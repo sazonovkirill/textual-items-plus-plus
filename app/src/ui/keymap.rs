@@ -10,7 +10,7 @@ use crate::app::Command;
 
 /// One key press: its modifiers and code, with `Shift` dropped from characters because the
 /// character already says whether it is shifted.
-type Key = (KeyModifiers, KeyCode);
+pub(super) type Key = (KeyModifiers, KeyCode);
 
 /// Each command's default keys, written `mod+mod+key` in lower case for a key with `ctrl`, `alt`
 /// or `shift`, and the character or key name alone for a key without them. A feature binds its
@@ -73,6 +73,13 @@ fn pressed(modifiers: KeyModifiers, code: KeyCode) -> Key {
     }
 }
 
+/// The key `event` presses, as the keymaps match it; releases, repeats and other events press
+/// none.
+pub(super) fn key_press(event: &Event) -> Option<Key> {
+    let key = event.as_key_press_event()?;
+    Some(pressed(key.modifiers, key.code))
+}
+
 /// The commands the keys give.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keymap {
@@ -103,10 +110,7 @@ impl Keymap {
     /// none.
     #[must_use]
     pub fn command(&self, event: &Event) -> Option<Command> {
-        let key = event.as_key_press_event()?;
-        self.commands
-            .get(&pressed(key.modifiers, key.code))
-            .copied()
+        self.commands.get(&key_press(event)?).copied()
     }
 }
 

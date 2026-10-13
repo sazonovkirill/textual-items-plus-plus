@@ -2,12 +2,15 @@
 //! the app's effects and draws its state.
 
 mod keymap;
+mod picker;
+mod text_keys;
 mod theme;
 
 use crossterm::event::Event;
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 pub use keymap::Keymap;
+pub use picker::{PickerPopup, picker_input};
 pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::app::{self, Effect, Message, State};

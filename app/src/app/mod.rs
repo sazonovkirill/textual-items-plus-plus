@@ -4,6 +4,7 @@
 
 pub mod autosave;
 mod command;
+mod picker;
 mod selection;
 mod state;
 mod text_field;
@@ -11,6 +12,7 @@ mod update;
 pub mod view;
 
 pub use command::{Command, Context, Entry, REGISTRY};
+pub use picker::{Candidate, Entries, Picked, Picker, PickerInput, PickerView};
 pub use selection::Selection;
 pub use state::State;
 pub use text_field::{Motion, TextEdit, TextField};

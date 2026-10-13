@@ -19,6 +19,11 @@ allow = [
     "Zlib",
 ]
 
+# The fuzzy matcher the pickers use, as in taskpaper-terminal, whose owner allowed MPL-2.0 for it.
+[[licenses.exceptions]]
+crate = "nucleo-matcher"
+allow = ["MPL-2.0"]
+
 [licenses.private]
 ignore = true
 
