@@ -4,5 +4,5 @@
 mod document;
 mod item;
 
-pub use document::{Document, PlacementError};
+pub use document::{Document, Op, PlacementError, Snapshot, Transaction};
 pub use item::{Completion, Item, ItemId, ItemKind, Node, Tag};

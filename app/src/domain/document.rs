@@ -7,6 +7,10 @@ use thiserror::Error;
 
 use super::item::{Item, ItemId, ItemKind, Node};
 
+mod edit;
+
+pub use edit::{Op, Snapshot, Transaction};
+
 /// The whole todo list: the Inbox, always first (FR-ORG-07), then the top-level nodes in the
 /// user's order (FR-ORG-08), each with its children.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +40,21 @@ pub enum PlacementError {
     /// Changing an item cannot change its kind; converting is its own operation (FR-ORG-06).
     #[error("changing an item cannot change its kind")]
     KindChanged,
+    /// The node is not as the edit expects: its item, place or subtree changed since the edit
+    /// was made.
+    #[error("node {0:?} has changed since the edit was made")]
+    Stale(ItemId),
+    /// A node to put in has an identifier already in use, or one this document never made.
+    #[error("node {0:?} cannot be put in: its identifier is in use or unknown")]
+    IdUnavailable(ItemId),
+    /// The position is past the end of the parent's children, or of the top level for `None`.
+    #[error("position {index} is past the children of {parent:?}")]
+    Position {
+        /// The parent, or `None` for the top level.
+        parent: Option<ItemId>,
+        /// The position.
+        index: usize,
+    },
 }
 
 impl Default for Document {
@@ -94,32 +113,9 @@ impl Document {
     /// [`PlacementError::NoSuchNode`] when `parent` is not in this document, and
     /// [`PlacementError::DoesNotFit`] when the hierarchy does not allow `node` there.
     pub fn push(&mut self, parent: Option<ItemId>, node: Node) -> Result<ItemId, PlacementError> {
-        let parent_node = parent
-            .map(|id| self.node(id).ok_or(PlacementError::NoSuchNode(id)))
-            .transpose()?;
-        let fits = match (&node, parent_node) {
-            (Node::Kept(_), _) => true,
-            (Node::Item(_), Some(Node::Kept(_))) => false,
-            (Node::Item(item), parent) => item
-                .kind
-                .fits_in(parent.and_then(Node::item).map(|parent| parent.kind)),
-        };
-        if !fits {
-            return Err(PlacementError::DoesNotFit);
-        }
-        let siblings = match parent {
-            Some(parent) => {
-                &mut self
-                    .entries
-                    .get_mut(&parent)
-                    .ok_or(PlacementError::NoSuchNode(parent))?
-                    .children
-            }
-            None => &mut self.top_level,
-        };
-        let id = ItemId::new(self.next_number);
-        siblings.push(id);
-        self.next_number += 1;
+        self.check_fit(parent, &node)?;
+        let id = self.new_id();
+        self.siblings_mut(parent)?.push(id);
         self.entries.insert(
             id,
             Entry {
@@ -144,6 +140,50 @@ impl Document {
             return Err(PlacementError::KindChanged);
         }
         Ok(std::mem::replace(old, item))
+    }
+
+    /// Whether `node` may go in `parent`, or at the top level for `None`: kept content anywhere,
+    /// an item only where its kind fits, and never inside kept content.
+    fn check_fit(&self, parent: Option<ItemId>, node: &Node) -> Result<(), PlacementError> {
+        let parent_node = parent
+            .map(|id| self.node(id).ok_or(PlacementError::NoSuchNode(id)))
+            .transpose()?;
+        let fits = match (node, parent_node) {
+            (Node::Kept(_), _) => true,
+            (Node::Item(_), Some(Node::Kept(_))) => false,
+            (Node::Item(item), parent) => item
+                .kind
+                .fits_in(parent.and_then(Node::item).map(|parent| parent.kind)),
+        };
+        if fits {
+            Ok(())
+        } else {
+            Err(PlacementError::DoesNotFit)
+        }
+    }
+
+    /// The children of `parent` in order, or the top-level nodes for `None`.
+    fn siblings(&self, parent: Option<ItemId>) -> Result<&[ItemId], PlacementError> {
+        match parent {
+            Some(id) => self
+                .entries
+                .get(&id)
+                .map(|entry| entry.children.as_slice())
+                .ok_or(PlacementError::NoSuchNode(id)),
+            None => Ok(&self.top_level),
+        }
+    }
+
+    /// The children of `parent` to change, or the top-level nodes for `None`.
+    fn siblings_mut(&mut self, parent: Option<ItemId>) -> Result<&mut Vec<ItemId>, PlacementError> {
+        match parent {
+            Some(id) => self
+                .entries
+                .get_mut(&id)
+                .map(|entry| &mut entry.children)
+                .ok_or(PlacementError::NoSuchNode(id)),
+            None => Ok(&mut self.top_level),
+        }
     }
 }
 
@@ -313,6 +353,22 @@ mod tests {
         assert_eq!(
             PlacementError::KindChanged.to_string(),
             "changing an item cannot change its kind"
+        );
+        assert_eq!(
+            PlacementError::Stale(ItemId::new(3)).to_string(),
+            "node ItemId(3) has changed since the edit was made"
+        );
+        assert_eq!(
+            PlacementError::IdUnavailable(ItemId::new(3)).to_string(),
+            "node ItemId(3) cannot be put in: its identifier is in use or unknown"
+        );
+        assert_eq!(
+            PlacementError::Position {
+                parent: None,
+                index: 2
+            }
+            .to_string(),
+            "position 2 is past the children of None"
         );
     }
 }

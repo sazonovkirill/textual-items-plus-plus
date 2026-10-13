@@ -4,6 +4,7 @@
 
 pub mod autosave;
 mod command;
+mod history;
 mod picker;
 mod selection;
 mod state;
@@ -12,6 +13,7 @@ mod update;
 pub mod view;
 
 pub use command::{Command, Context, Entry, REGISTRY};
+pub use history::History;
 pub use picker::{Candidate, Entries, Picked, Picker, PickerInput, PickerView};
 pub use selection::Selection;
 pub use state::State;
