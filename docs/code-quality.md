@@ -27,7 +27,7 @@ All logic lives in the library (`app/src/lib.rs` and its modules); `main.rs` onl
 | Layer | Owns | May depend on |
 | --- | --- | --- |
 | Domain | The data model (tasks, projects and the other entities the specs define) and the rules and operations that change it | `std` and small pure crates only |
-| Store | Persistence: the TaskPaper format, the mapping between it and the domain model, and file I/O (atomic saves, backups, watching for outside changes, recovery files) | Domain, `std` and file-system crates |
+| Store | Persistence: the TaskPaper format, the mapping between it and the domain model, and file I/O (atomic saves, backups, watching for outside changes, recovery files), plus the app's other files, the settings and the saved pane layout | Domain, `std` and file-system crates |
 | App | Application state, messages, the update function, modes, views, undo, search and filter state, and effects such as "save this data" | Domain |
 | UI | The terminal frontend: mapping key events to messages, widgets and the view that renders the state into a `Frame`, and running the app's effects through Store | App, Domain, Store, Ratatui, crossterm |
 

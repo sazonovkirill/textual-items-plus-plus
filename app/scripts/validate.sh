@@ -22,7 +22,7 @@ static_checks() {
   pending_snapshots
 }
 
-# Domain, Store and App are the UI-independent core (docs/code-quality.md, Architecture).
+# Domain and App are the UI-independent core and Store sits beside them (docs/code-quality.md, Architecture).
 layers() {
   local found=0
   if [[ -d src/domain ]] && grep -rnwE 'ratatui|crossterm|store|app|ui' src/domain | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'; then
