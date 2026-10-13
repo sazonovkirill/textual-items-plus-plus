@@ -2,11 +2,13 @@
 //! the app's effects and draws its state.
 
 mod keymap;
+mod theme;
 
 use crossterm::event::Event;
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 pub use keymap::Keymap;
+pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::app::{self, Effect, Message, State};
 

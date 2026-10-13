@@ -3,7 +3,7 @@
 - Status: Reference
 - Last updated: 2026-10-13
 
-This page defines the color themes compiled into the app for v1: two dark and two light. Each was chosen on its own merits from what is popular and maintained in 2025-2026 across Neovim (the dotfyle usage ranking), terminal emulators (all four ship in Ghostty's bundled catalog, which comes from iTerm2-Color-Schemes), and editors. Each one has a permissive license, verified in its own repository, so its palette can be built into the binary with attribution. Every hex value below comes from the theme's official palette file. The app also keeps its "Terminal Dark" theme, which uses the terminal's own 16 ANSI colors. That theme is not listed here and needs no palette. Candidates evaluated for later releases are listed at the end, without palettes.
+This page defines the color themes compiled into the app for v1: two dark and two light. Each was chosen on its own merits from what is popular and maintained in 2025-2026 across Neovim (the dotfyle usage ranking), terminal emulators (all four ship in Ghostty's bundled catalog, which comes from iTerm2-Color-Schemes), and editors. Each one has a permissive license, verified in its own repository, so its palette can be built into the binary with attribution. Every hex value below comes from the theme's official palette file. The app also keeps its "Terminal Dark" theme, which uses the terminal's own 16 ANSI colors; its roles are listed [after the four](#terminal-dark). Candidates evaluated for later releases are listed at the end, without palettes.
 
 ## Selection
 
@@ -170,6 +170,33 @@ Notes: every role clears 4.5:1. Checklist done uses `fg.subtle`, which happens t
 | Tag 6 | `#5e409d` | purple-600 | 7.58:1 |
 
 Notes: the yellow tag uses `yellow-700` from the extended palette because `yellow-600` is 3.39:1 on paper. Cyan-600 and green-600 sit just under 4.5:1 (4.43 and 4.39). Their darker 700 steps are available if the app wants AA for every role.
+## Terminal Dark
+
+- Key: `terminal-dark` · the terminal's own colors, the default until settings choose a theme (D-30)
+
+It draws in the terminal's 16 ANSI colors, so it follows the user's palette and needs no truecolor. Where the 16 have no color that fits, it uses greys of the 256-color palette, as taskpaper-terminal does. Their contrast depends on the terminal's palette, so none is given.
+
+| Role | Color |
+|---|---|
+| Background | the terminal's own |
+| Text | the terminal's own |
+| Dim text | grey 248 |
+| Primary | bright blue |
+| Accent | yellow |
+| Selection | grey 237 |
+| Focus marker | bright blue |
+| Current-line band | black |
+| Text on the band and selection | grey 255, light whatever the palette |
+| Headers | bright magenta |
+| Rule lines | bright black |
+| Links | cyan |
+| Start-date chip | green |
+| Due-date chip | red |
+| Overdue | bright red |
+| Error | red |
+| Tag text | cyan |
+| Checklist done | grey 244 |
+
 ## Contrast summary
 
 - Text and dim text clear 4.5:1 in all four themes. The lowest is dim text in Flexoki Light at 4.97:1.
