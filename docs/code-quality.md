@@ -10,7 +10,7 @@ These are the owner's requirements. Everything else in this document serves them
 1. **Strict Clippy.** All default lints plus `clippy::pedantic`, configured in `app/Cargo.toml`, with warnings denied. Exceptions are narrow and justified.
 2. **No panics in production code.** No `unwrap`, `panic!`, `todo!`, `unimplemented!` or unchecked indexing outside tests. `expect` is allowed only for a real invariant, and its message says why it cannot fail.
 3. **Typed errors.** The library returns `thiserror` enums; `anyhow` is used only in `main.rs`.
-4. **One crate with layered modules.** The domain model knows nothing about Ratatui or crossterm, and dependencies point inward only.
+4. **One crate with layered modules.** App logic, persistence and UI are separate layers, so the core logic and persistence could be reused behind a different UI, such as a desktop app (owner, 2026-10-13). The domain model knows nothing about storage, Ratatui or crossterm, and dependencies point inward only.
 5. **No unsafe code.** `unsafe_code` is forbidden crate-wide.
 6. **Brief doc comments on every public item,** enforced by `missing_docs`.
 7. **Reproducible tooling.** The Rust toolchain is pinned in `rust-toolchain.toml`, and `cargo-deny` checks licenses, advisories and duplicate dependencies as part of validation.
@@ -22,28 +22,30 @@ These are the owner's requirements. Everything else in this document serves them
 
 ## Architecture
 
-All logic lives in the library (`app/src/lib.rs` and its modules); `main.rs` only sets up the terminal, runs the event loop, restores the terminal and reports a fatal error, as the [testing strategy](testing-strategy.md#test-levels-and-layout) requires. The library has three layers:
+All logic lives in the library (`app/src/lib.rs` and its modules); `main.rs` only sets up the terminal, runs the event loop, restores the terminal and reports a fatal error, as the [testing strategy](testing-strategy.md#test-levels-and-layout) requires. The library has four layers:
 
 | Layer | Owns | May depend on |
 | --- | --- | --- |
-| Domain | The data model (tasks, projects and the other entities the specs define), the rules and operations that change it, and reading and writing its stored form | `std` and small pure crates only |
+| Domain | The data model (tasks, projects and the other entities the specs define) and the rules and operations that change it | `std` and small pure crates only |
+| Store | Persistence: the TaskPaper format, the mapping between it and the domain model, and file I/O (atomic saves, backups, watching for outside changes, recovery files) | Domain, `std` and file-system crates |
 | App | Application state, messages, the update function, modes, views, undo, search and filter state, and effects such as "save this data" | Domain |
-| UI | Mapping key events to messages, widgets and the view that renders the state into a `Frame` | App, Domain, Ratatui, crossterm |
+| UI | The terminal frontend: mapping key events to messages, widgets and the view that renders the state into a `Frame`, and running the app's effects through Store | App, Domain, Store, Ratatui, crossterm |
 
-- Dependencies point inward: UI depends on App, App on Domain, never the reverse. Domain and App never import `ratatui` or `crossterm`; a key event becomes an app-level message at the UI boundary.
+- Dependencies point inward: UI depends on App and Store, App and Store on Domain, never the reverse. Domain, Store and App never import `ratatui` or `crossterm`, and App never imports Store: it asks for loading and saving through effects. A key event becomes an app-level message at the UI boundary.
+- A different frontend, such as a desktop app, reuses Domain, Store and App unchanged and replaces only UI.
 - The update function is pure: it takes the state and a message and returns the new state and effects. File I/O and the clock happen at the edge and are passed in, so every layer except terminal setup runs in tests without a terminal.
 - The view renders state and never changes it. Widgets hold no application state of their own beyond what Ratatui's `StatefulWidget` state needs.
-- Each layer is a module tree (`domain/`, `app/`, `ui/`). Only what another layer or the integration tests need is `pub`; everything else is private or `pub(crate)`. The owner chose one crate: the separation between core and UI exists at the module level, and reviewers enforce it. Splitting into a Cargo workspace requires a new owner decision.
-- Preserving data is a design constraint, not a feature: the domain model keeps whatever it reads and does not understand, so that saving unchanged data reproduces it and nothing the user stored is lost ([AGENTS.md](../AGENTS.md#2-correct-not-just-green)).
+- Each layer is a module tree (`domain/`, `store/`, `app/`, `ui/`). Only what another layer or the integration tests need is `pub`; everything else is private or `pub(crate)`. The owner chose one crate: the separation between core and UI exists at the module level, and reviewers enforce it. Splitting into a Cargo workspace requires a new owner decision.
+- Preserving data is a design constraint, not a feature: the domain model keeps whatever Store reads and does not understand, so that saving unchanged data reproduces it and nothing the user stored is lost ([AGENTS.md](../AGENTS.md#2-correct-not-just-green)).
 
 ### UI-independent core
 
-Domain and App together are the core. Every behavior of the app, including editing, navigation, views, undo, search, filtering, loading and saving, lives in the core and works the same behind any frontend. The terminal UI only translates input into messages and renders what the core exposes.
+Domain and App together are the core, and the rules below apply to it. Store is the persistence layer that every frontend reuses beside the core: it does file I/O, which the core never does, but it too has no global or static mutable state, takes the clock and timers as parameters, and has no terminal dependency; its tests call its interface directly, on temporary directories. Every behavior of the app, including editing, navigation, views, undo, search, filtering, loading and saving, lives in the core or in Store and works the same behind any frontend. The terminal UI only translates input into messages and renders what the core exposes.
 
 - **Messages are user intents, not input events.** The core accepts messages such as "move to next item", "complete this task", "move this task to a project" or "show Today", never key codes or mouse events. Key bindings and keymaps belong to the frontend, so a web or desktop UI can bind the same intents differently.
 - **The core exposes what to show, not how.** It provides read-only queries for everything a frontend renders: the visible items with their fields, the selection and cursor, the current mode and view, and status or error messages. It knows nothing of cells, colors, styles, borders or Ratatui types.
 - **Layout and presentation belong to the frontend.** Text wrapping, Unicode display width, scrolling to keep the cursor visible, themes and widgets live in the UI. When a behavior depends on the viewport, such as page up and page down, the frontend passes the size it has as part of the message.
-- **Effects are data.** The core returns effects such as "save this text to this path" and never performs I/O, reads the clock or blocks. The frontend executes them and reports results back as messages, so the core can run in a single-threaded, async or WebAssembly host.
+- **Effects are data.** The core returns effects such as "save the document" and never performs I/O, reads the clock or blocks. The frontend executes them, calling Store for persistence, and reports results back as messages, so the core can run in a single-threaded, async or WebAssembly host.
 - **No terminal assumptions.** The core has no global or static mutable state, no direct access to the environment, the terminal or the process, and no dependency that only works in a terminal.
 - **Test the core without the UI.** Unit tests cover every core behavior by sending messages to the core and checking its queries and effects, so the same contract holds for any future frontend. UI tests check the key bindings and what is drawn on top of it.
 
@@ -135,7 +137,7 @@ cognitive_complexity = "warn"
 - Formatting is stock `rustfmt` with no configuration; `validate.sh static` checks it.
 - An `#[allow]` or `#[expect]` is placed on the smallest item possible, never crate-wide, and carries a `reason = "..."`. Prefer `#[expect]`, which fails once the lint no longer fires. Allowing a pedantic lint project-wide requires an owner decision recorded here.
 - `app/clippy.toml` lists `disallowed-methods` for sleeping and reading the clock, which belong to the frontend's edge ([UI-independent core](#ui-independent-core)). Frontend code that must read the clock opts out on that item with `#[expect(clippy::disallowed_methods, reason = "...")]`.
-- `validate.sh static` also fails when a line of `src/domain` that is not a comment contains the word `ratatui`, `crossterm`, `app` or `ui`, or such a line of `src/app` contains `ratatui`, `crossterm` or `ui`, so the layer direction above is checked, not only reviewed. It matches whole words in any import form, alias or `super::` path; name local values in those layers so they do not collide.
+- `validate.sh static` also fails when a line of `src/domain` that is not a comment contains the word `ratatui`, `crossterm`, `store`, `app` or `ui`, such a line of `src/store` contains `ratatui`, `crossterm`, `app` or `ui`, or such a line of `src/app` contains `ratatui`, `crossterm`, `store` or `ui`, so the layer direction above is checked, not only reviewed. It matches whole words in any import form, alias or `super::` path; name local values in those layers so they do not collide.
 - New code uses the latest stable Rust and dependency APIs, as the agent workflow's [Modern Rust](agent-workflow.md#modern-rust) rule requires.
 
 ## Toolchain and dependencies

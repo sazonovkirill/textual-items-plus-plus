@@ -22,15 +22,19 @@ static_checks() {
   pending_snapshots
 }
 
-# Domain and App are the UI-independent core (docs/code-quality.md, Architecture).
+# Domain, Store and App are the UI-independent core (docs/code-quality.md, Architecture).
 layers() {
   local found=0
-  if [[ -d src/domain ]] && grep -rnwE 'ratatui|crossterm|app|ui' src/domain | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'; then
-    echo 'layers: src/domain may depend only on std and small pure crates, never on ratatui, crossterm, app or ui' >&2
+  if [[ -d src/domain ]] && grep -rnwE 'ratatui|crossterm|store|app|ui' src/domain | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'; then
+    echo 'layers: src/domain may depend only on std and small pure crates, never on ratatui, crossterm, store, app or ui' >&2
     found=1
   fi
-  if [[ -d src/app ]] && grep -rnwE 'ratatui|crossterm|ui' src/app | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'; then
-    echo 'layers: src/app may depend only on domain; turn key events into app messages and render in src/ui' >&2
+  if [[ -d src/store ]] && grep -rnwE 'ratatui|crossterm|app|ui' src/store | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'; then
+    echo 'layers: src/store may depend only on domain and file-system crates, never on ratatui, crossterm, app or ui' >&2
+    found=1
+  fi
+  if [[ -d src/app ]] && grep -rnwE 'ratatui|crossterm|store|ui' src/app | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'; then
+    echo 'layers: src/app may depend only on domain; load and save through effects that src/ui runs with src/store, and render in src/ui' >&2
     found=1
   fi
   return "$found"
