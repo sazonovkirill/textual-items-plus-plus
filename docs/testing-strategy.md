@@ -12,7 +12,7 @@ These are the owner's requirements. Everything else in this document serves them
 3. **Every type and standalone function has a complete set of unit tests** covering the happy path, error cases and edge cases.
 4. **Tests verify the contract, not the implementation.** A test states what a unit promises to its callers through its public interface. Refactoring that keeps the contract must not require rewriting tests.
 5. **Integration (UI) tests cover every user interaction with the app, within reason.** Every key binding, command, mode and screen a user can reach has at least one test driving it through the app's input handling and checking what the user sees and what is saved.
-6. **Every test can run in parallel** with every other test.
+6. **Every test can run in parallel** with every other test, and tests always run in parallel (owner, 2026-10-13).
 7. **UI tests render through Ratatui's `TestBackend`**, so agents can see what the app shows without a real terminal.
 
 ## Test levels and layout
@@ -90,14 +90,14 @@ Feature-complete means every Must requirement has a test that shows it working.
 
 ## Parallel execution
 
-Every test must pass when run in parallel with every other test, in any order, as threads in one process (`cargo test`).
+Every test must pass when run in parallel with every other test, in any order, as threads in one process (`cargo test`). Tests always run that way, to keep the suite fast (owner, 2026-10-13): never pass `--test-threads=1` or set `RUST_TEST_THREADS`, and `validate.sh` refuses to run while `RUST_TEST_THREADS` is set.
 
 - No shared mutable state between tests: no `static mut`, no global caches, no singletons that tests write to.
 - Never use fixed paths, the home directory, or the real working directory. Every test that touches the filesystem creates its own `tempfile::TempDir` and keeps the guard alive until the test ends.
 - Never set or remove environment variables in a test; `std::env::set_var` is unsound in multi-threaded programs. Pass configuration in as parameters, or set it on a child process with `Command::env`.
 - Never sleep or read the wall clock. Inject time as a parameter or through a clock the test controls. Clippy's `disallowed-methods` in `app/clippy.toml` rejects `std::thread::sleep`, `Instant::now` and `SystemTime::now` everywhere.
 - Tests are deterministic: no randomness without a fixed seed (proptest's own seeds and regression files excepted), and no dependence on terminal size, locale or timezone of the machine running them.
-- `serial_test` is a last resort for a resource that truly cannot be isolated, and needs a comment explaining why.
+- Never serialize tests. `serial_test` is banned in `app/deny.toml`, and so is any lock that makes tests wait for each other; a resource that seems impossible to isolate is redesigned so it can be, or raised with the owner.
 
 ## Snapshots
 

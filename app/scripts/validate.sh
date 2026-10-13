@@ -2,6 +2,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Tests always run in parallel (docs/testing-strategy.md, Parallel execution).
+if [[ -n "${RUST_TEST_THREADS:-}" ]]; then
+  echo 'validate: unset RUST_TEST_THREADS; tests always run in parallel' >&2
+  exit 1
+fi
+
 format() {
   cargo fmt --all
 }

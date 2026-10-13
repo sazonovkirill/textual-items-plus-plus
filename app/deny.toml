@@ -25,6 +25,9 @@ ignore = true
 [bans]
 multiple-versions = "deny"
 wildcards = "deny"
+deny = [
+    { crate = "serial_test", reason = "tests always run in parallel (docs/testing-strategy.md, Parallel execution)" },
+]
 skip = [
     { crate = "hashbrown@0.16.1", reason = "kasuari, under ratatui-core 0.1, still uses hashbrown 0.16" },
     { crate = "syn@2.0.119", reason = "derive_more (crossterm) and strum_macros (ratatui) still use syn 2" },
