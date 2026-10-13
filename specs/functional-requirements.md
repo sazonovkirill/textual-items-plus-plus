@@ -3,7 +3,7 @@
 - Status: Draft
 - Last updated: 2026-10-13
 
-What textual-items++ does, as stated by the owner on 2026-10-13. The owner's answers are recorded under [Decisions](#decisions) and referenced as **(D-n)**; choices the owner has not made yet are in [open-questions.md](open-questions.md) and referenced as **(OQ-n)**, and the requirements assume their proposed defaults until the owner decides.
+What textual-items++ does, as stated by the owner on 2026-10-13. The owner's answers are recorded under [Decisions](#decisions) and referenced as **(D-n)**; the questions in [open-questions.md](open-questions.md), referenced as **(OQ-n)**, were all decided on 2026-10-13, and each records its decision there.
 
 Priorities: **Must** is required for v1, **Should** is expected soon after, **Later** is planned after v1 and must not be precluded by the design, **Won't** is out of scope.
 
@@ -13,7 +13,7 @@ References: [Things 3](reference/things3.md), [Todoist](reference/todoist.md), [
 
 ## Product summary
 
-textual-items++ is a keyboard-first todo app for the terminal, in the spirit of Things 3 and Todoist, for software engineers and other people who live in a terminal. Work is organized as areas, projects, sections and tasks, as in Things 3, with three changes: projects nest, areas can hold sections, and sections have descriptions (D-2). Tasks are edited in place, as in Things 3, except their descriptions and comments, which open in a full-height panel on the right, as in taskpaper-terminal (D-5). Everything is stored in one plain-text `.taskpaper` file (D-6). The look, keys and settings follow taskpaper-terminal (D-8).
+textual-items++ is a keyboard-first todo app for the terminal, in the spirit of Things 3 and Todoist, for software engineers and other people who live in a terminal. Work is organized as areas, projects, sections and tasks, as in Things 3, with three changes: projects nest, areas can hold sections, and sections have descriptions (D-2). Titles and dates are edited in place, as in Things 3; a task's description, checklist and comments open in a full-height panel on the right, as in taskpaper-terminal (D-5, OQ-6). Everything is stored in one plain-text `.taskpaper` file (D-6). The look, keys and settings follow taskpaper-terminal (D-8).
 
 ## Terms
 
@@ -27,7 +27,7 @@ textual-items++ is a keyboard-first todo app for the terminal, in the spirit of 
 - **Description**: Markdown text attached to an item: shown under an area, project or section, and in the attachments panel for a task.
 - **Comment**: a dated one-line remark on a task, as in Todoist but for one user (FR-ATT).
 - **Inbox**: the built-in place for tasks not yet organized (FR-ORG-07).
-- **View**: a list the app builds, such as Inbox, Upcoming, Logbook, Trash or search results, as opposed to a container shown as itself.
+- **View**: a list the app builds, such as Inbox, Today, Upcoming, All, Logbook, Trash or search results, as opposed to a container shown as itself.
 - **Pane**: one column of the split view, showing its own view or container (FR-PANE).
 - **Navigate mode** and **edit mode**: in navigate mode keys act on items; in edit mode keys edit the text of one item in place (FR-EDIT).
 - **Start date**: the day an item becomes relevant, Things 3's "When". **Due date**: the day it must be done, Things 3's "Deadline". Any item can have either or both (D-13).
@@ -42,21 +42,21 @@ textual-items++ is a keyboard-first todo app for the terminal, in the spirit of 
 | FR-ORG-03 | Sections sit in an area or a project, unlike Things 3, where areas cannot have headings, and contain tasks (D-2). | Must |
 | FR-ORG-04 | Tasks sit in the Inbox, an area, a project or a section. | Must |
 | FR-ORG-05 | Every area, project and section has a title, an optional start date, due date and tags (FR-DATE, FR-TAG), and an optional description, Markdown text of any length shown under its title when it is open; sections have descriptions, unlike Things 3 (D-2). | Must |
-| FR-ORG-06 | The user creates, renames, reorders, moves and deletes areas, projects and sections. Moving or deleting one carries everything inside it. A project can be turned into an area and back, and a section into a project and back, keeping their contents where the target allows them (OQ-2). | Must |
+| FR-ORG-06 | The user creates, renames, reorders, moves and deletes areas, projects and sections. Moving or deleting one carries everything inside it. An area can be turned into a project, but a project can't be turned into an area (D-25); a section can be turned into a project and back, keeping their contents where the target allows them (OQ-2). | Must |
 | FR-ORG-07 | The Inbox is a built-in container, always first, where tasks go when no other place is chosen, as in Things 3. It holds tasks only (OQ-3). | Must |
 | FR-ORG-08 | Items keep the order the user gives them everywhere; nothing is sorted automatically except in views that say so. | Must |
-| FR-ORG-09 | A project can be completed, which logs it with everything in it, as in Things 3 (OQ-4). | Should |
+| FR-ORG-09 | Any item can be completed, an area, project or section as well as a task. Completing an item leaves everything inside it in its own state, uncompleted items included. The completed item itself is shown like any other completed item (FR-VIEW-03, FR-VIEW-11), but everything inside it, completed or not, is no longer shown anywhere in the app: not in any view, the Logbook and search included, nor in palettes, pickers, the Navigator, the sidebar or the item opened as a container. Uncompleting the item shows it all again (OQ-4). | Must |
 
 ## FR-TASK · Tasks
 
 | ID | Requirement | Priority |
 |---|---|---|
 | FR-TASK-01 | A task has a title, and optionally a description, a start date, a due date, tags, a checklist and comments (D-1, D-12, D-13). | Must |
-| FR-TASK-02 | A task is completed and uncompleted with one key; completing records the date. Completed tasks stay visible where they are until they are logged (OQ-5). | Must |
+| FR-TASK-02 | A task is completed and uncompleted with one key; completing records the date. A completed item never moves in the file: it stays where it is, dimmed and struck through, and the Logbook only collects it (OQ-5); lists show it after the uncompleted items (FR-VIEW-11). | Must |
 | FR-TASK-03 | A task row shows its title and, compactly, its start and due dates as date chips (FR-DATE-02), its tags, its checklist progress (`2/5`) and icons for a description and comments, as taskpaper-terminal does ([ui.md §2](reference/taskpaper-terminal/specs/ui.md#2-blocks)). | Must |
 | FR-TASK-04 | A task's description is Markdown text of any length, rendered in the attachments panel and edited there as raw text (FR-ATT, D-5). | Must |
 | FR-TASK-05 | Tasks are reordered and moved to another container like every item (FR-OPS). | Must |
-| FR-TASK-06 | A task can be converted to a project and back. | Should |
+| FR-TASK-06 | A task can be converted to a project, in its place: its title, description, dates and tags carry over, its checklist items become the project's tasks, nested ones as their checklists, and its comments are appended to the project's description under a Comments heading, since projects have none, so nothing is lost (D-25). Where a project can't go, in a section or the Inbox, the conversion is refused with a message (OQ-2). Converting a project back to a task is not required. | Must |
 | FR-TASK-07 | Repeating tasks, as in Things 3 and Todoist. | Later |
 
 ## FR-CHK · Checklists
@@ -64,18 +64,18 @@ textual-items++ is a keyboard-first todo app for the terminal, in the spirit of 
 | ID | Requirement | Priority |
 |---|---|---|
 | FR-CHK-01 | A task's checklist is a list of items, each with text and a done state, nested to any depth, unlike Things 3, whose checklists are flat (D-1). | Must |
-| FR-CHK-02 | The checklist is shown and edited inline, under the task's title, when the task is opened in place, as in Things 3 (D-4, OQ-6). | Must |
+| FR-CHK-02 | The checklist is shown and edited in the attachments panel, in a Checklist section between the description and the comments (FR-ATT, OQ-6). | Must |
 | FR-CHK-03 | Checklist items are added, edited, deleted, checked and unchecked, reordered, indented and outdented with the same keys as items elsewhere. Pasting several lines adds one item per line, keeping their indentation as nesting. | Must |
-| FR-CHK-04 | Checking an item does not check or complete anything else: its children, its parent and the task keep their own state (OQ-7). | Must |
+| FR-CHK-04 | Checking an item does not check or complete anything else: its children, its parent and the task keep their own state. A checked item and everything under it, at any depth, are drawn dimmed, as taskpaper-terminal draws a done block and its contents (OQ-7). | Must |
 
-## FR-ATT · Descriptions and comments of tasks
+## FR-ATT · Descriptions, checklists and comments of tasks
 
 These copy taskpaper-terminal's attachments setup ([attachments.md](reference/taskpaper-terminal/specs/attachments.md)), which has exactly the layout the owner wants (D-5).
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-ATT-01 | A task's description and comments are read and edited in a modal panel over the right side of the screen, from the top of the screen to the status line, showing the description and below it the comments, as taskpaper-terminal's attachments panel does. This is the one place the app intentionally differs from Things 3 and Todoist (D-5). | Must |
-| FR-ATT-02 | The panel opens with one key for the description and one for the comments, from the task's row or while it is open in place, and closes with `Esc`. | Must |
+| FR-ATT-01 | A task's description, checklist and comments are read and edited in a modal panel over the right side of the screen, from the top of the screen to the status line, showing the description, below it the checklist and below that the comments, as taskpaper-terminal's attachments panel does. This is the one place the app intentionally differs from Things 3 and Todoist (D-5, OQ-6). | Must |
+| FR-ATT-02 | The panel opens with one key each for the description, the checklist and the comments, from the task's row, and closes with `Esc`. | Must |
 | FR-ATT-03 | The description is rendered as Markdown in the panel and edited as raw text in a multi-line editor there (D-5). | Must |
 | FR-ATT-04 | Comments are single lines, each stamped with its local date and time, listed newest first; the user adds, edits and deletes them. There is one user, so comments carry no author (D-1). | Must |
 | FR-ATT-05 | Every change made in the panel is one undo step and is saved like any edit. | Must |
@@ -84,13 +84,17 @@ These copy taskpaper-terminal's attachments setup ([attachments.md](reference/ta
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-VIEW-01 | Inbox: the tasks in the Inbox, in their order (D-3). | Must |
+| FR-VIEW-01 | Inbox: the tasks in the Inbox that have no start date, in their order. Giving an Inbox task a start date takes it out of the Inbox view, as scheduling does in Things 3; it stays under the Inbox in the file and shows in Today, Upcoming and All (D-3, OQ-9). | Must |
 | FR-VIEW-02 | Upcoming: every open item with a start or due date after today, tasks and also areas, projects and sections (D-13), grouped by day, the next days one by one and later dates by month, as in Things 3 (D-3, OQ-8). | Must |
-| FR-VIEW-03 | Logbook: completed tasks, and completed projects once they can be completed (FR-ORG-09), newest first, grouped by completion date, each with its location; uncompleting one returns it to where it was (D-3). | Must |
+| FR-VIEW-03 | Logbook: a view of every completed item from every list, newest first, grouped by completion date, each with its location. It moves nothing; uncompleting an item there uncompletes it where it is (D-3, OQ-5). | Must |
 | FR-VIEW-04 | Trash: deleted items, newest first, each with its location. An item in the Trash can be restored to where it was, or deleted for good; Empty Trash deletes everything in it for good after confirmation (D-3). | Must |
-| FR-VIEW-05 | Opening an area, project or section shows its description and its contents in order: sections as headings with their tasks below, and, for areas and projects, their projects (D-2). | Must |
-| FR-VIEW-06 | Today, Anytime and Someday views, as in Things 3 (OQ-9). | Later |
-| FR-VIEW-07 | A navigator lists the Inbox, the views and every area and project as a tree, with counts of open tasks, and opens the chosen entry in the focused pane (OQ-10). | Must |
+| FR-VIEW-05 | Opening an area, project or section shows its description and its contents in order: sections as headings with their tasks below, and, for areas and projects, their child projects, each as one row; a child project's tasks and sections are not shown there, only when that project is opened (D-2, D-26). | Must |
+| FR-VIEW-06 | Today: every open item whose start date or due date is today or earlier, grouped by area and project, overdue ones first, as in Things 3 (OQ-9). | Must |
+| FR-VIEW-07 | A Navigator window, opened by a key over the panes as in taskpaper-terminal, lists the Inbox, Today, Upcoming, All, Logbook and Trash and every area and project as a tree, with counts of open tasks, filters as the user types, and opens the chosen entry in the focused pane ([navigation.md §6](reference/taskpaper-terminal/specs/navigation.md#6-navigator-fr-ui-01-d-7-d-11-d-28-d-79), OQ-10). | Must |
+| FR-VIEW-08 | All: every open task in every list, grouped by where it lives, in place of Things 3's Anytime and Someday; this app has no Anytime/Someday distinction (OQ-9). | Must |
+| FR-VIEW-09 | Anytime and Someday views (OQ-9). | Won't |
+| FR-VIEW-10 | A sidebar on the left, shown and hidden with a hotkey, lists the areas and projects as a tree and is where they are created, renamed, deleted, indented and outdented and reordered with keys (OQ-10). | Must |
+| FR-VIEW-11 | In every list, completed items come after the uncompleted ones within each area, project and section, without changing their order in the file. They are hidden, except in the Logbook and search results (FR-SRCH-03), until **Show Completed Items** (`Ctrl+O`, as in taskpaper-terminal) shows them, per pane; the same key hides them again. The Logbook always shows them. Checklists are not lists of items: checked checklist items stay in place and shown, dimmed (FR-CHK-04) (D-21). | Must |
 
 ## FR-EDIT · Editing
 
@@ -98,7 +102,7 @@ These copy taskpaper-terminal's attachments setup ([attachments.md](reference/ta
 |---|---|---|
 | FR-EDIT-01 | Navigate mode moves between items and acts on them; edit mode edits the text of one item. `Enter` or a vi-style key starts editing, `Esc` returns, as in taskpaper-terminal (D-4, D-8). | Must |
 | FR-EDIT-02 | Editing happens in place: the editor opens where the item is, keeping the surrounding items and the scroll position, as in Things 3 (D-4). | Must |
-| FR-EDIT-03 | Opening a task expands it in place to show its checklist and its dates below its title, as Things 3 opens a to-do; the description and comments open in the attachments panel instead (D-4, D-5). | Must |
+| FR-EDIT-03 | A task's title and dates are edited in place; its description, checklist and comments open in the attachments panel instead (D-4, D-5, OQ-6). | Must |
 | FR-EDIT-04 | The text editor uses standard text-editing keys (arrows, Home/End, word motion and deletion, selection, clipboard), as taskpaper-terminal's edit mode does, not vim's normal mode (D-8, OQ-12). | Must |
 | FR-EDIT-05 | Creating an item opens it directly in edit mode: a new task below or above the focused one, a new section, project or area, each from one key or a short key sequence. | Must |
 | FR-EDIT-06 | Undo and redo every change, structural ones included. | Must |
@@ -110,12 +114,15 @@ These copy taskpaper-terminal's selection and structural operations ([editing.md
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-OPS-01 | Several items are selected by extending the selection with `Shift` and a motion, or by toggling items one by one, as in taskpaper-terminal (D-18). | Must |
-| FR-OPS-02 | The focused item or the selection moves up and down among its siblings with keys, crossing into the neighboring container at the edges, carrying everything inside it (D-18). | Must |
-| FR-OPS-03 | The focused item or the selection is indented and outdented where the hierarchy allows it: a project into or out of the project above it, a checklist item under or out of the one above it; a move the hierarchy does not allow is refused with a short message (D-18, FR-ORG). | Must |
+| FR-OPS-01 | Several items are selected by extending the selection with `Shift` and a motion (`Shift+↓`/`Shift+↑`, `Shift+j`/`Shift+k`) (D-24), or by toggling items one by one, as in taskpaper-terminal (D-18). | Must |
+| FR-OPS-02 | The focused item or the selection moves up and down among its siblings with `Alt` and a motion (`Alt+↓`/`Alt+↑`, `Alt+j`/`Alt+k`) (D-24), crossing into the neighboring container at the edges, carrying everything inside it (D-18). | Must |
+| FR-OPS-03 | The focused item or the selection is indented with `]` and outdented with `[` (D-24), beside taskpaper-terminal's `Tab`/`Shift+Tab`, where the hierarchy allows it: a project into or out of the project above it, a checklist item under or out of the one above it; a move the hierarchy does not allow is refused with a short message (D-18, FR-ORG). | Must |
 | FR-OPS-04 | The focused item or the selection moves to another container chosen in a fuzzy picker (Move to), as in taskpaper-terminal (D-18). | Must |
 | FR-OPS-05 | The selection is deleted, duplicated, copied, cut and pasted with its contents; pasted text with several lines becomes several items, as in taskpaper-terminal (D-18). | Must |
 | FR-OPS-06 | Completing, setting dates, tagging and deleting apply to the whole selection at once (D-18). | Must |
+| FR-OPS-07 | Group into section: the selected tasks become the tasks of a new section created where the first of them was, in the same area or project, whose title is then edited in place (D-25); it is refused with a message for tasks already in a section or in the Inbox, where a section can't go (OQ-2). | Must |
+| FR-OPS-08 | Group into project: the selected tasks and sections become the contents of a new project created where the first of them was, whose title is then edited in place (D-25); it is refused with a message where a project can't go, in a section or the Inbox (OQ-2). | Must |
+| FR-OPS-09 | Converting a project to an area: no command does it (D-25). | Won't |
 
 ## FR-DATE · Dates
 
@@ -136,14 +143,14 @@ These copy taskpaper-terminal's selection and structural operations ([editing.md
 | FR-TAG-03 | Tags are shown on the item's row, compactly and in a dimmed style, after its title. | Must |
 | FR-TAG-04 | The current view, container or search results can be filtered to items carrying chosen tags, as Things 3 filters by tag. | Must |
 | FR-TAG-05 | Tags can be renamed and deleted everywhere at once from a list of all tags. | Should |
-| FR-TAG-06 | Tags nest, as Things 3's parent tags do, and filtering by a tag includes its children (OQ-11). | Later |
+| FR-TAG-06 | Nested tags, as Things 3's parent tags; tags never nest here (OQ-11). | Won't |
 
 ## FR-NAV · Navigation
 
 | ID | Requirement | Priority |
 |---|---|---|
 | FR-NAV-01 | vi-style motions move between items: next and previous, first and last, parent container, next and previous section; arrow keys work too (D-4). | Must |
-| FR-NAV-02 | Opening a container or view shows it in the pane, like zooming in Workflowy; a key goes up to the parent container and another to the home view (OQ-10). | Must |
+| FR-NAV-02 | Opening a container or view shows it in the pane, like zooming in Workflowy; a key goes up to the parent container and another to the home view, the Inbox (OQ-10). | Must |
 | FR-NAV-03 | Breadcrumbs at the top of each pane show the path to what it shows, such as `Work › Website › Launch`, as in Workflowy; a crumb can be opened by key or click (D-9). | Must |
 | FR-NAV-04 | Go Back and Go Forward move through a history of where the user has been, like a browser's, each pane with its own history, as Workflowy's panes have (D-10). | Must |
 | FR-NAV-05 | Go to Symbol: a palette that finds any area, project, section or task by fuzzy matching, filtering as the user types, and opens it in the focused pane, like VS Code's Go to Symbol (D-4). | Must |
@@ -177,6 +184,7 @@ Panes copy taskpaper-terminal's, which follow Workflowy's ([navigation.md §5](r
 | FR-KEY-03 | A keyboard shortcuts panel, toggled with `?`, lists the most useful bindings for the current mode and context in a sidebar on the right, grouped, scrollable and showing the user's own bindings, as in taskpaper-terminal ([ui.md §4](reference/taskpaper-terminal/specs/ui.md#4-shortcuts-panel-fr-key-04), D-17). | Must |
 | FR-KEY-04 | Key bindings can be changed in the settings file. | Should |
 | FR-KEY-05 | The mouse can focus items, open crumbs and navigator entries, toggle completion and scroll; no feature depends on it. | Should |
+| FR-KEY-06 | Two prefix families, as in taskpaper-terminal's mnemonics: `g` then a letter **g**oes somewhere, a view, place or palette, such as `gi` Inbox and `gt` Today; `m` then a letter **m**odifies the focused item or the selection, such as `ms` set the start date, `md` set the due date and `mt` start today (start date set to today). Every view and every item property gets a key in its family; where a letter is already taken in taskpaper-terminal, the keybindings spec picks the nearest free mnemonic (D-23). | Must |
 
 ## FR-UI · Look and feel
 
@@ -184,17 +192,20 @@ Panes copy taskpaper-terminal's, which follow Workflowy's ([navigation.md §5](r
 |---|---|---|
 | FR-UI-01 | The UI is modern, sleek, intuitive and fast, following the [TUI best practices](reference/tui-best-practices.md) (D-4). | Must |
 | FR-UI-02 | The look follows taskpaper-terminal: its layout, typography by color, weight and dimming, focus marker and current-line band, breadcrumbs, status line, dialogs that dim the screen behind them, and its icons ([ui.md](reference/taskpaper-terminal/specs/ui.md), D-8). | Must |
-| FR-UI-03 | Between 12 and 16 built-in color themes, modern and well made, light and dark, switched with a live preview; they include taskpaper-terminal's twelve ([themes.md](reference/taskpaper-terminal/reference/themes.md)) and its Terminal Dark theme that follows the terminal's own colors (D-11, OQ-15). | Must |
+| FR-UI-03 | Four built-in color themes for v1, two dark and two light, a fresh selection of modern, well-made light and dark themes ([themes.md](reference/themes.md)), switched with a live preview, plus a theme that draws in the terminal's own colors, like taskpaper-terminal's Terminal Dark (D-11, OQ-15, D-22). | Must |
 | FR-UI-04 | Nerd Font icons mark item kinds, dates, attachments, views and the status line; one setting turns them off, for plain Unicode markers, as in taskpaper-terminal (D-11). | Must |
 | FR-UI-05 | Word wrap is a setting: on, long titles wrap; off, every item takes one row and long text ends in `…` (D-11). | Must |
 | FR-UI-06 | The app works in an 80×24 terminal and degrades gracefully below it. | Must |
 | FR-UI-07 | Modern, smooth and fluid animations show where focus landed, what a command changed and when an action was refused: moving focus, opening and closing items, panes, palettes and the attachments panel, completing and deleting. They follow taskpaper-terminal's rules: they never delay input or layout, run only while something moves, and a setting reduces or turns them off ([ui.md §9](reference/taskpaper-terminal/specs/ui.md#9-animation-fr-ui-11), [tui-animation.md](reference/taskpaper-terminal/reference/tui-animation.md), D-16). | Must |
+| FR-UI-08 | Weather: after the app has had no input for a few minutes, a full-screen animation of the season's weather plays over it until the next key or click, as in taskpaper-terminal: autumn leaves, winter snow or spring rain. A setting, on by default, turns it off, another sets the idle minutes, and the command palette starts it at once ([ui.md §10](reference/taskpaper-terminal/specs/ui.md#10-weather-fr-ui-12), D-19). | Must |
+| FR-UI-09 | Every modal window that chooses an item, such as Move to, the tag picker, a parent or Go to Symbol, filters its list as the user types, as taskpaper-terminal's finders do: typed text narrows the list by fuzzy match, the first match is focused, arrows and `Ctrl+P`/`Ctrl+N` move, `Enter` chooses and `Esc` closes (D-20). | Must |
+| FR-UI-10 | More built-in themes, up to the 12 to 16 of D-11 (D-22). | Later |
 
 ## FR-SET · Settings
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-SET-01 | Settings are stored in one TOML file in the user's config folder (`$XDG_CONFIG_HOME` respected, also on macOS), readable and editable by hand; the app runs with defaults when it is missing, as in taskpaper-terminal (D-11). | Must |
+| FR-SET-01 | Settings are stored in one TOML file, `~/.config/textual-items-plus-plus/config.toml` (`$XDG_CONFIG_HOME` respected, also on macOS), readable and editable by hand; the app runs with defaults when it is missing, as in taskpaper-terminal (D-11, OQ-16). | Must |
 | FR-SET-02 | A settings window, opened by a key and from the command palette, lists every setting grouped by topic, with its value and a one-line description; a change applies at once with a live preview and is saved immediately, as in taskpaper-terminal ([ui.md §8](reference/taskpaper-terminal/specs/ui.md#8-settings-window-fr-set-02-fr-set-03), D-11). | Must |
 | FR-SET-03 | The settings include at least the theme (FR-UI-03), icons (FR-UI-04) and word wrap (FR-UI-05) (D-11). | Must |
 | FR-SET-04 | Writing a setting keeps the file's comments, order and unknown keys; invalid values are reported and ignored, and the app still starts. | Must |
@@ -203,7 +214,7 @@ Panes copy taskpaper-terminal's, which follow Workflowy's ([navigation.md §5](r
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-STORE-01 | All data is stored in one `.taskpaper` file, the source of truth, readable and editable in any text editor and in TaskPaper ([reference](reference/taskpaper.md), D-6, OQ-16). | Must |
+| FR-STORE-01 | All data is stored in one `.taskpaper` file, the source of truth, readable and editable in any text editor and in TaskPaper ([reference](reference/taskpaper.md), D-6). The app runs as `tipp [file]`: it opens the given file, or the one the `file` setting names, by default `~/textual-items.taskpaper`, creating it when missing (OQ-16). | Must |
 | FR-STORE-02 | Areas, projects and sections are TaskPaper projects; which of the three a project is, is marked with a tag (OQ-17) (D-6). | Must |
 | FR-STORE-03 | Tasks are TaskPaper tasks (D-6). | Must |
 | FR-STORE-04 | The description of an area, project or section is its TaskPaper text lines (notes) directly below it, before anything else inside it (D-6). Its lines are guarded as taskpaper-terminal guards attachment lines, with an invisible U+200B written and removed by the app, so a Markdown line such as `- item`, `Goals:` or indented code never reads back as a task, a project or a different depth ([attachments.md §1.1](reference/taskpaper-terminal/specs/attachments.md#11-guarding-content-lines)). | Must |
@@ -242,3 +253,11 @@ Panes copy taskpaper-terminal's, which follow Workflowy's ([navigation.md §5](r
 | D-16 | 2026-10-13 | The app has modern, nice and fluent animations (owner). |
 | D-17 | 2026-10-13 | The app has a keyboard shortcuts panel, as in taskpaper-terminal (owner). |
 | D-18 | 2026-10-13 | The app supports multi-selection and rearranging items, as taskpaper-terminal does (owner). |
+| D-19 | 2026-10-13 | The app has taskpaper-terminal's weather animation (owner). |
+| D-20 | 2026-10-13 | Every modal window that chooses an item, such as Move to, filters as the user types, as in taskpaper-terminal (owner). |
+| D-21 | 2026-10-13 | Completed items are shown at the end of the list within each item, and a Show Completed Items command on `Ctrl+O` shows them (owner). The agent chose, after taskpaper-terminal: hidden by default, toggled per pane, file order untouched, checklists left as FR-CHK-04 has them. |
+| D-22 | 2026-10-13 | v1 ships four themes, to save time; more can be explored and added later (owner). Narrows D-11 and OQ-15. |
+| D-23 | 2026-10-13 | `g` shortcuts go to things (`gi` Inbox, `gt` Today, and so on) and `m` shortcuts modify things (`ms` set start date, `md` set due date, `mt` start today) (owner). |
+| D-24 | 2026-10-13 | `Shift` with a motion extends the multi-selection, `Alt` with a motion moves the selected items up or down, and `[`/`]` outdent and indent, wherever these apply (owner). `[`/`]` replace taskpaper-terminal's start-date nudge on those keys; the keybindings spec gives that nudge other keys. |
+| D-25 | 2026-10-13 | A task can be converted to a project; several tasks can be grouped into a section; several tasks and sections can be grouped into a project; a project can't be converted to an area (owner). The agent chose what a converted task's checklist and comments become, and that a group is created where its first item was. |
+| D-26 | 2026-10-13 | An area's view and a project's view don't show the tasks of their child projects (owner). |

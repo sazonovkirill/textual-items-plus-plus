@@ -12,6 +12,7 @@ Research snapshots of the products textual-items++ is modeled on or compatible w
 | [taskpaper.md](taskpaper.md) | The TaskPaper file format: exact parsing rules, tags, dates, queries and edge cases (researched for taskpaper-terminal on 2026-10-04). |
 | [workflowy.md](workflowy.md) | Workflowy: zoom, breadcrumbs, panes, search and keyboard shortcuts (researched for taskpaper-terminal on 2026-10-04). |
 | [tui-best-practices.md](tui-best-practices.md) | What makes a terminal UI fast, sleek and keyboard first, from exemplary TUIs and Ratatui. |
+| [themes.md](themes.md) | The four built-in color themes of v1, with full palettes, licenses and contrast, and candidates for later. |
 | [taskpaper-terminal/](taskpaper-terminal/README.md) | A snapshot of the owner's taskpaper-terminal requirements and specs, whose setups textual-items++ copies. |
 
 Markers used: **(inferred)** = our reasoning, not stated by the source; **(unverified)** = could not be confirmed in an official source.

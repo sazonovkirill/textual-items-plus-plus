@@ -35,7 +35,7 @@ Priorities use the same scale as the functional requirements: **Must** (v1), **S
 |---|---|---|
 | N-PERF-01 | Open and draw a file of 50,000 items in under 300 ms on a modern laptop. | Must |
 | N-PERF-02 | A keystroke reaches the screen in under 16 ms for typical actions on that file, palettes and search included (FR-UI-01). | Must |
-| N-PERF-03 | Idle CPU near zero: draw only on input, resize, file change, timers and while an animation plays. | Must |
+| N-PERF-03 | Idle CPU near zero: draw only on input, resize, file change, timers and while an animation, the weather included, plays. | Must |
 | N-REL-01 | A panic never loses data: the terminal is restored and unsaved changes are written to a recovery file. | Must |
 | N-REL-02 | Parsing and writing are covered by round-trip property tests and a corpus of TaskPaper samples. | Must |
 | N-PORT-01 | Runs on macOS and Linux in common terminals (iTerm2, Terminal.app, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal) and inside tmux. | Must |
