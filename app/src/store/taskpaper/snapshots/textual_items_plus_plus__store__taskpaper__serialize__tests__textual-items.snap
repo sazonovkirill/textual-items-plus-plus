@@ -1,0 +1,27 @@
+---
+source: src/store/taskpaper/serialize.rs
+expression: line_tree(&outline)
+---
+0 0 "Inbox:" Project []
+1 0 "- Call the plumber @due(2026-10-15)" Task [@due(2026-10-15)]
+1 0 "- Read \"Deep Work\" @start(2026-10-20)" Task [@start(2026-10-20)]
+0 0 "Work: @area" Project [@area]
+1 0 "Shared notes for every work project." Note []
+1 0 "Website:" Project []
+2 0 "Relaunch the company site." Note []
+2 0 "\u{200b}- a guarded description line" Note []
+2 0 "NOTE @hidden" Note [@hidden]
+3 0 "\u{200b}Markdown **notes**" Note []
+2 0 "COMMENTS @hidden" Note [@hidden]
+3 0 "2026-10-12 Sam: looks good" Note []
+2 0 "- Draft the copy @flagged" Task [@flagged]
+3 0 "- Outline" Task []
+3 0 "- First pass @done(2026-10-10)" Task [@done(2026-10-10)]
+2 0 "Design: @section" Project [@section]
+3 0 "- Pick fonts @done(2026-10-11)" Task [@done(2026-10-11)]
+3 0 "- Mock the home page @due(2026-10-30) @waiting" Task [@due(2026-10-30) @waiting]
+2 0 "Launch: @section" Project [@section]
+0 0 "" Note []
+0 0 "Home: @area" Project [@area]
+1 0 "- Water the plants @trashed(2026-10-12)" Task [@trashed(2026-10-12)]
+1 0 "Garden: @custom(keep me)" Project [@custom(keep me)]

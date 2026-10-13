@@ -1,0 +1,5 @@
+---
+source: src/store/taskpaper/serialize.rs
+expression: line_tree(&outline)
+---
+0 0 "  - Milk" Note []

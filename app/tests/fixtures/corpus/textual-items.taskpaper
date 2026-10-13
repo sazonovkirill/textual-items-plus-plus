@@ -1,0 +1,23 @@
+Inbox:
+	- Call the plumber @due(2026-10-15)
+	- Read "Deep Work" @start(2026-10-20)
+Work: @area
+	Shared notes for every work project.
+	Website:
+		Relaunch the company site.
+		​- a guarded description line
+		NOTE @hidden
+			​Markdown **notes**
+		COMMENTS @hidden
+			2026-10-12 Sam: looks good
+		- Draft the copy @flagged
+			- Outline
+			- First pass @done(2026-10-10)
+		Design: @section
+			- Pick fonts @done(2026-10-11)
+			- Mock the home page @due(2026-10-30) @waiting
+		Launch: @section
+
+Home: @area
+	- Water the plants @trashed(2026-10-12)
+	Garden: @custom(keep me)

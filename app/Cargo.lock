@@ -1723,9 +1723,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "insta",
  "proptest",
  "ratatui",
  "termlens",
+ "thiserror 2.0.21",
  "unicode-segmentation",
 ]
 
