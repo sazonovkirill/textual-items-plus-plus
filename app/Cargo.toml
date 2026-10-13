@@ -12,7 +12,10 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.104"
 crossterm = "0.29.0"
+jiff = "0.2.37"
+notify-debouncer-full = "0.7.0"
 ratatui = "0.30.2"
+tempfile = "3.27.0"
 thiserror = "2.0.21"
 unicode-segmentation = "1.13.3"
 

@@ -2,6 +2,7 @@
 //! commands and views. Depends only on the domain layer, so the same core can run behind another
 //! frontend.
 
+pub mod autosave;
 mod command;
 mod selection;
 mod state;

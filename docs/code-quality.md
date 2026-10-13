@@ -27,7 +27,7 @@ All logic lives in the library (`app/src/lib.rs` and its modules); `main.rs` onl
 | Layer | Owns | May depend on |
 | --- | --- | --- |
 | Domain | The data model (tasks, projects and the other entities the specs define) and the rules and operations that change it | `std` and small pure crates only |
-| Store | Persistence: the TaskPaper format, the mapping between it and the domain model, and file I/O (atomic saves, backups, watching for outside changes, recovery files), plus the app's other files, the settings and the saved pane layout | Domain, `std` and file-system crates |
+| Store | Persistence: the TaskPaper format, the mapping between it and the domain model, and file I/O (atomic saves, backups, watching for outside changes, recovery files), plus the app's other files, the settings and the saved pane layout | Domain, `std`, file-system crates and small pure crates such as `jiff` for dates |
 | App | Application state, messages, the update function, modes, views, undo, search and filter state, and effects such as "save this data" | Domain |
 | UI | The terminal frontend: mapping key events to messages, widgets and the view that renders the state into a `Frame`, and running the app's effects through Store | App, Domain, Store, Ratatui, crossterm |
 
@@ -143,7 +143,7 @@ cognitive_complexity = "warn"
 ## Toolchain and dependencies
 
 - `rust-toolchain.toml` at the repository root pins an exact stable release with the `rustfmt`, `clippy` and `llvm-tools` components. Bumping it is its own commit, which fixes any new lint findings. Agents use rustup so the pin takes effect.
-- `cargo-deny`, configured in `app/deny.toml`, runs in `validate.sh static` and checks advisories, licenses (permissive licenses only; a non-permissive license needs the owner), banned and duplicate crates, and that every crate comes from crates.io. A duplicate version that Ratatui or crossterm pulls in is listed under `skip` with a reason and removed once upstream converges. The crate sets `publish = false` until the owner chooses a license, so the license check covers dependencies only.
+- `cargo-deny`, configured in `app/deny.toml`, runs in `validate.sh static` and checks advisories, licenses (permissive licenses only; a non-permissive license needs the owner), banned and duplicate crates, and that every crate comes from crates.io. A duplicate version that a dependency such as Ratatui, crossterm or notify pulls in is listed under `skip` with a reason and removed once upstream converges. The crate sets `publish = false` until the owner chooses a license, so the license check covers dependencies only.
 - Prefer `std`, Ratatui and crossterm when they cover the need. Add a dependency only for a demonstrated need, after checking its maintenance, license, size and transitive dependencies; record why on the task. Versions stay locked in `app/Cargo.lock` and every build uses `--locked`.
 - No dependency may make network requests, collect data or write outside the files the user opens.
 

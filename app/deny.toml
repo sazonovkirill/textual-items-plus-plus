@@ -30,6 +30,7 @@ deny = [
 ]
 skip = [
     { crate = "hashbrown@0.16.1", reason = "kasuari, under ratatui-core 0.1, still uses hashbrown 0.16" },
+    { crate = "windows-sys@0.60.2", reason = "notify 8 and file-id, under notify-debouncer-full 0.7, still use windows-sys 0.60" },
     { crate = "syn@2.0.119", reason = "derive_more (crossterm) and strum_macros (ratatui) still use syn 2" },
 ]
 
