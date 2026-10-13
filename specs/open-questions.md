@@ -175,7 +175,7 @@ The owner wants 12 to 16 (D-11). taskpaper-terminal has Terminal Dark plus twelv
 - **B.** As A, but the binary is named `textual-items` or another name the owner picks.
 
 **Proposed default:** A.
-**Decision (2026-10-13):** A.
+**Decision (2026-10-13):** A. Later the same day the owner replaced the default file: without a path the app opens toy data (D-29).
 **Affects:** FR-STORE-01, FR-SET-01.
 
 ### OQ-17 · How a TaskPaper project says whether it is an area, project or section — decided
