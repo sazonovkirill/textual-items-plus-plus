@@ -8,6 +8,7 @@
 
 mod atomic;
 mod backup;
+pub mod demo;
 mod disk;
 mod folders;
 mod recovery;

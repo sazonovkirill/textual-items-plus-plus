@@ -1,0 +1,54 @@
+Inbox:
+	Everything not sorted yet lands here.
+	- Call the bank about the card @due({today+2})
+	- Buy coffee beans @errands
+	- Read the article Sam sent @start({today+3})
+Work: @area
+	Everything for the day job.
+	- Answer the recruiter's email @due({today-1})
+	Website: @due({today+20})
+		The new marketing site, built with the design team.
+		NOTE @hidden
+			# Goals
+			- Faster pages
+			- A clear pricing page
+		COMMENTS @hidden
+			[{today-1} 16:05] Design sent the final mockups.
+			[{today-3} 10:20] Kick-off went well.
+		- Collect logos from partners
+		Launch: @section
+			What has to happen before launch.
+			- Write the announcement @start({today}) @writing
+				Keep it under 300 words.
+				NOTE @hidden
+					Draft in the shared doc.
+				COMMENTS @hidden
+					[{today-1} 21:30] Ask design for screenshots
+				- Outline
+					- Intro
+					- Pricing
+				- First draft @done({today-1})
+				- Proofread
+			- Book the launch call @due({today+5}) @meeting
+		Polish: @section
+			- Fix the footer links
+			- Compress the hero image @done({today-2})
+		Blog:
+			A project inside a project.
+			- Pick the first three topics
+	Hiring: @section
+		- Review two portfolios @due({today})
+Home: @area
+	- Water the plants @start({today-1})
+	Move to the new flat:
+		- Pack the books
+			- Fiction
+			- Cookbooks
+		- Hand back the old keys @due({today+12})
+		Paperwork: @section
+			- Change the address at the bank
+			- Register at the town hall @start({today+7})
+Learn Rust:
+	A project outside any area.
+	- Finish the ownership chapter @rust
+	- Write a small CLI @rust @start({today+1})

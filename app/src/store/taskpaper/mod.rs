@@ -2,12 +2,14 @@
 //! TaskPaper 3 does ([file-format.md](../../../../specs/reference/taskpaper-terminal/specs/file-format.md)).
 //! Pure: it takes and returns text and never touches files.
 
+mod model;
 mod outline;
 mod serialize;
 mod tags;
 
 use thiserror::Error;
 
+pub use model::{Source, read_document, write_document};
 pub use outline::{FileFormat, IndentUnit, Line, LineEnding, LineId, LineKind, Outline};
 pub use serialize::serialize;
 pub use tags::Tag;
