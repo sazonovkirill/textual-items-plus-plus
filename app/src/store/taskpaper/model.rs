@@ -199,8 +199,13 @@ impl Writer<'_> {
             .document
             .node(id)
             .expect("the document's own nodes are written");
-        let (line_id, place) = match node {
-            Node::Kept(text) => (self.push(parent, text.clone(), source), Place::Kept),
+        let children = self.document.children(id);
+        let (line_id, place, children) = match node {
+            Node::Kept(text) => (
+                self.push(parent, text.clone(), source),
+                Place::Kept,
+                children.to_vec(),
+            ),
             Node::Item(item) => {
                 let text = match source {
                     Some(read) if reads_as(read, place, item) => read.text().to_owned(),
@@ -208,12 +213,67 @@ impl Writer<'_> {
                 };
                 let line_id = self.push(parent, text, source);
                 self.write_contents(line_id, item, source_id);
-                (line_id, Place::In(item.kind))
+                (
+                    line_id,
+                    Place::In(item.kind),
+                    self.children_order(item, source_id, children),
+                )
             }
         };
-        for &child in self.document.children(id) {
+        for child in children {
             self.write_node(line_id, place, child);
         }
+    }
+
+    /// The order to write `item`'s `children` in: as they are, unless the kept nodes before its
+    /// first item child would read back as its description or attachments, which happens when the
+    /// item that was first moved away; those nodes then go right after that child, where they
+    /// were read, so that they stay kept (D-41).
+    fn children_order(
+        &self,
+        item: &Item,
+        source_id: Option<LineId>,
+        children: &[ItemId],
+    ) -> Vec<ItemId> {
+        let document = self.document;
+        let first_item = children
+            .iter()
+            .position(|&child| !matches!(document.node(child), Some(Node::Kept(_))));
+        match first_item.and_then(|index| children.split_at_checked(index)) {
+            Some((kept, [first, rest @ ..])) if self.joins_contents(item, source_id, kept) => {
+                std::iter::once(first)
+                    .chain(kept)
+                    .chain(rest)
+                    .copied()
+                    .collect()
+            }
+            _ => children.to_vec(),
+        }
+    }
+
+    /// Whether the nodes `kept`, written right after `item`'s description and attachments, would
+    /// read back as part of them; worked out on a scratch outline.
+    fn joins_contents(&self, item: &Item, source_id: Option<LineId>, kept: &[ItemId]) -> bool {
+        if kept.is_empty() {
+            return false;
+        }
+        let mut scratch = Writer {
+            document: self.document,
+            source: self.source,
+            outline: Outline::new(self.outline.format().clone()),
+        };
+        let root = scratch.outline.root();
+        let line_id = scratch.push(root, String::new(), None);
+        scratch.write_contents(line_id, item, source_id);
+        let contents = children(&scratch.outline, line_id).len();
+        for &node in kept {
+            scratch.write_node(line_id, Place::In(item.kind), node);
+        }
+        let parts = Parts::of(&scratch.outline, line_id);
+        parts.description.len()
+            + usize::from(parts.note.is_some())
+            + usize::from(parts.comments.is_some())
+            > contents
     }
 
     /// Writes `item`'s description and attachments under its line `line_id`; `source_id` is the
@@ -732,6 +792,142 @@ Work: @area
             let (document, source) = load(&text);
             prop_assert_eq!(save(&document, &source), text);
         }
+
+        // FR-STORE-04, FR-STORE-09, N-REL-02
+        #[test]
+        fn removing_a_node_changes_no_other_item_that_keeps_an_item_child(
+            lines in prop::collection::vec(
+                (1..4_usize, prop::sample::select(vec![
+                    "- task", "Project:", "Section: @section", "text", "", "NOTE @hidden",
+                    "COMMENTS @hidden", "L @hidden", "\u{200B}- guarded",
+                ])),
+                0..24,
+            ),
+            pick in any::<prop::sample::Index>(),
+        ) {
+            let mut text = "Inbox:\nA: @area\n".to_owned();
+            for (depth, line) in lines {
+                text.push_str(&"\t".repeat(depth));
+                text.push_str(line);
+                text.push('\n');
+            }
+            let (mut document, source) = load(&text);
+            let nodes = descendants(&document, first_top_level(&document));
+            prop_assume!(!nodes.is_empty());
+            remove(&mut document, *pick.get(&nodes));
+            let (reloaded, _) = load(&save(&document, &source));
+            let after = items(&reloaded);
+            prop_assert_eq!(items(&document).len(), after.len());
+            for ((id, before), after) in items(&document).into_iter().zip(after) {
+                let has_item_child = document
+                    .children(id)
+                    .iter()
+                    .any(|&child| document.node(child).and_then(Node::item).is_some());
+                if has_item_child {
+                    prop_assert_eq!(before, after.1);
+                } else {
+                    prop_assert_eq!((before.kind, &before.title), (after.1.kind, &after.1.title));
+                }
+            }
+        }
+    }
+
+    /// `document` without the node `id` and its subtree.
+    fn remove(document: &mut Document, id: ItemId) {
+        let (parent, index) = document.position(id).unwrap();
+        let subtree = document.snapshot(id).unwrap();
+        let remove = domain::Op::Remove {
+            parent,
+            index,
+            subtree,
+        };
+        document
+            .apply(&domain::Transaction::new(vec![remove]))
+            .unwrap();
+    }
+
+    /// `text` without the node `id` picks from the document it holds, as saved.
+    fn removed(text: &str, id: impl Fn(&Document) -> ItemId) -> String {
+        let (mut document, source) = load(text);
+        let id = id(&document);
+        remove(&mut document, id);
+        save(&document, &source)
+    }
+
+    /// Every node under `id`, in file order.
+    fn descendants(document: &Document, id: ItemId) -> Vec<ItemId> {
+        document
+            .children(id)
+            .iter()
+            .flat_map(|&child| std::iter::once(child).chain(descendants(document, child)))
+            .collect()
+    }
+
+    /// The items of `document` in file order, without kept content.
+    fn items(document: &Document) -> Vec<(ItemId, &Item)> {
+        let mut ids = vec![document.inbox()];
+        ids.extend(descendants(document, document.inbox()));
+        for &id in document.top_level() {
+            ids.push(id);
+            ids.extend(descendants(document, id));
+        }
+        ids.into_iter()
+            .filter_map(|id| Some((id, document.node(id)?.item()?)))
+            .collect()
+    }
+
+    // FR-STORE-04, FR-STORE-09, N-REL-02
+    #[test]
+    fn kept_lines_stay_kept_when_the_first_child_moves_away() {
+        let first = |document: &Document| {
+            let children = document.children(first_top_level(document));
+            *children
+                .iter()
+                .find(|&&id| document.node(id).and_then(Node::item).is_some())
+                .unwrap()
+        };
+        for (text, expected) in [
+            (
+                "Inbox:\nP:\n\t- a\n\ttext\n\t- b\n",
+                "Inbox:\nP:\n\t- b\n\ttext\n",
+            ),
+            (
+                "Inbox:\nP:\n\tabout\n\t- a\n\ttext\n\t\n\tmore\n\t- b\n\t- c\n",
+                "Inbox:\nP:\n\tabout\n\t- b\n\ttext\n\t\n\tmore\n\t- c\n",
+            ),
+            (
+                "Inbox:\nP:\n\t- a\n\tNOTE @hidden\n\t\tn\n\t- b\n",
+                "Inbox:\nP:\n\t- b\n\tNOTE @hidden\n\t\tn\n",
+            ),
+            (
+                "Inbox:\nP:\n\tL @hidden\n\t- a\n\ttext\n\t- b\n",
+                "Inbox:\nP:\n\tL @hidden\n\ttext\n\t- b\n",
+            ),
+            ("Inbox:\nP:\n\t- a\n\t\n\t- b\n", "Inbox:\nP:\n\t\n\t- b\n"),
+        ] {
+            let saved = removed(text, first);
+            assert_eq!(saved, expected, "{text:?}");
+            let (original, _) = load(text);
+            let (reloaded, _) = load(&saved);
+            assert_eq!(
+                item(&reloaded, first_top_level(&reloaded)),
+                item(&original, first_top_level(&original)),
+                "{text:?}"
+            );
+        }
+    }
+
+    // FR-STORE-04
+    #[test]
+    fn kept_lines_with_no_item_left_before_them_read_as_the_description() {
+        let first = |document: &Document| document.children(first_top_level(document))[0];
+        let saved = removed("Inbox:\nP:\n\t- a\n\ttext\n", first);
+        assert_eq!(saved, "Inbox:\nP:\n\ttext\n");
+        let (document, _) = load(&saved);
+        assert_eq!(
+            item(&document, first_top_level(&document)).description,
+            "text"
+        );
     }
 
     // FR-STORE-08
