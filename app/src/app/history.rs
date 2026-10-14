@@ -10,8 +10,25 @@ use crate::domain::{Document, ItemId, PlacementError, Transaction};
 pub struct History {
     undo: Vec<Step>,
     redo: Vec<Step>,
-    /// The items the latest step applied changed, until they are forgotten.
-    changed: Vec<ItemId>,
+    applied: Applied,
+}
+
+/// What the latest step applied changed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Applied {
+    /// The items it changed, until they are forgotten.
+    items: Vec<ItemId>,
+    /// Whether it changed nothing but the Evening and Today's order.
+    only_today: bool,
+}
+
+impl Applied {
+    fn of(transaction: &Transaction) -> Self {
+        Self {
+            items: transaction.items(),
+            only_today: transaction.only_today(),
+        }
+    }
 }
 
 /// A transaction ready to apply, with the selection before it and the one to restore after it.
@@ -53,7 +70,7 @@ impl History {
             return Ok(());
         }
         document.apply(&transaction)?;
-        self.changed = transaction.items();
+        self.applied = Applied::of(&transaction);
         let step = Step {
             transaction,
             before,
@@ -72,7 +89,7 @@ impl History {
     /// The [`PlacementError`] when the document no longer matches the step; then nothing
     /// changes.
     pub fn undo(&mut self, document: &mut Document) -> Result<Option<Selection>, PlacementError> {
-        step(&mut self.undo, &mut self.redo, &mut self.changed, document)
+        step(&mut self.undo, &mut self.redo, &mut self.applied, document)
     }
 
     /// Replays the latest undone step and returns the selection from after it, or `None` when
@@ -83,28 +100,35 @@ impl History {
     /// The [`PlacementError`] when the document no longer matches the step; then nothing
     /// changes.
     pub fn redo(&mut self, document: &mut Document) -> Result<Option<Selection>, PlacementError> {
-        step(&mut self.redo, &mut self.undo, &mut self.changed, document)
+        step(&mut self.redo, &mut self.undo, &mut self.applied, document)
     }
 
     /// The items the latest step committed, undone or redone changed, put in or took out, with
     /// everything inside those put in or taken out, since they were last forgotten.
     #[must_use]
     pub fn changed(&self) -> &[ItemId] {
-        &self.changed
+        &self.applied.items
+    }
+
+    /// Whether the latest step committed, undone or redone changed nothing but the Evening and
+    /// Today's order, which the file never keeps (D-111).
+    #[must_use]
+    pub fn only_today(&self) -> bool {
+        self.applied.only_today
     }
 
     /// Forgets what the latest step changed, as each message starts.
     pub fn forget_changed(&mut self) {
-        self.changed.clear();
+        self.applied.items.clear();
     }
 }
 
-/// Applies the latest step of `from`, noting what it changed in `changed`, and moves its inverse
+/// Applies the latest step of `from`, noting what it changed in `applied`, and moves its inverse
 /// onto `to`.
 fn step(
     from: &mut Vec<Step>,
     to: &mut Vec<Step>,
-    changed: &mut Vec<ItemId>,
+    applied: &mut Applied,
     document: &mut Document,
 ) -> Result<Option<Selection>, PlacementError> {
     let Some(step) = from.pop() else {
@@ -114,7 +138,7 @@ fn step(
         from.push(step);
         return Err(error);
     }
-    *changed = step.transaction.items();
+    *applied = Applied::of(&step.transaction);
     let selection = step.after.clone();
     to.push(step.inverse());
     Ok(Some(selection))

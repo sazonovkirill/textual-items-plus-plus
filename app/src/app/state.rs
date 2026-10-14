@@ -1067,6 +1067,7 @@ impl State {
     /// when it is not a row.
     fn change_focusing(&mut self, transaction: Transaction, focused: Option<ItemId>) {
         let before = self.listings();
+        let revision = self.document.revision();
         let listed_before = before.get(self.left.len()).map_or(&[][..], |rows| rows);
         let (pane, today) = (&self.pane, self.today);
         let mut after = pane.selection.clone();
@@ -1079,6 +1080,7 @@ impl State {
                 after
             })
             .expect("a transaction made from the document as it is fits it");
+        self.keep_saved_state(revision);
         if focused != self.pane().selection.focused() {
             self.pane_mut().selection.focus(focused);
         }
@@ -1255,22 +1257,32 @@ impl State {
 
     /// Takes back the latest change and restores the selection from before it.
     pub(super) fn undo(&mut self) {
-        let before = self.listings();
+        let (before, revision) = (self.listings(), self.document.revision());
         let restored = self
             .history
             .undo(&mut self.document)
             .expect("every change goes through the history, so its steps fit the document");
+        self.keep_saved_state(revision);
         self.restore(restored, &before);
     }
 
     /// Makes the latest change taken back again and restores the selection from after it.
     pub(super) fn redo(&mut self) {
-        let before = self.listings();
+        let (before, revision) = (self.listings(), self.document.revision());
         let restored = self
             .history
             .redo(&mut self.document)
             .expect("every change goes through the history, so its steps fit the document");
+        self.keep_saved_state(revision);
         self.restore(restored, &before);
+    }
+
+    /// Leaves the saved state as it was at `revision` when the step applied since changed
+    /// nothing but the Evening and Today's order, which the file never keeps (D-111).
+    fn keep_saved_state(&mut self, revision: u64) {
+        if self.history.only_today() {
+            self.saving.unchanged(revision, self.document.revision());
+        }
     }
 
     /// Selects `selection` in the pane with the keys, if there is one, keeping each pane's focus

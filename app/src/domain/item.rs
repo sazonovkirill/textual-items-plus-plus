@@ -227,6 +227,18 @@ impl Item {
         self.evening == Some(today)
     }
 
+    /// Whether it holds what `other` does but for the Evening and Today's order, which the app
+    /// keeps only while it runs (D-99, D-108).
+    #[must_use]
+    pub fn same_but_for_today(&self, other: &Self) -> bool {
+        let lasting = |item: &Self| Self {
+            evening: None,
+            today_place: None,
+            ..item.clone()
+        };
+        lasting(self) == lasting(other)
+    }
+
     /// Whether it is overdue on `today`: due before it and not completed (FR-DATE-04).
     #[must_use]
     pub fn overdue(&self, today: Date) -> bool {

@@ -611,8 +611,9 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        AttachmentsInput, Command, DateInput, EditDialogInput, EditInput, Focus, Go, History,
-        Message, Opened, PickerInput, Prefill, QuickAddInput, Selected, Side, TextEdit, Whose,
+        AttachmentsInput, Command, DateInput, Direction, EditDialogInput, EditInput, Focus, Go,
+        History, Message, Opened, PickerInput, Prefill, QuickAddInput, Selected, Side, TextEdit,
+        Whose,
         navigator::Stop,
         update,
         view::{Shown, View},
@@ -1699,6 +1700,65 @@ mod tests {
         assert_eq!(send(&mut state, Message::Terminate), [Effect::Save]);
         assert_eq!(state.editing(), None);
         assert!(titled(&state, "abc").is_some());
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-VIEW-13, F-FILE-05, F-FILE-06
+    #[test]
+    fn the_evening_and_today_s_order_leave_the_saved_state_as_it_was() -> TestResult {
+        let mut started = Document::new();
+        for title in ["a", "b"] {
+            let mut task = Item::new(ItemKind::Task, title);
+            task.start = Some(TODAY);
+            started.push(Some(started.inbox()), Node::Item(task))?;
+        }
+        let in_today = || {
+            let mut state = State::new(
+                started.clone(),
+                Opened::File("todo.taskpaper".into()),
+                TODAY,
+            );
+            command(&mut state, Command::Go(Go::View(View::Today)));
+            state
+        };
+        let mut state = in_today();
+        let steps = [
+            Command::Move(Direction::Down),
+            Command::Undo,
+            Command::Redo,
+            Command::ToggleEvening,
+            Command::Undo,
+            Command::Redo,
+        ];
+        for step in steps {
+            let before = state.document().clone();
+            assert_eq!(command(&mut state, step), [], "{step:?}");
+            assert_ne!(
+                state.document(),
+                &before,
+                "{step:?} changes the app's state"
+            );
+            assert_eq!(state.save_state(), SaveState::Saved, "{step:?}");
+            assert_eq!(state.deadline(), None, "{step:?}");
+        }
+        assert_eq!(send(&mut state, Message::Tick(secs(5))), []);
+        assert_eq!(
+            send(
+                &mut state,
+                Message::OnDisk(OnDisk::Changed(document(&["x"])?))
+            ),
+            [Effect::Reloaded],
+            "not a conflict"
+        );
+        let mut state = in_today();
+        command(&mut state, Command::ToggleFlagged);
+        command(&mut state, Command::ToggleEvening);
+        assert_eq!(state.save_state(), SaveState::Unsaved, "still unsaved");
+        assert_eq!(send(&mut state, Message::Tick(secs(6))), [Effect::Save]);
+        command(&mut state, Command::ToggleEvening);
+        send(&mut state, Message::Disk(Report::Saved));
+        assert_eq!(state.save_state(), SaveState::Saved, "saved as it is");
+        assert_eq!(send(&mut state, Message::Tick(secs(9))), []);
         Ok(())
     }
 

@@ -225,15 +225,24 @@ impl Autosave {
         self.confirm_quit = false;
     }
 
-    /// The document went from revision `from` to `to` without changing, as an edit session
-    /// that changes nothing does: when the file held it at `from`, it holds it at `to`, and a
-    /// change seen at `from` is still the latest.
+    /// The document went from revision `from` to `to` without changing what the file holds, as
+    /// an edit session that changes nothing does: whatever held or tried `from`, the file, a
+    /// save under way or one that failed, holds or tried `to`, and a change seen at `from` is
+    /// still the latest.
     pub fn unchanged(&mut self, from: u64, to: u64) {
-        if self.saved == Some(from) {
-            self.saved = Some(to);
-        }
-        if self.seen == from {
-            self.seen = to;
+        let failed = self.failure.as_mut().map(|failure| &mut failure.revision);
+        for revision in [
+            self.saved.as_mut(),
+            self.writing.as_mut(),
+            failed,
+            Some(&mut self.seen),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if *revision == from {
+                *revision = to;
+            }
         }
     }
 
@@ -450,6 +459,18 @@ mod tests {
         assert_eq!(autosave.state(5), SaveState::Unsaved, "4 was not saved");
         assert_eq!(autosave.deadline(), Some(ms(1100)), "it is still due");
         assert_eq!(autosave.step(5, ms(1100)), Step::Save(5));
+        autosave.unchanged(5, 6);
+        autosave.saved();
+        assert_eq!(
+            autosave.state(6),
+            SaveState::Saved,
+            "the save under way held 6"
+        );
+        autosave.step(7, ms(2000));
+        assert_eq!(autosave.step(7, ms(3000)), Step::Save(7));
+        autosave.failed("disk full".to_owned());
+        autosave.unchanged(7, 8);
+        assert_eq!(autosave.deadline(), None, "8 failed as 7 did");
     }
 
     // F-FILE-05

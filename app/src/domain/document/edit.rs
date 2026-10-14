@@ -173,6 +173,16 @@ impl Transaction {
         items
     }
 
+    /// Whether it changes nothing but the Evening and Today's order, which the app keeps only
+    /// while it runs (D-99, D-108).
+    #[must_use]
+    pub fn only_today(&self) -> bool {
+        self.ops.iter().all(|op| match op {
+            Op::Set { before, after, .. } => before.same_but_for_today(after),
+            Op::Insert { .. } | Op::Remove { .. } => false,
+        })
+    }
+
     /// The transaction that undoes this one: the inverse operations in reverse order.
     #[must_use]
     pub fn inverse(self) -> Self {
@@ -471,6 +481,37 @@ mod tests {
         ]);
         assert_eq!(transaction.items(), [project, section, task, kept]);
         assert!(!transaction.items().contains(&area));
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-VIEW-13
+    #[test]
+    fn a_transaction_tells_when_it_changes_only_the_evening_and_today_s_order()
+    -> Result<(), PlacementError> {
+        let Fixture { document, task, .. } = fixture()?;
+        let before = document
+            .node(task)
+            .and_then(Node::item)
+            .cloned()
+            .ok_or(PlacementError::NoSuchNode(task))?;
+        let set = |after: Item| Op::Set {
+            id: task,
+            before: before.clone(),
+            after,
+        };
+        let today = Item {
+            evening: Some(jiff::civil::date(2026, 10, 14)),
+            today_place: Some(2),
+            ..before.clone()
+        };
+        let flagged = Item {
+            flagged: true,
+            ..today.clone()
+        };
+        assert!(Transaction::new(vec![set(today)]).only_today());
+        assert!(!Transaction::new(vec![set(flagged)]).only_today());
+        let removed = removal(&document, task).ok_or(PlacementError::NoSuchNode(task))?;
+        assert!(!Transaction::new(vec![removed]).only_today());
         Ok(())
     }
 
