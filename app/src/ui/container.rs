@@ -405,7 +405,7 @@ mod tests {
         let pane = ContainerPane {
             document,
             container,
-            rows: app::rows(document, container),
+            rows: app::rows(document, container, true),
             focused: focused.map(|title| find(document, title)),
             theme: &theme,
             icons: IconSet::Plain,

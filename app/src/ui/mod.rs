@@ -74,11 +74,11 @@ impl Tui {
         Ok(Self::new(state))
     }
 
-    /// Handles one terminal event: the keys of a bound command give it to the core, and the
-    /// core's effects are carried out.
-    pub fn handle(&mut self, event: &Event) {
+    /// Handles one terminal event on `today`, the local date: the keys of a bound command give
+    /// it to the core, and the core's effects are carried out.
+    pub fn handle(&mut self, event: &Event, today: Date) {
         if let Some(command) = self.keymap.press(event) {
-            let effects = app::update(&mut self.state, Message::Command(command));
+            let effects = app::update(&mut self.state, Message::Command(command), today);
             for effect in effects {
                 self.run(effect);
             }

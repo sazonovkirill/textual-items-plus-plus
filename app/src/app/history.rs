@@ -32,8 +32,9 @@ impl Step {
 
 impl History {
     /// Applies `transaction` to `document` and makes it the next step to undo, dropping
-    /// everything undone before it; `before` and `after` are the selections around the command.
-    /// A transaction without operations changes nothing and is not recorded.
+    /// everything undone before it; `before` is the selection before the command and `after`
+    /// gives the one after it from the changed document. A transaction without operations
+    /// changes nothing and is not recorded.
     ///
     /// # Errors
     ///
@@ -43,7 +44,7 @@ impl History {
         document: &mut Document,
         transaction: Transaction,
         before: Selection,
-        after: Selection,
+        after: impl FnOnce(&Document) -> Selection,
     ) -> Result<(), PlacementError> {
         if transaction.ops().is_empty() {
             return Ok(());
@@ -52,7 +53,7 @@ impl History {
         let step = Step {
             transaction,
             before,
-            after,
+            after: after(document),
         };
         self.undo.push(step.inverse());
         self.redo.clear();
@@ -129,6 +130,19 @@ mod tests {
         Ok(Transaction::new(vec![Op::Set { id, before, after }]))
     }
 
+    /// The selection after a rename to `A`, focusing the Inbox task so named.
+    fn focus_renamed(document: &Document) -> Selection {
+        let mut selection = Selection::default();
+        selection.focus(
+            document
+                .children(document.inbox())
+                .iter()
+                .copied()
+                .find(|&id| title(document, id) == Some("A")),
+        );
+        selection
+    }
+
     /// A document with tasks `a` and `b` in the Inbox.
     fn document() -> Result<(Document, ItemId, ItemId), PlacementError> {
         let mut document = Document::new();
@@ -145,7 +159,7 @@ mod tests {
         to: &str,
     ) -> Result<(), PlacementError> {
         let transaction = rename(document, id, to)?;
-        history.commit(document, transaction, Selection::default(), focused(id))
+        history.commit(document, transaction, Selection::default(), |_| focused(id))
     }
 
     // FR-EDIT-06
@@ -201,6 +215,24 @@ mod tests {
         Ok(())
     }
 
+    // FR-EDIT-06
+    #[test]
+    fn the_selection_after_a_step_comes_from_the_changed_document() -> Result<(), PlacementError> {
+        let (mut document, a, _) = document()?;
+        let mut history = History::default();
+        let transaction = rename(&document, a, "A")?;
+        let committed = history.commit(
+            &mut document,
+            transaction,
+            Selection::default(),
+            focus_renamed,
+        );
+        assert_eq!(committed, Ok(()));
+        history.undo(&mut document)?;
+        assert_eq!(history.redo(&mut document)?, Some(focused(a)));
+        Ok(())
+    }
+
     #[test]
     fn empty_and_refused_commits_keep_the_history() -> Result<(), PlacementError> {
         let (mut document, a, _) = document()?;
@@ -210,12 +242,12 @@ mod tests {
         let kept = history.clone();
         let empty = Transaction::default();
         assert_eq!(
-            history.commit(&mut document, empty, Selection::default(), focused(a)),
+            history.commit(&mut document, empty, Selection::default(), focus_renamed),
             Ok(())
         );
         let stale = rename(&document, a, "c")?.inverse();
         assert_eq!(
-            history.commit(&mut document, stale, Selection::default(), focused(a)),
+            history.commit(&mut document, stale, Selection::default(), focus_renamed),
             Err(PlacementError::Stale(a))
         );
         assert_eq!(history, kept);

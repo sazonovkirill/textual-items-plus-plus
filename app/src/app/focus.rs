@@ -50,6 +50,27 @@ pub(super) fn target(rows: &[Row], focused: Option<ItemId>, motion: Focus) -> Op
     row.copied().map(Row::id).or(focused)
 }
 
+/// The row to focus once the rows `before` have become `after`: `focused` while it is still a
+/// row, else the nearest row after it that remains, else the nearest before it, so that hiding
+/// the focused row moves the focus on as a list does when an item leaves it. With nothing of
+/// that to go to, the first row.
+pub(super) fn kept(before: &[Row], after: &[Row], focused: Option<ItemId>) -> Option<ItemId> {
+    let remains = |id: &ItemId| after.iter().any(|row| row.id() == *id);
+    if let Some(id) = focused.filter(remains) {
+        return Some(id);
+    }
+    let at = focused.and_then(|id| before.iter().position(|row| row.id() == id));
+    at.and_then(|at| {
+        let (earlier, later) = before.split_at(at);
+        later
+            .iter()
+            .chain(earlier.iter().rev())
+            .map(|row| row.id())
+            .find(remains)
+    })
+    .or_else(|| after.first().map(|row| row.id()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,5 +167,29 @@ mod tests {
     fn without_rows_nothing_is_focused() {
         assert_eq!(target(&[], None, Focus::Next), None);
         assert_eq!(target(&[], Some(id(1)), Focus::Last), None);
+    }
+
+    // FR-VIEW-11
+    #[test]
+    fn a_row_that_stays_keeps_the_focus() {
+        let after = [task(2, None), task(1, None)];
+        assert_eq!(kept(&rows(), &after, Some(id(1))), Some(id(1)));
+    }
+
+    // FR-VIEW-11, FR-ORG-09
+    #[test]
+    fn a_row_that_leaves_hands_the_focus_to_the_next_that_stays_else_the_one_before() {
+        let after = [task(1, None), Row::Section(id(3)), task(5, Some(3))];
+        assert_eq!(kept(&rows(), &after, Some(id(4))), Some(id(5)));
+        assert_eq!(kept(&rows(), &after, Some(id(7))), Some(id(5)));
+        assert_eq!(kept(&rows(), &after, Some(id(2))), Some(id(3)));
+    }
+
+    #[test]
+    fn a_focus_that_was_no_row_goes_to_the_first() {
+        let after = [task(2, None)];
+        assert_eq!(kept(&rows(), &after, Some(id(99))), Some(id(2)));
+        assert_eq!(kept(&rows(), &after, None), Some(id(2)));
+        assert_eq!(kept(&rows(), &[], Some(id(1))), None);
     }
 }

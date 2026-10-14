@@ -104,6 +104,26 @@ impl Document {
         self.entries.get(&id).map_or(&[], |entry| &entry.children)
     }
 
+    /// Whether the contents of `id` are hidden everywhere because it, or an item it is inside,
+    /// is completed (FR-ORG-09).
+    #[must_use]
+    pub fn conceals(&self, id: ItemId) -> bool {
+        let mut at = id;
+        loop {
+            if self
+                .node(at)
+                .and_then(Node::item)
+                .is_some_and(|item| item.completed.is_some())
+            {
+                return true;
+            }
+            match self.position(at) {
+                Some((Some(parent), _)) => at = parent,
+                _ => return false,
+            }
+        }
+    }
+
     /// Adds `node` as the last child of `parent`, or last at the top level when `parent` is
     /// `None`. Kept content goes anywhere; an item only where its kind fits, and never inside
     /// kept content.
@@ -190,6 +210,7 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::Completion;
     use ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
 
     fn item(kind: ItemKind) -> Node {
@@ -302,6 +323,27 @@ mod tests {
         assert_eq!(document, Document::new());
         assert_eq!(document.node(missing), None);
         assert_eq!(document.children(missing), []);
+    }
+
+    // FR-ORG-09
+    #[test]
+    fn a_completed_item_conceals_everything_inside_it() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let mut done = Item::new(Area, "done");
+        done.completed = Some(Completion::Undated);
+        let area = document.push(None, Node::Item(done))?;
+        let line = document.push(Some(area), kept())?;
+        let project = document.push(Some(area), item(Project))?;
+        let task = document.push(Some(project), item(Task))?;
+        let open = document.push(None, item(Area))?;
+        let inside_open = document.push(Some(open), item(Task))?;
+        for id in [area, line, project, task] {
+            assert!(document.conceals(id), "{id:?}");
+        }
+        for id in [open, inside_open, document.inbox(), ItemId::new(99)] {
+            assert!(!document.conceals(id), "{id:?}");
+        }
+        Ok(())
     }
 
     #[test]

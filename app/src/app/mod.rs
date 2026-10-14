@@ -4,6 +4,7 @@
 
 pub mod autosave;
 mod command;
+mod completion;
 mod container;
 mod focus;
 mod history;

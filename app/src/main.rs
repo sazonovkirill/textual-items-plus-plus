@@ -44,7 +44,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal, mut tui: Tui) -> anyhow::Result<
         terminal
             .draw(|frame| frame.render_widget(&mut tui, frame.area()))
             .context("cannot draw")?;
-        tui.handle(&event::read().context("cannot read the terminal")?);
+        let event = event::read().context("cannot read the terminal")?;
+        tui.handle(&event, jiff::Zoned::now().date());
     }
     Ok(())
 }

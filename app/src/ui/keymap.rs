@@ -27,6 +27,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Focus(Focus::Parent), &["#"]),
     (Command::Focus(Focus::NextSection), &["g j", "ctrl+down"]),
     (Command::Focus(Focus::PreviousSection), &["g k", "ctrl+up"]),
+    // taskpaper-terminal's keys; a legacy terminal sends `Ctrl+Shift+Z` as `Ctrl+Z`, which
+    // undoes (D-35).
+    (Command::ToggleCompleted, &["x", "ctrl+enter"]),
+    (Command::ShowCompleted, &["ctrl+o", "g c"]),
+    (Command::Undo, &["z", "ctrl+z"]),
+    (Command::Redo, &["Z", "ctrl+shift+z", "ctrl+y"]),
 ];
 
 /// The keys `text` names, as [`DEFAULT_KEYS`] writes a sequence. `None` unless each one is a
@@ -245,6 +251,30 @@ mod tests {
         ] {
             assert_eq!(keymap.press(&event), command, "{event:?}");
         }
+    }
+
+    // FR-TASK-02, FR-VIEW-11, FR-EDIT-06, FR-KEY-02
+    #[test]
+    fn completing_showing_completed_undo_and_redo_have_taskpaper_terminal_keys() {
+        let mut keymap = Keymap::default();
+        let ctrl = KeyModifiers::CONTROL;
+        for (event, command) in [
+            (char('x'), Command::ToggleCompleted),
+            (press(KeyCode::Enter, ctrl), Command::ToggleCompleted),
+            (press(KeyCode::Char('o'), ctrl), Command::ShowCompleted),
+            (char('z'), Command::Undo),
+            (press(KeyCode::Char('z'), ctrl), Command::Undo),
+            (char('Z'), Command::Redo),
+            (
+                press(KeyCode::Char('z'), ctrl | KeyModifiers::SHIFT),
+                Command::Redo,
+            ),
+            (press(KeyCode::Char('y'), ctrl), Command::Redo),
+        ] {
+            assert_eq!(keymap.press(&event), Some(command), "{event:?}");
+        }
+        assert_eq!(keymap.press(&char('g')), None);
+        assert_eq!(keymap.press(&char('c')), Some(Command::ShowCompleted));
     }
 
     // FR-NAV-01, FR-KEY-02

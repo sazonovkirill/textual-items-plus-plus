@@ -31,11 +31,13 @@ impl Row {
 
 /// The rows `container` shows, in order: its tasks outside any section, then each of its
 /// sections as a heading with the section's tasks below it, then its child projects, each group
-/// in file order whatever order the file mixes them in (FR-VIEW-05, FR-ORG-08). The Inbox and a
-/// section hold only tasks. Content kept as read and items in the Trash are not shown; an item
-/// that is not a container, or no item at all, shows nothing.
+/// in file order whatever order the file mixes them in (FR-VIEW-05, FR-ORG-08). Within each group
+/// completed items come after the others, and are left out unless `show_completed` (FR-VIEW-11).
+/// The Inbox and a section hold only tasks. Content kept as read, items in the Trash and the
+/// contents of a completed item are not shown (FR-ORG-09); an item that is not a container, or
+/// no item at all, shows nothing.
 #[must_use]
-pub fn rows(document: &Document, container: ItemId) -> Vec<Row> {
+pub fn rows(document: &Document, container: ItemId, show_completed: bool) -> Vec<Row> {
     let Some(kind) = document
         .node(container)
         .and_then(Node::item)
@@ -43,42 +45,66 @@ pub fn rows(document: &Document, container: ItemId) -> Vec<Row> {
     else {
         return Vec::new();
     };
+    if document.conceals(container) {
+        return Vec::new();
+    }
+    let group = Group {
+        document,
+        show_completed,
+    };
     match kind {
-        ItemKind::Inbox | ItemKind::Section => tasks(document, container, None).collect(),
+        ItemKind::Inbox | ItemKind::Section => group.tasks(container, None).collect(),
         ItemKind::Area | ItemKind::Project => {
-            let mut rows: Vec<Row> = tasks(document, container, None).collect();
-            for section in shown(document, container, ItemKind::Section) {
+            let mut rows: Vec<Row> = group.tasks(container, None).collect();
+            for section in group.shown(container, ItemKind::Section) {
                 rows.push(Row::Section(section));
-                rows.extend(tasks(document, section, Some(section)));
+                if !document.conceals(section) {
+                    rows.extend(group.tasks(section, Some(section)));
+                }
             }
-            rows.extend(shown(document, container, ItemKind::Project).map(Row::Project));
+            rows.extend(group.shown(container, ItemKind::Project).map(Row::Project));
             rows
         }
         ItemKind::Task | ItemKind::ChecklistItem => Vec::new(),
     }
 }
 
-/// The task rows of `parent`, listed under `section`.
-fn tasks(
-    document: &Document,
-    parent: ItemId,
-    section: Option<ItemId>,
-) -> impl Iterator<Item = Row> {
-    shown(document, parent, ItemKind::Task).map(move |id| Row::Task { id, section })
+/// How the children of one container are picked and ordered into a group of rows.
+#[derive(Clone, Copy)]
+struct Group<'a> {
+    document: &'a Document,
+    show_completed: bool,
 }
 
-/// The children of `parent` of kind `kind` that are not in the Trash, in file order.
-fn shown(document: &Document, parent: ItemId, kind: ItemKind) -> impl Iterator<Item = ItemId> {
-    document
-        .children(parent)
-        .iter()
-        .copied()
-        .filter(move |&id| {
-            document
-                .node(id)
-                .and_then(Node::item)
-                .is_some_and(|item| item.kind == kind && item.deleted.is_none())
-        })
+impl<'a> Group<'a> {
+    /// The task rows of `parent`, listed under `section`.
+    fn tasks(self, parent: ItemId, section: Option<ItemId>) -> impl Iterator<Item = Row> + 'a {
+        self.shown(parent, ItemKind::Task)
+            .map(move |id| Row::Task { id, section })
+    }
+
+    /// The children of `parent` of kind `kind` that are not in the Trash, the uncompleted ones
+    /// first and then, if shown, the completed ones, each in file order.
+    fn shown(self, parent: ItemId, kind: ItemKind) -> impl Iterator<Item = ItemId> + 'a {
+        let children = |completed: bool| {
+            self.document
+                .children(parent)
+                .iter()
+                .copied()
+                .filter(move |&id| {
+                    self.document
+                        .node(id)
+                        .and_then(Node::item)
+                        .is_some_and(|item| {
+                            item.kind == kind
+                                && item.deleted.is_none()
+                                && item.completed.is_some() == completed
+                        })
+                })
+        };
+        let completed = self.show_completed.then(|| children(true));
+        children(false).chain(completed.into_iter().flatten())
+    }
 }
 
 #[cfg(test)]
@@ -86,7 +112,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::domain::{Item, PlacementError};
+    use crate::domain::{Completion, Item, PlacementError};
     use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
     fn add(document: &mut Document, parent: ItemId, kind: ItemKind) -> ItemId {
@@ -103,7 +129,7 @@ mod tests {
         let first = add(&mut document, inbox, Task);
         let second = add(&mut document, inbox, Task);
         assert_eq!(
-            rows(&document, inbox),
+            rows(&document, inbox, false),
             [
                 Row::Task {
                     id: first,
@@ -131,7 +157,7 @@ mod tests {
         let other_section = add(&mut document, project, Section);
         let early_task = add(&mut document, project, Task);
         assert_eq!(
-            rows(&document, project),
+            rows(&document, project, false),
             [
                 Row::Task {
                     id: late_task,
@@ -151,7 +177,7 @@ mod tests {
             ]
         );
         assert!(
-            !rows(&document, project)
+            !rows(&document, project, false)
                 .iter()
                 .any(|row| row.id() == in_child)
         );
@@ -166,7 +192,7 @@ mod tests {
         let project = add(&mut document, area, Project);
         let section = add(&mut document, area, Section);
         assert_eq!(
-            rows(&document, area),
+            rows(&document, area, false),
             [Row::Section(section), Row::Project(project)]
         );
         Ok(())
@@ -180,7 +206,7 @@ mod tests {
         let section = add(&mut document, area, Section);
         let task = add(&mut document, section, Task);
         assert_eq!(
-            rows(&document, section),
+            rows(&document, section, false),
             [Row::Task {
                 id: task,
                 section: None
@@ -205,7 +231,7 @@ mod tests {
         deleted_task.deleted = Some(date(2026, 10, 1));
         document.push(Some(area), Node::Item(deleted_task))?;
         assert_eq!(
-            rows(&document, area),
+            rows(&document, area, false),
             [Row::Task {
                 id: task,
                 section: None
@@ -221,9 +247,86 @@ mod tests {
         let task = add(&mut document, inbox, Task);
         add(&mut document, task, ChecklistItem);
         let line = document.push(None, Node::Kept("text".to_owned()))?;
-        assert_eq!(rows(&document, task), []);
-        assert_eq!(rows(&document, line), []);
-        assert_eq!(rows(&document, ItemId::new(99)), []);
+        assert_eq!(rows(&document, task, false), []);
+        assert_eq!(rows(&document, line, false), []);
+        assert_eq!(rows(&document, ItemId::new(99), false), []);
+        Ok(())
+    }
+
+    fn complete(document: &mut Document, id: ItemId) {
+        let mut item = document
+            .node(id)
+            .and_then(Node::item)
+            .cloned()
+            .expect("the test completes an item");
+        item.completed = Some(Completion::On(date(2026, 10, 14)));
+        document.set(id, item).expect("the kind stays");
+    }
+
+    // FR-VIEW-11, FR-TASK-02
+    #[test]
+    fn completed_items_come_last_in_each_group_and_only_when_shown() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let project = document.push(None, Node::Item(Item::new(Project, "p")))?;
+        let done_task = add(&mut document, project, Task);
+        let task = add(&mut document, project, Task);
+        let done_section = add(&mut document, project, Section);
+        let section = add(&mut document, project, Section);
+        let done_in_section = add(&mut document, section, Task);
+        let in_section = add(&mut document, section, Task);
+        let done_project = add(&mut document, project, Project);
+        let child = add(&mut document, project, Project);
+        for id in [done_task, done_section, done_in_section, done_project] {
+            complete(&mut document, id);
+        }
+        let loose = |id| Row::Task { id, section: None };
+        let under = |id| Row::Task {
+            id,
+            section: Some(section),
+        };
+        assert_eq!(
+            rows(&document, project, false),
+            [
+                loose(task),
+                Row::Section(section),
+                under(in_section),
+                Row::Project(child)
+            ]
+        );
+        assert_eq!(
+            rows(&document, project, true),
+            [
+                loose(task),
+                loose(done_task),
+                Row::Section(section),
+                under(in_section),
+                under(done_in_section),
+                Row::Section(done_section),
+                Row::Project(child),
+                Row::Project(done_project),
+            ]
+        );
+        Ok(())
+    }
+
+    // FR-ORG-09
+    #[test]
+    fn a_completed_container_shows_none_of_its_contents() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let section = add(&mut document, area, Section);
+        add(&mut document, section, Task);
+        let project = add(&mut document, area, Project);
+        add(&mut document, project, Task);
+        complete(&mut document, section);
+        assert_eq!(
+            rows(&document, area, true),
+            [Row::Section(section), Row::Project(project)]
+        );
+        assert_eq!(rows(&document, section, true), []);
+        complete(&mut document, area);
+        assert_eq!(rows(&document, area, true), []);
+        assert_eq!(rows(&document, project, true), []);
         Ok(())
     }
 

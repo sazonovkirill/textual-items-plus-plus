@@ -2,8 +2,10 @@
 
 use std::path::PathBuf;
 
+use jiff::civil::Date;
+
 use super::{
-    Selection,
+    History, Selection, completion,
     container::{self, Row},
     focus::{self, Focus},
 };
@@ -25,6 +27,9 @@ pub struct State {
     opened: Opened,
     container: ItemId,
     selection: Selection,
+    history: History,
+    /// Whether the pane shows completed items (FR-VIEW-11); per pane once there are several.
+    show_completed: bool,
 }
 
 impl State {
@@ -37,6 +42,8 @@ impl State {
             document,
             opened,
             selection: Selection::default(),
+            history: History::default(),
+            show_completed: false,
         };
         state.move_focus(Focus::First);
         state
@@ -63,7 +70,13 @@ impl State {
     /// The rows the shown container lists, in order.
     #[must_use]
     pub fn rows(&self) -> Vec<Row> {
-        container::rows(&self.document, self.container)
+        container::rows(&self.document, self.container, self.show_completed)
+    }
+
+    /// Whether completed items are shown.
+    #[must_use]
+    pub fn shows_completed(&self) -> bool {
+        self.show_completed
     }
 
     /// The items the next command acts on.
@@ -76,6 +89,72 @@ impl State {
     pub(super) fn move_focus(&mut self, motion: Focus) {
         let target = focus::target(&self.rows(), self.selection.focused(), motion);
         self.selection.focus(target);
+    }
+
+    /// Completes the selected items on `today`, or uncompletes them when all are completed, as
+    /// one step to undo, moving the focus on when its row hides.
+    pub(super) fn toggle_completed(&mut self, today: Date) {
+        let transaction = completion::toggle(&self.document, self.selection.items(), today);
+        let before = self.rows();
+        let (container, show_completed) = (self.container, self.show_completed);
+        let focused = self.selection.focused();
+        let mut after = self.selection.clone();
+        self.history
+            .commit(
+                &mut self.document,
+                transaction,
+                self.selection.clone(),
+                |document| {
+                    let rows = container::rows(document, container, show_completed);
+                    after.focus(focus::kept(&before, &rows, focused));
+                    after
+                },
+            )
+            .expect("a transaction made from the document as it is fits it");
+        self.settle(&before);
+    }
+
+    /// Shows completed items, or hides them again, moving the focus on when its row hides.
+    pub(super) fn toggle_show_completed(&mut self) {
+        let before = self.rows();
+        self.show_completed = !self.show_completed;
+        self.settle(&before);
+    }
+
+    /// Takes back the latest change and restores the selection from before it.
+    pub(super) fn undo(&mut self) {
+        let before = self.rows();
+        let restored = self
+            .history
+            .undo(&mut self.document)
+            .expect("every change goes through the history, so its steps fit the document");
+        self.restore(restored, &before);
+    }
+
+    /// Makes the latest change taken back again and restores the selection from after it.
+    pub(super) fn redo(&mut self) {
+        let before = self.rows();
+        let restored = self
+            .history
+            .redo(&mut self.document)
+            .expect("every change goes through the history, so its steps fit the document");
+        self.restore(restored, &before);
+    }
+
+    /// Selects `selection`, if there is one, keeping the focus on a row shown.
+    fn restore(&mut self, selection: Option<Selection>, before: &[Row]) {
+        if let Some(selection) = selection {
+            self.selection = selection;
+            self.settle(before);
+        }
+    }
+
+    /// Keeps the focus on a row now that the rows `before` have changed.
+    fn settle(&mut self, before: &[Row]) {
+        let focused = focus::kept(before, &self.rows(), self.selection.focused());
+        if focused != self.selection.focused() {
+            self.selection.focus(focused);
+        }
     }
 }
 
@@ -94,7 +173,7 @@ mod tests {
         let state = State::new(document.clone(), Opened::Demo);
         assert_eq!(state.container(), inbox);
         assert_eq!(state.selection().focused(), Some(first));
-        assert_eq!(state.rows(), container::rows(&document, inbox));
+        assert_eq!(state.rows(), container::rows(&document, inbox, false));
         assert_eq!(state.document(), &document);
         assert_eq!(state.opened(), &Opened::Demo);
         Ok(())

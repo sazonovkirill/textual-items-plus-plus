@@ -11,6 +11,15 @@ pub enum Command {
     Quit,
     /// Move the focus (FR-NAV-01).
     Focus(Focus),
+    /// Complete the selected items, or uncomplete them when all are completed (FR-TASK-02,
+    /// FR-ORG-09).
+    ToggleCompleted,
+    /// Show completed items, or hide them again (FR-VIEW-11).
+    ShowCompleted,
+    /// Take back the latest change (FR-EDIT-06).
+    Undo,
+    /// Make the latest change taken back again (FR-EDIT-06).
+    Redo,
 }
 
 /// Where a command can be given. Later steps add the modes and windows that take keys of their
@@ -74,6 +83,26 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Focus(Focus::PreviousSection),
         title: "Previous Section",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ToggleCompleted,
+        title: "Complete",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ShowCompleted,
+        title: "Show Completed Items",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Undo,
+        title: "Undo",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Redo,
+        title: "Redo",
         context: Context::Navigate,
     },
 ];

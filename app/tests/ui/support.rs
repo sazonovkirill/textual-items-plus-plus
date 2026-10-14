@@ -42,7 +42,7 @@ impl Harness {
 
     /// Hands the app `event` and draws what it shows after it.
     pub fn send(&mut self, event: &Event) {
-        self.tui.handle(event);
+        self.tui.handle(event, TODAY);
         self.draw();
     }
 
