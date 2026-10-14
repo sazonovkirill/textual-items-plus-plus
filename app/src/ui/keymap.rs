@@ -34,6 +34,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Extend(Direction::Down), &["J", "shift+down"]),
     (Command::Extend(Direction::Up), &["K", "shift+up"]),
     (Command::TogglePicked, &["v"]),
+    // vim's visual line mode (D-82).
+    (Command::VisualLines, &["V"]),
     (Command::SelectAll, &["ctrl+a"]),
     (Command::ClearSelection, &["esc"]),
     // taskpaper-terminal's keys, and the owner's `.` (D-80); a legacy terminal sends

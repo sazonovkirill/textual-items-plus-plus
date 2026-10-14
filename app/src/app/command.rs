@@ -17,6 +17,9 @@ pub enum Command {
     Extend(Direction),
     /// Pick the focused row, or unpick it when it is picked (FR-OPS-01).
     TogglePicked,
+    /// Start visual line mode at the focused row, in which motions pick the rows from it to the
+    /// focus, or end it (FR-OPS-01).
+    VisualLines,
     /// Pick every row (FR-OPS-01).
     SelectAll,
     /// Pick nothing, so that commands take the focused row again (FR-OPS-01).
@@ -255,6 +258,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::TogglePicked,
         title: "Toggle Selected",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::VisualLines,
+        title: "Visual Line Mode",
         context: Context::Navigate,
     },
     Entry {
@@ -768,6 +776,7 @@ mod tests {
             Command::Extend(Direction::Down),
             Command::Extend(Direction::Up),
             Command::TogglePicked,
+            Command::VisualLines,
             Command::SelectAll,
             Command::ClearSelection,
         ];

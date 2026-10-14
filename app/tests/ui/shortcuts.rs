@@ -97,7 +97,7 @@ fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
         lines.get(1..3).unwrap_or_default(),
         [
             "│ ↑ more                              (",
-            "│  Go to Symbol                       /"
+            "│  Go to Trash                       gd"
         ]
     );
     harness.type_text("))))))))");

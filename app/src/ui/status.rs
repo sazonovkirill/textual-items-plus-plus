@@ -51,6 +51,8 @@ impl Widget for StatusLine<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mode = if self.state.editing().is_some() {
             format!(" {} EDIT", Icon::Edit.glyph(self.icons))
+        } else if self.state.selection().visual() {
+            format!(" {} VISUAL LINE", Icon::Navigate.glyph(self.icons))
         } else {
             format!(" {} NAVIGATE", Icon::Navigate.glyph(self.icons))
         };
@@ -207,6 +209,24 @@ mod tests {
             40,
             " ↕ NAVIGATE · Demo data · not saved     ",
         );
+    }
+
+    // FR-OPS-01, D-82
+    #[test]
+    fn visual_line_mode_is_named_as_vim_names_it() -> Result<(), crate::domain::PlacementError> {
+        let mut document = Document::new();
+        let task = crate::domain::Item::new(crate::domain::ItemKind::Task, "a");
+        document.push(Some(document.inbox()), crate::domain::Node::Item(task))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        let visual = app::Message::Command(app::Command::VisualLines);
+        app::update(&mut state, visual, TODAY);
+        check_state(
+            &state,
+            "",
+            43,
+            " ↕ VISUAL LINE · Demo data · not saved     ",
+        );
+        Ok(())
     }
 
     // FR-EDIT-01

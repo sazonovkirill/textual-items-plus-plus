@@ -192,15 +192,18 @@ impl Pane {
         }))
     }
 
-    /// Moves the focus as `motion` says, keeping what is picked.
+    /// Moves the focus as `motion` says, keeping what is picked, or in visual line mode among
+    /// the rows alone, picking the rows from where the mode began to it (D-82).
     pub(super) fn move_focus(&mut self, document: &Document, today: Date, motion: Focus) {
-        let target = focus::target(
-            &self.rows(document, today),
-            self.heading(document),
-            self.selection.focused(),
-            motion,
-        );
-        self.selection.focus(target);
+        let rows = self.rows(document, today);
+        let focused = self.selection.focused();
+        if self.selection.visual() {
+            let target = focus::target(&rows, None, focused, motion);
+            self.selection.extend(&rows, target);
+        } else {
+            let target = focus::target(&rows, self.heading(document), focused, motion);
+            self.selection.focus(target);
+        }
     }
 
     /// Where the pane is.

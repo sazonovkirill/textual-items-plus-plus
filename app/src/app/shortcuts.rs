@@ -60,6 +60,7 @@ impl KeyGroup {
             Command::Focus(_) => Self::Moving,
             Command::Extend(_)
             | Command::TogglePicked
+            | Command::VisualLines
             | Command::SelectAll
             | Command::ClearSelection => Self::Selection,
             Command::Go(_)

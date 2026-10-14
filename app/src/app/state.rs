@@ -318,6 +318,17 @@ impl State {
         self.pane_mut().selection.toggle(&rows);
     }
 
+    /// Starts visual line mode at the focused row, or ends it (FR-OPS-01, D-82).
+    pub(super) fn toggle_visual(&mut self) {
+        let rows = self.listed();
+        self.pane_mut().selection.toggle_visual(&rows);
+    }
+
+    /// Ends visual line mode, keeping the picks for what ends it to act on (D-82).
+    pub(super) fn end_visual(&mut self) {
+        self.pane_mut().selection.end_visual();
+    }
+
     /// Picks every row (FR-OPS-01).
     pub(super) fn select_all(&mut self) {
         let rows = self.listed();

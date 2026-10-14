@@ -118,13 +118,28 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     effects
 }
 
-/// Applies `message` to `state` by the module that owns it.
+/// Applies `message` to `state` by the module that owns it. A command or a paste ends visual
+/// line mode, as in vim, unless it moves the focus, extends or toggles the mode, or shows or
+/// scrolls the shortcuts panel (D-82).
 fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     let emptying = matches!(state.notice(), Some(Notice::EmptyTrash(_)));
     if let Message::Command(_) | Message::Paste(..) = message {
         state.finish_editing();
         state.finish_searching();
         state.clear_notice();
+        let keeps_visual = matches!(
+            message,
+            Message::Command(
+                Command::Focus(_)
+                    | Command::Extend(_)
+                    | Command::VisualLines
+                    | Command::Shortcuts
+                    | Command::ScrollShortcuts(_)
+            )
+        );
+        if !keeps_visual {
+            state.end_visual();
+        }
     }
     if let Message::Command(command) = message
         && (state.panel_command(command, today) || state.sidebar_command(command, today))
@@ -170,6 +185,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::Focus(motion) => state.move_focus(motion),
         Command::Extend(direction) => state.extend_selection(direction),
         Command::TogglePicked => state.toggle_picked(),
+        Command::VisualLines => state.toggle_visual(),
         Command::SelectAll => state.select_all(),
         Command::ClearSelection => state.clear_selection(),
         Command::ToggleCompleted => state.toggle_completed(today),
@@ -915,6 +931,71 @@ mod tests {
         give(&mut state, Command::Undo);
         assert_eq!(dates(&state, "a"), (Some(TODAY), None));
         assert_eq!(dates(&state, "b"), (None, None));
+        Ok(())
+    }
+
+    // FR-OPS-01, D-82
+    #[test]
+    fn visual_line_mode_extends_with_every_motion_until_another_command()
+    -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        for title in ["a", "b", "c", "d"] {
+            document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, title)))?;
+        }
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        let picked = |state: &State| {
+            let rows = state.rows();
+            let titles = rows
+                .iter()
+                .filter(|row| state.selection().is_picked(row.id()));
+            titles
+                .filter_map(|row| Some(state.document().node(row.id())?.item()?.title.clone()))
+                .collect::<Vec<_>>()
+        };
+        give(&mut state, Command::Focus(Focus::Next));
+        give(&mut state, Command::VisualLines);
+        assert!(state.selection().visual());
+        assert_eq!(picked(&state), ["b"]);
+        give(&mut state, Command::Focus(Focus::Last));
+        assert_eq!(picked(&state), ["b", "c", "d"]);
+        give(&mut state, Command::Shortcuts);
+        give(&mut state, Command::Focus(Focus::First));
+        assert_eq!(
+            picked(&state),
+            ["a", "b"],
+            "the title row is no row to pick"
+        );
+        give(&mut state, Command::ToggleCompleted);
+        assert!(!state.selection().visual(), "a command ends it");
+        assert_eq!(titles(&state), ["c", "d"], "acting on the picks");
+        give(&mut state, Command::Undo);
+        give(&mut state, Command::Focus(Focus::Last));
+        assert_eq!(picked(&state), ["a", "b"], "motions only move again");
+        give(&mut state, Command::VisualLines);
+        give(&mut state, Command::VisualLines);
+        give(&mut state, Command::Focus(Focus::Previous));
+        assert_eq!(
+            picked(&state),
+            ["a", "b", "d"],
+            "V again ends it, keeping the picks"
+        );
+        give(&mut state, Command::VisualLines);
+        give(&mut state, Command::ClearSelection);
+        assert!(!state.selection().visual());
+        assert_eq!(picked(&state), Vec::<String>::new(), "Esc picks nothing");
+        give(&mut state, Command::VisualLines);
+        let branch = crate::domain::Branch {
+            node: Node::Item(Item::new(ItemKind::Task, "pasted")),
+            children: Vec::new(),
+        };
+        update(&mut state, Message::Paste(Side::Below, vec![branch]), TODAY);
+        assert!(!state.selection().visual(), "a terminal paste ends it too");
+        give(&mut state, Command::Undo);
+        assert!(
+            !state.selection().visual(),
+            "and undoing it leaves it ended"
+        );
         Ok(())
     }
 

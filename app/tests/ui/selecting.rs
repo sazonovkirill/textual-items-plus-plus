@@ -57,6 +57,52 @@ fn shift_and_a_motion_pick_three_tasks_that_x_completes_at_once() {
     );
 }
 
+// FR-OPS-01, FR-OPS-06, FR-TASK-02, D-82
+#[test]
+fn shift_v_picks_lines_as_j_and_k_move_until_a_command_acts_on_them() {
+    let mut harness = Harness::new(60, 12);
+    let status = |harness: &Harness| harness.rows().last().cloned().unwrap_or_default();
+    harness.type_text("Vj");
+    assert_eq!(items(&harness), [star(CALL), star(COFFEE), READ.into()]);
+    assert!(
+        status(&harness).contains("VISUAL LINE"),
+        "{}",
+        status(&harness)
+    );
+    harness.type_text("jk");
+    assert_eq!(
+        items(&harness),
+        [star(CALL), star(COFFEE), READ.into()],
+        "moving back shrinks the lines"
+    );
+    harness.type_text("jx");
+    assert_eq!(
+        items(&harness),
+        Vec::<String>::new(),
+        "x completes them all"
+    );
+    assert!(
+        status(&harness).contains("NAVIGATE"),
+        "{}",
+        status(&harness)
+    );
+    harness.key(KeyCode::Char('z'));
+    harness.type_text("VkV");
+    assert!(status(&harness).contains("NAVIGATE"), "V again leaves it");
+    harness.type_text("Vk");
+    harness.key(KeyCode::Esc);
+    assert!(status(&harness).contains("NAVIGATE"), "so does Esc");
+    assert_eq!(
+        items(&harness)
+            .iter()
+            .filter(|item| item.starts_with('*'))
+            .count(),
+        1,
+        "Esc picks nothing: {:?}",
+        items(&harness)
+    );
+}
+
 // FR-OPS-01, FR-OPS-02
 #[test]
 fn v_picks_rows_one_by_one_alt_j_moves_them_and_esc_lets_go() {

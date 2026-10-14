@@ -1,7 +1,8 @@
 //! The selection: which items the next command acts on. Commands that act on items take the
 //! picked rows, or the focused one when none is picked, as in taskpaper-terminal (FR-OPS-01,
 //! D-18): extending with `Shift` and a motion picks a run of rows, and rows can be picked one by
-//! one while plain motions move the focus and keep what is picked.
+//! one while plain motions move the focus and keep what is picked, and in visual line mode, as
+//! vim's `V` starts it, every motion extends.
 
 use super::container::Row;
 use crate::domain::ItemId;
@@ -15,6 +16,8 @@ pub struct Selection {
     /// The latest run of extensions, which the next extension continues while the focus is still
     /// where it ended.
     run: Option<Run>,
+    /// Whether motions extend the run, as in vim's visual line mode (D-82).
+    visual: bool,
 }
 
 /// A run of extensions: the row it began at, the row it ended at and what was picked before it.
@@ -36,6 +39,12 @@ impl Selection {
     #[must_use]
     pub fn is_picked(&self, id: ItemId) -> bool {
         self.picked.contains(&id)
+    }
+
+    /// Whether motions extend the selection, as in vim's visual line mode (D-82).
+    #[must_use]
+    pub fn visual(&self) -> bool {
+        self.visual
     }
 
     /// Focuses `item`, or nothing, keeping what is picked.
@@ -114,21 +123,55 @@ impl Selection {
         self.run = None;
     }
 
+    /// Starts visual line mode at the focused row among `rows`, as vim's `V` does: picks it and
+    /// begins a run of extensions there, on top of what is picked, which motions extend until
+    /// the mode ends. With the mode on, ends it, keeping the picks; with the focus on no row, as
+    /// the container's heading, does nothing.
+    pub(super) fn toggle_visual(&mut self, rows: &[Row]) {
+        if self.visual {
+            self.visual = false;
+            return;
+        }
+        let Some(focused) = self
+            .focused
+            .filter(|&id| rows.iter().any(|row| row.id() == id))
+        else {
+            return;
+        };
+        let before = self.picked.clone();
+        if !self.picked.contains(&focused) {
+            self.picked.push(focused);
+        }
+        self.run = Some(Run {
+            anchor: focused,
+            end: focused,
+            before,
+        });
+        self.visual = true;
+    }
+
+    /// Ends visual line mode, keeping the picks.
+    pub(super) fn end_visual(&mut self) {
+        self.visual = false;
+    }
+
     /// Picks every row of `rows`.
     pub(super) fn select_all(&mut self, rows: &[Row]) {
         self.picked = rows.iter().map(|row| row.id()).collect();
         self.run = None;
     }
 
-    /// Picks nothing, so that commands take the focused row again.
+    /// Picks nothing, so that commands take the focused row again, ending visual line mode.
     pub(super) fn clear(&mut self) {
         self.picked.clear();
         self.run = None;
+        self.visual = false;
     }
 
     /// Maps the picked items and the run of extensions through `found`, as after a reload, and
     /// unpicks those it does not find and those no row of `rows` shows, as when they were
-    /// deleted, hidden or moved away; the run ends when its anchor goes.
+    /// deleted, hidden or moved away; the run, and with it visual line mode, ends when its anchor
+    /// goes.
     pub(super) fn keep(&mut self, rows: &[Row], found: impl Fn(ItemId) -> Option<ItemId>) {
         let shown = |id: &ItemId| rows.iter().any(|row| row.id() == *id);
         let kept = |ids: &[ItemId]| -> Vec<ItemId> {
@@ -145,6 +188,7 @@ impl Selection {
                 before: kept(&run.before),
             })
         });
+        self.visual &= self.run.is_some();
     }
 }
 
@@ -337,5 +381,52 @@ mod tests {
             [3, 4],
             "nor when its end is not found again"
         );
+    }
+
+    // FR-OPS-01, D-82
+    #[test]
+    fn visual_line_mode_picks_from_where_it_began_to_the_focus() {
+        let rows = rows();
+        let mut selection = focused_on(1);
+        selection.toggle(&rows);
+        selection.focus(Some(id(3)));
+        assert!(!selection.visual());
+        selection.toggle_visual(&rows);
+        assert!(selection.visual());
+        assert_eq!(items(&selection), [1, 3], "on top of what was picked");
+        selection.extend(&rows, Some(id(4)));
+        selection.extend(&rows, Some(id(5)));
+        assert_eq!(items(&selection), [1, 3, 4, 5]);
+        selection.extend(&rows, Some(id(2)));
+        assert_eq!(items(&selection), [1, 2, 3], "past the anchor it grows up");
+        selection.toggle_visual(&rows);
+        assert!(!selection.visual(), "V again ends it");
+        assert_eq!(items(&selection), [1, 2, 3], "keeping the picks");
+        selection.toggle_visual(&rows);
+        selection.end_visual();
+        assert!(!selection.visual());
+        assert_eq!(items(&selection), [1, 2, 3]);
+        selection.toggle_visual(&rows);
+        selection.clear();
+        assert!(!selection.visual(), "picking nothing ends it");
+        assert_eq!(items(&selection), [2]);
+    }
+
+    // FR-OPS-01, D-68, D-82
+    #[test]
+    fn visual_line_mode_needs_a_focused_row_and_ends_when_its_row_goes() {
+        let rows = rows();
+        let mut heading = focused_on(99);
+        heading.toggle_visual(&rows);
+        assert_eq!(heading, focused_on(99), "the heading is no row");
+        let mut selection = focused_on(2);
+        selection.toggle_visual(&rows);
+        selection.extend(&rows, Some(id(3)));
+        selection.keep(&rows, Some);
+        assert!(selection.visual(), "its row is still there");
+        let fewer: Vec<Row> = rows.into_iter().filter(|row| row.id() != id(2)).collect();
+        selection.keep(&fewer, Some);
+        assert!(!selection.visual());
+        assert_eq!(items(&selection), [3]);
     }
 }
