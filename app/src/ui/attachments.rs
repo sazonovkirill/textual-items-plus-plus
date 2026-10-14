@@ -64,7 +64,7 @@ impl Scroll {
 
 /// The keys of the open panel while the note is not edited, as taskpaper-terminal's
 /// (keybindings.md §4).
-const KEYS: &[(Key, PanelKey)] = &[
+pub(super) const KEYS: &[(Key, PanelKey)] = &[
     (
         (KeyModifiers::NONE, KeyCode::Esc),
         PanelKey::Input(AttachmentsInput::Close),

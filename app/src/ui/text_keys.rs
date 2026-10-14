@@ -20,7 +20,7 @@ const fn go(motion: Motion, select: bool) -> TextEdit {
 
 /// The text keys besides typing, as the keymap matches them. `Shift+↑` and `Shift+↓` select to
 /// the start and end of the text.
-const TEXT: &[(Key, TextEdit)] = &[
+pub(super) const TEXT: &[(Key, TextEdit)] = &[
     ((NONE, KeyCode::Left), go(Motion::Left, false)),
     ((NONE, KeyCode::Right), go(Motion::Right, false)),
     ((CTRL, KeyCode::Left), go(Motion::WordLeft, false)),

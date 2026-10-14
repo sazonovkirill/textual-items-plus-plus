@@ -120,6 +120,10 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Sidebar, &["M"]),
     (Command::FocusSidebar, &["ctrl+w h", "ctrl+w left"]),
     (Command::FocusPane, &["ctrl+w l", "ctrl+w right"]),
+    // taskpaper-terminal's keys for its shortcuts panel and for scrolling it a page (its D-55).
+    (Command::Shortcuts, &["?"]),
+    (Command::ScrollShortcuts(Direction::Down), &[")"]),
+    (Command::ScrollShortcuts(Direction::Up), &["("]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
     // while the user types (its D-115, D-38).
     (Command::KeepMine, &["ctrl+k"]),
@@ -197,6 +201,52 @@ fn pressed(modifiers: KeyModifiers, code: KeyCode) -> Key {
     }
 }
 
+/// How `keys` read on screen: plain characters run together, as `gg`, and otherwise each key as
+/// [`key_label`] writes it with a space between them, as `Ctrl+W h`.
+fn sequence_label(keys: &[Key]) -> String {
+    let plain = keys.iter().all(|&(modifiers, code)| {
+        modifiers.is_empty() && matches!(code, KeyCode::Char(c) if c != ' ')
+    });
+    let presses: Vec<String> = keys.iter().copied().map(key_label).collect();
+    presses.join(if plain { "" } else { " " })
+}
+
+/// How one key reads on screen: its modifiers, then the key, a letter with `Ctrl` in capitals,
+/// a capital letter with a modifier marked with `Shift`, and the arrow keys as arrows.
+pub(super) fn key_label((modifiers, code): Key) -> String {
+    let mut label = String::new();
+    let shifted = matches!(code, KeyCode::Char(c) if c.is_uppercase()) && !modifiers.is_empty();
+    for (modifier, name) in [
+        (KeyModifiers::CONTROL, "Ctrl+"),
+        (KeyModifiers::ALT, "Alt+"),
+    ] {
+        if modifiers.contains(modifier) {
+            label.push_str(name);
+        }
+    }
+    if shifted || modifiers.contains(KeyModifiers::SHIFT) {
+        label.push_str("Shift+");
+    }
+    let name = match code {
+        KeyCode::Char(c) if c != ' ' && modifiers.contains(KeyModifiers::CONTROL) => {
+            c.to_uppercase().to_string()
+        }
+        KeyCode::Up => "↑".to_owned(),
+        KeyCode::Down => "↓".to_owned(),
+        KeyCode::Left => "←".to_owned(),
+        KeyCode::Right => "→".to_owned(),
+        KeyCode::PageUp => "PgUp".to_owned(),
+        KeyCode::PageDown => "PgDn".to_owned(),
+        KeyCode::BackTab => "Tab".to_owned(),
+        KeyCode::Backspace => "Backspace".to_owned(),
+        KeyCode::Delete => "Delete".to_owned(),
+        KeyCode::Enter => "Enter".to_owned(),
+        code => code.to_string(),
+    };
+    label.push_str(&name);
+    label
+}
+
 /// The key `event` presses, as the keymaps match it; releases, repeats and other events press
 /// none.
 pub(super) fn key_press(event: &Event) -> Option<Key> {
@@ -208,7 +258,8 @@ pub(super) fn key_press(event: &Event) -> Option<Key> {
 /// pressed and the clock's latest reading.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keymap {
-    commands: HashMap<Vec<Key>, Command>,
+    /// Every binding, in the order its keys are written.
+    commands: Vec<(Vec<Key>, Command)>,
     /// Every sequence that is the start of a longer binding, with its keys as written.
     prefixes: HashMap<Vec<Key>, String>,
     pending: Vec<Key>,
@@ -267,7 +318,29 @@ impl Keymap {
             self.pending = keys;
             return None;
         }
-        self.commands.get(&keys).copied()
+        self.command(&keys)
+    }
+
+    /// The command `keys` are bound to, if any.
+    fn command(&self, keys: &[Key]) -> Option<Command> {
+        self.commands
+            .iter()
+            .find(|(bound, _)| bound == keys)
+            .map(|&(_, command)| command)
+    }
+
+    /// How the keys bound to `command` read on screen, in the order they are written, separated by
+    /// commas, as taskpaper-terminal's shortcuts panel writes them: a sequence of plain
+    /// characters run together, such as `gg`, and others with a space between their keys, such
+    /// as `Ctrl+W h`; empty when no key gives it.
+    #[must_use]
+    pub fn labels(&self, command: Command) -> String {
+        self.commands
+            .iter()
+            .filter(|&&(_, bound)| bound == command)
+            .map(|(keys, _)| sequence_label(keys))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// The command of the keys pressed so far, when they are a binding of their own and `event`
@@ -276,10 +349,10 @@ impl Keymap {
     /// `B` starts a new item with `B` (its keybindings.md §1). `None`, changing nothing,
     /// otherwise.
     pub fn cut_short(&mut self, event: &Event) -> Option<Command> {
-        let command = *self.commands.get(&self.pending)?;
+        let command = self.command(&self.pending)?;
         let mut keys = self.pending.clone();
         keys.push(key_press(event)?);
-        if self.prefixes.contains_key(&keys) || self.commands.contains_key(&keys) {
+        if self.prefixes.contains_key(&keys) || self.command(&keys).is_some() {
             return None;
         }
         self.pending.clear();
@@ -295,7 +368,7 @@ impl Keymap {
             return None;
         }
         let keys = std::mem::take(&mut self.pending);
-        self.commands.get(&keys).copied()
+        self.command(&keys)
     }
 
     /// When the sequence pressed so far ends without another key, if one is pending.
@@ -698,6 +771,61 @@ mod tests {
             pressed(KeyModifiers::SHIFT, KeyCode::Up),
             (KeyModifiers::SHIFT, KeyCode::Up)
         );
+    }
+
+    // FR-KEY-03
+    #[test]
+    fn question_mark_shows_the_shortcuts_and_parentheses_scroll_them() {
+        let mut keymap = Keymap::default();
+        for (c, command) in [
+            ('?', Command::Shortcuts),
+            (')', Command::ScrollShortcuts(Direction::Down)),
+            ('(', Command::ScrollShortcuts(Direction::Up)),
+        ] {
+            assert_eq!(keymap.press(&char(c)), Some(command), "{c}");
+        }
+    }
+
+    // FR-KEY-03
+    #[test]
+    fn labels_write_keys_as_the_shortcuts_panel_shows_them() {
+        let label = |keys| parse_sequence(keys).map(|keys| sequence_label(&keys));
+        for (keys, expected) in [
+            ("j", "j"),
+            ("G", "G"),
+            ("g g", "gg"),
+            ("o s", "os"),
+            ("space", "Space"),
+            ("g space", "g Space"),
+            ("ctrl+q", "Ctrl+Q"),
+            ("ctrl+'", "Ctrl+'"),
+            ("ctrl+space", "Ctrl+Space"),
+            ("alt+k", "Alt+k"),
+            ("alt+K", "Alt+Shift+K"),
+            ("ctrl+shift+z", "Ctrl+Shift+Z"),
+            ("alt+shift+left", "Alt+Shift+←"),
+            ("shift+down", "Shift+↓"),
+            ("shift+tab", "Shift+Tab"),
+            ("up", "↑"),
+            ("right", "→"),
+            ("ctrl+down", "Ctrl+↓"),
+            ("pagedown", "PgDn"),
+            ("pageup", "PgUp"),
+            ("delete", "Delete"),
+            ("backspace", "Backspace"),
+            ("enter", "Enter"),
+            ("ctrl+enter", "Ctrl+Enter"),
+            ("esc", "Esc"),
+            ("home", "Home"),
+            ("tab", "Tab"),
+            ("ctrl+w h", "Ctrl+W h"),
+            ("f1", "F1"),
+        ] {
+            assert_eq!(label(keys).as_deref(), Some(expected), "{keys}");
+        }
+        let keymap = Keymap::default();
+        assert_eq!(keymap.labels(Command::Go(Go::Home)), "Ctrl+', gh, gi");
+        assert_eq!(keymap.labels(Command::Redo), "Z, Ctrl+Shift+Z, Ctrl+Y");
     }
 
     #[test]

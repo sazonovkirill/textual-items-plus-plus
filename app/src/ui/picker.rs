@@ -18,7 +18,7 @@ use super::{
 use crate::app::{PickerInput, PickerView};
 
 /// The keys of an open picker besides the text keys of its query.
-const PICKER: &[(Key, PickerInput)] = &[
+pub(super) const PICKER: &[(Key, PickerInput)] = &[
     ((KeyModifiers::NONE, KeyCode::Esc), PickerInput::Dismiss),
     ((KeyModifiers::NONE, KeyCode::Enter), PickerInput::Choose),
     ((KeyModifiers::NONE, KeyCode::Up), PickerInput::Previous),

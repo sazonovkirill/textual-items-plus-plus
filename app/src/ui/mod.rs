@@ -13,6 +13,7 @@ mod file;
 mod keymap;
 mod markdown;
 mod picker;
+mod shortcuts;
 mod sidebar;
 mod status;
 mod text_keys;
@@ -23,7 +24,7 @@ use std::{
     time::Duration,
 };
 
-use crossterm::event::Event;
+use crossterm::event::{Event, KeyModifiers};
 use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
@@ -41,9 +42,8 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
     app::{
-        self, Command, Context, DateInput, Destination, EditInput, Effect, Message, Opened, Part,
-        PickerInput, Place, REGISTRY, Side, State, Stop, TagEntry, TagMark, TagsFor, TagsView,
-        TextEdit,
+        self, Command, DateInput, Destination, Direction, EditInput, Effect, Message, Opened, Part,
+        PickerInput, Place, Side, State, Stop, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
@@ -56,6 +56,7 @@ use container::ContainerPane;
 use crumbs::Crumbs;
 use date_prompt::DatePromptPanel;
 use file::File;
+use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
 use sidebar::SidebarPane;
 use status::StatusLine;
 
@@ -93,6 +94,13 @@ pub struct Tui {
     clipboard: Clipboard,
     /// The local date, as last given.
     today: Date,
+    /// What the terminal has shown of its keyboard, which the shortcuts panel notes.
+    keyboard: Keyboard,
+    /// The first line of the shortcuts panel's list on screen, and the window whose keys it
+    /// lists, which a change scrolls back to the top (FR-KEY-03).
+    shortcuts_scroll: (usize, Option<Window>),
+    /// How many lines a page of the shortcuts panel was at the last draw, which its keys scroll.
+    shortcuts_page: usize,
 }
 
 impl Tui {
@@ -111,7 +119,15 @@ impl Tui {
             file: None,
             clipboard: Clipboard::default(),
             today,
+            keyboard: Keyboard::default(),
+            shortcuts_scroll: (0, None),
+            shortcuts_page: 1,
         }
+    }
+
+    /// Notes in the shortcuts panel whether the kitty keyboard protocol is on (FR-KEY-03).
+    pub fn use_kitty(&mut self, kitty: bool) {
+        self.keyboard.kitty = kitty;
     }
 
     /// Copies to and pastes from `system` from now on, keeping only the app's own copy without
@@ -212,6 +228,11 @@ impl Tui {
             self.paste(text);
             return;
         }
+        if keymap::key_press(event)
+            .is_some_and(|(modifiers, _)| modifiers.contains(KeyModifiers::ALT))
+        {
+            self.keyboard.alt_seen = true;
+        }
         if let Some(command) = self.keymap.cut_short(event) {
             self.give(command);
         }
@@ -235,7 +256,7 @@ impl Tui {
                 Some(PanelKey::Input(input)) => Some(Message::Attachments(input)),
                 Some(PanelKey::Scroll(scroll)) => {
                     let [panes, ..] = self.layout(self.area);
-                    let page = AttachmentsPanel::page(AttachmentsPanel::area(panes));
+                    let page = AttachmentsPanel::page(AttachmentsPanel::area(self.strip(panes)));
                     self.panel_top = scroll.from(self.panel_top, page);
                     None
                 }
@@ -331,27 +352,9 @@ impl Tui {
         }
     }
 
-    /// Whether the app takes `command` now: while the conflict prompt is open only its own
-    /// commands and quitting, while the attachments panel is open only quitting, while the
-    /// Navigator, Move to or the date prompt is open or in edit mode only global ones, and
-    /// otherwise any.
+    /// Whether the app takes `command` now.
     fn allows(&self, command: Command) -> bool {
-        let context = REGISTRY
-            .iter()
-            .find(|entry| entry.command == command)
-            .map(|entry| entry.context);
-        if self.state.conflict().is_some() {
-            command == Command::Quit || context == Some(Context::Conflict)
-        } else if self.state.attachments().is_some() {
-            command == Command::Quit
-        } else if self.state.editing().is_some()
-            || self.open_picker().is_some()
-            || self.state.date_prompt().is_some()
-        {
-            context == Some(Context::Global)
-        } else {
-            true
-        }
+        self.state.takes(command)
     }
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
@@ -367,7 +370,7 @@ impl Tui {
         let [panes, prompt, _] = self.layout(area);
         if let Some(view) = self.state.attachments() {
             return AttachmentsPanel::new(view, &self.theme, self.icons)
-                .caret(AttachmentsPanel::area(panes), self.panel_top);
+                .caret(AttachmentsPanel::area(self.strip(panes)), self.panel_top);
         }
         if let Some(view) = self.state.date_prompt() {
             return Some(DatePromptPanel::new(&view, &self.theme).caret(prompt));
@@ -382,7 +385,7 @@ impl Tui {
             return Some(tags_popup(&view, &self.theme, self.icons).caret(panes));
         }
         let sidebar = self.state.sidebar();
-        let [side, pane] = split(panes, sidebar.is_some());
+        let [side, pane] = split(self.strip(panes), sidebar.is_some());
         if let Some(view) = sidebar.filter(|view| view.keys) {
             return SidebarPane::new(&self.state, view, &self.theme, self.icons).caret(side);
         }
@@ -393,7 +396,7 @@ impl Tui {
     /// The columns the description being edited wraps in, as last drawn.
     fn description_columns(&self) -> usize {
         let [panes, _, _] = self.layout(self.area);
-        let [_, pane] = split(panes, self.state.sidebar().is_some());
+        let [_, pane] = split(self.strip(panes), self.state.sidebar().is_some());
         ContainerPane::new(&self.state, self.today, &self.theme, self.icons)
             .description_columns(pane_layout(pane)[2])
             .unwrap_or(usize::MAX)
@@ -402,7 +405,7 @@ impl Tui {
     /// The columns the note being edited wraps in, as last drawn.
     fn note_columns(&self) -> usize {
         let [panes, ..] = self.layout(self.area);
-        AttachmentsPanel::columns(AttachmentsPanel::area(panes))
+        AttachmentsPanel::columns(AttachmentsPanel::area(self.strip(panes)))
     }
 
     /// Carries out one effect of the core.
@@ -433,6 +436,13 @@ impl Tui {
                 let branches = self.clipboard.branches();
                 self.update(Message::Paste(side, branches));
             }
+            Effect::ScrollShortcuts(direction) => {
+                let (scroll, _) = &mut self.shortcuts_scroll;
+                *scroll = match direction {
+                    Direction::Down => scroll.saturating_add(self.shortcuts_page),
+                    Direction::Up => scroll.saturating_sub(self.shortcuts_page),
+                };
+            }
         }
     }
 
@@ -451,6 +461,96 @@ impl Tui {
             Constraint::Length(1),
         ])
         .areas(area)
+    }
+
+    /// Where the panes go of `panes`, the area they share with the shortcuts panel: left of it
+    /// while it shows, or all of it on a screen under 80 columns, which draws the panel over the
+    /// pane, as taskpaper-terminal does.
+    fn strip(&self, panes: Rect) -> Rect {
+        match self.shortcuts_area(panes) {
+            Some(shortcuts) if panes.width >= 80 => Rect {
+                width: panes.width - shortcuts.width,
+                ..panes
+            },
+            _ => panes,
+        }
+    }
+
+    /// Where the shortcuts panel goes of `panes`, at their right, while it shows and the screen
+    /// has room for it.
+    fn shortcuts_area(&self, panes: Rect) -> Option<Rect> {
+        if !self.state.shows_shortcuts() || panes.width < 40 || panes.height < 9 {
+            return None;
+        }
+        let [_, shortcuts] = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(shortcuts::width(panes.width)),
+        ])
+        .areas(panes);
+        Some(shortcuts)
+    }
+
+    /// The window that has the keys, when one does that binds keys of its own.
+    fn window(&self) -> Option<Window> {
+        if let Some((_, part, _)) = self.state.editing() {
+            Some(Window::Editing(part))
+        } else if self.state.attachments().is_some() {
+            Some(Window::Attachments)
+        } else if self.state.date_prompt().is_some() {
+            Some(Window::DatePrompt)
+        } else if self.open_picker().is_some() {
+            Some(Window::Picker)
+        } else {
+            None
+        }
+    }
+
+    /// What the shortcuts panel lists while it shows: the keys of the window that has them, if
+    /// any, then each group of the commands the app takes now with how their keys read, leaving
+    /// out commands no key gives (FR-KEY-03).
+    fn shortcuts(&self) -> Option<Vec<Listing>> {
+        let groups = self.state.shortcuts()?;
+        let window = self
+            .window()
+            .map(shortcuts::window_keys)
+            .unwrap_or_default();
+        let commands = groups.into_iter().filter_map(|(group, entries)| {
+            let keys: Vec<_> = entries
+                .into_iter()
+                .map(|entry| (entry.title.to_owned(), self.keymap.labels(entry.command)))
+                .filter(|(_, keys)| !keys.is_empty())
+                .collect();
+            (!keys.is_empty()).then_some((group.name(), keys))
+        });
+        Some(window.into_iter().chain(commands).collect())
+    }
+
+    /// Draws the shortcuts panel in `area` while it shows, scrolled no further than its end and
+    /// naming the keys that scroll it while they do; a panel that is hidden, or lists another
+    /// window's keys, opens at the top.
+    fn render_shortcuts(&mut self, area: Option<Rect>, buf: &mut Buffer) {
+        let window = self.window();
+        let (Some(groups), Some(area)) = (self.shortcuts(), area) else {
+            self.shortcuts_scroll = (0, window);
+            return;
+        };
+        if self.shortcuts_scroll.1 != window {
+            self.shortcuts_scroll = (0, window);
+        }
+        let scrolls = [Direction::Up, Direction::Down].map(|direction| {
+            let command = Command::ScrollShortcuts(direction);
+            if self.allows(command) {
+                self.keymap.labels(command)
+            } else {
+                String::new()
+            }
+        });
+        let [up, down] = &scrolls;
+        let panel = ShortcutsPanel::new(&groups, self.keyboard, &self.theme, [up, down]);
+        let (last, page) = panel.scroll_range(area);
+        self.shortcuts_scroll.0 = self.shortcuts_scroll.0.min(last);
+        self.shortcuts_page = page;
+        panel.scrolled(self.shortcuts_scroll.0).render(area, buf);
     }
 
     /// Whether the session has ended, so the event loop should stop.
@@ -605,15 +705,15 @@ fn tags_popup<'a>(
 }
 
 impl Widget for &mut Tui {
-    /// Draws the pane, below its breadcrumbs and a rule, beside the sidebar while it shows, over
-    /// the status line, scrolling the pane to keep the focus in view, the date prompt between
+    /// Draws the pane, below its breadcrumbs and a rule, beside the sidebar while it shows and
+    /// the shortcuts panel at the right while it shows, over the status line, scrolling the pane to keep the focus in view, the date prompt between
     /// them while it is open, and the Navigator, Move to, the attachments panel or the conflict
     /// prompt over them while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
         let [panes, prompt, status] = self.layout(area);
         let sidebar = self.state.sidebar();
-        let [side, pane] = split(panes, sidebar.is_some());
+        let [side, pane] = split(self.strip(panes), sidebar.is_some());
         if let Some(view) = sidebar {
             SidebarPane::new(&self.state, view, &self.theme, self.icons).render(side, buf);
         }
@@ -636,6 +736,8 @@ impl Widget for &mut Tui {
             buf,
             &mut self.top,
         );
+        let shortcuts = self.shortcuts_area(panes);
+        self.render_shortcuts(shortcuts, buf);
         if let Some(view) = self.state.navigator() {
             navigator_popup(&view, &self.theme, self.icons).render(panes, buf);
         }
@@ -650,7 +752,7 @@ impl Widget for &mut Tui {
         }
         match self.state.attachments() {
             Some(view) => AttachmentsPanel::new(view, &self.theme, self.icons).render(
-                panes,
+                self.strip(panes),
                 buf,
                 &mut self.panel_top,
             ),

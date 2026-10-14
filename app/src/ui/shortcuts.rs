@@ -1,0 +1,444 @@
+//! The shortcuts panel at the right of the panes, as taskpaper-terminal draws it
+//! ([ui.md §4](../../../specs/reference/taskpaper-terminal/specs/ui.md#4-shortcuts-panel-fr-key-04),
+//! FR-KEY-03): the commands the app takes now with their keys as the keymap binds them, and while
+//! a picker, the date prompt or edit mode has the keys, that window's own keys first, read from
+//! the tables that bind them.
+
+use crossterm::event::KeyModifiers;
+use ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    style::{Style, Stylize},
+    text::Line,
+    widgets::{Block, Borders, Clear, Padding, Widget},
+};
+
+use super::{
+    Theme,
+    attachments::{self, PanelKey, Scroll},
+    date_prompt,
+    edit_keys::{DESCRIPTION, DESCRIPTION_MOTIONS, EDIT},
+    keymap::{Key, key_label},
+    picker, text_keys,
+};
+use crate::app::{AttachmentsInput, DateInput, EditInput, Motion, Part, PickerInput, TextEdit};
+
+/// A group of the panel: its heading, and each command's name with how its keys read.
+pub(super) type Listing = (&'static str, Vec<(String, String)>);
+
+/// What the terminal has shown of its keyboard, which the panel notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) struct Keyboard {
+    /// Whether the kitty keyboard protocol is active.
+    pub(super) kitty: bool,
+    /// Whether a key with `Alt` has arrived, which on macOS takes a terminal setting.
+    pub(super) alt_seen: bool,
+}
+
+/// The window that has the keys, when one does that binds keys of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Window {
+    /// The Navigator, Move to or the tag picker.
+    Picker,
+    /// The date prompt.
+    DatePrompt,
+    /// The attachments panel, while its note is not edited.
+    Attachments,
+    /// Edit mode, editing this part of an item.
+    Editing(Part),
+}
+
+/// The groups of keys `window` binds: its own, then the text keys it leaves as they are.
+pub(super) fn window_keys(window: Window) -> Vec<Listing> {
+    let (heading, own): (_, Vec<(Key, String)>) = match window {
+        Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
+        Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
+        Window::Attachments => (
+            "Attachments Panel",
+            named(attachments::KEYS, |key| {
+                match key {
+                    PanelKey::Input(AttachmentsInput::Close) => "Close",
+                    PanelKey::Input(AttachmentsInput::EditNote) => "Edit Note",
+                    PanelKey::Scroll(Scroll::Lines(lines)) if lines < 0 => "Scroll Up",
+                    PanelKey::Scroll(Scroll::Lines(_)) => "Scroll Down",
+                    PanelKey::Scroll(Scroll::Pages(pages)) if pages < 0 => "Page Up",
+                    PanelKey::Scroll(Scroll::Pages(_)) => "Page Down",
+                    PanelKey::Scroll(Scroll::Top) => "Top",
+                    PanelKey::Scroll(Scroll::Bottom) => "Bottom",
+                }
+                .to_owned()
+            }),
+        ),
+        Window::Editing(Part::Title) => ("Editing", named(EDIT, edit_name)),
+        Window::Editing(part @ (Part::Description | Part::Note)) => {
+            let motions = DESCRIPTION_MOTIONS
+                .iter()
+                .flat_map(|&((modifiers, code), motion)| {
+                    let name = motion_name(motion(0));
+                    [
+                        ((modifiers, code), name.clone()),
+                        (
+                            (modifiers.union(KeyModifiers::SHIFT), code),
+                            format!("Select {name}"),
+                        ),
+                    ]
+                });
+            let heading = if part == Part::Note {
+                "Editing Note"
+            } else {
+                "Editing Description"
+            };
+            (
+                heading,
+                motions.chain(named(DESCRIPTION, edit_name)).collect(),
+            )
+        }
+    };
+    if window == Window::Attachments {
+        return vec![(heading, merged(own))];
+    }
+    let text = text_keys::TEXT
+        .iter()
+        .filter(|&&(key, _)| own.iter().all(|&(bound, _)| bound != key))
+        .map(|&(key, edit)| (key, text_name(edit)))
+        .collect();
+    vec![(heading, merged(own)), ("Text", merged(text))]
+}
+
+/// Each key of `table` with the name `name` gives what it does.
+fn named<T: Copy>(table: &[(Key, T)], name: impl Fn(T) -> String) -> Vec<(Key, String)> {
+    table
+        .iter()
+        .map(|&(key, input)| (key, name(input)))
+        .collect()
+}
+
+/// Each name of `keys` once, where it first comes, with how its keys read, separated by commas.
+fn merged(keys: Vec<(Key, String)>) -> Vec<(String, String)> {
+    let mut listed: Vec<(String, String)> = Vec::new();
+    for (key, name) in keys {
+        let label = key_label(key);
+        match listed.iter_mut().find(|(listed, _)| *listed == name) {
+            Some((_, labels)) => {
+                labels.push_str(", ");
+                labels.push_str(&label);
+            }
+            None => listed.push((name, label)),
+        }
+    }
+    listed
+}
+
+/// What a picker's key does, as the panel names it.
+fn picker_name(input: PickerInput) -> String {
+    match input {
+        PickerInput::Edit(edit) => text_name(edit),
+        PickerInput::Previous => "Previous Match".to_owned(),
+        PickerInput::Next => "Next Match".to_owned(),
+        PickerInput::Choose => "Choose".to_owned(),
+        PickerInput::Dismiss => "Close".to_owned(),
+    }
+}
+
+/// What a key of the date prompt does, as the panel names it.
+fn date_name(input: DateInput) -> String {
+    match input {
+        DateInput::Edit(edit) => text_name(edit),
+        DateInput::Apply => "Set Date".to_owned(),
+        DateInput::Cancel => "Cancel".to_owned(),
+    }
+}
+
+/// What an edit-mode key does, as the panel names it.
+fn edit_name(input: EditInput) -> String {
+    match input {
+        EditInput::Text(edit) => text_name(edit),
+        EditInput::Next => "Done, Then Next Task".to_owned(),
+        EditInput::Done => "Done".to_owned(),
+    }
+}
+
+/// What a text key does, as the panel names it.
+fn text_name(edit: TextEdit) -> String {
+    match edit {
+        TextEdit::Insert('\n') => "New Line".to_owned(),
+        TextEdit::Insert(_) => "Type".to_owned(),
+        TextEdit::Move {
+            motion,
+            select: false,
+        } => motion_name(motion),
+        TextEdit::Move {
+            motion,
+            select: true,
+        } => format!("Select {}", motion_name(motion)),
+        TextEdit::DeleteBackward => "Delete Back".to_owned(),
+        TextEdit::DeleteForward => "Delete Forward".to_owned(),
+        TextEdit::DeleteWordBackward => "Delete Word Back".to_owned(),
+        TextEdit::DeleteWordForward => "Delete Word Forward".to_owned(),
+        TextEdit::SelectAll => "Select All".to_owned(),
+    }
+}
+
+/// Where a caret motion goes, as the panel names it.
+fn motion_name(motion: Motion) -> String {
+    match motion {
+        Motion::Left => "Left",
+        Motion::Right => "Right",
+        Motion::WordLeft => "Word Left",
+        Motion::WordRight => "Word Right",
+        Motion::LineStart => "Line Start",
+        Motion::LineEnd => "Line End",
+        Motion::Up { .. } => "Line Up",
+        Motion::Down { .. } => "Line Down",
+        Motion::Start => "Text Start",
+        Motion::End => "Text End",
+        Motion::To(_) => "Click",
+    }
+    .to_owned()
+}
+
+/// The columns the panel takes of panes `width` wide: a quarter, wide enough for a command's
+/// name beside several keys.
+pub(super) fn width(width: u16) -> u16 {
+    (width / 4).clamp(36, 48)
+}
+
+/// The shortcuts panel: titled "Shortcuts" beside a rule down its left edge, each group's name
+/// in the headers color over its commands, each command's name with its keys at the right in
+/// the primary color, scrolled, with a `↑ more` line first while lines are hidden above and a
+/// `↓ more` line last while lines are hidden below, each with the keys that scroll that way, and
+/// below it what the keyboard reports: how to send `Alt` on macOS until an `Alt` key arrives, and
+/// whether the kitty protocol is on.
+pub(super) struct ShortcutsPanel<'a> {
+    groups: &'a [Listing],
+    keyboard: Keyboard,
+    theme: &'a Theme,
+    scroll: usize,
+    keys: [&'a str; 2],
+}
+
+/// Which list lines a panel shows: from the first line on, as many as there is room for, and
+/// whether lines are hidden above and below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Shown {
+    first: usize,
+    count: usize,
+    above: bool,
+    below: bool,
+}
+
+impl<'a> ShortcutsPanel<'a> {
+    /// The panel in `theme` listing `groups` from the top, its `↑ more` and `↓ more` lines
+    /// naming `keys`, the keys that scroll up and down, and noting what `keyboard` reports.
+    pub(super) fn new(
+        groups: &'a [Listing],
+        keyboard: Keyboard,
+        theme: &'a Theme,
+        keys: [&'a str; 2],
+    ) -> Self {
+        Self {
+            groups,
+            keyboard,
+            theme,
+            scroll: 0,
+            keys,
+        }
+    }
+
+    /// The panel with its list scrolled `scroll` lines down, as far as the list goes.
+    pub(super) fn scrolled(self, scroll: usize) -> Self {
+        Self { scroll, ..self }
+    }
+
+    /// How far the list scrolls when the panel is drawn over `area`, and how many lines a page
+    /// scrolls: the lines shown between the `↑ more` and `↓ more` lines, at least one.
+    pub(super) fn scroll_range(&self, area: Rect) -> (usize, usize) {
+        let height = usize::from(self.list(area).height);
+        let last = self.shown(height, usize::MAX).first;
+        (last, height.saturating_sub(2).max(1))
+    }
+
+    /// The list's area when the panel is drawn over `area`: inside the frame, above the notes.
+    fn list(&self, area: Rect) -> Rect {
+        let height = u16::try_from(self.notes().len()).unwrap_or(u16::MAX);
+        let [list, _] = Layout::vertical([Constraint::Fill(1), Constraint::Length(height)])
+            .areas(self.frame().inner(area));
+        list
+    }
+
+    /// The lines a list `height` lines tall shows scrolled `scroll` lines down, as far as the
+    /// list goes: all of them when they fit, else as many as fit beside the `more` lines.
+    fn shown(&self, height: usize, scroll: usize) -> Shown {
+        let lines = self.rows().len();
+        if lines <= height {
+            return Shown {
+                first: 0,
+                count: lines,
+                above: false,
+                below: false,
+            };
+        }
+        // At the end the `↑ more` line takes a row and the last lines take the rest.
+        let first = scroll.min(lines - height.saturating_sub(1));
+        let above = first > 0;
+        let below = first + height.saturating_sub(1) < lines;
+        Shown {
+            first,
+            count: height.saturating_sub(usize::from(above) + usize::from(below)),
+            above,
+            below,
+        }
+    }
+
+    /// The panel's frame: a rule down its left edge, its title and padding.
+    fn frame(&self) -> Block<'static> {
+        Block::new()
+            .borders(Borders::LEFT)
+            .border_style(Style::new().fg(self.theme.rule))
+            .padding(Padding::horizontal(1))
+            .title(Line::from("Shortcuts").bold())
+    }
+
+    /// The list's rows: each group's name, then each of its commands' names with their keys.
+    fn rows(&self) -> Vec<(Line<'static>, Line<'static>)> {
+        let mut rows = Vec::new();
+        for (heading, entries) in self.groups {
+            rows.push((
+                Line::styled(*heading, Style::new().fg(self.theme.headers).bold()),
+                Line::default(),
+            ));
+            for (name, keys) in entries {
+                rows.push((
+                    Line::from(format!(" {name}")),
+                    Line::styled(keys.clone(), Style::new().fg(self.theme.primary)),
+                ));
+            }
+        }
+        rows
+    }
+
+    /// The row saying more lines are hidden, `↑` above or `↓` below, with the keys that show them.
+    fn more(&self, arrow: &str, keys: &str) -> (Line<'static>, Line<'static>) {
+        (
+            Line::from(format!("{arrow} more")).dim(),
+            Line::styled(keys.to_owned(), Style::new().fg(self.theme.primary)),
+        )
+    }
+
+    /// The notes under the list, after a blank line.
+    fn notes(&self) -> Vec<Line<'static>> {
+        let mut notes = vec![Line::default()];
+        if !self.keyboard.alt_seen {
+            notes.push(Line::from("No Alt key seen yet: on macOS"));
+            notes.push(Line::from("set Option as Meta or Esc+"));
+        }
+        let kitty = if self.keyboard.kitty { "on" } else { "off" };
+        notes.push(Line::from(format!("Kitty keyboard protocol: {kitty}")));
+        notes.into_iter().map(Line::dim).collect()
+    }
+}
+
+impl Widget for ShortcutsPanel<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Clear.render(area, buf);
+        let frame = self.frame();
+        let inner = frame.inner(area);
+        frame.render(area, buf);
+        let list = self.list(area);
+        let shown = self.shown(usize::from(list.height), self.scroll);
+        let [up, down] = self.keys;
+        let rows = shown
+            .above
+            .then(|| self.more("↑", up))
+            .into_iter()
+            .chain(self.rows().into_iter().skip(shown.first).take(shown.count))
+            .chain(shown.below.then(|| self.more("↓", down)));
+        for ((name, keys), row) in rows.zip(list.rows()) {
+            let width = u16::try_from(keys.width()).unwrap_or(u16::MAX);
+            let [name_area, keys_area] =
+                Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)])
+                    .spacing(1)
+                    .areas(row);
+            name.render(name_area, buf);
+            keys.right_aligned().render(keys_area, buf);
+        }
+        let footer = inner.rows().skip(usize::from(list.height));
+        for (note, row) in self.notes().into_iter().zip(footer) {
+            note.render(row, buf);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::KeyCode;
+
+    use super::*;
+
+    // FR-KEY-03
+    #[test]
+    fn every_text_edit_has_a_name() {
+        let names: Vec<_> = [
+            TextEdit::Insert('a'),
+            TextEdit::DeleteWordForward,
+            TextEdit::Move {
+                motion: Motion::To(0),
+                select: false,
+            },
+        ]
+        .into_iter()
+        .map(text_name)
+        .collect();
+        assert_eq!(names, ["Type", "Delete Word Forward", "Click"]);
+        let edit = TextEdit::SelectAll;
+        assert_eq!(picker_name(PickerInput::Edit(edit)), "Select All");
+        assert_eq!(date_name(DateInput::Edit(edit)), "Select All");
+    }
+
+    // FR-KEY-03
+    #[test]
+    fn each_window_lists_its_own_keys_then_the_text_keys_it_leaves() {
+        let headings = |window| -> Vec<_> {
+            window_keys(window)
+                .into_iter()
+                .map(|(heading, keys)| (heading, keys.len()))
+                .collect()
+        };
+        assert_eq!(headings(Window::Picker), [("Picker", 4), ("Text", 16)]);
+        assert_eq!(
+            headings(Window::DatePrompt),
+            [("Date Prompt", 2), ("Text", 16)]
+        );
+        assert_eq!(
+            headings(Window::Editing(Part::Title)),
+            [("Editing", 2), ("Text", 16)]
+        );
+        assert_eq!(
+            headings(Window::Editing(Part::Description)),
+            [("Editing Description", 14), ("Text", 12)]
+        );
+        assert_eq!(
+            headings(Window::Editing(Part::Note)),
+            [("Editing Note", 14), ("Text", 12)]
+        );
+        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 8)]);
+    }
+
+    // FR-KEY-03
+    #[test]
+    fn keys_with_one_name_are_listed_together_where_the_first_one_is() {
+        let none = KeyModifiers::NONE;
+        let keys = vec![
+            ((none, KeyCode::Up), "Up".to_owned()),
+            ((none, KeyCode::Char('k')), "Down".to_owned()),
+            ((KeyModifiers::CONTROL, KeyCode::Char('p')), "Up".to_owned()),
+        ];
+        assert_eq!(
+            merged(keys),
+            [
+                ("Up".to_owned(), "↑, Ctrl+P".to_owned()),
+                ("Down".to_owned(), "k".to_owned())
+            ]
+        );
+    }
+}

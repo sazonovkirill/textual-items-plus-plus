@@ -56,6 +56,8 @@ pub struct State {
     /// The item the attachments panel is on, while it is open (FR-ATT-01).
     pub(super) panel: Option<ItemId>,
     sidebar: Sidebar,
+    /// Whether the shortcuts panel shows (FR-KEY-03).
+    pub(super) shortcuts: bool,
     pub(super) saving: Saving,
 }
 
@@ -79,6 +81,7 @@ impl State {
             editing: None,
             panel: None,
             sidebar: Sidebar::default(),
+            shortcuts: false,
             saving,
         }
     }
@@ -804,6 +807,8 @@ impl State {
                 | Command::Sidebar
                 | Command::FocusSidebar
                 | Command::FocusPane
+                | Command::Shortcuts
+                | Command::ScrollShortcuts(_)
                 | Command::Go(Go::Home | Go::Back | Go::Forward | Go::View(_))
                 | Command::KeepMine
                 | Command::TakeTheirs

@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::civil::Date;
 
 use super::{
-    AttachmentsInput, Command, ConflictSide, DateInput, EditInput, Notice, OnDisk, PickerInput,
-    Report, Side, State, autosave::Ending,
+    AttachmentsInput, Command, ConflictSide, DateInput, Direction, EditInput, Notice, OnDisk,
+    PickerInput, Report, Side, State, autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -68,6 +68,9 @@ pub enum Effect {
     /// Read the items on the clipboard and paste them on this side of the focus with
     /// [`Message::Paste`] (FR-OPS-05).
     ReadClipboard(Side),
+    /// Scroll the shortcuts panel a page this way, as far as it goes, while it shows; how much a
+    /// page is depends on how the frontend draws it (FR-KEY-03).
+    ScrollShortcuts(Direction),
 }
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
@@ -151,6 +154,10 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::Sidebar) => state.toggle_sidebar(),
         Message::Command(Command::FocusSidebar) => state.focus_sidebar(true),
         Message::Command(Command::FocusPane) => state.focus_sidebar(false),
+        Message::Command(Command::Shortcuts) => state.toggle_shortcuts(),
+        Message::Command(Command::ScrollShortcuts(direction)) => {
+            return vec![Effect::ScrollShortcuts(direction)];
+        }
         Message::Navigator(input) => state.navigator_input(input),
         Message::MoveTo(input) => state.move_to_input(input),
         Message::Tags(input) => state.tags_input(input),

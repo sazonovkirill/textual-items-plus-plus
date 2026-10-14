@@ -59,6 +59,7 @@ fn main() -> anyhow::Result<()> {
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         )
         .is_ok();
+    tui.use_kitty(kitty);
     // Text pasted into a terminal that does not bracket it arrives as typed keys.
     let bracketed = execute!(io::stdout(), EnableBracketedPaste).is_ok();
     forward_terminal_events(inputs);

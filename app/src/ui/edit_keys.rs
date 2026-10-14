@@ -13,7 +13,7 @@ use super::{
 use crate::app::{EditInput, Motion, TextEdit};
 
 /// The keys of edit mode besides the text keys.
-const EDIT: &[(Key, EditInput)] = &[
+pub(super) const EDIT: &[(Key, EditInput)] = &[
     ((KeyModifiers::NONE, KeyCode::Enter), EditInput::Next),
     ((KeyModifiers::NONE, KeyCode::Esc), EditInput::Done),
 ];
@@ -28,32 +28,53 @@ pub(super) fn edit_input(event: &Event) -> Option<EditInput> {
         .or_else(|| text_keys::text_edit(key).map(EditInput::Text))
 }
 
-/// What `event` does while a description is edited, its lines wrapping in `width` columns:
-/// `Enter` breaks the line, `Esc` ends editing, `↑` and `↓` move by lines on screen,
-/// `Home` and `End` go to the start and end of the line, with `Ctrl` of the text, each selecting
-/// with `Shift`, and the other text keys edit it. Only key presses count.
+/// The motion a key gives for text wrapping in the given columns.
+pub(super) type LineMotion = fn(usize) -> Motion;
+
+/// The keys that move the caret while a description is edited, besides the text keys, each
+/// selecting with `Shift`: `↑` and `↓` by lines on screen as they wrap in the given columns,
+/// `Home` and `End` to the start and end of the line, and with `Ctrl` of the text.
+pub(super) const DESCRIPTION_MOTIONS: &[(Key, LineMotion)] = &[
+    ((KeyModifiers::NONE, KeyCode::Up), |width| Motion::Up {
+        width,
+    }),
+    ((KeyModifiers::NONE, KeyCode::Down), |width| Motion::Down {
+        width,
+    }),
+    ((KeyModifiers::NONE, KeyCode::Home), |_| Motion::LineStart),
+    ((KeyModifiers::NONE, KeyCode::End), |_| Motion::LineEnd),
+    ((KeyModifiers::CONTROL, KeyCode::Home), |_| Motion::Start),
+    ((KeyModifiers::CONTROL, KeyCode::End), |_| Motion::End),
+];
+
+/// The other keys of a description besides the text keys: `Enter` breaks the line and `Esc`
+/// ends editing.
+pub(super) const DESCRIPTION: &[(Key, EditInput)] = &[
+    (
+        (KeyModifiers::NONE, KeyCode::Enter),
+        EditInput::Text(TextEdit::Insert('\n')),
+    ),
+    ((KeyModifiers::NONE, KeyCode::Esc), EditInput::Done),
+];
+
+/// What `event` does while a description is edited, its lines wrapping in `width` columns: its
+/// motion key moves the caret, its other description key acts, and the other text keys edit it.
+/// Only key presses count.
 pub(super) fn description_input(event: &Event, width: usize) -> Option<EditInput> {
     let (modifiers, code) = keymap::key_press(event)?;
     let select = modifiers.contains(KeyModifiers::SHIFT);
-    let moved = modifiers.difference(KeyModifiers::SHIFT);
-    let motion = match (moved, code) {
-        (KeyModifiers::NONE, KeyCode::Up) => Motion::Up { width },
-        (KeyModifiers::NONE, KeyCode::Down) => Motion::Down { width },
-        (KeyModifiers::NONE, KeyCode::Home) => Motion::LineStart,
-        (KeyModifiers::NONE, KeyCode::End) => Motion::LineEnd,
-        (KeyModifiers::CONTROL, KeyCode::Home) => Motion::Start,
-        (KeyModifiers::CONTROL, KeyCode::End) => Motion::End,
-        _ => {
-            return match (modifiers, code) {
-                (KeyModifiers::NONE, KeyCode::Enter) => {
-                    Some(EditInput::Text(TextEdit::Insert('\n')))
-                }
-                (KeyModifiers::NONE, KeyCode::Esc) => Some(EditInput::Done),
-                key => text_keys::text_edit(key).map(EditInput::Text),
-            };
-        }
-    };
-    Some(EditInput::Text(TextEdit::Move { motion, select }))
+    let moved = (modifiers.difference(KeyModifiers::SHIFT), code);
+    if let Some((_, motion)) = DESCRIPTION_MOTIONS.iter().find(|(key, _)| *key == moved) {
+        return Some(EditInput::Text(TextEdit::Move {
+            motion: motion(width),
+            select,
+        }));
+    }
+    DESCRIPTION
+        .iter()
+        .find(|(key, _)| *key == (modifiers, code))
+        .map(|&(_, input)| input)
+        .or_else(|| text_keys::text_edit((modifiers, code)).map(EditInput::Text))
 }
 
 #[cfg(test)]

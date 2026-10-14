@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// The keys of the open prompt besides the text keys.
-const PROMPT: &[(Key, DateInput)] = &[
+pub(super) const PROMPT: &[(Key, DateInput)] = &[
     ((KeyModifiers::NONE, KeyCode::Enter), DateInput::Apply),
     ((KeyModifiers::NONE, KeyCode::Esc), DateInput::Cancel),
 ];

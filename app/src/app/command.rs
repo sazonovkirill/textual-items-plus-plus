@@ -102,6 +102,10 @@ pub enum Command {
     FocusSidebar,
     /// Give the keys back to the pane (FR-VIEW-10).
     FocusPane,
+    /// Show the shortcuts panel, or hide it (FR-KEY-03).
+    Shortcuts,
+    /// Scroll the shortcuts panel a page this way (FR-KEY-03).
+    ScrollShortcuts(Direction),
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
     KeepMine,
     /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
@@ -497,6 +501,21 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::FocusPane,
         title: "Focus Pane",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Shortcuts,
+        title: "Toggle Shortcuts",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ScrollShortcuts(Direction::Down),
+        title: "Scroll Shortcuts Down",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ScrollShortcuts(Direction::Up),
+        title: "Scroll Shortcuts Up",
         context: Context::Navigate,
     },
     // Global, so that its key closes the Navigator too.
