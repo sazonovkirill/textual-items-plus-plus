@@ -125,6 +125,9 @@ pub enum Command {
     FilterTags,
     /// Show every row again, filtered by no tag (FR-TAG-04).
     ClearTagFilter,
+    /// Pin the selected projects, which the sidebar and the Navigator then also list among the
+    /// pinned projects, or unpin them when all are pinned (FR-VIEW-12).
+    TogglePinned,
     /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
     Sidebar,
     /// Hide the projects inside the project the sidebar focuses, or show them again (FR-VIEW-10).
@@ -583,6 +586,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::ClearTagFilter,
         title: "Clear Tag Filter",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::TogglePinned,
+        title: "Pin or Unpin Project",
         context: Context::Navigate,
     },
     Entry {

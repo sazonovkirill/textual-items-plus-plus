@@ -26,6 +26,7 @@ mod navigator;
 mod palette;
 mod pane;
 mod picker;
+mod pinning;
 mod save_as;
 mod saving;
 mod search;

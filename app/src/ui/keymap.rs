@@ -135,6 +135,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Tags, &["m g"]),
     (Command::FilterTags, &["g f"]),
     (Command::ClearTagFilter, &["g F"]),
+    // `m` modifies the focused item, and **p**in (owner, FR-VIEW-12).
+    (Command::TogglePinned, &["m p"]),
     // The owner's key to fold a project in the sidebar (D-67).
     (Command::Collapse, &["'"]),
     // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends

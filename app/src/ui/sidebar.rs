@@ -1,8 +1,8 @@
-//! The sidebar left of the pane: the Inbox, the views, the areas and projects as a tree, each after its icon
-//! with a container's open tasks counted at the right, as the Navigator lists them, after a marker
-//! on a collapsed area, the entry of what the pane shows on the selection background, the
-//! focused one marked while the sidebar has the keys and the title being edited there as a text
-//! field in its row (FR-VIEW-10).
+//! The sidebar left of the pane: the Inbox, the views, the pinned projects, the areas and projects
+//! as a tree, each after its icon with a container's open tasks counted at the right, as the
+//! Navigator lists them, after a marker on a collapsed area, the entry of what the pane shows on
+//! the selection background, the focused one marked while the sidebar has the keys and the title
+//! being edited there as a text field in its row (FR-VIEW-10, FR-VIEW-12).
 
 use ratatui::{
     buffer::Buffer,
@@ -15,7 +15,7 @@ use ratatui::{
 use super::{FOCUS_MARKER, Icon, IconSet, Theme};
 use crate::{
     app::{Part, SidebarView, State, Stop, TextField, view::Shown},
-    domain::{Document, ItemId, ItemKind, Node},
+    domain::{Document, ItemKind, Node},
 };
 
 /// The widest the sidebar gets, in columns.
@@ -34,7 +34,8 @@ pub(super) struct SidebarPane<'a> {
     lines: Vec<usize>,
     /// The entry of what the pane shows, or of the closest container above it.
     current: Option<Shown>,
-    editing: Option<(ItemId, &'a TextField)>,
+    /// The index of the entry whose title is edited, and its text field.
+    editing: Option<(usize, &'a TextField)>,
     theme: &'a Theme,
     icons: IconSet,
 }
@@ -59,12 +60,21 @@ impl<'a> SidebarPane<'a> {
             .chain(state.path().into_iter().rev().map(Shown::Container))
             .find(|&shown| view.entries.iter().any(|stop| stop.shown() == shown));
         view.keys &= state.attachments().is_none();
+        // The sidebar edits the title of its focused entry, which tells apart the two entries of
+        // a pinned project.
+        let editing = state
+            .editing()
+            .filter(|&(_, part, _)| view.keys && part == Part::Title)
+            .and_then(|(id, _, field)| {
+                let edited = |&index: &usize| {
+                    (view.entries.get(index))
+                        .is_some_and(|stop| stop.shown() == Shown::Container(id))
+                };
+                view.focused.filter(edited).map(|index| (index, field))
+            });
         Self {
             document: state.document(),
-            editing: state
-                .editing()
-                .filter(|&(_, part, _)| view.keys && part == Part::Title)
-                .map(|(id, _, field)| (id, field)),
+            editing,
             lines: lines(&view.entries),
             view,
             current,
@@ -76,21 +86,16 @@ impl<'a> SidebarPane<'a> {
     /// Where the terminal's cursor goes when the sidebar is drawn over `area`: at the caret of
     /// the title being edited in it, when there is one and it fits.
     pub(super) fn caret(&self, area: Rect) -> Option<Position> {
-        let (id, field) = self.editing?;
+        let (index, field) = self.editing?;
         let content = content(area);
         let offset = self.offset(content);
-        let (index, stop) = self
-            .view
-            .entries
-            .iter()
-            .enumerate()
-            .find(|(_, stop)| stop.shown() == Shown::Container(id))?;
+        let stop = *self.view.entries.get(index)?;
         let row = self.lines.get(index)?.checked_sub(offset)?;
         let y = content.y
             + u16::try_from(row)
                 .ok()
                 .filter(|&row| row < content.height)?;
-        let title = self.title(*stop, content);
+        let title = self.title(index, stop, content);
         let caret = Span::raw(field.text().get(..field.caret()).unwrap_or_default()).width();
         let x = usize::from(title.x) + caret - title.shift;
         let x = u16::try_from(x).ok().filter(|&x| x < content.right())?;
@@ -107,22 +112,26 @@ impl<'a> SidebarPane<'a> {
             })
     }
 
-    /// Where the title of `stop` starts in `content`, and how far it is scrolled sideways to
-    /// keep the caret in view while it is edited.
-    fn title(&self, stop: Stop, content: Rect) -> Title {
+    /// The text field of the entry at `index`, while its title is edited.
+    fn edited(&self, index: usize) -> Option<&'a TextField> {
+        self.editing
+            .filter(|&(edited, _)| edited == index)
+            .map(|(_, field)| field)
+    }
+
+    /// Where the title of `stop`, the entry at `index`, starts in `content`, and how far it is
+    /// scrolled sideways to keep the caret in view while it is edited.
+    fn title(&self, index: usize, stop: Stop, content: Rect) -> Title {
         let column = |columns: usize| u16::try_from(columns).unwrap_or(u16::MAX);
         // v1 nests no project in another (D-57), so the groups' blank lines show the tree.
         let icon_x = content.x.saturating_add(1);
         let glyph = Span::raw(super::stop_icon(stop).glyph(self.icons)).width() + 1;
         let x = icon_x.saturating_add(column(glyph));
-        let shift = match self.editing {
-            Some((id, field)) if stop.shown() == Shown::Container(id) => {
-                let caret = Span::raw(field.text().get(..field.caret()).unwrap_or_default());
-                let room = usize::from(content.right().saturating_sub(x));
-                super::field::shift(field.text(), caret.width(), room)
-            }
-            _ => 0,
-        };
+        let shift = self.edited(index).map_or(0, |field| {
+            let caret = Span::raw(field.text().get(..field.caret()).unwrap_or_default());
+            let room = usize::from(content.right().saturating_sub(x));
+            super::field::shift(field.text(), caret.width(), room)
+        });
         Title {
             icon: icon_x,
             x,
@@ -140,12 +149,12 @@ impl<'a> SidebarPane<'a> {
         }
     }
 
-    /// The line of the title of `stop`: its text, an area's in capitals as a header, or the text
-    /// edited with the selected part in the selection colors.
-    fn title_line(&self, stop: Stop) -> Line<'a> {
+    /// The line of the title of `stop`, the entry at `index`: its text, an area's in capitals as
+    /// a header, or the text edited with the selected part in the selection colors.
+    fn title_line(&self, index: usize, stop: Stop) -> Line<'a> {
         let style = self.title_style(stop);
-        match (self.editing, stop) {
-            (Some((id, field)), Stop::Place(place)) if id == place.id => {
+        match (self.edited(index), stop) {
+            (Some(field), Stop::Place(_)) => {
                 let text = field.text();
                 let selection = field.selection().unwrap_or(field.caret()..field.caret());
                 let selected = Style::new()
@@ -193,9 +202,7 @@ impl Widget for SidebarPane<'_> {
                 continue;
             };
             let focused = self.view.keys && Some(index) == self.view.focused;
-            let editing = self
-                .editing
-                .is_some_and(|(id, _)| stop.shown() == Shown::Container(id));
+            let editing = self.edited(index).is_some();
             // The text field marks its selection on the selection background.
             let band = if Some(stop.shown()) == self.current && !editing {
                 Some(theme.selection)
@@ -208,13 +215,11 @@ impl Widget for SidebarPane<'_> {
             if focused {
                 buf.set_string(row.x, row.y, FOCUS_MARKER, Style::new().fg(theme.focus));
             }
-            let title = self.title(stop, content);
+            let title = self.title(index, stop, content);
             // A collapsed project's marker stands before its count, as Todoist's does (D-67).
             let (marker, tasks) = match stop {
                 Stop::Place(place) => (
-                    self.view
-                        .collapsed
-                        .contains(&place.id)
+                    (!place.in_pinned && self.view.collapsed.contains(&place.id))
                         .then(|| Icon::Collapsed.glyph(self.icons).to_owned()),
                     (place.open_tasks > 0).then(|| place.open_tasks.to_string()),
                 ),
@@ -239,7 +244,7 @@ impl Widget for SidebarPane<'_> {
                 row.right().saturating_sub(title.x).saturating_sub(right),
                 1,
             );
-            Paragraph::new(self.title_line(stop))
+            Paragraph::new(self.title_line(index, stop))
                 .scroll((0, u16::try_from(title.shift).unwrap_or(u16::MAX)))
                 .render(text.intersection(row), buf);
             if !editing {
@@ -267,12 +272,13 @@ fn content(area: Rect) -> Rect {
 }
 
 /// The line each of `entries` is drawn on: a blank line sets off the Inbox, the views, the
-/// projects in no area and each area with what it holds (D-45).
+/// pinned projects, the projects in no area and each area with what it holds (D-45, FR-VIEW-12).
 fn lines(entries: &[Stop]) -> Vec<usize> {
     #[derive(PartialEq)]
     enum Group {
         Inbox,
         Views,
+        Pinned,
         Projects,
         Area,
     }
@@ -282,6 +288,7 @@ fn lines(entries: &[Stop]) -> Vec<usize> {
     for &stop in entries {
         if stop.depth() == 0 {
             let this = match stop {
+                Stop::Place(place) if place.in_pinned => Group::Pinned,
                 Stop::Place(place) => match place.kind {
                     ItemKind::Inbox => Group::Inbox,
                     ItemKind::Area => Group::Area,

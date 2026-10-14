@@ -365,7 +365,7 @@ impl State {
 
     /// The selected items, or the container shown while its heading has the focus, which the
     /// commands that edit an item's own details act on (owner, D-68).
-    fn described(&self) -> Vec<ItemId> {
+    pub(super) fn described(&self) -> Vec<ItemId> {
         let selection = &self.pane().selection;
         let items = selection.items(&self.listed());
         if !items.is_empty() {
@@ -1052,8 +1052,8 @@ impl State {
 
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, editing its description
-    /// in the pane, adding an area or a project, collapsing it, deleting, moving, converting and
-    /// setting its dates, each one step to
+    /// in the pane, adding an area or a project, collapsing it, deleting, moving, converting,
+    /// pinning and setting its dates, each one step to
     /// undo, opening Move to for it or the attachments panel on it, and showing the entry in the
     /// first pane, the sidebar keeping the keys, or in a new pane, which gets them; a view's entry
     /// is only shown. The commands [`sidebar_passes`] names pass to the app; every other command
@@ -1132,6 +1132,8 @@ impl State {
                 self.nudge_date_for(vec![id], kind, 1, today);
             }
             (Command::Tags, Some(Shown::Container(id))) => self.open_tags_for(vec![id]),
+            (Command::TogglePinned, Some(Shown::Container(id))) => self.toggle_pinned_for(&[id]),
+            (Command::TogglePinned, Some(Shown::View(_))) => self.notify(Notice::NotAProject),
             (Command::OpenNote(_), Some(Shown::Container(id))) => {
                 self.open_panel(id, Selected::Note);
             }
@@ -1540,6 +1542,7 @@ pub(super) fn sidebar_takes(command: Command) -> bool {
             | Command::SetDate(_)
             | Command::StartToday
             | Command::ToggleLater
+            | Command::TogglePinned
             | Command::DayEarlier(_)
             | Command::DayLater(_)
             | Command::Tags

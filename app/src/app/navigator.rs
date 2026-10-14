@@ -1,6 +1,8 @@
-//! The Navigator: the places a user can go, the Inbox, the views of the view registry and every
-//! area and project as a tree, in the fuzzy picker a key opens over the panes (FR-VIEW-07, OQ-10).
-//! Hides how the tree and its counts follow from the document.
+//! The Navigator: the places a user can go, the Inbox, the views of the view registry, the pinned
+//! projects and every area and project as a tree, in the fuzzy picker a key opens over the panes
+//! (FR-VIEW-07, FR-VIEW-12, OQ-10). Hides how the tree and its counts follow from the document.
+
+use std::ops::Range;
 
 use super::{
     Candidate, Picker, PickerInput, TextEdit, container,
@@ -35,6 +37,15 @@ impl Stop {
             Self::View(_) => 0,
         }
     }
+
+    /// Whether it is a pinned project's entry among the pinned projects, rather than in the tree.
+    #[must_use]
+    pub const fn in_pinned(self) -> bool {
+        match self {
+            Self::Place(place) => place.in_pinned,
+            Self::View(_) => false,
+        }
+    }
 }
 
 /// A place the Navigator lists, with what it shows of it.
@@ -50,13 +61,17 @@ pub struct Place {
     pub open_tasks: usize,
     /// Whether it is a project marked Later (D-89).
     pub later: bool,
+    /// Whether it is listed among the pinned projects, which list a pinned project again, apart
+    /// from the tree, at depth 0 (FR-VIEW-12).
+    pub in_pinned: bool,
 }
 
 /// The Navigator over `document`, focused on the entry of what the pane shows: a view's own, or
 /// that of the container shown, else of the closest container above it that has one, such as a
 /// section's project, as an editor's file tree follows the open file.
 pub(super) fn open(document: &Document, shown: Shown) -> Picker<Stop> {
-    let mut picker = Picker::new(stops(document));
+    let (stops, pinned) = listing(document);
+    let mut picker = Picker::with_repeats(stops, pinned);
     match shown {
         Shown::View(view) => {
             picker.focus_where(|stop| *stop == Stop::View(view));
@@ -83,9 +98,30 @@ pub(super) fn reopen(document: &Document, shown: Shown, query: &str) -> Picker<S
 }
 
 /// Every entry, in order: the Inbox, then the views as the view registry lists them, then the
-/// other [`places`].
+/// pinned projects and then the other [`places`].
 pub(super) fn stops(document: &Document) -> Vec<Candidate<Stop>> {
-    let mut places = places(document).into_iter().map(|place| Candidate {
+    listing(document).0
+}
+
+/// Every entry as [`stops`] lists them, and the positions of the pinned projects among them,
+/// which repeat entries of the tree.
+fn listing(document: &Document) -> (Vec<Candidate<Stop>>, Range<usize>) {
+    let places = places(document);
+    // A pinned project is listed again in the order of the tree, under the same titles above it.
+    let pinned: Vec<Candidate<Stop>> = places
+        .iter()
+        .filter(|place| place.value.kind == ItemKind::Project && pinned(document, place.value.id))
+        .map(|place| Candidate {
+            value: Stop::Place(Place {
+                depth: 0,
+                in_pinned: true,
+                ..place.value
+            }),
+            text: place.text.clone(),
+            detail: place.detail.clone(),
+        })
+        .collect();
+    let mut places = places.into_iter().map(|place| Candidate {
         value: Stop::Place(place.value),
         text: place.text,
         detail: place.detail,
@@ -95,12 +131,20 @@ pub(super) fn stops(document: &Document) -> Vec<Candidate<Stop>> {
         text: entry.title.to_owned(),
         detail: String::new(),
     });
-    places
-        .next()
-        .into_iter()
-        .chain(views)
-        .chain(places)
-        .collect()
+    let mut stops: Vec<Candidate<Stop>> = places.next().into_iter().chain(views).collect();
+    let start = stops.len();
+    stops.extend(pinned);
+    let repeats = start..stops.len();
+    stops.extend(places);
+    (stops, repeats)
+}
+
+/// Whether the item `id` is pinned.
+fn pinned(document: &Document, id: ItemId) -> bool {
+    document
+        .node(id)
+        .and_then(Node::item)
+        .is_some_and(|item| item.pinned)
 }
 
 /// Every place, in the order of the tree: the Inbox, then each area and project at the top level
@@ -138,6 +182,7 @@ fn list<'a>(
             depth: above.len(),
             open_tasks: 0,
             later: item.is_later(),
+            in_pinned: false,
         },
         text: item.title.clone(),
         detail: above.join(" › "),
@@ -250,6 +295,7 @@ mod tests {
             depth,
             open_tasks: 0,
             later: false,
+            in_pinned: false,
         };
         assert_eq!(
             listed(&document),
@@ -359,6 +405,7 @@ mod tests {
                 depth: 0,
                 open_tasks: 0,
                 later: false,
+                in_pinned: false,
             })
         };
         let mut expected = vec![("Inbox".to_owned(), place(document.inbox(), ItemKind::Inbox))];
@@ -370,6 +417,60 @@ mod tests {
         expected.push(("Work".to_owned(), place(work, Area)));
         assert_eq!(listed, expected);
         assert!(listed.contains(&("Logbook".to_owned(), Stop::View(View::Logbook))));
+        Ok(())
+    }
+
+    // FR-VIEW-12
+    #[test]
+    fn lists_the_pinned_projects_after_the_views_and_once_while_a_query_is_typed()
+    -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = add(&mut document, None, Area, "Work")?;
+        let mut site = Item::new(Project, "Site");
+        site.pinned = true;
+        let site = document.push(Some(work), Node::Item(site))?;
+        add(&mut document, Some(site), Task, "t")?;
+        let mut done = Item::new(Project, "Done");
+        (done.pinned, done.completed) = (true, Some(Completion::Undated));
+        document.push(None, Node::Item(done))?;
+        let listed: Vec<(String, String, Stop)> = stops(&document)
+            .into_iter()
+            .map(|candidate| (candidate.text, candidate.detail, candidate.value))
+            .collect();
+        // Each holds the one task.
+        let place = |id, kind, depth, in_pinned| {
+            Stop::Place(Place {
+                id,
+                kind,
+                depth,
+                open_tasks: 1,
+                later: false,
+                in_pinned,
+            })
+        };
+        let after_views = listed.get(view::REGISTRY.len() + 1..);
+        assert_eq!(
+            after_views,
+            Some(
+                &[
+                    ("Site".into(), "Work".into(), place(site, Project, 0, true)),
+                    ("Work".into(), String::new(), place(work, Area, 0, false)),
+                    ("Site".into(), "Work".into(), place(site, Project, 1, false)),
+                ][..]
+            ),
+            "the completed project is left out"
+        );
+        let mut picker = open(&document, Shown::Container(site));
+        assert_eq!(
+            picker.input(PickerInput::Choose),
+            Some(Picked::Chosen(place(site, Project, 0, true)))
+        );
+        let mut picker = reopen(&document, Shown::Container(site), "site");
+        assert_eq!(picker.view().entries.len(), 1, "listed once");
+        assert_eq!(
+            picker.input(PickerInput::Choose),
+            Some(Picked::Chosen(place(site, Project, 1, false)))
+        );
         Ok(())
     }
 }

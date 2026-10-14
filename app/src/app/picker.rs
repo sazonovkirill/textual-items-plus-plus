@@ -2,7 +2,7 @@
 //! to: the query typed into it, the candidates it matches in ranked order, the focused one and
 //! what each input does to them (FR-UI-09). Hides how candidates are matched and ranked.
 
-use std::{cmp::Reverse, mem};
+use std::{cmp::Reverse, mem, ops::Range};
 
 use nucleo_matcher::{
     Config, Matcher, Utf32Str,
@@ -99,6 +99,9 @@ pub struct Picker<T> {
     /// The positions in `candidates` of those the query matches, best first.
     ranked: Vec<usize>,
     focused: usize,
+    /// The positions in `candidates` of those that repeat others, listed only while the query is
+    /// empty.
+    repeats: Range<usize>,
 }
 
 impl<T: Clone> Picker<T> {
@@ -106,11 +109,20 @@ impl<T: Clone> Picker<T> {
     /// the first focused.
     #[must_use]
     pub fn new(candidates: Vec<Candidate<T>>) -> Self {
+        Self::with_repeats(candidates, 0..0)
+    }
+
+    /// A picker over `candidates` as [`new`](Self::new) opens one, where those at the positions
+    /// `repeats` repeat others, as shortcuts to them, and so are left out once a query is typed,
+    /// which lists each match once.
+    #[must_use]
+    pub fn with_repeats(candidates: Vec<Candidate<T>>, repeats: Range<usize>) -> Self {
         Self {
             ranked: (0..candidates.len()).collect(),
             candidates,
             query: TextField::new(String::new()),
             focused: 0,
+            repeats,
         }
     }
 
@@ -127,9 +139,11 @@ impl<T: Clone> Picker<T> {
         }
     }
 
-    /// Lists `candidates` instead, matched against the query as typed, the first match focused.
+    /// Lists `candidates` instead, none of them repeating another, matched against the query as
+    /// typed, the first match focused.
     pub fn relist(&mut self, candidates: Vec<Candidate<T>>) {
         self.candidates = candidates;
+        self.repeats = 0..0;
         self.rank(false);
         self.focused = 0;
     }
@@ -183,10 +197,11 @@ impl<T: Clone> Picker<T> {
         self.focused = 0;
     }
 
-    /// Ranks the candidates the query matches: by how well their text matches, then in the order
-    /// given. Each word of the query must match, fuzzily, ignoring case unless it has a capital
-    /// and ignoring accents unless it has one; characters such as `!` or `^` match themselves.
-    /// With `narrowed`, only those matched before are gone through.
+    /// Ranks the candidates the query matches, leaving out the repeats unless it is empty: by how
+    /// well their text matches, then in the order given. Each word of the query must match,
+    /// fuzzily, ignoring case unless it has a capital and ignoring accents unless it has one;
+    /// characters such as `!` or `^` match themselves. With `narrowed`, only those matched before
+    /// are gone through.
     fn rank(&mut self, narrowed: bool) {
         let pattern = Pattern::new(
             self.query.text(),
@@ -197,7 +212,11 @@ impl<T: Clone> Picker<T> {
         let mut matcher = Matcher::new(Config::DEFAULT);
         let mut buffer = Vec::new();
         let candidates = &self.candidates;
+        let repeats = (!self.query.text().is_empty()).then_some(&self.repeats);
         let mut score = |index: usize| {
+            if repeats.is_some_and(|repeats| repeats.contains(&index)) {
+                return None;
+            }
             let text = Utf32Str::new(&candidates.get(index)?.text, &mut buffer);
             Some((Reverse(pattern.score(text, &mut matcher)?), index))
         };
@@ -262,6 +281,26 @@ mod tests {
             motion,
             select: false,
         }
+    }
+
+    // FR-VIEW-12
+    #[test]
+    fn repeats_are_listed_only_while_the_query_is_empty() {
+        let candidates = ["Inbox", "Site", "Work", "Site"];
+        let candidates = (1..)
+            .zip(candidates)
+            .map(|(value, text)| candidate(value, text));
+        let mut picker = Picker::with_repeats(candidates.collect(), 1..2);
+        assert_eq!(listed(&picker), (vec![1, 2, 3, 4], 0));
+        typed(&mut picker, "si");
+        assert_eq!(listed(&picker).0, [4], "typed on");
+        edit(&mut picker, TextEdit::DeleteBackward);
+        assert_eq!(listed(&picker).0, [4], "ranked anew");
+        edit(&mut picker, TextEdit::DeleteBackward);
+        assert_eq!(listed(&picker).0, [1, 2, 3, 4], "emptied again");
+        picker.relist(vec![candidate(5, "Site"), candidate(6, "Site")]);
+        typed(&mut picker, "s");
+        assert_eq!(listed(&picker).0, [5, 6], "relisted ones repeat nothing");
     }
 
     // FR-UI-09

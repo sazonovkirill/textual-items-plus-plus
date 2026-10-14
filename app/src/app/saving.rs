@@ -104,6 +104,9 @@ pub enum Notice {
     AreaUncompleted,
     /// Later was asked for on areas or sections, which are never Later (FR-ORG-11, D-89).
     NotLater,
+    /// Pinning was asked for on items none of which is a project, which only is pinned
+    /// (FR-VIEW-12).
+    NotAProject,
     /// Typing `@` at the start of a word of a title was refused: the word would read back as a
     /// tag, and tags go on from the tag picker (FR-TAG-02).
     TagInTitle,
@@ -129,6 +132,7 @@ impl Notice {
                 | Self::AreaUntagged
                 | Self::AreaUncompleted
                 | Self::NotLater
+                | Self::NotAProject
         )
     }
 }

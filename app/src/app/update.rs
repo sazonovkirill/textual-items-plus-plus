@@ -247,6 +247,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         }
         Command::OpenChecklist => state.open_checklist(),
         Command::Tags => state.open_tags(),
+        Command::TogglePinned => state.toggle_pinned(),
         Command::FilterTags => state.open_tag_filter(),
         Command::ClearTagFilter => state.clear_tag_filter(),
         Command::Sidebar => state.toggle_sidebar(),
@@ -706,6 +707,59 @@ mod tests {
             .and_then(Node::item)
             .map(|area| area.tags.clone());
         assert_eq!(tags, Some(vec![crate::domain::Tag::plain("x")]));
+        Ok(())
+    }
+
+    // FR-VIEW-12
+    #[test]
+    fn pinning_acts_on_projects_in_the_pane_and_the_sidebar() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let site = document.push(Some(work), Node::Item(Item::new(ItemKind::Project, "Site")))?;
+        document.push(Some(site), Node::Item(Item::new(ItemKind::Task, "t")))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        let pinned = |state: &State| {
+            (state.document().node(site))
+                .and_then(Node::item)
+                .is_some_and(|item| item.pinned)
+        };
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::TogglePinned);
+        assert!(pinned(&state));
+        assert_eq!(
+            sidebar(&state),
+            (
+                Some("Site".into()),
+                vec!["Site".into(), "Work".into(), "  Site".into()]
+            ),
+            "listed again, the focus staying on the project in its area"
+        );
+        give(&mut state, Command::Undo);
+        assert!(!pinned(&state), "one step to undo");
+        give(&mut state, Command::Redo);
+        give(&mut state, Command::Focus(Focus::First));
+        for _ in 0..=crate::app::view::REGISTRY.len() {
+            give(&mut state, Command::TogglePinned);
+            assert_eq!(state.notice(), Some(&Notice::NotAProject));
+            give(&mut state, Command::Focus(Focus::Next));
+        }
+        assert_eq!(sidebar(&state).0.as_deref(), Some("Site"));
+        give(&mut state, Command::TogglePinned);
+        assert!(!pinned(&state), "unpinned from its entry among the pinned");
+        assert_eq!(
+            sidebar(&state).0.as_deref(),
+            Some("Work"),
+            "now where the entry was"
+        );
+        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::NextPane);
+        give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::TogglePinned);
+        assert_eq!(state.notice(), Some(&Notice::NotAProject), "the area shown");
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::TogglePinned);
+        assert!(pinned(&state), "the project's row in the pane");
         Ok(())
     }
 

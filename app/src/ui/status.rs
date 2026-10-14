@@ -116,6 +116,7 @@ fn kept(state: &State) -> String {
         Notice::NoChecklist => "only a task has a checklist".to_owned(),
         Notice::AreaUndated => "an area has no start or due date".to_owned(),
         Notice::AreaUntagged => "an area has no tags".to_owned(),
+        Notice::NotAProject => "only a project is pinned".to_owned(),
         Notice::AreaUncompleted => "an area can't be completed".to_owned(),
         Notice::NotLater => "only a task or a project can be Later".to_owned(),
         Notice::Settings(problem) => format!("config.toml: {problem}"),

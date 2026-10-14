@@ -133,6 +133,9 @@ pub struct Item {
     /// Whether it is marked Later, as Things 3's Someday. What the app goes by is
     /// [`is_later`](Item::is_later).
     pub later: bool,
+    /// Whether it is a project the sidebar and the Navigator also list among the pinned ones
+    /// (FR-VIEW-12).
+    pub pinned: bool,
     /// The user's tags, and any other tag the model does not interpret, in their order.
     pub tags: Vec<Tag>,
 }
@@ -152,6 +155,7 @@ impl Item {
             completed: None,
             deleted: None,
             later: false,
+            pinned: false,
             tags: Vec::new(),
         }
     }
@@ -218,7 +222,8 @@ pub struct Tag {
 /// The tag names the app writes itself, and those TaskPaper reads as plain text, which no tag of
 /// the user's takes (FR-STORE-10, OQ-11).
 const RESERVED: &[&str] = &[
-    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "id", "text", "type",
+    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "pinned", "id",
+    "text", "type",
 ];
 
 impl Tag {

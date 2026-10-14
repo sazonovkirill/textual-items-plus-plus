@@ -21,6 +21,7 @@ mod navigation;
 mod notes;
 mod palette;
 mod panes;
+mod pinning;
 mod quitting;
 mod rearranging;
 mod save_as;

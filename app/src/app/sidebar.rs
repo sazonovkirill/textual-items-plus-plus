@@ -1,6 +1,6 @@
-//! The sidebar: the Inbox, the views, and the areas and projects as a tree beside the pane,
-//! where they are created, renamed, deleted and reordered with keys, and collapsed (FR-VIEW-10,
-//! OQ-10). Hides which entry it keeps focused as the tree changes, which areas it collapses and
+//! The sidebar: the Inbox, the views, the pinned projects, and the areas and projects as a tree
+//! beside the pane, where they are created, renamed, deleted and reordered with keys, and
+//! collapsed (FR-VIEW-10, FR-VIEW-12, OQ-10). Hides which entry it keeps focused as the tree changes, which areas it collapses and
 //! where its changes put items in the document.
 
 use std::collections::BTreeSet;
@@ -17,19 +17,46 @@ use crate::domain::{Destination, Document, Item, ItemId, ItemKind, Node, Transac
 pub(super) struct Sidebar {
     shown: bool,
     keys: bool,
-    focused: Option<Shown>,
+    focused: Option<Entry>,
     /// Where the focused entry was in the tree, so that the focus stays there once it leaves.
     index: usize,
     /// The entry focused before a new one was added, to go back to when it is left empty.
-    left: Option<Shown>,
+    left: Option<Entry>,
     /// The areas whose projects are hidden, for as long as the app runs (D-67, D-75).
     collapsed: BTreeSet<ItemId>,
+}
+
+/// An entry the sidebar focuses: what it opens, and whether it is that project's entry among the
+/// pinned projects, which list a pinned project a second time (FR-VIEW-12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Entry {
+    shown: Shown,
+    in_pinned: bool,
+}
+
+impl Entry {
+    /// The entry of what `shown` opens in the tree, or the Inbox's or a view's.
+    const fn of(shown: Shown) -> Self {
+        Self {
+            shown,
+            in_pinned: false,
+        }
+    }
+
+    /// The entry that is `stop`.
+    const fn at(stop: Stop) -> Self {
+        Self {
+            shown: stop.shown(),
+            in_pinned: stop.in_pinned(),
+        }
+    }
 }
 
 /// What a frontend draws of the sidebar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SidebarView {
-    /// The Inbox, the views, and the areas and projects in the order of the tree.
+    /// The Inbox, the views, the pinned projects, and the areas and projects in the order of the
+    /// tree.
     pub entries: Vec<Stop>,
     /// The index of the focused entry, if any.
     pub focused: Option<usize>,
@@ -44,7 +71,7 @@ impl Sidebar {
     pub(super) fn open(focused: Shown) -> Self {
         Self {
             shown: true,
-            focused: Some(focused),
+            focused: Some(Entry::of(focused)),
             ..Self::default()
         }
     }
@@ -56,7 +83,7 @@ impl Sidebar {
             (false, _) => {
                 self.shown = true;
                 self.keys = true;
-                self.focused = near.or(self.focused);
+                self.focused = near.map(Entry::of).or(self.focused);
             }
             (true, true) => {
                 self.shown = false;
@@ -83,7 +110,7 @@ impl Sidebar {
 
     /// What the focused entry opens, if any.
     pub(super) fn focused(&self) -> Option<Shown> {
-        self.focused
+        self.focused.map(|entry| entry.shown)
     }
 
     /// Focuses the new entry `id`, remembering the one focused before for [`finish`].
@@ -91,7 +118,7 @@ impl Sidebar {
     /// [`finish`]: Self::finish
     pub(super) fn focus_new(&mut self, id: ItemId) {
         self.left = self.focused;
-        self.focused = Some(Shown::Container(id));
+        self.focused = Some(Entry::of(Shown::Container(id)));
     }
 
     /// Ends adding an entry: one left empty, and so not added, gives the focus back to the entry
@@ -114,8 +141,8 @@ impl Sidebar {
             Focus::First => 0,
             Focus::Last => entries.len() - 1,
         };
-        if let Some(stop) = entries.get(target) {
-            self.focused = Some(stop.shown());
+        if let Some(&stop) = entries.get(target) {
+            self.focused = Some(Entry::at(stop));
         }
     }
 
@@ -129,7 +156,7 @@ impl Sidebar {
         self.index = at.unwrap_or(0);
         self.focused = at
             .and_then(|index| entries.get(index))
-            .map(|stop| stop.shown());
+            .map(|&stop| Entry::at(stop));
     }
 
     /// What a frontend draws of the sidebar of `document`, while it shows.
@@ -175,7 +202,7 @@ impl Sidebar {
     /// Collapses the focused area, or a project a file nests projects in, when it holds projects
     /// the sidebar lists, or expands it when it is collapsed (owner, D-67, D-75).
     pub(super) fn toggle_collapsed(&mut self, document: &Document) {
-        let Some(Shown::Container(id)) = self.focused else {
+        let Some(Shown::Container(id)) = self.focused() else {
             return;
         };
         if !self.collapsed.remove(&id) && holds_projects(document, id) {
@@ -186,7 +213,7 @@ impl Sidebar {
     /// Expands the areas holding the focused entry, so that a project added or moved into a
     /// collapsed one shows where it went.
     pub(super) fn reveal(&mut self, document: &Document) {
-        if let Some(Shown::Container(id)) = self.focused {
+        if let Some(Shown::Container(id)) = self.focused() {
             for above in container::path(document, id) {
                 if above != id {
                     self.collapsed.remove(&above);
@@ -199,9 +226,12 @@ impl Sidebar {
     /// `exact` finds them as in a document read again; a focused entry not found gives way to
     /// the one now where it was, and the others are dropped.
     pub(super) fn rematch(&mut self, exact: impl Fn(ItemId) -> Option<ItemId>) {
-        let rematched = |shown| match shown {
-            Shown::Container(id) => exact(id).map(Shown::Container),
-            Shown::View(_) => Some(shown),
+        let rematched = |entry: Entry| match entry.shown {
+            Shown::Container(id) => exact(id).map(|id| Entry {
+                shown: Shown::Container(id),
+                ..entry
+            }),
+            Shown::View(_) => Some(entry),
         };
         self.focused = self.focused.and_then(rematched);
         self.left = self.left.and_then(rematched);
@@ -213,16 +243,18 @@ impl Sidebar {
         let last = entries.len().checked_sub(1)?;
         let found = self
             .focused
-            .and_then(|shown| entries.iter().position(|stop| stop.shown() == shown));
+            .and_then(|entry| entries.iter().position(|&stop| Entry::at(stop) == entry));
         Some(found.unwrap_or(self.index.min(last)))
     }
 }
 
 /// The entries of `document` as the sidebar lists them: the Navigator's with the Inbox and the
-/// views first, then the projects in no area and then the areas, each followed by what it holds,
-/// as Things 3's sidebar groups them. Within each group they keep the order of the file.
+/// views first, then the pinned projects, then the projects in no area and then the areas, each
+/// followed by what it holds, as Things 3's sidebar groups them. Within each group they keep the
+/// order of the file.
 pub(super) fn entries(document: &Document) -> Vec<Stop> {
-    let (mut first, mut projects, mut areas) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut first, mut pinned) = (Vec::new(), Vec::new());
+    let (mut projects, mut areas) = (Vec::new(), Vec::new());
     let mut group = ItemKind::Inbox;
     for stop in navigator::stops(document)
         .into_iter()
@@ -232,6 +264,10 @@ pub(super) fn entries(document: &Document) -> Vec<Stop> {
             first.push(stop);
             continue;
         };
+        if place.in_pinned {
+            pinned.push(stop);
+            continue;
+        }
         if place.depth == 0 {
             group = place.kind;
         }
@@ -241,7 +277,7 @@ pub(super) fn entries(document: &Document) -> Vec<Stop> {
             _ => projects.push(stop),
         }
     }
-    [first, projects, areas].concat()
+    [first, pinned, projects, areas].concat()
 }
 
 /// The transaction that moves `id` one step `direction` among its siblings in the tree, past the
@@ -836,10 +872,10 @@ mod tests {
         let at = sidebar.index;
         sidebar.rematch(|id| (id == work).then_some(home));
         assert_eq!(sidebar.focused(), Some(Shown::Container(home)));
-        assert_eq!(sidebar.left, Some(Shown::View(View::Today)));
+        assert_eq!(sidebar.left, Some(Entry::of(Shown::View(View::Today))));
         assert_eq!(sidebar.collapsed, BTreeSet::from([home]));
         sidebar.rematch(|_| None);
-        assert_eq!(sidebar.left, Some(Shown::View(View::Today)));
+        assert_eq!(sidebar.left, Some(Entry::of(Shown::View(View::Today))));
         assert!(sidebar.collapsed.is_empty());
         let entries = entries(&document);
         sidebar.settle(&entries);
@@ -869,5 +905,73 @@ mod tests {
             Some(Shown::Container(solo)),
             "kept, and finished only once"
         );
+    }
+
+    /// Pins or unpins the project `id` of `document`.
+    fn pin(document: &mut Document, id: ItemId, pinned: bool) -> Result<(), PlacementError> {
+        let item = document.node(id).and_then(Node::item).cloned();
+        let item = item.ok_or(PlacementError::NoSuchNode(id))?;
+        document.set(id, Item { pinned, ..item })?;
+        Ok(())
+    }
+
+    // FR-VIEW-12
+    #[test]
+    fn pinned_projects_are_listed_again_after_the_views_each_entry_focused_apart()
+    -> Result<(), PlacementError> {
+        let mut document = document();
+        let (blog, solo) = (find(&document, "Blog"), find(&document, "Solo"));
+        let gone = document
+            .top_level()
+            .get(1)
+            .copied()
+            .ok_or(PlacementError::DoesNotFit)?;
+        for id in [solo, blog, gone] {
+            pin(&mut document, id, true)?;
+        }
+        assert_eq!(
+            tree(&document),
+            [
+                "Inbox", "Blog", "Solo", "Solo", "Work", "  Site", "    Blog", "  Docs", "Home"
+            ],
+            "in the order of the file, without the Trash"
+        );
+        let views = REGISTRY.len();
+        let mut sidebar = Sidebar::default();
+        sidebar.toggle(Some(Shown::Container(solo)));
+        let focused = |sidebar: &Sidebar, document: &Document| {
+            sidebar.view(document).and_then(|view| view.focused)
+        };
+        assert_eq!(
+            focused(&sidebar, &document),
+            Some(views + 3),
+            "the project's entry in the tree"
+        );
+        assert_eq!(
+            moved(&document, &mut sidebar, Focus::Previous).as_deref(),
+            Some("Solo")
+        );
+        assert_eq!(
+            focused(&sidebar, &document),
+            Some(views + 2),
+            "its entry among the pinned"
+        );
+        assert_eq!(
+            moved(&document, &mut sidebar, Focus::Previous).as_deref(),
+            Some("Blog")
+        );
+        assert_eq!(
+            moved(&document, &mut sidebar, Focus::Next).as_deref(),
+            Some("Solo")
+        );
+        assert_eq!(focused(&sidebar, &document), Some(views + 2));
+        pin(&mut document, solo, false)?;
+        sidebar.settle(&entries(&document));
+        assert_eq!(
+            (sidebar.focused(), focused(&sidebar, &document)),
+            (Some(Shown::Container(solo)), Some(views + 2)),
+            "unpinned, the focus stays where its entry was, now the project in the tree"
+        );
+        Ok(())
     }
 }
