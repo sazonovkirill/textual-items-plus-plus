@@ -113,14 +113,15 @@ Find anything fast and make the app yours.
 | 6.1 | **Animations.** Port the animation layer: focus, opening and closing, panels, panes and palettes, completing and deleting, refusals; never delaying input; its setting. | FR-UI-07 | M5 | Complete a task and watch it fade |
 | 6.2 | **Weather.** Port the idle weather animation, its settings and its palette command. | FR-UI-08, N-PERF-03 | M5 | Leave the app idle |
 | 6.3 | **Performance and portability.** The 50,000-item benchmark, keystroke budget, idle CPU and terminal checks. | N-PERF-01–03, N-PORT-01–04 | M5 | `validate.sh bench` |
+| 6.4 | **Mouse.** Mouse capture with its terminal setup and teardown; clicking focuses an item, toggles its completion, opens a crumb or a Navigator entry; the wheel scrolls panes, panels and pickers. Clicks become the same messages keys send, so the core stays free of mouse events. Moved up from Later by the owner (2026-10-14). | FR-KEY-05 | M5 | Click a task's checkbox |
 
-**Parallel:** all three run at once.
+**Parallel:** all four run at once.
 
 ## Later
 
 After v1, unless the owner moves them up:
 
-- **Should:** Quick Add (FR-EDIT-07), renaming and deleting tags (FR-TAG-05), custom key bindings (FR-KEY-04), the mouse (FR-KEY-05), `NO_COLOR` and 16-color themes (N-UX-03), `cargo install` (N-DIST-01).
+- **Should:** Quick Add (FR-EDIT-07), renaming and deleting tags (FR-TAG-05), custom key bindings (FR-KEY-04), `NO_COLOR` and 16-color themes (N-UX-03), `cargo install` (N-DIST-01).
 - **Later:** repeating tasks (FR-TASK-07), search operators and saved searches (FR-SRCH-04), more themes (FR-UI-10).
 
 The other Should rows, F-FILE-08 and N-PORT-03, are already in steps 1.2 and 1.1.
@@ -134,6 +135,6 @@ The other Should rows, F-FILE-08 and N-PORT-03, are already in steps 1.2 and 1.1
 | M3 | 8 (3.1–3.8) | none |
 | M4 | 3 (4.2, 4.3, 4.4 or 4.5) | 4.4 |
 | M5 | 5 (5.1–5.5) | none |
-| M6 | 3 (6.1–6.3) | none |
+| M6 | 4 (6.1–6.4) | none |
 
 M3 and M4's attachment steps (4.1–4.3) touch separate parts of the app, so the owner could let them run as one wave after M2.
