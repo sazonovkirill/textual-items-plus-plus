@@ -39,7 +39,7 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, Command, Context, DateInput, Destination, EditInput, Effect, Message, Opened, Part,
-        PickerInput, Place, REGISTRY, Side, State, TextEdit,
+        PickerInput, Place, REGISTRY, Side, State, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
     },
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
@@ -223,13 +223,9 @@ impl Tui {
             date_prompt::date_prompt_input(event)
                 .map(Message::DatePrompt)
                 .or_else(|| self.global(event))
-        } else if self.state.navigator().is_some() {
+        } else if let Some(to_picker) = self.open_picker() {
             picker_input(event)
-                .map(Message::Navigator)
-                .or_else(|| self.global(event))
-        } else if self.state.move_to().is_some() {
-            picker_input(event)
-                .map(Message::MoveTo)
+                .map(to_picker)
                 .or_else(|| self.global(event))
         } else {
             self.keymap.press(event).map(Message::Command)
@@ -241,9 +237,9 @@ impl Tui {
 
     /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
     /// it: a description being edited takes it whole; a title being edited takes a single line,
-    /// while several lines end editing and paste as items below; the query of the open Navigator
-    /// or Move to and the open date prompt take it with its line breaks as spaces; otherwise the
-    /// items it holds paste below the focus. The conflict prompt takes none.
+    /// while several lines end editing and paste as items below; the query of the open Navigator,
+    /// Move to or tag picker and the open date prompt take it with its line breaks as spaces;
+    /// otherwise the items it holds paste below the focus. The conflict prompt takes none.
     fn paste(&mut self, text: &str) {
         if self.state.conflict().is_some() {
             return;
@@ -259,19 +255,15 @@ impl Tui {
             for c in text.chars() {
                 self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
             }
-        } else if self.state.navigator().is_some()
-            || self.state.move_to().is_some()
-            || self.state.date_prompt().is_some()
-        {
+        } else if self.state.date_prompt().is_some() {
             for c in text.chars() {
-                let edit = TextEdit::Insert(if matches!(c, '\r' | '\n') { ' ' } else { c });
-                self.update(if self.state.navigator().is_some() {
-                    Message::Navigator(PickerInput::Edit(edit))
-                } else if self.state.move_to().is_some() {
-                    Message::MoveTo(PickerInput::Edit(edit))
-                } else {
-                    Message::DatePrompt(DateInput::Edit(edit))
-                });
+                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
+                self.update(Message::DatePrompt(DateInput::Edit(TextEdit::Insert(c))));
+            }
+        } else if let Some(to_picker) = self.open_picker() {
+            for c in text.chars() {
+                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
+                self.update(to_picker(PickerInput::Edit(TextEdit::Insert(c))));
             }
         } else {
             let branches = store::taskpaper::read_branches(text);
@@ -283,6 +275,20 @@ impl Tui {
     fn update(&mut self, message: Message) {
         for effect in app::update(&mut self.state, message, self.today) {
             self.run(effect);
+        }
+    }
+
+    /// What carries an input to the open picker, the Navigator, Move to or the tag picker, while
+    /// one is open.
+    fn open_picker(&self) -> Option<fn(PickerInput) -> Message> {
+        if self.state.navigator().is_some() {
+            Some(Message::Navigator)
+        } else if self.state.move_to().is_some() {
+            Some(Message::MoveTo)
+        } else if self.state.tags().is_some() {
+            Some(Message::Tags)
+        } else {
+            None
         }
     }
 
@@ -312,8 +318,7 @@ impl Tui {
         if self.state.conflict().is_some() {
             command == Command::Quit || context == Some(Context::Conflict)
         } else if self.state.editing().is_some()
-            || self.state.navigator().is_some()
-            || self.state.move_to().is_some()
+            || self.open_picker().is_some()
             || self.state.date_prompt().is_some()
         {
             context == Some(Context::Global)
@@ -340,6 +345,9 @@ impl Tui {
         }
         if let Some(view) = self.state.move_to() {
             return Some(move_to_popup(&view, &self.theme, self.icons).caret(panes));
+        }
+        if let Some(view) = self.state.tags() {
+            return Some(tags_popup(&view, &self.theme, self.icons).caret(panes));
         }
         let sidebar = self.state.sidebar();
         let [side, pane] = split(panes, sidebar.is_some());
@@ -507,6 +515,28 @@ fn move_to_popup<'a>(
         })
 }
 
+/// The tag picker's window, each tag after the tag icon, marked at the right when every item it
+/// tags carries it or the filter has it, when some do, or when it is new (FR-TAG-02, FR-TAG-04).
+fn tags_popup<'a>(
+    view: &'a TagsView<'a>,
+    theme: &'a Theme,
+    icons: IconSet,
+) -> PickerPopup<'a, TagEntry> {
+    let title = match view.tags_for {
+        TagsFor::Items => "Tags",
+        TagsFor::Filter => "Filter by tags",
+    };
+    PickerPopup::new(title, &view.picker, &|_| Icon::Tag, icons, theme).badge(&|entry| {
+        match entry.mark {
+            TagMark::Off => "",
+            TagMark::Some => "–",
+            TagMark::All => "✓",
+            TagMark::New => "new tag",
+        }
+        .to_owned()
+    })
+}
+
 impl Widget for &mut Tui {
     /// Draws the pane, below its breadcrumbs and a rule, beside the sidebar while it shows, over
     /// the status line, scrolling the pane to keep the focus in view, the date prompt between
@@ -522,7 +552,9 @@ impl Widget for &mut Tui {
         }
         let [crumbs, rule, pane] = pane_layout(pane);
         let path = self.state.path();
-        Crumbs::new(self.state.document(), &path, &self.theme, self.icons).render(crumbs, buf);
+        Crumbs::new(self.state.document(), &path, &self.theme, self.icons)
+            .filter(self.state.tag_filter())
+            .render(crumbs, buf);
         Line::styled(
             "─".repeat(usize::from(rule.width)),
             Style::new().fg(self.theme.rule),
@@ -541,6 +573,9 @@ impl Widget for &mut Tui {
         }
         if let Some(view) = self.state.date_prompt() {
             DatePromptPanel::new(&view, &self.theme).render(prompt, buf);
+        }
+        if let Some(view) = self.state.tags() {
+            tags_popup(&view, &self.theme, self.icons).render(panes, buf);
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
             let (theirs, mine) = if view.diff {

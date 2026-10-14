@@ -3,6 +3,8 @@
 
 use std::ops::Range;
 
+use crate::domain::is_tag_name_char;
+
 /// One tag occurrence in a line body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
@@ -68,7 +70,7 @@ fn tag_at(text: &str, at: usize) -> Option<(usize, String, Option<String>)> {
     let rest = text.get(at + 1..)?;
     let name_len = rest
         .char_indices()
-        .find(|&(_, c)| !is_name_char(c))
+        .find(|&(_, c)| !is_tag_name_char(c))
         .map_or(rest.len(), |(index, _)| index);
     let name = rest.get(..name_len)?.to_owned();
     let name_end = at + 1 + name_len;
@@ -107,17 +109,6 @@ fn ends_tag(text: &str, end: usize) -> bool {
     text.get(end..)
         .and_then(|rest| rest.chars().next())
         .is_none_or(is_whitespace)
-}
-
-/// The XML name characters without `:`, as TaskPaper's `TagWord` (BMP only, like its regex).
-fn is_name_char(c: char) -> bool {
-    matches!(c,
-        'A'..='Z' | '_' | 'a'..='z' | '-' | '.' | '0'..='9' | '\u{B7}'
-        | '\u{C0}'..='\u{D6}' | '\u{D8}'..='\u{F6}' | '\u{F8}'..='\u{2FF}'
-        | '\u{300}'..='\u{36F}' | '\u{370}'..='\u{37D}' | '\u{37F}'..='\u{1FFF}'
-        | '\u{200C}'..='\u{200D}' | '\u{203F}'..='\u{2040}' | '\u{2070}'..='\u{218F}'
-        | '\u{2C00}'..='\u{2FEF}' | '\u{3001}'..='\u{D7FF}' | '\u{F900}'..='\u{FDCF}'
-        | '\u{FDF0}'..='\u{FFFD}')
 }
 
 /// JavaScript's `\s`, which TaskPaper's regexes use.
@@ -303,41 +294,6 @@ mod tests {
         }
         for c in ['a', '\u{85}', '\u{200B}', '\u{1F}'] {
             assert!(!is_whitespace(c), "{c:?}");
-        }
-    }
-
-    #[test]
-    fn name_characters_match_taskpaper() {
-        for c in [
-            'A', 'Z', 'a', 'z', '_', '-', '.', '0', '9', '\u{B7}', '\u{C0}', '\u{D6}', '\u{D8}',
-            '\u{F6}', '\u{F8}', '\u{2FF}', '\u{300}', '\u{36F}', '\u{370}', '\u{37D}', '\u{37F}',
-            '\u{1FFF}', '\u{200C}', '\u{200D}', '\u{203F}', '\u{2040}', '\u{2070}', '\u{218F}',
-            '\u{2C00}', '\u{2FEF}', '\u{3001}', '\u{D7FF}', '\u{F900}', '\u{FDCF}', '\u{FDF0}',
-            '\u{FFFD}',
-        ] {
-            assert!(is_name_char(c), "{c:?}");
-        }
-        for c in [
-            ':',
-            '/',
-            '@',
-            '#',
-            '!',
-            ',',
-            '(',
-            ' ',
-            '\u{D7}',
-            '\u{F7}',
-            '\u{37E}',
-            '\u{2000}',
-            '\u{2041}',
-            '\u{2190}',
-            '\u{3000}',
-            '\u{FDD0}',
-            '\u{FFFE}',
-            '\u{10000}',
-        ] {
-            assert!(!is_name_char(c), "{c:?}");
         }
     }
 }

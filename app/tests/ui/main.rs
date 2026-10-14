@@ -17,3 +17,4 @@ mod saving;
 mod selecting;
 mod sidebar;
 mod support;
+mod tagging;

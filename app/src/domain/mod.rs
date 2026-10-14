@@ -6,4 +6,4 @@ mod document;
 mod item;
 
 pub use document::{Branch, Destination, Document, Op, PlacementError, Snapshot, Transaction};
-pub use item::{Completion, Item, ItemId, ItemKind, Node, Tag};
+pub use item::{Completion, Item, ItemId, ItemKind, Node, Tag, is_tag_name_char, tag_name};

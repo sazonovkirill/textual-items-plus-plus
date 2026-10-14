@@ -75,6 +75,9 @@ pub enum Notice {
     /// Indenting, outdenting, converting or grouping was refused, for this reason (FR-OPS-03,
     /// FR-TASK-06, FR-OPS-07, FR-OPS-08).
     Refused(Refusal),
+    /// Typing `@` at the start of a word of a title was refused: the word would read back as a
+    /// tag, and tags go on from the tag picker (FR-TAG-02).
+    TagInTitle,
 }
 
 /// The conflict prompt as a frontend shows it.
@@ -371,8 +374,9 @@ impl State {
     /// container it showed, its focus, what is picked and its history on the items they were on,
     /// as far as their text paths find them, the Navigator open on the places now listed with its
     /// query, Move to open on the destinations now listed with its query while an item it moves
-    /// is found again, and the date prompt open while an item it dates is. The undo history is
-    /// cleared, since its steps fit only the document as it was.
+    /// is found again, and the date prompt open while an item it dates is. The tag filter stays
+    /// while the container shown is found again as it was. The undo history is cleared, since its
+    /// steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -380,8 +384,12 @@ impl State {
         let exact =
             |id| text_path::find(&old, new, id).and_then(|(found, exact)| exact.then_some(found));
         let opens = |id: ItemId| container::opens(new, id).then_some(id);
-        self.container = nearest(self.container)
-            .and_then(opens)
+        let kept = exact(self.container).and_then(opens);
+        if kept.is_none() {
+            self.filter.clear();
+        }
+        self.container = kept
+            .or_else(|| nearest(self.container).and_then(opens))
             .unwrap_or_else(|| new.inbox());
         let focused = self.selection.focused();
         let rows = self.rows();
@@ -407,6 +415,11 @@ impl State {
             .date_prompt
             .take()
             .and_then(|prompt| prompt.rematched(exact));
+        if let Some(tags) = &self.tags {
+            let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
+            let rows = container::rows(new, self.container, self.shows_completed());
+            self.tags = tags.reopen(new, items, &rows, &self.filter);
+        }
         self.history = super::History::default();
         self.saving.autosave.reloaded(new.revision());
     }
@@ -692,6 +705,29 @@ mod tests {
         Ok(())
     }
 
+    // F-FILE-06, FR-TAG-04
+    #[test]
+    fn a_reload_keeps_the_tag_filter_only_on_the_container_found_as_it_was() -> TestResult {
+        let mut state = opened(&["a"])?;
+        state.container = titled(&state, "P").ok_or("P")?;
+        state.filter = vec!["x".to_owned()];
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["b"])?)),
+        );
+        assert_eq!(state.tag_filter(), ["x"]);
+        let mut theirs = document(&["b"])?;
+        let project = find(&theirs, "P").ok_or("P")?;
+        theirs.set(project, Item::new(ItemKind::Project, "Q"))?;
+        send(&mut state, Message::OnDisk(OnDisk::Changed(theirs)));
+        assert_eq!(
+            state.tag_filter(),
+            [] as [String; 0],
+            "P is not found as it was"
+        );
+        Ok(())
+    }
+
     // F-FILE-06, FR-OPS-04
     #[test]
     fn a_reload_keeps_move_to_open_while_an_item_it_moves_is_found_again() -> TestResult {
@@ -741,6 +777,39 @@ mod tests {
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
         assert!(state.date_prompt().is_none(), "a, which it dates, is gone");
+        Ok(())
+    }
+
+    // F-FILE-06, FR-TAG-02
+    #[test]
+    fn a_reload_keeps_the_tag_picker_open_while_an_item_it_tags_is_found_again() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::Tags);
+        send(
+            &mut state,
+            Message::Tags(PickerInput::Edit(TextEdit::Insert('t'))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
+        );
+        assert_eq!(state.tags().ok_or("open")?.picker.query.text(), "t");
+        send(&mut state, Message::Tags(PickerInput::Choose));
+        let a = titled(&state, "a").ok_or("a")?;
+        let tags = &state
+            .document()
+            .node(a)
+            .and_then(Node::item)
+            .ok_or("a")?
+            .tags;
+        assert_eq!(tags.first().map(|tag| tag.name.as_str()), Some("t"));
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::Tags);
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
+        );
+        assert!(state.tags().is_none(), "a, which it tagged, is gone");
         Ok(())
     }
 

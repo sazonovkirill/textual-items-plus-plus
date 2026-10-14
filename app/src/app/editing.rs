@@ -48,13 +48,24 @@ pub(super) struct Editing {
 enum Origin {
     /// It was there, as this item.
     Existing(Item),
-    /// It was added for editing, at this index among this parent's children, or the top-level
-    /// nodes for `None`, and then had the items this transaction moves moved into it.
+    /// It was added for editing as this item, without its title, at this index among this
+    /// parent's children, or the top-level nodes for `None`, and then had the items this
+    /// transaction moves moved into it.
     New {
+        item: Item,
         parent: Option<ItemId>,
         index: usize,
         contents: Transaction,
     },
+}
+
+/// Why an edit to a title was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Refused {
+    /// It put `@` at the start of a word, which would read back as a tag.
+    Tag,
+    /// It started a container's title with `-` and a space, which would read back as a task.
+    Task,
 }
 
 impl Editing {
@@ -96,25 +107,25 @@ impl Editing {
         })
     }
 
-    /// Adds an empty item of `kind` at `index` among `parent`'s children, or the top-level nodes
-    /// for `None`, and starts editing it; `before` is the selection to restore when it is undone
-    /// or left empty. The caller picks a place where the kind fits.
+    /// Adds `item`, which has no title, at `index` among `parent`'s children, or the top-level
+    /// nodes for `None`, and starts editing its title; `before` is the selection to restore when
+    /// it is undone or left empty. The caller picks a place where its kind fits.
     pub(super) fn new_item(
         document: &mut Document,
-        kind: ItemKind,
+        item: Item,
         place: (Option<ItemId>, usize),
         before: Selection,
     ) -> Self {
-        Self::group(document, kind, place, &[], before)
+        Self::group(document, item, place, &[], before)
     }
 
-    /// Adds an empty item of `kind` as [`new_item`](Self::new_item) does, moves `items` into it,
-    /// each the last of its children in turn, and starts editing it: adding it, moving them and
-    /// naming it are one change, which leaving it empty does not make (FR-OPS-07, FR-OPS-08). The
-    /// caller groups items that fit in the new one and do not hold its place.
+    /// Adds `item` as [`new_item`](Self::new_item) does, moves `items` into it, each the last of
+    /// its children in turn, and starts editing it: adding it, moving them and naming it are one
+    /// change, which leaving it empty does not make (FR-OPS-07, FR-OPS-08). The caller groups
+    /// items that fit in the new one and do not hold its place.
     pub(super) fn group(
         document: &mut Document,
-        kind: ItemKind,
+        item: Item,
         (parent, index): (Option<ItemId>, usize),
         items: &[ItemId],
         before: Selection,
@@ -122,12 +133,12 @@ impl Editing {
         let revision = document.revision();
         let id = document.new_id();
         document
-            .apply(&insert(parent, index, id, kind, String::new()))
+            .apply(&insert(parent, index, id, item.clone()))
             .expect("the caller places a new item where its kind fits");
         let mut ops = Vec::new();
-        for &item in items {
+        for &grouped in items {
             let moved = document
-                .move_to(item, Destination::Last(Some(id)))
+                .move_to(grouped, Destination::Last(Some(id)))
                 .expect("the caller groups items that fit in the new one");
             document
                 .apply(&moved)
@@ -136,11 +147,12 @@ impl Editing {
         }
         Self {
             id,
-            kind,
+            kind: item.kind,
             part: Part::Title,
             field: TextField::new(String::new()),
             before,
             origin: Origin::New {
+                item,
                 parent,
                 index,
                 contents: Transaction::new(ops),
@@ -180,13 +192,19 @@ impl Editing {
     /// an edit that starts a section's, project's or area's title with `-` and a space, which
     /// would read back as a task. A description's lines are guarded, so they hold any text
     /// (FR-STORE-04).
-    pub(super) fn input(&mut self, document: &mut Document, edit: TextEdit) {
+    ///
+    /// # Errors
+    ///
+    /// Why the edit was refused, when it was.
+    pub(super) fn input(&mut self, document: &mut Document, edit: TextEdit) -> Result<(), Refused> {
         let edited = self.field.edited(edit);
-        if self.part == Part::Title
-            && (word_starts(edited.text()) > word_starts(self.field.text())
-                || (self.kind != ItemKind::Task && reads_as_task(edited.text())))
-        {
-            return;
+        if self.part == Part::Title {
+            if word_starts(edited.text()) > word_starts(self.field.text()) {
+                return Err(Refused::Tag);
+            }
+            if self.kind != ItemKind::Task && reads_as_task(edited.text()) {
+                return Err(Refused::Task);
+            }
         }
         self.field = edited;
         let item = document
@@ -197,6 +215,7 @@ impl Editing {
         document
             .set(self.id, item)
             .expect("an item keeps its kind when its text changes");
+        Ok(())
     }
 
     /// `item` with `text` as the part edited.
@@ -240,12 +259,13 @@ impl Editing {
                 }
             }
             Origin::New {
+                item,
                 parent,
                 index,
                 contents,
             } => {
                 let added = |title: String| {
-                    let insert = insert(*parent, *index, self.id, self.kind, title);
+                    let insert = insert(*parent, *index, self.id, self.with_text(item, title));
                     Transaction::new([insert.ops(), contents.ops()].concat())
                 };
                 let draft = self.field.text().to_owned();
@@ -283,19 +303,13 @@ pub(super) fn reads_as_task(title: &str) -> bool {
     chars.next() == Some('-') && chars.next().is_some_and(char::is_whitespace)
 }
 
-/// The transaction that puts an item of `kind` titled `title`, numbered `id`, at `index` among
-/// `parent`'s children, or the top-level nodes for `None`.
-fn insert(
-    parent: Option<ItemId>,
-    index: usize,
-    id: ItemId,
-    kind: ItemKind,
-    title: String,
-) -> Transaction {
+/// The transaction that puts `item`, numbered `id`, at `index` among `parent`'s children, or the
+/// top-level nodes for `None`.
+fn insert(parent: Option<ItemId>, index: usize, id: ItemId, item: Item) -> Transaction {
     Transaction::new(vec![Op::Insert {
         parent,
         index,
-        subtree: Snapshot::new(id, Node::Item(Item::new(kind, title))),
+        subtree: Snapshot::new(id, Node::Item(item)),
     }])
 }
 
@@ -308,10 +322,11 @@ mod tests {
         Some(document.node(id)?.item()?.title.as_str())
     }
 
-    fn typed(editing: &mut Editing, document: &mut Document, text: &str) {
-        for c in text.chars() {
-            editing.input(document, TextEdit::Insert(c));
-        }
+    /// Types `text` and returns why each character refused was refused.
+    fn typed(editing: &mut Editing, document: &mut Document, text: &str) -> Vec<Refused> {
+        text.chars()
+            .filter_map(|c| editing.input(document, TextEdit::Insert(c)).err())
+            .collect()
     }
 
     /// A document whose Inbox holds task `a` with a checklist item, and a selection on `a`.
@@ -358,7 +373,7 @@ mod tests {
             let mut editing = Editing::existing(&document, a, selection.clone())
                 .ok_or(PlacementError::DoesNotFit)?;
             for edit in edits {
-                editing.input(&mut document, edit);
+                assert_eq!(editing.input(&mut document, edit), Ok(()));
             }
             assert_eq!(editing.finish(&mut document).0, Transaction::default());
             assert_eq!(document, original);
@@ -384,7 +399,7 @@ mod tests {
         let original = document.clone();
         let mut editing = Editing::new_item(
             &mut document,
-            ItemKind::Task,
+            Item::new(ItemKind::Task, ""),
             (Some(inbox), 0),
             selection.clone(),
         );
@@ -413,8 +428,12 @@ mod tests {
     fn a_new_task_left_empty_is_not_added() -> Result<(), PlacementError> {
         let (mut document, a, _, selection) = document()?;
         let inbox = document.inbox();
-        let mut editing =
-            Editing::new_item(&mut document, ItemKind::Task, (Some(inbox), 1), selection);
+        let mut editing = Editing::new_item(
+            &mut document,
+            Item::new(ItemKind::Task, ""),
+            (Some(inbox), 1),
+            selection,
+        );
         typed(&mut editing, &mut document, "  ");
         assert_eq!(editing.finish(&mut document).0, Transaction::default());
         assert_eq!(document.children(inbox), [a]);
@@ -427,42 +446,54 @@ mod tests {
         let (mut document, a, _, selection) = document()?;
         let mut editing =
             Editing::existing(&document, a, selection).ok_or(PlacementError::DoesNotFit)?;
-        typed(&mut editing, &mut document, "@b @c");
+        assert_eq!(typed(&mut editing, &mut document, "@b @c"), [Refused::Tag]);
         assert_eq!(
             title(&document, a),
             Some("a@b c"),
             "inside a word it is text"
         );
-        editing.input(
-            &mut document,
-            TextEdit::Move {
-                motion: Motion::Start,
-                select: false,
-            },
+        assert_eq!(
+            editing.input(
+                &mut document,
+                TextEdit::Move {
+                    motion: Motion::Start,
+                    select: false,
+                }
+            ),
+            Ok(())
         );
-        typed(&mut editing, &mut document, "@");
-        editing.input(&mut document, TextEdit::SelectAll);
-        typed(&mut editing, &mut document, "@");
+        assert_eq!(typed(&mut editing, &mut document, "@"), [Refused::Tag]);
+        assert_eq!(editing.input(&mut document, TextEdit::SelectAll), Ok(()));
+        assert_eq!(typed(&mut editing, &mut document, "@"), [Refused::Tag]);
         assert_eq!(title(&document, a), Some("a@b c"));
         for (motion, select) in [(Motion::End, false), (Motion::Left, true)] {
-            editing.input(&mut document, TextEdit::Move { motion, select });
+            assert_eq!(
+                editing.input(&mut document, TextEdit::Move { motion, select }),
+                Ok(())
+            );
         }
-        typed(&mut editing, &mut document, "@");
+        assert_eq!(typed(&mut editing, &mut document, "@"), [Refused::Tag]);
         assert_eq!(
             title(&document, a),
             Some("a@b c"),
             "nor in place of a selection after a space"
         );
-        editing.input(&mut document, TextEdit::SelectAll);
-        typed(&mut editing, &mut document, "x@y");
-        editing.input(
-            &mut document,
-            TextEdit::Move {
-                motion: Motion::Start,
-                select: false,
-            },
+        assert_eq!(editing.input(&mut document, TextEdit::SelectAll), Ok(()));
+        assert_eq!(typed(&mut editing, &mut document, "x@y"), []);
+        assert_eq!(
+            editing.input(
+                &mut document,
+                TextEdit::Move {
+                    motion: Motion::Start,
+                    select: false,
+                }
+            ),
+            Ok(())
         );
-        editing.input(&mut document, TextEdit::DeleteForward);
+        assert_eq!(
+            editing.input(&mut document, TextEdit::DeleteForward),
+            Err(Refused::Tag)
+        );
         assert_eq!(
             title(&document, a),
             Some("x@y"),
@@ -476,8 +507,12 @@ mod tests {
     fn a_new_area_is_added_at_the_top_level_and_renamed_like_a_task() -> Result<(), PlacementError>
     {
         let (mut document, _, _, selection) = document()?;
-        let mut editing =
-            Editing::new_item(&mut document, ItemKind::Area, (None, 0), selection.clone());
+        let mut editing = Editing::new_item(
+            &mut document,
+            Item::new(ItemKind::Area, ""),
+            (None, 0),
+            selection.clone(),
+        );
         let id = editing.id();
         assert_eq!(editing.kind(), ItemKind::Area);
         assert_eq!(document.top_level(), [id]);
@@ -499,25 +534,35 @@ mod tests {
     #[test]
     fn a_container_title_never_starts_with_a_dash_and_a_space() -> Result<(), PlacementError> {
         let (mut document, a, _, selection) = document()?;
-        let mut editing =
-            Editing::new_item(&mut document, ItemKind::Area, (None, 0), selection.clone());
+        let mut editing = Editing::new_item(
+            &mut document,
+            Item::new(ItemKind::Area, ""),
+            (None, 0),
+            selection.clone(),
+        );
         let area = editing.id();
         typed(&mut editing, &mut document, " - x -y");
         assert_eq!(title(&document, area), Some(" -x -y"));
-        editing.input(&mut document, TextEdit::SelectAll);
+        assert_eq!(editing.input(&mut document, TextEdit::SelectAll), Ok(()));
         typed(&mut editing, &mut document, "x- y");
-        editing.input(
-            &mut document,
-            TextEdit::Move {
-                motion: Motion::Start,
-                select: false,
-            },
+        assert_eq!(
+            editing.input(
+                &mut document,
+                TextEdit::Move {
+                    motion: Motion::Start,
+                    select: false,
+                }
+            ),
+            Ok(())
         );
-        editing.input(&mut document, TextEdit::DeleteForward);
+        assert_eq!(
+            editing.input(&mut document, TextEdit::DeleteForward),
+            Err(Refused::Task)
+        );
         assert_eq!(title(&document, area), Some("x- y"));
         let mut task =
             Editing::existing(&document, a, selection).ok_or(PlacementError::DoesNotFit)?;
-        task.input(&mut document, TextEdit::SelectAll);
+        assert_eq!(task.input(&mut document, TextEdit::SelectAll), Ok(()));
         typed(&mut task, &mut document, "- a");
         assert_eq!(title(&document, a), Some("- a"), "a task's may");
         Ok(())
@@ -551,8 +596,11 @@ mod tests {
         let mut editing =
             Editing::description(&document, a, selection).ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(editing.field().caret(), "@due Goals:\n- one".len());
-        editing.input(&mut document, TextEdit::SelectAll);
-        editing.input(&mut document, TextEdit::DeleteBackward);
+        assert_eq!(editing.input(&mut document, TextEdit::SelectAll), Ok(()));
+        assert_eq!(
+            editing.input(&mut document, TextEdit::DeleteBackward),
+            Ok(())
+        );
         let (transaction, _) = editing.finish(&mut document);
         document.apply(&transaction)?;
         assert_eq!(

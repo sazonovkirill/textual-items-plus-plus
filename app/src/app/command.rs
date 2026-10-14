@@ -82,6 +82,13 @@ pub enum Command {
     GroupIntoSection,
     /// Make the selected items the contents of a new project and edit its title (FR-OPS-08).
     GroupIntoProject,
+    /// Open the tag picker, which adds a tag to the selected items or removes it from them
+    /// (FR-TAG-02, FR-OPS-06).
+    Tags,
+    /// Open the tag picker that chooses the tags the pane is filtered by (FR-TAG-04).
+    FilterTags,
+    /// Show every row again, filtered by no tag (FR-TAG-04).
+    ClearTagFilter,
     /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
     Sidebar,
     /// Give the keys to the sidebar while it shows (FR-VIEW-10).
@@ -408,6 +415,21 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::Tags,
+        title: "Tags",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FilterTags,
+        title: "Filter by Tags",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ClearTagFilter,
+        title: "Clear Tag Filter",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::Sidebar,
         title: "Toggle Sidebar",
         context: Context::Navigate,
@@ -583,6 +605,19 @@ mod tests {
             Command::GroupIntoProject,
         ];
         for command in added.chain(others) {
+            let entry = REGISTRY.iter().find(|entry| entry.command == command);
+            assert_eq!(
+                entry.map(|entry| entry.context),
+                Some(Context::Navigate),
+                "{command:?}"
+            );
+        }
+    }
+
+    // FR-TAG-02, FR-TAG-04
+    #[test]
+    fn tagging_and_filtering_by_tags_are_navigate_commands() {
+        for command in [Command::Tags, Command::FilterTags, Command::ClearTagFilter] {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);
             assert_eq!(
                 entry.map(|entry| entry.context),

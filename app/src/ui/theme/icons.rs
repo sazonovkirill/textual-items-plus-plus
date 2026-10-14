@@ -49,6 +49,8 @@ pub enum Icon {
     Edit,
     /// The status line's mark of changes not saved yet.
     Unsaved,
+    /// A tag, in the tag picker and the tag filter.
+    Tag,
 }
 
 /// The glyphs the UI draws for its icons.
@@ -117,6 +119,8 @@ impl Icon {
             Self::Edit => ("\u{f03eb}", "✎"),
             // nf-md-circle_medium
             Self::Unsaved => ("\u{f09de}", "●"),
+            // nf-md-tag_outline
+            Self::Tag => ("\u{f04fc}", "@"),
         }
     }
 }
@@ -127,7 +131,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 22] = [
+    const ICONS: [Icon; 23] = [
         Icon::Area,
         Icon::Project,
         Icon::Section,
@@ -150,6 +154,7 @@ mod tests {
         Icon::Navigate,
         Icon::Edit,
         Icon::Unsaved,
+        Icon::Tag,
     ];
 
     /// The task and fold markers, drawn the same with Nerd Font icons as without.

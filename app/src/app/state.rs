@@ -11,17 +11,18 @@ use super::{
     container::{self, Row},
     converting,
     date_prompt::{self, DatePrompt},
-    editing::Editing,
+    editing::{Editing, Refused},
     focus::{self, Focus},
     move_to::{Destination, MoveTo},
     moving,
     navigator::{self, Place},
     saving::Saving,
     sidebar::{self, Sidebar},
+    tags::{self, Choice, TagPicker, TagsView},
     trash,
     visits::{Visit, Visits},
 };
-use crate::domain::{Branch, Document, ItemId, ItemKind, Transaction, dates::DateKind};
+use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Tag, Transaction, dates::DateKind};
 
 /// Where the document came from, which decides whether changes to it can be kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +49,11 @@ pub struct State {
     pub(super) move_to: Option<MoveTo>,
     /// The date prompt, while it is open (FR-DATE-02).
     pub(super) date_prompt: Option<DatePrompt>,
+    /// The tag picker, while it is open (FR-TAG-02, FR-TAG-04).
+    pub(super) tags: Option<TagPicker>,
+    /// The tags every row the pane shows carries, none for every row (FR-TAG-04); per pane once
+    /// there are several.
+    pub(super) filter: Vec<String>,
     /// The item whose title or description is edited, in edit mode (FR-EDIT-01), in the sidebar
     /// while it has the keys.
     editing: Option<Editing>,
@@ -73,6 +79,8 @@ impl State {
             navigator: None,
             move_to: None,
             date_prompt: None,
+            tags: None,
+            filter: Vec::new(),
             editing: None,
             sidebar: Sidebar::default(),
             saving,
@@ -106,10 +114,21 @@ impl State {
         container::path(&self.document, self.container)
     }
 
-    /// The rows the shown container lists, in order.
+    /// The rows the shown container lists, in order, those the tag filter keeps.
     #[must_use]
     pub fn rows(&self) -> Vec<Row> {
-        container::rows(&self.document, self.container, self.show_completed)
+        shown(
+            &self.document,
+            self.container,
+            self.show_completed,
+            &self.filter,
+        )
+    }
+
+    /// The tags the pane is filtered by, none when it is not (FR-TAG-04).
+    #[must_use]
+    pub fn tag_filter(&self) -> &[String] {
+        &self.filter
     }
 
     /// Whether completed items are shown.
@@ -140,6 +159,12 @@ impl State {
     #[must_use]
     pub fn date_prompt(&self) -> Option<DatePromptView<'_>> {
         self.date_prompt.as_ref().map(DatePrompt::view)
+    }
+
+    /// The tag picker, while it is open.
+    #[must_use]
+    pub fn tags(&self) -> Option<TagsView<'_>> {
+        self.tags.as_ref().map(TagPicker::view)
     }
 
     /// The sidebar, while it shows (FR-VIEW-10).
@@ -301,10 +326,11 @@ impl State {
         }
     }
 
-    /// Opens the Move to picker for the selected items, closing the Navigator. Nothing opens when
-    /// no project, section or task is selected.
+    /// Opens the Move to picker for the selected items, closing the Navigator and the tag picker.
+    /// Nothing opens when no project, section or task is selected.
     pub(super) fn open_move_to(&mut self) {
         self.navigator = None;
+        self.tags = None;
         self.move_to = MoveTo::open(&self.document, self.selection.items(&self.rows()));
     }
 
@@ -326,13 +352,76 @@ impl State {
         }
     }
 
+    /// Opens the tag picker for the selected items, closing the Navigator and Move to (FR-TAG-02,
+    /// FR-OPS-06). Nothing opens with nothing selected.
+    pub(super) fn open_tags(&mut self) {
+        let items = self.selection.items(&self.rows());
+        self.open_tags_for(items);
+    }
+
+    fn open_tags_for(&mut self, items: Vec<ItemId>) {
+        self.navigator = None;
+        self.move_to = None;
+        self.tags = TagPicker::for_items(&self.document, items);
+    }
+
+    /// Opens the tag picker that chooses the tags the pane is filtered by, closing the Navigator
+    /// and Move to (FR-TAG-04).
+    pub(super) fn open_tag_filter(&mut self) {
+        self.navigator = None;
+        self.move_to = None;
+        let rows = container::rows(&self.document, self.container, self.show_completed);
+        self.tags = Some(TagPicker::for_filter(&self.document, &rows, &self.filter));
+    }
+
+    /// Applies `input` to the open tag picker: choosing a tag closes it and adds the tag to the
+    /// selected items, or removes it from them when each carries it, as one step to undo, or adds
+    /// it to the filter, or takes it out when the filter has it. Nothing happens while it is
+    /// closed.
+    pub(super) fn tags_input(&mut self, input: PickerInput) {
+        let Some(closed) = self
+            .tags
+            .as_mut()
+            .and_then(|picker| picker.input(&self.document, input))
+        else {
+            return;
+        };
+        self.tags = None;
+        match closed {
+            Picked::Chosen(Choice::Items(transaction)) => self.change(transaction),
+            Picked::Chosen(Choice::Filter(name)) => {
+                let mut filter = self.filter.clone();
+                if filter.contains(&name) {
+                    filter.retain(|chosen| *chosen != name);
+                } else {
+                    filter.push(name);
+                }
+                self.set_filter(filter);
+            }
+            Picked::Dismissed => {}
+        }
+    }
+
+    /// Shows every row again, filtered by no tag (FR-TAG-04).
+    pub(super) fn clear_tag_filter(&mut self) {
+        self.set_filter(Vec::new());
+    }
+
+    /// Filters the pane by `filter`, moving the focus on when its row hides.
+    fn set_filter(&mut self, filter: Vec<String>) {
+        let before = self.rows();
+        self.filter = filter;
+        self.settle(&before);
+    }
+
     /// Moves the selected items one step `direction` among their rows, as one step to undo,
     /// keeping the focus where it is (FR-OPS-02, FR-OPS-10).
     pub(super) fn move_item(&mut self, direction: Direction) {
         let (container, show_completed) = (self.container, self.show_completed);
+        let filter = self.filter.clone();
         let transaction =
             moving::shift_all(&self.document, &self.targets(), direction, |document| {
-                container::rows(document, container, show_completed)
+                shown(document, container, show_completed, &filter)
             });
         self.change(transaction);
     }
@@ -380,7 +469,7 @@ impl State {
             Ok(Some(place)) => {
                 let editing = Editing::group(
                     &mut self.document,
-                    kind,
+                    Item::new(kind, ""),
                     place,
                     &items,
                     self.selection.clone(),
@@ -439,9 +528,10 @@ impl State {
             side,
         );
         let (parent, index) = place;
+        let item = self.new_item(ItemKind::Task);
         let editing = Editing::new_item(
             &mut self.document,
-            ItemKind::Task,
+            item,
             (Some(parent), index),
             self.selection.clone(),
         );
@@ -467,9 +557,10 @@ impl State {
         if parent.is_some_and(|parent| self.document.conceals(parent)) {
             return;
         }
+        let item = self.new_item(kind);
         let editing = Editing::new_item(
             &mut self.document,
-            kind,
+            item,
             (parent, index),
             self.selection.clone(),
         );
@@ -480,6 +571,19 @@ impl State {
             self.open(id, None);
         }
         self.start_editing(Some(editing));
+    }
+
+    /// An item of `kind` to add in the pane, without a title, carrying the tags the pane is
+    /// filtered by so that it shows, as in Things 3 (FR-TAG-04).
+    fn new_item(&self, kind: ItemKind) -> Item {
+        Item {
+            tags: self
+                .filter
+                .iter()
+                .map(|name| Tag::plain(name.as_str()))
+                .collect(),
+            ..Item::new(kind, "")
+        }
     }
 
     /// Starts editing the title of the container shown, in the pane's heading. The Inbox keeps
@@ -502,7 +606,11 @@ impl State {
             return;
         };
         match input {
-            EditInput::Text(edit) => editing.input(&mut self.document, edit),
+            EditInput::Text(edit) => {
+                if editing.input(&mut self.document, edit) == Err(Refused::Tag) {
+                    self.notify(Notice::TagInTitle);
+                }
+            }
             EditInput::Next => {
                 let row = editing.id() != self.container && !self.sidebar.has_keys();
                 let next = row
@@ -562,6 +670,7 @@ impl State {
     fn change_focusing(&mut self, transaction: Transaction, focused: Option<ItemId>) {
         let before = self.rows();
         let (container, show_completed) = (self.container, self.show_completed);
+        let filter = self.filter.clone();
         let mut after = self.selection.clone();
         self.history
             .commit(
@@ -569,7 +678,7 @@ impl State {
                 transaction,
                 self.selection.clone(),
                 |document| {
-                    let rows = container::rows(document, container, show_completed);
+                    let rows = shown(document, container, show_completed, &filter);
                     after.focus(focus::kept(&before, &rows, focused));
                     after
                 },
@@ -672,6 +781,7 @@ impl State {
                     date_prompt::set(&self.document, [id], DateKind::Start, Some(today));
                 self.change(transaction);
             }
+            (Command::Tags, Some(id)) => self.open_tags_for(vec![id]),
             _ => {}
         }
         true
@@ -683,7 +793,12 @@ impl State {
         let focused = self.sidebar.focused();
         let place = sidebar::place(&self.document, entries, focused, kind, side)
             .expect("the sidebar focuses one of its entries, beside which a project or area goes");
-        let editing = Editing::new_item(&mut self.document, kind, place, self.selection.clone());
+        let editing = Editing::new_item(
+            &mut self.document,
+            Item::new(kind, ""),
+            place,
+            self.selection.clone(),
+        );
         self.sidebar.focus_new(editing.id());
         self.editing = Some(editing);
     }
@@ -795,11 +910,12 @@ impl State {
         }
     }
 
-    /// Opens the Navigator on where the pane is, closing Move to and the date prompt, or closes it
-    /// when it is open.
+    /// Opens the Navigator on where the pane is, closing Move to, the date prompt and the tag
+    /// picker, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         self.move_to = None;
         self.date_prompt = None;
+        self.tags = None;
         self.navigator = match self.navigator {
             Some(_) => None,
             None => Some(navigator::open(&self.document, self.container)),
@@ -840,9 +956,10 @@ impl State {
     }
 
     /// Shows the container of `visit`, focused on its item when that is a row there and on the
-    /// first row otherwise, with nothing picked.
+    /// first row otherwise, with nothing picked and no tag filter.
     fn arrive(&mut self, visit: Visit) {
         self.selection.clear();
+        self.filter.clear();
         self.container = visit.container;
         let rows = self.rows();
         let focused = visit
@@ -851,6 +968,21 @@ impl State {
             .or_else(|| rows.first().map(|row| row.id()));
         self.selection.focus(focused);
     }
+}
+
+/// The rows `container` shows in `document`, completed items among them when `show_completed`,
+/// those carrying every tag of `filter`.
+fn shown(
+    document: &Document,
+    container: ItemId,
+    show_completed: bool,
+    filter: &[String],
+) -> Vec<Row> {
+    tags::filtered(
+        document,
+        container::rows(document, container, show_completed),
+        filter,
+    )
 }
 
 #[cfg(test)]
@@ -1059,6 +1191,21 @@ mod tests {
         for c in text.chars() {
             state.edit_input(EditInput::Text(TextEdit::Insert(c)));
         }
+    }
+
+    // FR-EDIT-04, FR-TAG-02
+    #[test]
+    fn a_word_typed_with_an_at_sign_first_is_refused_with_a_notice() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            inbox_task,
+            ..
+        } = fixture()?;
+        state.edit_title();
+        type_text(&mut state, " @x");
+        assert_eq!(title(&state, inbox_task), Some("i x"));
+        assert_eq!(state.notice(), Some(&Notice::TagInTitle));
+        Ok(())
     }
 
     // FR-EDIT-01, FR-EDIT-02, FR-EDIT-06

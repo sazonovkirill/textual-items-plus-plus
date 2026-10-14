@@ -125,6 +125,13 @@ impl<T: Clone> Picker<T> {
         }
     }
 
+    /// Lists `candidates` instead, matched against the query as typed, the first match focused.
+    pub fn relist(&mut self, candidates: Vec<Candidate<T>>) {
+        self.candidates = candidates;
+        self.rank(false);
+        self.focused = 0;
+    }
+
     /// Focuses the first entry listed whose value satisfies `predicate`, and says whether there
     /// is one; without one the focus stays where it was.
     pub fn focus_where(&mut self, predicate: impl Fn(&T) -> bool) -> bool {
@@ -439,5 +446,16 @@ mod tests {
             sample().input(PickerInput::Dismiss),
             Some(Picked::Dismissed)
         );
+    }
+
+    // FR-UI-09
+    #[test]
+    fn relisting_keeps_the_query_and_ranks_the_new_candidates() {
+        let mut picker = sample();
+        typed(&mut picker, "re");
+        picker.input(PickerInput::Next);
+        picker.relist(vec![candidate(9, "Recipes"), candidate(8, "Groceries")]);
+        assert_eq!(picker.view().query.text(), "re");
+        assert_eq!(listed(&picker), (vec![9, 8], 0));
     }
 }

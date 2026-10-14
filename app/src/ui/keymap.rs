@@ -96,6 +96,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::SetDate(DateKind::Start), &["m s"]),
     (Command::SetDate(DateKind::Due), &["m d"]),
     (Command::StartToday, &["m t"]),
+    // `m` and ta**g**, since `mt` sets the start date today; `g` and **f**ilter goes to a narrower
+    // view of the place shown, `F` taking the filter off again (D-50).
+    (Command::Tags, &["m g"]),
+    (Command::FilterTags, &["g f"]),
+    (Command::ClearTagFilter, &["g F"]),
     // Todoist's sidebar key, and taskpaper-terminal's keys to focus the pane left and right
     // (D-45).
     (Command::Sidebar, &["M"]),
@@ -376,6 +381,20 @@ mod tests {
                 given = keymap.press(event);
             }
             assert_eq!(given, command, "{events:?}");
+        }
+    }
+
+    // FR-TAG-02, FR-TAG-04, FR-KEY-06
+    #[test]
+    fn m_g_tags_and_g_f_filters_by_tags() {
+        let mut keymap = Keymap::default();
+        for (keys, command) in [
+            (['m', 'g'], Command::Tags),
+            (['g', 'f'], Command::FilterTags),
+            (['g', 'F'], Command::ClearTagFilter),
+        ] {
+            assert_eq!(keymap.press(&char(keys[0])), None);
+            assert_eq!(keymap.press(&char(keys[1])), Some(command), "{keys:?}");
         }
     }
 

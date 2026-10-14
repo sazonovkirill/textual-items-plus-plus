@@ -152,6 +152,54 @@ pub struct Tag {
     pub value: Option<String>,
 }
 
+/// The tag names the app writes itself, and those TaskPaper reads as plain text, which no tag of
+/// the user's takes (FR-STORE-10, OQ-11).
+const RESERVED: &[&str] = &[
+    "start", "due", "done", "deleted", "hidden", "area", "section", "id", "text", "type",
+];
+
+impl Tag {
+    /// The tag named `name` without a value, as the user's tags are.
+    #[must_use]
+    pub fn plain(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: None,
+        }
+    }
+
+    /// Whether it is one of the user's tags, which the user adds, removes and filters by by its
+    /// name, whatever its value: one whose name the app does not use itself (FR-TAG-01, OQ-11).
+    #[must_use]
+    pub fn is_users(&self) -> bool {
+        !RESERVED.contains(&self.name.as_str())
+    }
+}
+
+/// The name of the user's tag that `typed` names: trimmed, with each run of spaces inside it
+/// written `-` (OQ-11). `None` when nothing is left, when a character is one a TaskPaper tag name
+/// cannot hold, or when the app uses the name itself.
+#[must_use]
+pub fn tag_name(typed: &str) -> Option<String> {
+    let name = typed.split_whitespace().collect::<Vec<_>>().join("-");
+    let tag = Tag::plain(name);
+    (!tag.name.is_empty() && tag.name.chars().all(is_tag_name_char) && tag.is_users())
+        .then_some(tag.name)
+}
+
+/// Whether a TaskPaper tag name can hold `c`: the XML name characters without `:`, as TaskPaper's
+/// `TagWord` (BMP only, like its regex).
+#[must_use]
+pub fn is_tag_name_char(c: char) -> bool {
+    matches!(c,
+        'A'..='Z' | '_' | 'a'..='z' | '-' | '.' | '0'..='9' | '\u{B7}'
+        | '\u{C0}'..='\u{D6}' | '\u{D8}'..='\u{F6}' | '\u{F8}'..='\u{2FF}'
+        | '\u{300}'..='\u{36F}' | '\u{370}'..='\u{37D}' | '\u{37F}'..='\u{1FFF}'
+        | '\u{200C}'..='\u{200D}' | '\u{203F}'..='\u{2040}' | '\u{2070}'..='\u{218F}'
+        | '\u{2C00}'..='\u{2FEF}' | '\u{3001}'..='\u{D7FF}' | '\u{F900}'..='\u{FDCF}'
+        | '\u{FDF0}'..='\u{FFFD}')
+}
+
 #[cfg(test)]
 mod tests {
     use jiff::civil::date;
@@ -239,5 +287,69 @@ mod tests {
         assert!(item.overdue(today));
         item.completed = Some(Completion::Undated);
         assert!(!item.overdue(today), "completed");
+    }
+
+    // FR-STORE-10
+    #[test]
+    fn name_characters_match_taskpaper() {
+        for c in [
+            'A', 'Z', 'a', 'z', '_', '-', '.', '0', '9', '\u{B7}', '\u{C0}', '\u{D6}', '\u{D8}',
+            '\u{F6}', '\u{F8}', '\u{2FF}', '\u{300}', '\u{36F}', '\u{370}', '\u{37D}', '\u{37F}',
+            '\u{1FFF}', '\u{200C}', '\u{200D}', '\u{203F}', '\u{2040}', '\u{2070}', '\u{218F}',
+            '\u{2C00}', '\u{2FEF}', '\u{3001}', '\u{D7FF}', '\u{F900}', '\u{FDCF}', '\u{FDF0}',
+            '\u{FFFD}',
+        ] {
+            assert!(is_tag_name_char(c), "{c:?}");
+        }
+        for c in [
+            ':',
+            '/',
+            '@',
+            '#',
+            '!',
+            ',',
+            '(',
+            ' ',
+            '\u{D7}',
+            '\u{F7}',
+            '\u{37E}',
+            '\u{2000}',
+            '\u{2041}',
+            '\u{2190}',
+            '\u{3000}',
+            '\u{FDD0}',
+            '\u{FFFE}',
+            '\u{10000}',
+        ] {
+            assert!(!is_tag_name_char(c), "{c:?}");
+        }
+    }
+
+    // FR-TAG-02, FR-STORE-10
+    #[test]
+    fn a_typed_tag_name_is_trimmed_and_joined_with_dashes() {
+        assert_eq!(tag_name("  deep   work "), Some("deep-work".to_owned()));
+        assert_eq!(tag_name("Home"), Some("Home".to_owned()));
+        assert_eq!(tag_name("été.2"), Some("été.2".to_owned()));
+        for refused in ["", "   ", "a/b", "a:b", "@home", "done", "area", "type"] {
+            assert_eq!(tag_name(refused), None, "{refused:?}");
+        }
+    }
+
+    // FR-TAG-01, FR-STORE-10
+    #[test]
+    fn the_users_tags_have_a_name_the_app_leaves_alone() {
+        assert!(Tag::plain("home").is_users());
+        assert!(!Tag::plain("due").is_users());
+        let valued = Tag {
+            name: "priority".to_owned(),
+            value: Some("1".to_owned()),
+        };
+        assert!(valued.is_users());
+        let date = Tag {
+            name: "due".to_owned(),
+            value: Some("soon".to_owned()),
+        };
+        assert!(!date.is_users());
     }
 }

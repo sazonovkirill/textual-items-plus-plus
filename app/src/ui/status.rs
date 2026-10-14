@@ -13,8 +13,8 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use super::{Icon, IconSet, Theme};
-use crate::app::{Notice, Opened, Refusal, State, autosave::SaveState};
+use super::{Icon, IconSet, Theme, keymap};
+use crate::app::{Command, Notice, Opened, Refusal, State, autosave::SaveState};
 
 /// What stands between the parts of the line.
 const SEPARATOR: &str = " · ";
@@ -118,6 +118,10 @@ fn kept(state: &State) -> String {
         Notice::Refused(Refusal::ReadsAsTask) => {
             "only a task's title can start with \"- \"".to_owned()
         }
+        Notice::TagInTitle => format!(
+            "a title has no word starting with @; add tags with {}",
+            keymap::written(Command::Tags).unwrap_or_default()
+        ),
     });
     if let Some(notice) = notice {
         return notice;

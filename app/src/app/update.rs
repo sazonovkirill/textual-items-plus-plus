@@ -20,6 +20,8 @@ pub enum Message {
     Navigator(PickerInput),
     /// The user did something in the open Move to picker (FR-OPS-04).
     MoveTo(PickerInput),
+    /// The user did something in the open tag picker (FR-TAG-02, FR-TAG-04).
+    Tags(PickerInput),
     /// The user did something while editing a title or a description (FR-EDIT-01).
     Edit(EditInput),
     /// The user did something in the open date prompt (FR-DATE-02).
@@ -136,11 +138,15 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::GroupIntoSection) => state.group(ItemKind::Section),
         Message::Command(Command::GroupIntoProject) => state.group(ItemKind::Project),
         Message::Command(Command::EditDescription(whose)) => state.edit_description(whose),
+        Message::Command(Command::Tags) => state.open_tags(),
+        Message::Command(Command::FilterTags) => state.open_tag_filter(),
+        Message::Command(Command::ClearTagFilter) => state.clear_tag_filter(),
         Message::Command(Command::Sidebar) => state.toggle_sidebar(),
         Message::Command(Command::FocusSidebar) => state.focus_sidebar(true),
         Message::Command(Command::FocusPane) => state.focus_sidebar(false),
         Message::Navigator(input) => state.navigator_input(input),
         Message::MoveTo(input) => state.move_to_input(input),
+        Message::Tags(input) => state.tags_input(input),
         Message::Edit(input) => state.edit_input(input),
         Message::DatePrompt(input) => state.date_prompt_input(input),
     }
@@ -474,6 +480,29 @@ mod tests {
         Ok(())
     }
 
+    // FR-TAG-01, FR-TAG-02, FR-VIEW-10
+    #[test]
+    fn the_sidebar_tags_its_focused_entry() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let mut state = State::new(document, Opened::Demo);
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Last));
+        assert_eq!(sidebar(&state).0.as_deref(), Some("Work"));
+        give(&mut state, Command::Tags);
+        let typed = Message::Tags(PickerInput::Edit(TextEdit::Insert('x')));
+        assert_eq!(update(&mut state, typed, TODAY), []);
+        let chosen = Message::Tags(PickerInput::Choose);
+        assert_eq!(update(&mut state, chosen, TODAY), []);
+        let tags = state
+            .document()
+            .node(work)
+            .and_then(Node::item)
+            .map(|area| area.tags.clone());
+        assert_eq!(tags, Some(vec![crate::domain::Tag::plain("x")]));
+        Ok(())
+    }
+
     // FR-VIEW-10, FR-EDIT-05, FR-ORG-06, FR-OPS-05
     #[test]
     fn the_sidebar_adds_renames_and_deletes_without_moving_the_pane() -> Result<(), PlacementError>
@@ -560,6 +589,7 @@ mod tests {
             Command::MoveTo,
             Command::StartToday,
             Command::Go(Go::Into),
+            Command::Tags,
             Command::Focus(Focus::Next),
         ] {
             give(&mut state, command);

@@ -4,7 +4,7 @@
 
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::Widget,
@@ -19,10 +19,12 @@ const SEPARATOR: &str = " › ";
 /// What stands for the crumbs left out at the start.
 const ELLIPSIS: &str = "…";
 
-/// The breadcrumb line of a pane showing the last container of `path`.
+/// The breadcrumb line of a pane showing the last container of `path`, with the tags it is
+/// filtered by.
 pub(super) struct Crumbs<'a> {
     document: &'a Document,
     path: &'a [ItemId],
+    filter: &'a [String],
     theme: &'a Theme,
     icons: IconSet,
 }
@@ -38,17 +40,43 @@ impl<'a> Crumbs<'a> {
         Self {
             document,
             path,
+            filter: &[],
             theme,
             icons,
         }
+    }
+
+    /// The crumbs of a pane filtered by the tags `filter` holds (FR-TAG-04).
+    pub(super) fn filter(mut self, filter: &'a [String]) -> Self {
+        self.filter = filter;
+        self
+    }
+
+    /// The tags the pane is filtered by, after the tag icon, in the tag color; nothing without a
+    /// filter.
+    fn filtered(&self) -> Span<'static> {
+        if self.filter.is_empty() {
+            return Span::raw("");
+        }
+        let tags: Vec<String> = self.filter.iter().map(|name| format!("@{name}")).collect();
+        Span::styled(
+            format!(" {} {} ", Icon::Tag.glyph(self.icons), tags.join(" ")),
+            Style::new().fg(self.theme.tag),
+        )
     }
 }
 
 impl Widget for Crumbs<'_> {
     /// Draws, after the focus gutter so the crumbs line up with the rows, the home icon and each
-    /// container's title from the top down, joined by `›`, the earlier ones dimmed. When they do
-    /// not fit, the earliest give way to `…`, and the last is cut at the right edge.
+    /// container's title from the top down, joined by `›`, the earlier ones dimmed, and the tags
+    /// the pane is filtered by at the right end. When they do not fit, the earliest crumbs give
+    /// way to `…`, and the last is cut before the tags.
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let filtered = self.filtered();
+        let width = u16::try_from(filtered.width()).unwrap_or(u16::MAX);
+        let [area, tags] =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)]).areas(area);
+        filtered.render(tags, buf);
         let titles: Vec<&str> = self
             .path
             .iter()
