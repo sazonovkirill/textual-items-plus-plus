@@ -158,6 +158,29 @@ fn a_change_made_elsewhere_is_reloaded() {
     );
 }
 
+// F-FILE-06, FR-EDIT-08, D-114
+#[test]
+fn a_reload_rebases_the_edit_dialog_on_the_change_made_elsewhere() {
+    let (_dir, path, mut harness) = on_file("Inbox:\n\t- Buy milk\n\t- Call mom\n");
+    harness.type_text("e");
+    harness.key(KeyCode::End);
+    harness.type_text(" and eggs");
+    fs::write(
+        &path,
+        "Inbox:\n\t- Buy milk @due(2026-10-20) @errand\n\t\tfrom the shop on 5th\n\t- Call mom\n",
+    )
+    .expect("written");
+    harness.check();
+    let screen = harness.screen();
+    assert!(screen.contains("from the shop on 5th"), "{screen}");
+    harness.key(KeyCode::Enter);
+    harness.wait(1000);
+    assert_eq!(
+        read(&path),
+        "Inbox:\n\t- Buy milk and eggs @due(2026-10-20) @errand\n\t\tfrom the shop on 5th\n\t- Call mom\n"
+    );
+}
+
 // F-FILE-06, FR-VIEW-10
 #[test]
 fn a_reload_keeps_the_sidebar_on_its_entry_and_its_areas_collapsed() {

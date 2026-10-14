@@ -146,27 +146,21 @@ impl TagPicker {
         Self::new(Vec::new(), TagsFor::Filter, listed)
     }
 
-    /// The picker `self` was, made again for `document` with `items` and `rows`, and the query
-    /// typed again, as after a reload, a draft's carrying the tags it marked; `None` when it
-    /// tagged items and none is left.
+    /// The picker `self` was, made again for `document` with `items` and `rows`, marking the
+    /// tags named `marked`, which the filter holds or the draft carries, and the query typed
+    /// again, as after a reload; `None` when it tagged items and none is left.
     pub(super) fn reopen(
         &self,
         document: &Document,
         items: Vec<ItemId>,
         rows: &[Row],
-        filter: &[String],
+        marked: &[String],
     ) -> Option<Self> {
         let mut picker = match self.tags_for {
             TagsFor::Items => Self::for_items(document, items)?,
-            TagsFor::Filter => Self::for_filter(document, rows, filter),
+            TagsFor::Filter => Self::for_filter(document, rows, marked),
             TagsFor::Draft => {
-                let carried = self
-                    .listed
-                    .iter()
-                    .filter(|listed| listed.value.mark == TagMark::All);
-                let tags: Vec<Tag> = carried
-                    .map(|listed| Tag::plain(&*listed.value.name))
-                    .collect();
+                let tags: Vec<Tag> = marked.iter().map(Tag::plain).collect();
                 Self::for_draft(document, &tags)
             }
         };

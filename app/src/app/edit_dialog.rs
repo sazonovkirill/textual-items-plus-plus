@@ -94,12 +94,14 @@ pub struct EditDialogView<'a> {
     pub problem: Option<EditProblem>,
 }
 
-/// The open dialog: the item it edits, its draft, the focused field, the local date the dates
-/// typed resolve against, the tag picker open over it and why applying last failed.
+/// The open dialog: the item it edits, the item as its draft started from, its draft, the focused
+/// field, the local date the dates typed resolve against, the tag picker open over it and why
+/// applying last failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct EditDialog {
     id: ItemId,
     kind: ItemKind,
+    base: Item,
     focus: EditField,
     title: TextField,
     description: TextField,
@@ -149,6 +151,7 @@ impl EditDialog {
         Some(Self {
             id,
             kind: item.kind,
+            base: item.clone(),
             focus,
             title: TextField::new(item.title.clone()),
             description: TextField::multi_line(&item.description),
@@ -380,17 +383,59 @@ impl EditDialog {
         after
     }
 
-    /// The dialog on the item of a reloaded document that `exact` finds for its own, with its
-    /// draft and the tag picker made again for `document`, or `None` when it finds none.
+    /// The dialog on the item of a reloaded document that `exact` finds for its own, rebased on
+    /// it, with the tag picker made again for `document`, or `None` when it finds none.
     pub(super) fn rematched(
         self,
         document: &Document,
         exact: impl Fn(ItemId) -> Option<ItemId>,
     ) -> Option<Self> {
-        let id = exact(self.id)?;
-        let picker =
-            (self.picker.as_ref()).and_then(|picker| picker.reopen(document, Vec::new(), &[], &[]));
-        Some(Self { id, picker, ..self })
+        let mut dialog = Self {
+            id: exact(self.id)?,
+            ..self
+        };
+        dialog.rebase(edited(document, dialog.id).clone());
+        let carried: Vec<String> = (dialog.tags.iter())
+            .filter(|tag| tag.is_users())
+            .map(|tag| tag.name.clone())
+            .collect();
+        dialog.picker = (dialog.picker.take())
+            .and_then(|picker| picker.reopen(document, Vec::new(), &[], &carried));
+        Some(dialog)
+    }
+
+    /// Starts the draft from `item` instead: each field the user has not changed takes its value,
+    /// and each one they changed keeps theirs, so that applying the draft makes only their
+    /// changes over another program's (D-114).
+    fn rebase(&mut self, item: Item) {
+        let base = std::mem::replace(&mut self.base, item);
+        let item = &self.base;
+        if self.title.text() == base.title {
+            self.title = TextField::new(item.title.clone());
+        }
+        if self.description.text() == TextField::multi_line(&base.description).text() {
+            self.description = TextField::multi_line(&item.description);
+        }
+        if self.tags == base.tags {
+            self.tags.clone_from(&item.tags);
+        }
+        for (focus, field, from, to) in [
+            (EditField::Start, &mut self.start, base.start, item.start),
+            (EditField::Due, &mut self.due, base.due, item.due),
+        ] {
+            if field.text() == date_field(from).text() {
+                *field = date_field(to);
+                if focus == self.focus {
+                    *field = field.edited(TextEdit::SelectAll);
+                }
+            }
+        }
+        if self.pinned == base.pinned {
+            self.pinned = item.pinned;
+        }
+        if self.flagged == base.flagged {
+            self.flagged = item.flagged;
+        }
     }
 }
 
@@ -1050,6 +1095,85 @@ mod tests {
         open.picker = None;
         let closed = open.rematched(document, Some).ok_or("found")?;
         assert!(closed.picker.is_none());
+        Ok(())
+    }
+
+    // FR-EDIT-08, F-FILE-06, D-114
+    #[test]
+    fn a_rematched_dialog_takes_the_reloaded_value_of_each_field_the_user_left() -> TestResult {
+        let sample = sample()?;
+        let mut document = sample.document.clone();
+        let mut open = dialog(&document, sample.call)?;
+        typed(&mut open, &document, "!");
+        open.step(4);
+        typed(&mut open, &document, "2026-10-09");
+        open.step(1);
+        typed(&mut open, &document, " ");
+        let mut theirs = item(&document, sample.call).clone();
+        theirs.title = "Call the bank today".to_owned();
+        theirs.description = "Ask about fees".to_owned();
+        theirs.tags = vec![Tag::plain("errand")];
+        theirs.start = None;
+        theirs.due = Some(date(2026, 10, 20));
+        document.set(sample.call, theirs.clone())?;
+        let rebased = open.rematched(&document, Some).ok_or("found")?;
+        let view = rebased.view();
+        assert_eq!(view.title.text(), "Call the bank!", "the user's title");
+        assert_eq!(view.description.text(), "Ask about fees");
+        assert_eq!(view.tags, ["errand"]);
+        assert_eq!(view.start.field.text(), "");
+        assert_eq!(view.due.field.text(), "2026-10-09", "the user's due date");
+        assert!(view.flagged, "the user's flag");
+        assert_eq!(
+            rebased.applied(&theirs),
+            Ok(Item {
+                title: "Call the bank!".to_owned(),
+                due: Some(date(2026, 10, 9)),
+                flagged: true,
+                ..theirs.clone()
+            })
+        );
+        theirs.description = "Bring ID".to_owned();
+        document.set(sample.call, theirs)?;
+        let again = rebased.rematched(&document, Some).ok_or("found")?;
+        assert_eq!(
+            again.view().description.text(),
+            "Bring ID",
+            "the reloaded value became the description's base"
+        );
+        let mut dating = dialog(&document, sample.buy)?;
+        dating.step(4);
+        let mut due = item(&document, sample.buy).clone();
+        due.due = Some(date(2026, 10, 30));
+        document.set(sample.buy, due)?;
+        let mut dating = dating.rematched(&document, Some).ok_or("found")?;
+        typed(&mut dating, &document, "fri");
+        assert_eq!(
+            dating.view().due.field.text(),
+            "fri",
+            "the focused date field's reloaded text stays selected"
+        );
+        let mut picking = dialog(&document, sample.buy)?;
+        picking.step(2);
+        typed(&mut picking, &document, " ");
+        let mut tagged = item(&document, sample.buy).clone();
+        tagged.tags.push(Tag::plain("urgent"));
+        document.set(sample.buy, tagged)?;
+        let rebased = picking.rematched(&document, Some).ok_or("found")?;
+        let marks: Option<Vec<_>> = rebased.view().picker.map(|view| {
+            let entries = view.picker.entries.iter();
+            entries
+                .map(|entry| (entry.value.name.clone(), entry.value.mark))
+                .collect()
+        });
+        assert_eq!(
+            marks
+                .ok_or("the picker")?
+                .iter()
+                .find(|(name, _)| name == "urgent"),
+            Some(&("urgent".into(), TagMark::All)),
+            "the picker marks the rebased draft's tags"
+        );
         Ok(())
     }
 }
