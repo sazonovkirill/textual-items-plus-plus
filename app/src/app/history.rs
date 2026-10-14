@@ -1,14 +1,17 @@
 //! The undo and redo history: which committed transactions can be reverted and replayed, in what
-//! order, and what was selected before and after each (FR-EDIT-06, N-UX-02).
+//! order, what was selected before and after each (FR-EDIT-06, N-UX-02), and what the latest step
+//! applied changed, which a frontend shows (FR-UI-07).
 
 use super::Selection;
-use crate::domain::{Document, PlacementError, Transaction};
+use crate::domain::{Document, ItemId, PlacementError, Transaction};
 
 /// The steps to undo, latest last, and the undone ones to redo.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct History {
     undo: Vec<Step>,
     redo: Vec<Step>,
+    /// The items the latest step applied changed, until they are forgotten.
+    changed: Vec<ItemId>,
 }
 
 /// A transaction ready to apply, with the selection before it and the one to restore after it.
@@ -50,6 +53,7 @@ impl History {
             return Ok(());
         }
         document.apply(&transaction)?;
+        self.changed = transaction.items();
         let step = Step {
             transaction,
             before,
@@ -68,7 +72,7 @@ impl History {
     /// The [`PlacementError`] when the document no longer matches the step; then nothing
     /// changes.
     pub fn undo(&mut self, document: &mut Document) -> Result<Option<Selection>, PlacementError> {
-        step(&mut self.undo, &mut self.redo, document)
+        step(&mut self.undo, &mut self.redo, &mut self.changed, document)
     }
 
     /// Replays the latest undone step and returns the selection from after it, or `None` when
@@ -79,14 +83,28 @@ impl History {
     /// The [`PlacementError`] when the document no longer matches the step; then nothing
     /// changes.
     pub fn redo(&mut self, document: &mut Document) -> Result<Option<Selection>, PlacementError> {
-        step(&mut self.redo, &mut self.undo, document)
+        step(&mut self.redo, &mut self.undo, &mut self.changed, document)
+    }
+
+    /// The items the latest step committed, undone or redone changed, put in or took out, with
+    /// everything inside those put in or taken out, since they were last forgotten.
+    #[must_use]
+    pub fn changed(&self) -> &[ItemId] {
+        &self.changed
+    }
+
+    /// Forgets what the latest step changed, as each message starts.
+    pub fn forget_changed(&mut self) {
+        self.changed.clear();
     }
 }
 
-/// Applies the latest step of `from` and moves its inverse onto `to`.
+/// Applies the latest step of `from`, noting what it changed in `changed`, and moves its inverse
+/// onto `to`.
 fn step(
     from: &mut Vec<Step>,
     to: &mut Vec<Step>,
+    changed: &mut Vec<ItemId>,
     document: &mut Document,
 ) -> Result<Option<Selection>, PlacementError> {
     let Some(step) = from.pop() else {
@@ -96,6 +114,7 @@ fn step(
         from.push(step);
         return Err(error);
     }
+    *changed = step.transaction.items();
     let selection = step.after.clone();
     to.push(step.inverse());
     Ok(Some(selection))
@@ -160,6 +179,23 @@ mod tests {
     ) -> Result<(), PlacementError> {
         let transaction = rename(document, id, to)?;
         history.commit(document, transaction, Selection::default(), |_| focused(id))
+    }
+
+    // FR-UI-07
+    #[test]
+    fn it_tells_what_the_latest_step_changed_until_forgotten() -> Result<(), PlacementError> {
+        let (mut document, a, b) = document()?;
+        let mut history = History::default();
+        commit(&mut history, &mut document, a, "A")?;
+        assert_eq!(history.changed(), [a]);
+        commit(&mut history, &mut document, b, "B")?;
+        history.forget_changed();
+        assert_eq!(history.changed(), []);
+        history.undo(&mut document)?;
+        assert_eq!(history.changed(), [b], "undoing changes it back");
+        history.redo(&mut document)?;
+        assert_eq!(history.changed(), [b]);
+        Ok(())
     }
 
     // FR-EDIT-06

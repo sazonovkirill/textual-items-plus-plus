@@ -110,6 +110,8 @@ pub enum Effect {
 /// it.
 pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     state.set_today(today);
+    state.history.forget_changed();
+    state.forget_refusal();
     let mut effects = dispatch(state, message, today);
     state.settle_sidebar();
     effects.extend(state.step_saving());
@@ -433,6 +435,35 @@ mod tests {
         assert!(state.editing().is_none(), "the Inbox holds no sections");
         give(&mut state, Command::AddProject(End::Top));
         assert!(state.editing().is_some());
+        Ok(())
+    }
+
+    // FR-UI-07
+    #[test]
+    fn the_state_tells_what_each_message_changed_and_whether_it_was_refused()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        let a = state.selection().focused();
+        give(&mut state, Command::Move(Direction::Down));
+        assert_eq!(
+            state
+                .changed()
+                .iter()
+                .copied()
+                .map(Some)
+                .collect::<Vec<_>>(),
+            [a; 2]
+        );
+        assert!(!state.refused());
+        give(&mut state, Command::Indent);
+        assert!(state.refused());
+        assert_eq!(state.changed(), []);
+        update(&mut state, Message::Tick(Duration::from_secs(1)), TODAY);
+        assert!(!state.refused(), "the next message forgets the refusal");
+        assert!(
+            state.notice().is_some(),
+            "though the status line still says it"
+        );
         Ok(())
     }
 

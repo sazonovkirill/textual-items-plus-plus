@@ -90,6 +90,17 @@ pub enum Notice {
     NoWeather,
 }
 
+impl Notice {
+    /// Whether it says that what was asked for was refused, rather than what happened or that
+    /// there was nothing to act on (FR-UI-07).
+    fn refuses(&self) -> bool {
+        matches!(
+            self,
+            Self::Refused(_) | Self::TagInTitle | Self::CannotTakeTheirs
+        )
+    }
+}
+
 /// The conflict prompt as a frontend shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConflictView {
@@ -111,6 +122,8 @@ pub(super) struct Saving {
     conflict: Option<Conflict>,
     gone: bool,
     notice: Option<Notice>,
+    /// Whether the message being handled was refused, as a notice said.
+    refused: bool,
     /// Where the document went when the session ended with the conflict prompt open.
     left_in: Option<PathBuf>,
 }
@@ -152,6 +165,7 @@ impl Saving {
             conflict: None,
             gone: false,
             notice: None,
+            refused: false,
             left_in: None,
         }
     }
@@ -202,7 +216,13 @@ impl State {
 
     /// Has the status line say `notice` until the next command.
     pub(super) fn notify(&mut self, notice: Notice) {
+        self.saving.refused |= notice.refuses();
         self.saving.notice = Some(notice);
+    }
+
+    /// Forgets that the message before was refused, as each message starts.
+    pub(super) fn forget_refusal(&mut self) {
+        self.saving.refused = false;
     }
 
     /// Asks to end the session, saving first. With the conflict prompt open, the file on disk is
@@ -350,7 +370,7 @@ impl State {
         if let Some(theirs) = conflict.theirs.clone() {
             self.choose(Choice::TakeTheirs(theirs), ConflictSide::Mine)
         } else {
-            self.saving.notice = Some(Notice::CannotTakeTheirs);
+            self.notify(Notice::CannotTakeTheirs);
             Vec::new()
         }
     }
@@ -448,6 +468,13 @@ impl State {
     #[must_use]
     pub fn notice(&self) -> Option<&Notice> {
         self.saving.notice.as_ref()
+    }
+
+    /// Whether the message just handled was refused, as the status line says, which a frontend
+    /// shows (FR-UI-07).
+    #[must_use]
+    pub fn refused(&self) -> bool {
+        self.saving.refused
     }
 
     /// Whether quitting was refused because the document could not be kept, so quitting again

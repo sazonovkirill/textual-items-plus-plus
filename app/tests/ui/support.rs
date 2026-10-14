@@ -11,7 +11,10 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use jiff::civil::{Date, DateTime, date};
 use ratatui::{Terminal, backend::TestBackend};
 use tempfile::TempDir;
-use textual_items_plus_plus::ui::{Edge, Input, Tui};
+use textual_items_plus_plus::{
+    app::Animations,
+    ui::{Edge, Input, Tui},
+};
 
 /// The local date the tests run on.
 pub const TODAY: Date = date(2026, 10, 5);
@@ -64,6 +67,28 @@ impl Harness {
         width: u16,
         height: u16,
     ) -> Result<Self, textual_items_plus_plus::store::OpenError> {
+        Self::starting(folders, path, recovered, (width, height), Animations::Off)
+    }
+
+    /// Starts the app without a file, on the demo document, on a `width` by `height` terminal,
+    /// with every animation unless the settings file in `folders` says otherwise, as a session
+    /// not over SSH does; the other ways of starting it animate nothing, so that what tests not
+    /// about animation see is each frame as it ends.
+    pub fn animated(folders: TempDir, width: u16, height: u16) -> Self {
+        Self::starting(folders, None, None, (width, height), Animations::Full)
+            .expect("the demo opens")
+    }
+
+    /// Starts the app on `path`, with the document of the recovery file `recovered` when one is
+    /// given, keeping its own files in `folders`, on a terminal of `size`, animating as
+    /// `animations` says unless the settings file does.
+    fn starting(
+        folders: TempDir,
+        path: Option<PathBuf>,
+        recovered: Option<&Path>,
+        (width, height): (u16, u16),
+        animations: Animations,
+    ) -> Result<Self, textual_items_plus_plus::store::OpenError> {
         let terminal =
             Terminal::new(TestBackend::new(width, height)).expect("a test backend always sets up");
         let (inputs, received) = mpsc::channel();
@@ -74,6 +99,7 @@ impl Harness {
             layouts: Some(folders.path().join("layouts.json")),
             config: Some(folders.path().join("config.toml")),
             clock: || NOW,
+            animations,
         };
         let tui = Tui::open(path, recovered, TODAY, &edge)?;
         let mut harness = Self {
