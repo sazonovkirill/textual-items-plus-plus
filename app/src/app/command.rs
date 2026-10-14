@@ -53,6 +53,8 @@ pub enum Command {
     OpenNote(Whose),
     /// Open the attachments panel on an item's newest comment (FR-ATT-02, FR-ATT-04).
     OpenComments(Whose),
+    /// Open the attachments panel on the focused task's checklist (FR-ATT-02, FR-CHK-02).
+    OpenChecklist,
     /// Open the date prompt for the selected items' start or due date (FR-DATE-02, FR-OPS-06).
     SetDate(DateKind),
     /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
@@ -487,6 +489,11 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::OpenChecklist,
+        title: "Open Checklist",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::SetDate(DateKind::Start),
         title: "Set Start Date",
         context: Context::Navigate,
@@ -779,6 +786,7 @@ mod tests {
             Command::OpenNote(Whose::Shown),
             Command::OpenComments(Whose::Focused),
             Command::OpenComments(Whose::Shown),
+            Command::OpenChecklist,
             Command::Delete,
             Command::Restore,
             Command::EmptyTrash,

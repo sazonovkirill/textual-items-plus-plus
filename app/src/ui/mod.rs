@@ -44,8 +44,8 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput, Effect,
-        Focus, Message, Opened, Part, PickerInput, Place, Side, State, Stop, TagEntry, TagMark,
-        TagsFor, TagsView, TextEdit,
+        Focus, Message, Opened, Part, PickerInput, Place, Selected, Side, State, Stop, TagEntry,
+        TagMark, TagsFor, TagsView, TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
@@ -227,7 +227,8 @@ impl Tui {
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
     /// Move to picker (FR-OPS-04) and, in edit mode, the title, description or note being edited
     /// take them the same way (FR-EDIT-01), and so does the date prompt (FR-DATE-02). The open
-    /// attachments panel takes them leaving only quitting, scrolling itself (FR-ATT-01).
+    /// attachments panel takes them, scrolling itself (FR-ATT-01), leaving quitting and the
+    /// commands it acts on (FR-CHK-03).
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
         if let Event::Paste(text) = event {
@@ -297,16 +298,24 @@ impl Tui {
         motion
     }
 
+    /// Whether the open attachments panel has an entry of a checklist selected, where pastes go.
+    fn in_checklist(&self) -> bool {
+        self.state
+            .attachments()
+            .is_some_and(|view| matches!(view.selected, Selected::Checklist(_)))
+    }
+
     /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
     /// it: a description or a note being edited takes it whole; a title being edited takes a
     /// single line, while several lines end editing and paste as items below; a comment being
     /// edited, the query of the open Navigator, Move to or tag picker and the open date prompt
     /// take it with its line breaks as spaces; otherwise the items it holds paste below the
-    /// focus. The conflict prompt takes none, nor does the attachments panel while nothing in it
-    /// is edited.
+    /// focus, or, in the checklist of the attachments panel, one item for each line below the
+    /// item selected (FR-CHK-03). The conflict prompt takes none, nor does the attachments panel
+    /// while nothing in it is edited and no checklist entry is selected.
     fn paste(&mut self, text: &str) {
         let panel = self.state.attachments().is_some() && self.state.editing().is_none();
-        if self.state.conflict().is_some() || panel {
+        if self.state.conflict().is_some() || (panel && !self.in_checklist()) {
             return;
         }
         let text = text.trim_end_matches(['\r', '\n']);
@@ -335,6 +344,9 @@ impl Tui {
                 let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
                 self.update(to_picker(PickerInput::Edit(TextEdit::Insert(c))));
             }
+        } else if self.in_checklist() {
+            let branches = store::taskpaper::read_checklist(text);
+            self.update(Message::Paste(Side::Below, branches));
         } else {
             let branches = store::taskpaper::read_branches(text);
             self.update(Message::Paste(Side::Below, branches));
@@ -511,7 +523,7 @@ impl Tui {
             }
             Effect::SetClipboard(branches) => self.clipboard.copy(&branches),
             Effect::ReadClipboard(side) => {
-                let branches = self.clipboard.branches();
+                let branches = self.clipboard.branches(self.in_checklist());
                 self.update(Message::Paste(side, branches));
             }
             Effect::NarrowPane => self.update(Message::PaneWidth(self.resized(false))),

@@ -1,6 +1,7 @@
 //! Integration tests: the whole app driven through key events and rendered in a `TestBackend`.
 
 mod all;
+mod checklists;
 mod clipboard;
 mod comments;
 mod completing;

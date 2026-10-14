@@ -87,12 +87,17 @@ pub(super) enum Refused {
 
 impl Editing {
     /// Starts editing the title of `id`, the caret at its end, when it is a task, section,
-    /// project or area; `before` is the selection to restore when the session is undone.
+    /// project, area or checklist item; `before` is the selection to restore when the session is
+    /// undone.
     pub(super) fn existing(document: &Document, id: ItemId, before: Selection) -> Option<Self> {
         let item = document.node(id).and_then(Node::item).filter(|item| {
             matches!(
                 item.kind,
-                ItemKind::Task | ItemKind::Section | ItemKind::Project | ItemKind::Area
+                ItemKind::Task
+                    | ItemKind::Section
+                    | ItemKind::Project
+                    | ItemKind::Area
+                    | ItemKind::ChecklistItem
             )
         })?;
         Some(Self {
@@ -288,7 +293,8 @@ impl Editing {
             if word_starts(edited.text()) > word_starts(self.field.text()) {
                 return Err(Refused::Tag);
             }
-            if self.kind != ItemKind::Task && reads_as_task(edited.text()) {
+            let line_of_a_task = matches!(self.kind, ItemKind::Task | ItemKind::ChecklistItem);
+            if !line_of_a_task && reads_as_task(edited.text()) {
                 return Err(Refused::Task);
             }
         }
@@ -519,13 +525,25 @@ mod tests {
         Ok(())
     }
 
+    // FR-CHK-03
     #[test]
-    fn the_inbox_and_checklist_items_are_not_edited_here() -> Result<(), PlacementError> {
-        let (document, _, check, selection) = document()?;
+    fn the_inbox_is_not_edited_here_and_a_checklist_item_is() -> Result<(), PlacementError> {
+        let (mut document, _, check, selection) = document()?;
         let inbox = document.inbox();
-        for id in [inbox, check, ItemId::new(99)] {
+        for id in [inbox, ItemId::new(99)] {
             assert_eq!(Editing::existing(&document, id, selection.clone()), None);
         }
+        let mut editing =
+            Editing::existing(&document, check, selection).ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(editing.input(&mut document, TextEdit::SelectAll), Ok(()));
+        for c in "- step".chars() {
+            assert_eq!(
+                editing.input(&mut document, TextEdit::Insert(c)),
+                Ok(()),
+                "a checklist item's text is written as a task's"
+            );
+        }
+        assert_eq!(editing.field().text(), "- step");
         Ok(())
     }
 

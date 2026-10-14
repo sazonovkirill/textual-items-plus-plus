@@ -41,13 +41,18 @@ impl Clipboard {
     }
 
     /// The items the clipboard holds: those of the system clipboard's text, else of the text the
-    /// app copied last.
-    pub(super) fn branches(&mut self) -> Vec<Branch> {
+    /// app copied last, read as checklist items, one for each line, for `checklist`.
+    pub(super) fn branches(&mut self, checklist: bool) -> Vec<Branch> {
+        let read = if checklist {
+            taskpaper::read_checklist
+        } else {
+            taskpaper::read_branches
+        };
         self.system
             .as_mut()
             .and_then(|system| system.get())
             .or_else(|| self.copied.clone())
-            .map(|text| taskpaper::read_branches(&text))
+            .map(|text| read(&text))
             .unwrap_or_default()
     }
 }

@@ -412,6 +412,10 @@ impl State {
     /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near, while
     /// the sidebar has the keys, or in a view, which has no place to paste into.
     pub(super) fn paste(&mut self, side: Side, branches: &[Branch]) {
+        if self.panel.is_some() {
+            self.paste_checklist(side, branches);
+            return;
+        }
         let Some(container) = self.container().filter(|_| !self.sidebar.has_keys()) else {
             return;
         };
@@ -783,6 +787,12 @@ impl State {
                     self.notify(Notice::TagInTitle);
                 }
             }
+            EditInput::Next if self.panel.is_some() => {
+                let checklist = editing.kind() == ItemKind::ChecklistItem;
+                if self.finish_editing() && checklist {
+                    self.new_checklist_item(Side::Below);
+                }
+            }
             EditInput::Next => {
                 let row =
                     container.is_some_and(|id| id != editing.id()) && !self.sidebar.has_keys();
@@ -812,6 +822,7 @@ impl State {
         };
         let (id, started) = (editing.id(), editing.revision());
         let in_sidebar = self.sidebar.has_keys();
+        let in_panel = self.panel.is_some();
         let heading = !in_sidebar && Some(id) == self.container();
         let listed = self.listings();
         let (transaction, before) = editing.finish(&mut self.document);
@@ -819,7 +830,7 @@ impl State {
             self.saving.unchanged(started, self.document.revision());
         }
         let mut after = self.pane().selection.clone();
-        if !heading && !in_sidebar {
+        if !heading && !in_sidebar && !in_panel {
             after.focus(Some(id));
         }
         self.history
@@ -829,6 +840,7 @@ impl State {
         if in_sidebar {
             self.sidebar.finish(kept);
         }
+        self.finish_adding(kept);
         if !kept {
             self.pane_mut().selection = before;
             if heading {
@@ -986,6 +998,7 @@ impl State {
             (Command::OpenComments(_), Some(Shown::Container(id))) => {
                 self.open_panel(id, Selected::Comment(0));
             }
+            (Command::OpenChecklist, Some(_)) => self.notify(Notice::NoChecklist),
             _ => {}
         }
         true

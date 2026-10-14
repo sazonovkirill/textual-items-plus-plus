@@ -78,6 +78,8 @@ pub enum Notice {
     /// Indenting, outdenting, converting or grouping was refused, for this reason (FR-OPS-03,
     /// FR-TASK-06, FR-OPS-07, FR-OPS-08).
     Refused(Refusal),
+    /// The checklist was asked for on an item that has none: only tasks have one (FR-ATT-02).
+    NoChecklist,
     /// Typing `@` at the start of a word of a title was refused: the word would read back as a
     /// tag, and tags go on from the tag picker (FR-TAG-02).
     TagInTitle,
@@ -378,8 +380,9 @@ impl State {
     /// as far as their text paths find them, the Navigator open on the places now listed with its
     /// query, Move to open on the destinations now listed with its query while an item it moves
     /// is found again, the date prompt open while an item it dates is, and the attachments panel
-    /// open while its item is. The tag filter stays while the container shown is found again as
-    /// it was. The undo history is cleared, since its steps fit only the document as it was.
+    /// open while its item is, on what it selected as far as that is found again. The tag filter
+    /// stays while the container shown is found again as it was. The undo history is cleared,
+    /// since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -408,7 +411,7 @@ impl State {
             .date_prompt
             .take()
             .and_then(|prompt| prompt.rematched(exact));
-        self.panel = self.rematched_panel(&old, exact);
+        self.panel = self.rematched_panel(&old, &exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
             let rows = view::rows(new, self.shown(), self.today, self.shows_completed());

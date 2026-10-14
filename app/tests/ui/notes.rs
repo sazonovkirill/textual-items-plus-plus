@@ -135,19 +135,28 @@ fn a_long_note_scrolls() {
     harness.ctrl('d');
     assert_eq!(
         panel(&harness)[1],
-        "│ line 9                               │"
+        "│ line 8                               │",
+        "a page down stops at the note's end"
     );
     harness.ctrl('d');
     assert_eq!(
-        panel(&harness)[1],
-        "│ line 10                              │",
-        "a page down stops at the end"
+        panel(&harness)[1..8],
+        [
+            "│ end                                  │",
+            "│                                      │",
+            "│                          \u{f0756} Checklist │",
+            "│ No checklist                         │",
+            "│                                      │",
+            "│                           󰆉 Comments │",
+            "│ No comments                          │",
+        ],
+        "and the next goes on to the task's empty checklist"
     );
     harness.type_text("gG");
     assert_eq!(
         panel(&harness)[4..8],
         [
-            "│ end                                  │",
+            "│ No checklist                         │",
             "│                                      │",
             "│                           󰆉 Comments │",
             "│ No comments                          │",

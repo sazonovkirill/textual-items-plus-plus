@@ -109,6 +109,7 @@ fn kept(state: &State) -> String {
             if *count == 1 { "item" } else { "items" }
         ),
         Notice::Refused(refusal) => why(*refusal).to_owned(),
+        Notice::NoChecklist => "only a task has a checklist".to_owned(),
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()

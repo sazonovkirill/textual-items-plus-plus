@@ -17,10 +17,10 @@ use ratatui::{
 use super::{Icon, IconSet, Theme, field};
 use crate::{
     app::{
-        PaneView, Part, Row, Selection, State, TextField,
+        self, PaneView, Part, Row, Selection, State, TextField,
         view::{self, Group, Heading, Locating, Shown, View},
     },
-    domain::{Document, Item, ItemId, ItemKind, Node, dates},
+    domain::{Document, Item, ItemId, ItemKind, Node, Tag, dates},
 };
 
 /// The columns left of the rows that hold the focus marker.
@@ -382,9 +382,9 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// Adds to `pieces` the lines of `row`, numbered `index`, showing `shown`, in content
-    /// `width`: its title, or the field editing it, then, when the view says where it is under
-    /// the title, that line, and otherwise the first line of its description; the field editing
-    /// its description shows either way.
+    /// `width`: its title, or the field editing it, with a task's checklist progress at the right,
+    /// then, when the view says where it is under the title, that line, and otherwise the first
+    /// line of its description; the field editing its description shows either way.
     fn row_pieces(
         &self,
         index: usize,
@@ -400,10 +400,19 @@ impl<'a> ContainerPane<'a> {
             }
             _ => None,
         };
-        pieces.push(match self.edited(row.id(), Part::Title) {
+        let mut title = match self.edited(row.id(), Part::Title) {
             Some(field) => self.field(shown, field, Some(index)),
             None => self.title_then(shown, Some(index), after),
-        });
+        };
+        if let Some((checked, total)) = app::progress(self.document, row.id()) {
+            let style = Style::new()
+                .fg(self.theme.headers)
+                .add_modifier(Modifier::DIM);
+            let glyph = Icon::Checklist.glyph(self.icons);
+            let progress = Span::styled(format!("{glyph} {checked}/{total} "), style);
+            title.right.spans.insert(0, progress);
+        }
+        pieces.push(title);
         let x = self.title_column(shown);
         // Where a view says under the title where its rows are, the second line is kept for that,
         // so its rows show no description and none takes three lines (owner, D-51).
@@ -485,11 +494,7 @@ impl<'a> ContainerPane<'a> {
     fn title_then(&self, item: &'a Item, row: Option<usize>, after: Option<Span<'a>>) -> Piece<'a> {
         let mut spans = vec![Span::styled(item.title.as_str(), self.title_style(item))];
         for tag in &item.tags {
-            let text = match &tag.value {
-                Some(value) => format!(" @{}({value})", tag.name),
-                None => format!(" @{}", tag.name),
-            };
-            spans.push(Span::styled(text, self.tag_style(item)));
+            spans.push(Span::styled(tag_text(tag), self.tag_style(item)));
         }
         spans.extend(after);
         Piece {
@@ -691,6 +696,14 @@ fn field_columns(width: u16, x: u16) -> usize {
 /// `text` wrapping between words (FR-UI-05).
 fn wrapped(text: Text<'_>) -> Paragraph<'_> {
     Paragraph::new(text).wrap(Wrap { trim: true })
+}
+
+/// `tag` as it follows a title: a space, then `@name` or `@name(value)`.
+pub(super) fn tag_text(tag: &Tag) -> String {
+    match &tag.value {
+        Some(value) => format!(" @{}({value})", tag.name),
+        None => format!(" @{}", tag.name),
+    }
 }
 
 /// The screen rows of content lines `start..end` shown in `area` from content line `top`.
@@ -931,7 +944,7 @@ mod tests {
             &theme,
             IconSet::Plain,
         );
-        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 8));
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 9));
         pane.render(buf.area, &mut buf, &mut 0);
         assert_eq!(
             lines(&buf)
@@ -944,8 +957,9 @@ mod tests {
                 "▌ - Answer the recruiter's  ! yesterday",
                 "▌   email",
                 "▌   Work",
-                "  - Write the             ≡ ❞ 1 ↦ today",
-                "    announcement @writing",
+                "  - Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
+                "    announcement",
+                "    @writing",
                 "    Work / Website › Launch",
             ]
         );
@@ -994,7 +1008,7 @@ mod tests {
                 "▌ - Answer the recruiter's  ! yesterday",
                 "▌   email",
                 "▌   Work",
-                "  - Write the             ≡ ❞ 1 ↦ today",
+                "  - Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
             ],
             "the row says where it is instead"
         );
@@ -1201,7 +1215,8 @@ mod tests {
                     "",
                     "  § Launch",
                     "    What has to happen before launch.",
-                    "▌ - Write the announcement @writing ≡ ❞ 1 ↦ today",
+                    "▌ - Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today",
+                    "▌   @writing",
                     "▌   Keep it under 300 words.",
                     "  - Book the launch call @meeting           ⇥ Sat",
                     "",
@@ -1211,7 +1226,6 @@ mod tests {
                     "",
                     "  ○ Blog",
                     "    A project inside a project.",
-                    "",
                     "",
                 ]
             )
@@ -1287,23 +1301,26 @@ mod tests {
             Some(theme.current_line),
             "the band spans the pane"
         );
-        let tag = at(28, 8);
+        let tag = at(4, 9);
         assert_eq!(tag.fg, Some(theme.tag));
         assert!(tag.add_modifier.contains(Modifier::DIM));
-        assert_eq!(at(4, 9).fg, Some(theme.dim_text), "a task's description");
+        assert_eq!(at(4, 10).fg, Some(theme.dim_text), "a task's description");
+        let progress = at(30, 8);
+        assert_eq!(progress.fg, Some(theme.headers), "checklist progress");
+        assert!(progress.add_modifier.contains(Modifier::DIM));
         let icons = at(36, 8);
         assert_eq!(icons.fg, Some(theme.headers));
         assert_eq!(at(42, 8).fg, Some(theme.start), "a start date chip");
         assert_eq!(
-            at(4, 10).bg,
+            at(4, 11).bg,
             Some(Color::Reset),
             "rows without focus have no band"
         );
-        let done = at(4, 14);
+        let done = at(4, 15);
         assert_eq!(done.fg, Some(theme.done));
         assert!(done.add_modifier.contains(Modifier::CROSSED_OUT));
-        assert_eq!(at(2, 14).fg, Some(theme.done), "a done task's marker");
-        assert!(!at(2, 14).add_modifier.contains(Modifier::CROSSED_OUT));
+        assert_eq!(at(2, 15).fg, Some(theme.done), "a done task's marker");
+        assert!(!at(2, 15).add_modifier.contains(Modifier::CROSSED_OUT));
     }
 
     // FR-UI-05
@@ -1350,7 +1367,7 @@ mod tests {
             (50, 5),
             &mut top,
         );
-        assert_eq!(top, 9);
+        assert_eq!(top, 10);
         assert_eq!(lines(&buf)[4].trim_end(), "▌ - Fix the footer links");
         draw_pane(
             &document,
@@ -1359,7 +1376,7 @@ mod tests {
             (50, 5),
             &mut top,
         );
-        assert_eq!(top, 10, "one row further down scrolls one line");
+        assert_eq!(top, 11, "one row further down scrolls one line");
         draw_pane(
             &document,
             website,
@@ -1367,7 +1384,7 @@ mod tests {
             (50, 5),
             &mut top,
         );
-        assert_eq!(top, 10, "a row in view does not scroll");
+        assert_eq!(top, 11, "a row in view does not scroll");
         let buf = draw_pane(&document, website, Some("Launch"), (50, 5), &mut top);
         assert_eq!((top, lines(&buf)[0].trim_end()), (6, "▌ § Launch"));
         draw_pane(
@@ -1388,7 +1405,7 @@ mod tests {
         assert_eq!(top, 8, "a row taller than the pane shows its first line");
         assert_eq!(
             lines(&buf)[0].trim_end(),
-            "▌ - Write the announcement @writing ≡ ❞ 1 ↦ today"
+            "▌ - Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today"
         );
     }
 

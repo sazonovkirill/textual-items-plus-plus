@@ -1,28 +1,36 @@
-//! The attachments panel: an item's note and comments, read and edited in a modal panel that
-//! takes the keys while it is open, as taskpaper-terminal's attachments panel is
+//! The attachments panel: an item's note, a task's checklist and an item's comments, read and
+//! edited in a modal panel that takes the keys while it is open, as taskpaper-terminal's
+//! attachments panel is
 //! ([attachments.md §3–5](../../../specs/reference/taskpaper-terminal/specs/attachments.md#3-attachments-panel-fr-att-03),
-//! FR-ATT-01–05). One of them is selected, which the keys act on. The note and a comment are
-//! edited as an item's description and title are, so a session is one step to undo and is saved
-//! like any edit.
+//! FR-ATT-01–05, FR-CHK-02–03). One of them is selected, which the keys act on. The note, a
+//! checklist item and a comment are edited as an item's description and title are, so a session
+//! is one step to undo and is saved like any edit.
 
-use jiff::civil::DateTime;
+use jiff::civil::{Date, DateTime};
 
-use super::{Focus, Part, State, TextField, Whose, editing::Editing};
-use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Transaction, comments};
+use super::{
+    Command, Focus, Notice, Refusal, Side, State, TextField, Whose,
+    checklist::{self, ChecklistLine},
+    editing::Editing,
+    moving,
+};
+use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Node, Op, Transaction, comments};
 
 /// What the user does in the open panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachmentsInput {
-    /// Edit what is selected: the note as raw text (FR-ATT-03) or a comment's text (FR-ATT-04).
+    /// Edit what is selected: the note as raw text (FR-ATT-03), a checklist item's text
+    /// (FR-CHK-03) or a comment's text (FR-ATT-04).
     Edit,
-    /// Select another of the note and the comments, in the order they show: the next, the one
-    /// before, the first or the last; other motions select nothing else.
+    /// Select another of the note, the checklist items and the comments, in the order they show,
+    /// as a motion moves the focus among rows.
     Select(Focus),
     /// Add a comment stamped with this local time, the newest, and edit its text (FR-ATT-04).
     AddComment(DateTime),
-    /// Delete the selected comment (FR-ATT-04).
+    /// Delete the selected checklist item with the items under it (FR-CHK-03) or the selected
+    /// comment (FR-ATT-04).
     Delete,
-    /// Close the panel, keeping the note being edited.
+    /// Close the panel, keeping what is being edited.
     Close,
 }
 
@@ -31,19 +39,34 @@ pub enum AttachmentsInput {
 pub enum Selected {
     /// The note.
     Note,
+    /// One item of a task's checklist, or `None` for a checklist with no items (FR-CHK-02).
+    Checklist(Option<ItemId>),
     /// The comment at this index, newest first.
     Comment(usize),
 }
 
-/// The open panel: the item it is on and what is selected.
+/// The open panel: the item it is on, what is selected and what was selected before a checklist
+/// item was added, to go back to when it is left empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Panel {
     id: ItemId,
     selected: Selected,
+    adding_from: Option<Selected>,
+}
+
+impl Panel {
+    /// The panel on item `id` with `selected` selected.
+    fn new(id: ItemId, selected: Selected) -> Self {
+        Self {
+            id,
+            selected,
+            adding_from: None,
+        }
+    }
 }
 
 /// The open panel as a frontend shows it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentsView<'a> {
     /// The item the panel is on.
     pub id: ItemId,
@@ -51,6 +74,8 @@ pub struct AttachmentsView<'a> {
     pub item: &'a Item,
     /// What is selected, one of what the item has.
     pub selected: Selected,
+    /// The item's checklist, items in tree order, when it is a task (FR-CHK-02).
+    pub checklist: Option<Vec<ChecklistLine<'a>>>,
     /// The text of what is selected as it is edited, while it is.
     pub editing: Option<&'a TextField>,
 }
@@ -59,18 +84,16 @@ impl State {
     /// The attachments panel, while it is open (FR-ATT-01).
     #[must_use]
     pub fn attachments(&self) -> Option<AttachmentsView<'_>> {
-        let Panel { id, selected } = self.panel?;
+        let Panel { id, selected, .. } = self.panel?;
         let item = self.document.node(id).and_then(Node::item)?;
-        let editing = self
-            .editing()
-            .filter(|&(edited, part, _)| {
-                edited == id && matches!(part, Part::Note | Part::Comment(_))
-            })
-            .map(|(_, _, field)| field);
+        let checklist = (item.kind == ItemKind::Task).then(|| checklist::lines(&self.document, id));
+        // The panel is modal, so what is edited while it is open is what it has selected.
+        let editing = self.editing().map(|(_, _, field)| field);
         Some(AttachmentsView {
             id,
             item,
             selected: kept(item, selected),
+            checklist,
             editing,
         })
     }
@@ -96,7 +119,22 @@ impl State {
             .and_then(Node::item)
             .is_some_and(|item| item.kind != ItemKind::ChecklistItem);
         if attached {
-            self.panel = Some(Panel { id, selected });
+            self.panel = Some(Panel::new(id, selected));
+        }
+    }
+
+    /// Opens the panel on the checklist of the focused task, its first item selected; for any
+    /// other item the status line says it has none (FR-ATT-02). Nothing opens with nothing
+    /// focused.
+    pub(super) fn open_checklist(&mut self) {
+        let Some(id) = self.pane().selection.focused() else {
+            return;
+        };
+        if is_task(&self.document, id) {
+            let selected = first_of_checklist(&self.document, id);
+            self.panel = Some(Panel::new(id, selected));
+        } else {
+            self.notify(Notice::NoChecklist);
         }
     }
 
@@ -107,7 +145,8 @@ impl State {
             return;
         };
         let (id, selected) = (view.id, view.selected);
-        let count = view.item.comments.len();
+        // Nothing is being added while this does anything but close.
+        let panel = Panel::new(id, selected);
         let editing = self.editing().is_some();
         let before = self.pane().selection.clone();
         match input {
@@ -119,54 +158,163 @@ impl State {
             AttachmentsInput::Edit => {
                 let editing = match selected {
                     Selected::Note => Editing::note(&self.document, id, before),
+                    Selected::Checklist(item) => {
+                        item.and_then(|item| Editing::existing(&self.document, item, before))
+                    }
                     Selected::Comment(index) => Editing::comment(&self.document, id, index, before),
                 };
                 self.start_editing(editing);
             }
             AttachmentsInput::Select(motion) => {
-                let at = match selected {
-                    Selected::Note => 0,
-                    Selected::Comment(index) => index + 1,
-                };
-                let at = match motion {
-                    Focus::Next => (at + 1).min(count),
-                    Focus::Previous => at.saturating_sub(1),
-                    Focus::First => 0,
-                    Focus::Last => count,
-                    Focus::Parent | Focus::NextSection | Focus::PreviousSection => at,
-                };
-                let selected = at.checked_sub(1).map_or(Selected::Note, Selected::Comment);
-                self.panel = Some(Panel { id, selected });
+                self.panel = Some(Panel::new(id, moved(&self.document, panel, motion)));
             }
             AttachmentsInput::AddComment(now) => {
                 let editing =
                     Editing::new_comment(&mut self.document, id, comments::stamp(now), before);
                 self.start_editing(editing);
-                self.panel = Some(Panel {
-                    id,
-                    selected: Selected::Comment(0),
-                });
+                self.panel = Some(Panel::new(id, Selected::Comment(0)));
             }
             AttachmentsInput::Delete => {
-                if let Selected::Comment(index) = selected {
-                    let transaction = without_comment(&self.document, id, index);
-                    self.change(transaction);
-                }
+                let transaction = match selected {
+                    Selected::Checklist(Some(item)) => checklist::delete(&self.document, item),
+                    Selected::Comment(index) => without_comment(&self.document, id, index),
+                    Selected::Note | Selected::Checklist(None) => return,
+                };
+                let before = entries(&self.document, id);
+                self.change(transaction);
+                self.panel = Some(settled(&self.document, panel, &before));
             }
         }
     }
 
+    /// Gives `command` to the open panel on `today`, and returns whether it took it. With a
+    /// checklist entry selected it acts on the selected item as the same command acts on a row
+    /// (FR-CHK-03): checking it, editing it, adding an item beside it, moving it among its
+    /// siblings, indenting and outdenting it, each one step to undo. The motions select as in
+    /// the panel. Quitting, pasting and the conflict prompt's commands pass to the app; every
+    /// other command does nothing while the panel is open.
+    pub(super) fn panel_command(&mut self, command: Command, today: Date) -> bool {
+        let passes = matches!(
+            command,
+            Command::Quit
+                | Command::Paste(_)
+                | Command::KeepMine
+                | Command::TakeTheirs
+                | Command::ShowDiff
+        );
+        if passes || self.panel.is_none() {
+            return false;
+        }
+        let selected = self.attachments().map(|view| view.selected);
+        match (command, selected) {
+            (Command::Focus(motion), _) => {
+                self.attachments_input(AttachmentsInput::Select(motion));
+            }
+            (Command::NewLike(side), _) => self.new_checklist_item(side),
+            (Command::EditTitle, _) => self.attachments_input(AttachmentsInput::Edit),
+            (Command::Delete, _) => self.attachments_input(AttachmentsInput::Delete),
+            (Command::ToggleCompleted, Some(Selected::Checklist(Some(item)))) => {
+                self.change(checklist::toggle(&self.document, item, today));
+            }
+            (Command::Move(direction), Some(Selected::Checklist(Some(item)))) => {
+                self.change(checklist::shift(&self.document, item, direction));
+            }
+            (Command::Indent, Some(Selected::Checklist(Some(item)))) => {
+                match checklist::indent(&self.document, item) {
+                    Some(transaction) => self.change(transaction),
+                    None => self.notify(Notice::Refused(Refusal::NothingAbove)),
+                }
+            }
+            (Command::Outdent, Some(Selected::Checklist(Some(item)))) => {
+                match moving::outdent_all(&self.document, &[item]) {
+                    Ok(transaction) => self.change(transaction),
+                    Err(refusal) => self.notify(Notice::Refused(refusal)),
+                }
+            }
+            _ => {}
+        }
+        true
+    }
+
+    /// Adds an empty checklist item on `side` of the one selected, or first or last in the task
+    /// with none, selects it and starts editing its text. Nothing happens unless a checklist entry
+    /// is selected.
+    pub(super) fn new_checklist_item(&mut self, side: Side) {
+        let Some(
+            panel @ Panel {
+                selected: Selected::Checklist(selected),
+                ..
+            },
+        ) = self.panel
+        else {
+            return;
+        };
+        let place = checklist::place(&self.document, panel.id, selected, side);
+        let before = self.pane().selection.clone();
+        let editing = Editing::new_item(
+            &mut self.document,
+            Item::new(ItemKind::ChecklistItem, ""),
+            place,
+            before,
+        );
+        self.panel = Some(Panel {
+            selected: Selected::Checklist(Some(editing.id())),
+            adding_from: Some(panel.selected),
+            ..panel
+        });
+        self.start_editing(Some(editing));
+    }
+
+    /// Ends adding a checklist item: when it was left empty, what was selected before it is
+    /// selected again (FR-CHK-03).
+    pub(super) fn finish_adding(&mut self, kept: bool) {
+        if let Some(panel) = self.panel.as_mut()
+            && let Some(from) = panel.adding_from.take()
+            && !kept
+        {
+            panel.selected = from;
+        }
+    }
+
+    /// Pastes `branches` as checklist items on `side` of the selected one, one step to undo,
+    /// selecting the last; nothing happens unless a checklist entry is selected (FR-CHK-03).
+    pub(super) fn paste_checklist(&mut self, side: Side, branches: &[Branch]) {
+        let Some(
+            panel @ Panel {
+                selected: Selected::Checklist(selected),
+                ..
+            },
+        ) = self.panel
+        else {
+            return;
+        };
+        if let Some((transaction, last)) =
+            checklist::paste(&mut self.document, panel.id, selected, side, branches)
+        {
+            self.change(transaction);
+            self.panel = Some(Panel {
+                selected: Selected::Checklist(Some(last)),
+                ..panel
+            });
+        }
+    }
+
     /// The panel once the document read again as `new` replaced `old`: on its item while
-    /// `exact` finds it again, with the comment selected found again as the same line among the
+    /// `exact` finds it again, with the checklist item selected while `exact` finds it, else the
+    /// checklist's first entry, and the comment selected found again as the same line among the
     /// comments read, or at the same place when it is not (FR-ATT-01, FR-ATT-04).
     pub(super) fn rematched_panel(
         &self,
         old: &Document,
-        exact: impl Fn(ItemId) -> Option<ItemId>,
+        exact: &dyn Fn(ItemId) -> Option<ItemId>,
     ) -> Option<Panel> {
-        let Panel { id, selected } = self.panel?;
+        let Panel { id, selected, .. } = self.panel?;
         let found = exact(id)?;
         let selected = match selected {
+            Selected::Checklist(item) => match item.and_then(exact) {
+                Some(again) => Selected::Checklist(Some(again)),
+                None => first_of_checklist(&self.document, found),
+            },
             Selected::Comment(index) => {
                 let line = old
                     .node(id)
@@ -183,11 +331,25 @@ impl State {
             }
             Selected::Note => Selected::Note,
         };
-        Some(Panel {
-            id: found,
-            selected,
-        })
+        Some(Panel::new(found, selected))
     }
+}
+
+/// Whether the open panel acts on `command`, as [`State::panel_command`] says: the motions and
+/// the commands that change a checklist item, and pasting.
+pub(super) fn acts_on(command: Command) -> bool {
+    matches!(
+        command,
+        Command::Focus(_)
+            | Command::NewLike(_)
+            | Command::EditTitle
+            | Command::Delete
+            | Command::ToggleCompleted
+            | Command::Move(_)
+            | Command::Indent
+            | Command::Outdent
+            | Command::Paste(_)
+    )
 }
 
 /// `selected` as far as `item` has it: a comment past the last is the last, and with no
@@ -201,6 +363,92 @@ fn kept(item: &Item, selected: Selected) -> Selected {
             .map_or(Selected::Note, Selected::Comment),
         selected => selected,
     }
+}
+
+/// What the panel on `id` has to select, in the order it shows them: the note, then a task's
+/// checklist items, or its empty checklist when it has none, then the comments.
+fn entries(document: &Document, id: ItemId) -> Vec<Selected> {
+    let mut entries = vec![Selected::Note];
+    if is_task(document, id) {
+        let items = checklist::lines(document, id);
+        if items.is_empty() {
+            entries.push(Selected::Checklist(None));
+        }
+        entries.extend(items.iter().map(|line| Selected::Checklist(Some(line.id))));
+    }
+    let comments = document
+        .node(id)
+        .and_then(Node::item)
+        .map_or(0, |item| item.comments.len());
+    entries.extend((0..comments).map(Selected::Comment));
+    entries
+}
+
+/// `panel` with its selection kept on what `document` has once what it had, `before`, changed
+/// and what was selected is gone: what is now where it was takes its place, else the last.
+fn settled(document: &Document, panel: Panel, before: &[Selected]) -> Panel {
+    let now = entries(document, panel.id);
+    let at = before
+        .iter()
+        .position(|&entry| entry == panel.selected)
+        .unwrap_or_default();
+    let selected = now.get(at).or(now.last()).copied();
+    Panel {
+        selected: selected.unwrap_or(Selected::Note),
+        ..panel
+    }
+}
+
+/// What `motion` selects in `panel` on `document` from what is selected: the next or previous,
+/// the first or the last, the checklist item holding the one selected, or the first of the next
+/// or previous section. Where there is none, what is selected.
+fn moved(document: &Document, panel: Panel, motion: Focus) -> Selected {
+    let entries = entries(document, panel.id);
+    let at = entries
+        .iter()
+        .position(|&entry| entry == panel.selected)
+        .unwrap_or_default();
+    let section = |entry: &Selected| std::mem::discriminant(entry);
+    let holder = match panel.selected {
+        Selected::Checklist(Some(item)) => document
+            .position(item)
+            .and_then(|(parent, _)| parent)
+            .filter(|&parent| parent != panel.id),
+        Selected::Note | Selected::Checklist(None) | Selected::Comment(_) => None,
+    };
+    let moved = match motion {
+        Focus::Next => entries.get(at + 1),
+        Focus::Previous => at.checked_sub(1).and_then(|before| entries.get(before)),
+        Focus::First => entries.first(),
+        Focus::Last => entries.last(),
+        Focus::Parent => holder
+            .map(|holder| Selected::Checklist(Some(holder)))
+            .and_then(|holder| entries.iter().find(|&&entry| entry == holder)),
+        Focus::NextSection => entries
+            .iter()
+            .skip(at)
+            .find(|entry| section(entry) != section(&panel.selected)),
+        Focus::PreviousSection => entries
+            .get(..at)
+            .unwrap_or_default()
+            .iter()
+            .rev()
+            .find(|entry| section(entry) != section(&panel.selected))
+            .and_then(|last| entries.iter().find(|entry| section(entry) == section(last))),
+    };
+    moved.copied().unwrap_or(panel.selected)
+}
+
+/// The first entry of the checklist of task `id`.
+fn first_of_checklist(document: &Document, id: ItemId) -> Selected {
+    Selected::Checklist(checklist::lines(document, id).first().map(|line| line.id))
+}
+
+fn is_task(document: &Document, id: ItemId) -> bool {
+    document
+        .node(id)
+        .and_then(Node::item)
+        .is_some_and(|item| item.kind == ItemKind::Task)
 }
 
 /// The transaction that deletes `id`'s comment at `index`.
@@ -223,8 +471,11 @@ mod tests {
     use jiff::civil::{Date, date};
 
     use super::*;
-    use crate::app::{Command, EditInput, Motion, Opened, TextEdit};
-    use crate::domain::{Document, PlacementError};
+    use crate::app::{
+        Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, Refusal, TextEdit,
+        update, view::View,
+    };
+    use crate::domain::{Completion, PlacementError};
 
     const TODAY: Date = date(2026, 10, 14);
 
@@ -433,9 +684,9 @@ mod tests {
 
     // FR-ATT-01, FR-ATT-04
     #[test]
-    fn selection_goes_from_the_note_through_the_comments_newest_first() -> Result<(), PlacementError>
-    {
-        let (mut state, a, _) = state()?;
+    fn selection_goes_from_the_note_through_the_checklist_and_the_comments_newest_first()
+    -> Result<(), PlacementError> {
+        let (mut state, a, c) = state()?;
         let mut document = state.document().clone();
         let item = document.node(a).and_then(Node::item).cloned();
         let mut item = item.ok_or(PlacementError::DoesNotFit)?;
@@ -445,8 +696,10 @@ mod tests {
         state.open_attachments(Whose::Focused, Selected::Comment(0));
         assert_eq!(selected(&state), Some(Selected::Comment(0)));
         for (motion, expected) in [
+            (Focus::Previous, Selected::Checklist(Some(c))),
             (Focus::Previous, Selected::Note),
             (Focus::Previous, Selected::Note),
+            (Focus::Next, Selected::Checklist(Some(c))),
             (Focus::Next, Selected::Comment(0)),
             (Focus::Last, Selected::Comment(2)),
             (Focus::Next, Selected::Comment(2)),
@@ -467,6 +720,335 @@ mod tests {
             (Some(Selected::Note), 3),
             "nothing but closing while the note is edited"
         );
+        Ok(())
+    }
+
+    fn give(state: &mut State, command: Command) {
+        update(state, Message::Command(command), TODAY);
+    }
+
+    fn input(state: &mut State, input: AttachmentsInput) {
+        update(state, Message::Attachments(input), TODAY);
+    }
+
+    fn edit(state: &mut State, input: EditInput) {
+        update(state, Message::Edit(input), TODAY);
+    }
+
+    /// The entry of checklist item `id`.
+    fn entry(id: ItemId) -> Selected {
+        Selected::Checklist(Some(id))
+    }
+
+    /// The open panel's checklist: each item's title and depth.
+    fn checklist(state: &State) -> Vec<(String, usize)> {
+        state
+            .attachments()
+            .and_then(|view| view.checklist)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|line| (line.item.title.clone(), line.depth))
+            .collect()
+    }
+
+    /// The item numbered `id`.
+    fn item(state: &State, id: ItemId) -> Option<&Item> {
+        state.document().node(id).and_then(Node::item)
+    }
+
+    /// A state on a file whose Inbox holds task `a` with the checklist items `titles`, focused on
+    /// `a`.
+    fn with_checklist<const N: usize>(
+        titles: [&str; N],
+    ) -> Result<(State, ItemId, [ItemId; N]), PlacementError> {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let a = document.push(inbox, Node::Item(Item::new(ItemKind::Task, "a")))?;
+        let mut items = [a; N];
+        for (id, title) in items.iter_mut().zip(titles) {
+            let item = Item::new(ItemKind::ChecklistItem, title);
+            *id = document.push(Some(a), Node::Item(item))?;
+        }
+        let state = State::new(document, Opened::File("a.taskpaper".into()), TODAY);
+        Ok((state, a, items))
+    }
+
+    fn branch(title: &str) -> Branch {
+        Branch {
+            node: Node::Item(Item::new(ItemKind::Task, title)),
+            children: Vec::new(),
+        }
+    }
+
+    // FR-ATT-02, FR-CHK-02
+    #[test]
+    fn the_checklist_opens_on_a_task_and_only_on_a_task() -> Result<(), PlacementError> {
+        let (mut state, a, c) = state()?;
+        give(&mut state, Command::OpenChecklist);
+        let view = state.attachments().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!((view.id, Some(view.selected)), (a, Some(entry(c))));
+        input(&mut state, AttachmentsInput::Close);
+        let (mut state, ..) = with_checklist([])?;
+        give(&mut state, Command::OpenChecklist);
+        assert_eq!(selected(&state), Some(Selected::Checklist(None)));
+        input(&mut state, AttachmentsInput::Edit);
+        assert!(
+            state.editing().is_none(),
+            "an empty checklist has no item to edit"
+        );
+        input(&mut state, AttachmentsInput::Close);
+        let inbox = state.document().inbox();
+        state.open_panel(inbox, Selected::Note);
+        assert_eq!(state.attachments().and_then(|view| view.checklist), None);
+        input(&mut state, AttachmentsInput::Close);
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::OpenChecklist);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::NoChecklist),
+            "an entry has none"
+        );
+        assert!(state.attachments().is_none());
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Go(Go::View(View::Logbook)));
+        give(&mut state, Command::OpenChecklist);
+        assert!(state.attachments().is_none(), "nothing is focused");
+        let mut document = Document::new();
+        let mut project = Item::new(ItemKind::Project, "p");
+        project.completed = Some(Completion::On(TODAY));
+        document.push(None, Node::Item(project))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Command::Go(Go::View(View::Logbook)));
+        give(&mut state, Command::OpenChecklist);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::NoChecklist),
+            "a project has none"
+        );
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-CHK-02
+    #[test]
+    fn the_motions_select_the_entries_in_turn() -> Result<(), PlacementError> {
+        let (mut state, _, [b, c]) = with_checklist(["b", "c"])?;
+        let mut document = state.document().clone();
+        let nested = Item::new(ItemKind::ChecklistItem, "d");
+        let d = document.push(Some(b), Node::Item(nested))?;
+        state = State::new(document, Opened::Demo, TODAY);
+        state.open_attachments(Whose::Focused, Selected::Note);
+        let steps = [
+            (Focus::Next, Some(entry(b))),
+            (Focus::Next, Some(entry(d))),
+            (Focus::Parent, Some(entry(b))),
+            (Focus::Parent, Some(entry(b))),
+            (Focus::Last, Some(entry(c))),
+            (Focus::Next, Some(entry(c))),
+            (Focus::PreviousSection, Some(Selected::Note)),
+            (Focus::Previous, Some(Selected::Note)),
+            (Focus::NextSection, Some(entry(b))),
+            (Focus::NextSection, Some(entry(b))),
+            (Focus::First, Some(Selected::Note)),
+            (Focus::Parent, Some(Selected::Note)),
+        ];
+        for (motion, entry) in steps {
+            input(&mut state, AttachmentsInput::Select(motion));
+            assert_eq!(selected(&state), entry, "{motion:?}");
+        }
+        give(&mut state, Command::Focus(Focus::Next));
+        assert_eq!(
+            selected(&state),
+            Some(entry(b)),
+            "a motion command selects too"
+        );
+        input(&mut state, AttachmentsInput::Close);
+        state.attachments_input(AttachmentsInput::Select(Focus::Next));
+        assert!(state.attachments().is_none(), "nothing opens");
+        let inbox = state.document().inbox();
+        state.open_panel(inbox, Selected::Note);
+        input(&mut state, AttachmentsInput::Select(Focus::Next));
+        assert_eq!(
+            selected(&state),
+            Some(Selected::Note),
+            "what is not a task has only its note"
+        );
+        Ok(())
+    }
+
+    // FR-CHK-03, FR-ATT-05, FR-EDIT-06
+    #[test]
+    fn items_are_added_edited_and_checked_each_one_step_to_undo() -> Result<(), PlacementError> {
+        let (mut state, a, [c]) = with_checklist(["c"])?;
+        give(&mut state, Command::OpenChecklist);
+        give(&mut state, Command::NewLike(Side::Above));
+        type_text(&mut state, "first");
+        edit(&mut state, EditInput::Next);
+        type_text(&mut state, "second");
+        let view = state.attachments().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(
+            view.editing.map(TextField::text),
+            Some("second"),
+            "Enter adds the next"
+        );
+        let second = view.selected;
+        edit(&mut state, EditInput::Next);
+        edit(&mut state, EditInput::Done);
+        assert_eq!(
+            selected(&state),
+            Some(second),
+            "an item left empty is not added, and the one before is selected again"
+        );
+        give(&mut state, Command::ToggleCompleted);
+        give(&mut state, Command::EditTitle);
+        type_text(&mut state, "!");
+        input(&mut state, AttachmentsInput::Edit);
+        input(&mut state, AttachmentsInput::Close);
+        let second = state
+            .document()
+            .children(a)
+            .iter()
+            .copied()
+            .find(|&id| entry(id) == second)
+            .ok_or(PlacementError::DoesNotFit)?;
+        let shown = item(&state, second).map(|it| (it.title.as_str(), it.completed));
+        assert_eq!(shown, Some(("second!", Some(Completion::On(TODAY)))));
+        assert_eq!(state.document().children(a).len(), 3);
+        state.undo();
+        assert_eq!(
+            item(&state, second).map(|it| it.title.as_str()),
+            Some("second")
+        );
+        state.undo();
+        assert_eq!(item(&state, second).and_then(|it| it.completed), None);
+        state.undo();
+        state.undo();
+        assert_eq!(
+            state.document().children(a),
+            [c],
+            "each item added is a step"
+        );
+        Ok(())
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn items_are_deleted_moved_indented_and_outdented() -> Result<(), PlacementError> {
+        let (mut state, _, [c, d, e]) = with_checklist(["c", "d", "e"])?;
+        give(&mut state, Command::OpenChecklist);
+        give(&mut state, Command::Indent);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::Refused(Refusal::NothingAbove))
+        );
+        give(&mut state, Command::Outdent);
+        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::NotNested)));
+        give(&mut state, Command::Move(Direction::Down));
+        give(&mut state, Command::Focus(Focus::Previous));
+        give(&mut state, Command::ToggleCompleted);
+        give(&mut state, Command::Focus(Focus::Next));
+        give(&mut state, Command::Indent);
+        let nested = [
+            ("d".to_owned(), 0),
+            ("c".to_owned(), 1),
+            ("e".to_owned(), 0),
+        ];
+        assert_eq!(checklist(&state), nested);
+        give(&mut state, Command::Outdent);
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::Delete);
+        assert_eq!(
+            selected(&state),
+            Some(entry(c)),
+            "the last goes, the one before it is selected"
+        );
+        give(&mut state, Command::Focus(Focus::Previous));
+        give(&mut state, Command::Delete);
+        assert_eq!(
+            selected(&state),
+            Some(entry(c)),
+            "the one after it is selected"
+        );
+        give(&mut state, Command::Delete);
+        assert_eq!(selected(&state), Some(Selected::Checklist(None)));
+        give(&mut state, Command::Delete);
+        assert!(item(&state, d).is_none() && item(&state, e).is_none());
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-CHK-03
+    #[test]
+    fn the_panel_takes_every_command_but_quitting_and_pasting() -> Result<(), PlacementError> {
+        let (mut state, a, _) = with_checklist(["c"])?;
+        state.open_attachments(Whose::Focused, Selected::Note);
+        let before = state.document().clone();
+        for command in [
+            Command::ToggleCompleted,
+            Command::NewLike(Side::Below),
+            Command::Delete,
+            Command::Sidebar,
+            Command::Undo,
+        ] {
+            give(&mut state, command);
+        }
+        assert_eq!(
+            state.document(),
+            &before,
+            "the note selected, the checklist's keys do nothing"
+        );
+        assert!(state.sidebar().is_none(), "nor do the rest");
+        update(
+            &mut state,
+            Message::Paste(Side::Below, vec![branch("r")]),
+            TODAY,
+        );
+        assert_eq!(state.document(), &before, "nothing pastes on the note");
+        input(&mut state, AttachmentsInput::Select(Focus::Last));
+        give(&mut state, Command::AddProject(End::Bottom));
+        assert_eq!(state.document(), &before);
+        let effects = update(
+            &mut state,
+            Message::Command(Command::Paste(Side::Above)),
+            TODAY,
+        );
+        assert_eq!(effects, [Effect::ReadClipboard(Side::Above)]);
+        let pasted = vec![branch("p"), branch("q")];
+        update(&mut state, Message::Paste(Side::Above, pasted), TODAY);
+        let titles: Vec<_> = checklist(&state)
+            .into_iter()
+            .map(|(title, _)| title)
+            .collect();
+        assert_eq!(titles, ["p", "q", "c"]);
+        let last = state.document().children(a).get(1).copied();
+        assert_eq!(
+            selected(&state),
+            last.map(entry),
+            "the last pasted is selected"
+        );
+        update(&mut state, Message::Paste(Side::Above, Vec::new()), TODAY);
+        assert_eq!(checklist(&state).len(), 3);
+        Ok(())
+    }
+
+    // F-FILE-06, FR-ATT-01
+    #[test]
+    fn a_rematched_panel_keeps_its_checklist_item_while_found() -> Result<(), PlacementError> {
+        let (mut state, a, [b, c]) = with_checklist(["b", "c"])?;
+        let old = state.document().clone();
+        let mut rematched = |selected, exact: &dyn Fn(ItemId) -> Option<ItemId>| {
+            state.panel = Some(Panel::new(a, selected));
+            state
+                .rematched_panel(&old, exact)
+                .map(|panel| panel.selected)
+        };
+        let all = |id| Some(id);
+        assert_eq!(rematched(entry(c), &all), Some(entry(c)));
+        let without_c = |id| (id != c).then_some(id);
+        assert_eq!(
+            rematched(entry(c), &without_c),
+            Some(entry(b)),
+            "the first item when the one selected is gone"
+        );
+        assert_eq!(rematched(Selected::Checklist(None), &all), Some(entry(b)));
         Ok(())
     }
 }

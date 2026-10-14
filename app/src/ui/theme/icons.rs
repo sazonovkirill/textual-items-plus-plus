@@ -37,6 +37,8 @@ pub enum Icon {
     Notes,
     /// An item's comments, beside their count.
     Comments,
+    /// A task's checklist, beside its progress.
+    Checklist,
     /// The breadcrumbs' first crumb, the home container.
     Home,
     /// A Navigator entry whose children are shown.
@@ -111,6 +113,8 @@ impl Icon {
             Self::Notes => ("\u{f11d7}", "≡"),
             // nf-md-comment_text_outline
             Self::Comments => ("\u{f0189}", "❞"),
+            // nf-md-format_list_checks
+            Self::Checklist => ("\u{f0756}", "☑"),
             // nf-md-home
             Self::Home => ("\u{f02dc}", "⌂"),
             // nf-md-cursor_default_outline
@@ -131,7 +135,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 23] = [
+    const ICONS: [Icon; 24] = [
         Icon::Area,
         Icon::Project,
         Icon::Section,
@@ -148,6 +152,7 @@ mod tests {
         Icon::Overdue,
         Icon::Notes,
         Icon::Comments,
+        Icon::Checklist,
         Icon::Home,
         Icon::Expanded,
         Icon::Collapsed,

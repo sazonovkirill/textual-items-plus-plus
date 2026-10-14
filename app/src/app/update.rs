@@ -103,7 +103,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         state.clear_notice();
     }
     if let Message::Command(command) = message
-        && state.sidebar_command(command, today)
+        && (state.panel_command(command, today) || state.sidebar_command(command, today))
     {
         return Vec::new();
     }
@@ -158,6 +158,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::OpenComments(whose)) => {
             state.open_attachments(whose, Selected::Comment(0));
         }
+        Message::Command(Command::OpenChecklist) => state.open_checklist(),
         Message::Command(Command::Tags) => state.open_tags(),
         Message::Command(Command::FilterTags) => state.open_tag_filter(),
         Message::Command(Command::ClearTagFilter) => state.clear_tag_filter(),

@@ -58,7 +58,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             named(attachments::KEYS, |key| {
                 match key {
                     PanelKey::Input(AttachmentsInput::Close) => "Close",
-                    PanelKey::Input(AttachmentsInput::Delete) => "Delete Comment",
+                    PanelKey::Input(AttachmentsInput::Delete) => "Delete",
                     // Edit is the only other input a key gives as it is.
                     PanelKey::Input(_) => "Edit",
                     PanelKey::AddComment => "Add Comment",

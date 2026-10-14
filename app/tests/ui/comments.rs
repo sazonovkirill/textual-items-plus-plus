@@ -40,21 +40,25 @@ fn read(path: &PathBuf) -> String {
 #[test]
 fn comment_on_a_task() {
     let (_dir, path) = file("Inbox:\n\t- Renew the passport\n");
-    let mut harness = Harness::open(path.clone(), 80, 12);
+    let mut harness = Harness::open(path.clone(), 80, 16);
     harness.type_text("N");
     assert_eq!(
-        panel(&harness)[1..6],
+        panel(&harness)[1..9],
         [
             "│                               󱇗 Note │",
             "│ No note                              │",
             "│                                      │",
+            "│                          \u{f0756} Checklist │",
+            "│ No checklist                         │",
+            "│                                      │",
             "│                           󰆉 Comments │",
             "│ No comments                          │",
-        ]
+        ],
+        "a task's checklist comes between"
     );
     harness.type_text("aPhotos: done");
     assert_eq!(
-        panel(&harness)[5..7],
+        panel(&harness)[8..10],
         [
             "│ [2026-10-05 09:30]                   │",
             "│ Photos: done                         │",
@@ -62,7 +66,7 @@ fn comment_on_a_task() {
         "stamped with the time it was added"
     );
     assert_eq!(
-        panel(&harness)[9],
+        panel(&harness)[13],
         "│ Enter done · Esc cancel              │"
     );
     harness.wait(1000);
@@ -75,7 +79,7 @@ fn comment_on_a_task() {
     harness.type_text("aBooked");
     harness.key(KeyCode::Enter);
     assert_eq!(
-        panel(&harness)[5..7],
+        panel(&harness)[8..10],
         [
             "│ [2026-10-05 09:30] Booked            │",
             "│ [2026-10-05 09:30] Photos: done      │",
@@ -91,7 +95,7 @@ fn comment_on_a_task() {
     );
     harness.type_text("kd");
     assert_eq!(
-        panel(&harness)[5..7],
+        panel(&harness)[8..10],
         [
             "│ [2026-10-05 09:30] Photos: done for  │",
             "│ the form                             │",
@@ -101,15 +105,15 @@ fn comment_on_a_task() {
     harness.ctrl('z');
     harness.type_text("N");
     assert_eq!(
-        panel(&harness)[5],
+        panel(&harness)[8],
         "│ [2026-10-05 09:30] Booked            │",
         "deleting is a step to undo, once the panel is closed"
     );
     harness.key(KeyCode::Esc);
-    let mut reopened = Harness::open(path, 80, 12);
+    let mut reopened = Harness::open(path, 80, 16);
     reopened.type_text("N");
     assert_eq!(
-        panel(&reopened)[5],
+        panel(&reopened)[8],
         "│ [2026-10-05 09:30] Booked            │"
     );
 }
@@ -117,7 +121,7 @@ fn comment_on_a_task() {
 // FR-ATT-04
 #[test]
 fn escape_cancels_a_comment_and_a_paste_goes_in_on_one_line() {
-    let mut harness = Harness::new(80, 12);
+    let mut harness = Harness::new(80, 16);
     harness.type_text("N");
     let before = harness.rows();
     harness.type_text("aon second thought");
@@ -127,7 +131,7 @@ fn escape_cancels_a_comment_and_a_paste_goes_in_on_one_line() {
     harness.send(&Event::Paste("one\ntwo\r\nthree\n".to_owned()));
     harness.key(KeyCode::Enter);
     assert_eq!(
-        panel(&harness)[5],
+        panel(&harness)[8],
         "│ [2026-10-05 09:30] one two three     │"
     );
 }

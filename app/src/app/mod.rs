@@ -6,6 +6,7 @@ mod adding;
 mod all;
 mod attachments;
 pub mod autosave;
+mod checklist;
 mod clipboard;
 mod command;
 mod completion;
@@ -39,6 +40,7 @@ mod visits;
 
 pub use adding::{End, Side};
 pub use attachments::{AttachmentsInput, AttachmentsView, Selected};
+pub use checklist::{ChecklistLine, progress};
 pub use command::{Command, Context, Entry, Go, REGISTRY, Whose};
 pub use container::{Row, rows};
 pub use date_prompt::{DateInput, DatePromptView};

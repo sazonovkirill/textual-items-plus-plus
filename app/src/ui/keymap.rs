@@ -112,6 +112,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::OpenNote(Whose::Shown), &["alt+n"]),
     (Command::OpenComments(Whose::Focused), &["N"]),
     (Command::OpenComments(Whose::Shown), &["alt+N"]),
+    // `c` for the checklist, which only a task has, so it has no key for the container shown.
+    (Command::OpenChecklist, &["c"]),
     // taskpaper-terminal's date prompt keys, and `t` to start today (D-23).
     (Command::SetDate(DateKind::Start), &["m s"]),
     (Command::SetDate(DateKind::Due), &["m d"]),
@@ -644,6 +646,13 @@ mod tests {
             keymap.press(&press(KeyCode::Char('n'), KeyModifiers::SHIFT)),
             Some(Command::EditDescription(Whose::Shown))
         );
+    }
+
+    // FR-ATT-02
+    #[test]
+    fn c_opens_the_checklist() {
+        let mut keymap = Keymap::default();
+        assert_eq!(keymap.press(&char('c')), Some(Command::OpenChecklist));
     }
 
     // FR-NAV-01, FR-KEY-02

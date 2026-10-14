@@ -3,7 +3,7 @@
 //! FR-KEY-03). Every command belongs to a group, so a command a later step registers is listed
 //! with the rest.
 
-use super::{Command, Context, Entry, REGISTRY, State};
+use super::{Command, Context, Entry, REGISTRY, State, attachments};
 
 /// A heading the shortcuts panel lists commands under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +71,7 @@ impl KeyGroup {
             | Command::EditDescription(_)
             | Command::OpenNote(_)
             | Command::OpenComments(_)
+            | Command::OpenChecklist
             | Command::RenameContainer => Self::Creating,
             Command::ToggleCompleted
             | Command::SetDate(_)
@@ -114,8 +115,9 @@ impl KeyGroup {
 
 impl State {
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
-    /// commands and quitting, while the attachments panel is open only quitting, while a picker or the date prompt is open or in edit mode only
-    /// global ones, and otherwise any.
+    /// commands and quitting, while the attachments panel is open quitting and, while nothing in
+    /// it is edited, the commands it acts on (FR-CHK-03), while a picker or the date prompt is
+    /// open or in edit mode only global ones, and otherwise any.
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -125,7 +127,7 @@ impl State {
         if self.conflict().is_some() {
             command == Command::Quit || context == Some(Context::Conflict)
         } else if self.attachments().is_some() {
-            command == Command::Quit
+            command == Command::Quit || (self.editing().is_none() && attachments::acts_on(command))
         } else if self.editing().is_some()
             || self.navigator.is_some()
             || self.move_to.is_some()
@@ -257,6 +259,34 @@ mod tests {
         );
         assert!(!state.takes(Command::Shortcuts));
         assert!(state.takes(Command::Navigator));
+        Ok(())
+    }
+
+    // FR-KEY-03, FR-CHK-03
+    #[test]
+    fn the_attachments_panel_leaves_quitting_and_the_commands_it_acts_on()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::Shortcuts);
+        give(&mut state, Command::OpenChecklist);
+        for (command, taken) in [
+            (Command::Quit, true),
+            (Command::ToggleCompleted, true),
+            (Command::Indent, true),
+            (Command::Undo, false),
+            (Command::Sidebar, false),
+            (Command::KeepMine, false),
+        ] {
+            assert_eq!(state.takes(command), taken, "{command:?}");
+        }
+        let groups = listed(&state).unwrap_or_default();
+        assert!(groups.iter().all(|&(name, _)| name != "Conflict"));
+        give(&mut state, Command::NewLike(super::super::Side::Below));
+        assert_eq!(
+            listed(&state),
+            Some(vec![("View and Panels", 1)]),
+            "only quitting while an item is edited"
+        );
         Ok(())
     }
 

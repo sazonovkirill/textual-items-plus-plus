@@ -174,6 +174,36 @@ pub fn read_branches(text: &str) -> Vec<Branch> {
         .collect()
 }
 
+/// The items `text` holds, as pasted into a checklist (FR-CHK-03): one item for each line that
+/// is not blank, its indentation nesting it under the line above it that is indented less, every
+/// line read as a task's, so that a line ending in `:` or with no `- ` is an item too. The items
+/// are tasks at the top and checklist items below; the app makes them all checklist items.
+#[must_use]
+pub fn read_checklist(text: &str) -> Vec<Branch> {
+    let tasks: Vec<String> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let body = line.trim_start();
+            let indentation = line.get(..line.len() - body.len()).unwrap_or_default();
+            if kind_of_line(body) == LineKind::Task {
+                line.to_owned()
+            } else {
+                format!("{indentation}- {body}")
+            }
+        })
+        .collect();
+    read_branches(&tasks.join("\n"))
+}
+
+/// The type TaskPaper reads `body`, a line without its indentation, as.
+fn kind_of_line(body: &str) -> LineKind {
+    let outline = parse(body);
+    children(&outline, outline.root())
+        .first()
+        .map_or(LineKind::Note, |&id| line(&outline, id).kind())
+}
+
 struct Reader<'a> {
     outline: &'a Outline,
     document: Document,
@@ -848,6 +878,35 @@ Secret @hidden
             "kept lines are copied as they were"
         );
         assert_eq!(read_branches("\n\n"), []);
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn pasted_lines_are_read_as_one_item_each_nested_by_indentation() {
+        let text = "Pack:\n  Books @done\n\n    - Novels\n  Plates\n- Labels @home\n";
+        let branches = read_checklist(text);
+        let read = |branch: &Branch| {
+            let item = branch.node.item().unwrap();
+            (item.kind, item.title.clone(), item.completed.is_some())
+        };
+        assert_eq!(
+            branches.iter().map(read).collect::<Vec<_>>(),
+            [
+                (ItemKind::Task, "Pack:".to_owned(), false),
+                (ItemKind::Task, "Labels".to_owned(), false),
+            ]
+        );
+        assert_eq!(branches[1].node.item().unwrap().tags, [tag("home", None)]);
+        let pack = &branches[0];
+        assert_eq!(
+            pack.children.iter().map(read).collect::<Vec<_>>(),
+            [
+                (ItemKind::ChecklistItem, "Books".to_owned(), true),
+                (ItemKind::ChecklistItem, "Plates".to_owned(), false),
+            ]
+        );
+        assert_eq!(read(&pack.children[0].children[0]).1, "Novels");
+        assert_eq!(read_checklist(" \n"), []);
     }
 
     // FR-STORE-02, FR-STORE-03, FR-STORE-04, FR-STORE-05, FR-STORE-06, FR-STORE-07,

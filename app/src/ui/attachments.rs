@@ -1,10 +1,11 @@
-//! The attachments panel in the terminal (FR-ATT-01–04): the keys that drive it and the panel
-//! itself, over the right side of the screen from its top to the status line, as
+//! The attachments panel in the terminal (FR-ATT-01–04, FR-CHK-02): the keys that drive it and
+//! the panel itself, over the right side of the screen from its top to the status line, as
 //! taskpaper-terminal draws it
 //! ([attachments.md §3–5](../../../specs/reference/taskpaper-terminal/specs/attachments.md#3-attachments-panel-fr-att-03)):
 //! a border titled with the item, the Note section under its heading, the note rendered as
-//! Markdown or, while it is edited, as typed, the Comments section under its heading, newest
-//! first, the selected one of them on the current-line band, and a hint naming the keys.
+//! Markdown or, while it is edited, as typed, a task's Checklist section under its heading, the
+//! Comments section under its heading, newest first, what is selected on the current-line band,
+//! and a hint naming the keys.
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
@@ -16,12 +17,14 @@ use ratatui::{
 };
 
 use super::{
-    Icon, IconSet, Theme, field,
+    Icon, IconSet, Theme,
+    container::tag_text,
+    field,
     keymap::{self, Key},
     markdown::{self, Format, NoteLine},
 };
 use crate::{
-    app::{AttachmentsInput, AttachmentsView, Focus, Selected},
+    app::{AttachmentsInput, AttachmentsView, ChecklistLine, Focus, Selected},
     domain::comments,
 };
 
@@ -165,8 +168,8 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 ];
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
-/// `Enter` edit what is selected, `d` and `Delete` delete the selected comment, `a` adds one,
-/// and the motion keys scroll or select. Only key presses count.
+/// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
+/// `a` adds a comment, and the motion keys scroll or select. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()
@@ -174,12 +177,12 @@ pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
         .map(|&(_, input)| input)
 }
 
-/// The panel's content laid out: its lines, the first line of each of the note and the comments
-/// in the order they show, how many lines it takes, and the line and column of the caret while
-/// something is edited.
+/// The panel's content laid out: its lines, the first line of each of the note, the checklist
+/// items and the comments in the order they show, how many lines it takes, and the line and
+/// column of the caret while something is edited.
 struct Content<'a> {
     lines: Vec<Line<'a>>,
-    starts: Vec<usize>,
+    starts: Vec<(Selected, usize)>,
     total: usize,
     caret: Option<(usize, usize)>,
 }
@@ -258,26 +261,31 @@ impl<'a> AttachmentsPanel<'a> {
     }
 
     /// The content lines from the first to past the last of what is selected when the panel is
-    /// drawn over `area`. The last of the note and the comments runs to the end of the content.
+    /// drawn over `area`. The last of what it has runs to the end of the content.
     pub(super) fn selected_lines(&self, area: Rect) -> (usize, usize) {
         self.selected_in(&self.laid_out(area))
     }
 
     /// The lines of `content` from the first to past the last of what is selected.
     fn selected_in(&self, content: &Content<'a>) -> (usize, usize) {
-        let at = match self.view.selected {
-            Selected::Note => 0,
-            Selected::Comment(index) => index + 1,
-        };
-        let start = content.starts.get(at).copied().unwrap_or_default();
-        let end = content.starts.get(at + 1).copied().unwrap_or(content.total);
+        let at = content
+            .starts
+            .iter()
+            .position(|&(entry, _)| entry == self.view.selected)
+            .unwrap_or_default();
+        let start = content.starts.get(at).map_or(0, |&(_, start)| start);
+        let end = content
+            .starts
+            .get(at + 1)
+            .map_or(content.total, |&(_, end)| end);
         (start, end)
     }
 
     /// The content laid out in the panel drawn over `area`: the Note section, its heading, then
     /// the note, rendered and wrapping, or a dimmed "No note", or while it is edited its text as
-    /// typed, wrapped as the field wraps it; a blank line; the Comments section, its heading,
-    /// then each comment, its timestamp dimmed and its text with its inline formatting, or a
+    /// typed, wrapped as the field wraps it; a blank line; for a task the Checklist section, its
+    /// heading, then each item, or a dimmed "No checklist", and a blank line; the Comments
+    /// section, its heading, then each comment, its timestamp dimmed and its text with its inline formatting, or a
     /// dimmed "No comments", the one edited as its timestamp above its text as typed.
     fn laid_out(&self, area: Rect) -> Content<'a> {
         let width = Self::content(area).width;
@@ -315,15 +323,38 @@ impl<'a> AttachmentsPanel<'a> {
             );
         }
         lines.push(Line::default());
-        let mut starts = vec![0, height(&lines)];
+        let mut starts = vec![(Selected::Note, 0)];
+        if let Some(checklist) = &self.view.checklist {
+            // The first item takes the section's heading with it.
+            let mut start = height(&lines);
+            lines.push(self.heading(Icon::Checklist, "Checklist"));
+            if checklist.is_empty() {
+                starts.push((Selected::Checklist(None), start));
+                lines.push(Line::styled("No checklist", dim));
+            }
+            for (index, line) in checklist.iter().enumerate() {
+                if index > 0 {
+                    start = height(&lines);
+                }
+                starts.push((Selected::Checklist(Some(line.id)), start));
+                let (shown, at) = self.checklist_line(line, usize::from(width));
+                if let Some((line, column)) = at {
+                    caret = Some((height(&lines) + line, column));
+                }
+                lines.extend(shown);
+            }
+            lines.push(Line::default());
+        }
+        let mut start = height(&lines);
         lines.push(self.heading(Icon::Comments, "Comments"));
         if item.comments.is_empty() {
             lines.push(Line::styled("No comments", dim));
         }
         for (index, comment) in item.comments.iter().enumerate() {
             if index > 0 {
-                starts.push(height(&lines));
+                start = height(&lines);
             }
+            starts.push((Selected::Comment(index), start));
             let (stamp, text) = comments::split(comment);
             if let Some((field, (line, column))) = editing(Selected::Comment(index)) {
                 if !stamp.is_empty() {
@@ -336,9 +367,6 @@ impl<'a> AttachmentsPanel<'a> {
                 line.spans.extend(self.formatted(text, Style::new()));
                 lines.push(line);
             }
-        }
-        if item.comments.is_empty() {
-            starts.pop();
         }
         Content {
             total: height(&lines),
@@ -355,6 +383,68 @@ impl<'a> AttachmentsPanel<'a> {
             Style::new().fg(self.theme.headers).bold(),
         )
         .right_aligned()
+    }
+
+    /// The lines of a checklist item in content `width`: indented by its depth, its marker,
+    /// checked or not, then its text and tags, a checked item's struck through, all dimmed while
+    /// it or an item above it is checked (FR-CHK-04); while its text is edited, the text as
+    /// typed, wrapping after the marker, and the caret's line and column among them.
+    fn checklist_line(
+        &self,
+        line: &ChecklistLine<'a>,
+        width: usize,
+    ) -> (Vec<Line<'a>>, Option<(usize, usize)>) {
+        let item = line.item;
+        let dim = if line.dimmed {
+            Style::new().add_modifier(Modifier::DIM)
+        } else {
+            Style::new()
+        };
+        let (marker, title) = if item.completed.is_some() {
+            let done = dim.fg(self.theme.done);
+            (Icon::DoneTask, done.add_modifier(Modifier::CROSSED_OUT))
+        } else {
+            (Icon::Task, dim)
+        };
+        let prefix = format!("{}{} ", "  ".repeat(line.depth), marker.glyph(self.icons));
+        let indent = Span::raw(&prefix).width();
+        let marker_style = title.remove_modifier(Modifier::CROSSED_OUT);
+        if let Some(field) = self.view.editing
+            && self.view.selected == Selected::Checklist(Some(line.id))
+        {
+            let columns = width.saturating_sub(indent + 1);
+            let (lines, (at, column)) = field::wrapped(field, columns, self.theme);
+            let lines = lines
+                .into_iter()
+                .enumerate()
+                .map(|(n, mut text)| {
+                    let lead = if n == 0 {
+                        prefix.clone()
+                    } else {
+                        " ".repeat(indent)
+                    };
+                    text.spans.insert(0, Span::styled(lead, marker_style));
+                    text
+                })
+                .collect();
+            return (lines, Some((at, indent + column)));
+        }
+        let mut spans = vec![
+            Span::styled(prefix, marker_style),
+            Span::styled(drawable(&item.title), title),
+        ];
+        let tag_color = if item.completed.is_some() {
+            self.theme.done
+        } else {
+            self.theme.tag
+        };
+        for tag in &item.tags {
+            spans.push(Span::styled(
+                tag_text(tag),
+                dim.fg(tag_color).add_modifier(Modifier::DIM),
+            ));
+        }
+        (vec![Line::from(spans)], None)
     }
 
     /// A line of the note as Markdown shows it: a heading bold, the first level also
@@ -434,8 +524,11 @@ impl<'a> AttachmentsPanel<'a> {
     fn hint(&self) -> Line<'static> {
         let keys = match (self.view.editing, self.view.selected) {
             (Some(_), Selected::Note) => "Enter new line · Esc done",
+            (Some(_), Selected::Checklist(_)) => "Enter next · Esc done",
             (Some(_), Selected::Comment(_)) => "Enter done · Esc cancel",
             (None, Selected::Note) => "a add · e edit · Esc close",
+            (None, Selected::Checklist(Some(_))) => "o add · x check · d del · Esc close",
+            (None, Selected::Checklist(None)) => "o add · Esc close",
             (None, Selected::Comment(_)) => "a add · e edit · d del · Esc close",
         };
         Line::styled(keys, Style::new().fg(self.theme.dim_text))
@@ -640,6 +733,7 @@ mod tests {
             id: ItemId::new(1),
             item,
             selected,
+            checklist: None,
             editing,
         };
         let area = Rect::new(0, 0, width, height);
@@ -648,7 +742,11 @@ mod tests {
             top,
             drawn: Some(selected),
         };
-        AttachmentsPanel::new(view, &theme, IconSet::Plain).render(area, &mut buf, &mut scrolled);
+        AttachmentsPanel::new(view.clone(), &theme, IconSet::Plain).render(
+            area,
+            &mut buf,
+            &mut scrolled,
+        );
         let caret = AttachmentsPanel::new(view, &theme, IconSet::Plain)
             .caret(AttachmentsPanel::area(area), scrolled.top);
         (buf, scrolled.top, caret)
@@ -801,6 +899,7 @@ mod tests {
                     id: ItemId::new(1),
                     item: &Item::new(ItemKind::Task, "x"),
                     selected: Selected::Note,
+                    checklist: None,
                     editing: Some(&field),
                 },
                 &BuiltIn::default().colors(),
@@ -918,6 +1017,7 @@ mod tests {
             id: ItemId::new(1),
             item: &item,
             selected,
+            checklist: None,
             editing: None,
         };
         let area = Rect::new(0, 0, 40, 8);
@@ -946,5 +1046,185 @@ mod tests {
         assert_eq!(top, 10, "in view");
         let panel = AttachmentsPanel::new(view(Selected::Comment(0)), &theme, IconSet::Plain);
         assert_eq!(panel.selected_lines(area), (12, 14));
+    }
+
+    /// A checklist line of `item` at `depth`, dimmed or not.
+    fn line(item: &Item, id: u64, depth: usize, dimmed: bool) -> ChecklistLine<'_> {
+        ChecklistLine {
+            id: ItemId::new(id),
+            item,
+            depth,
+            dimmed,
+        }
+    }
+
+    /// The panel on a task `Pack` with checklist items `Books`, checked, holding `Novels`, and
+    /// `Plates @home(kitchen)`, `selected` selected and edited in `editing` if given, drawn over
+    /// 40 × `height` cells from line `top`; the buffer, the line drawn from and the caret.
+    fn draw_checklist(
+        selected: Selected,
+        editing: Option<&TextField>,
+        height: u16,
+        top: usize,
+    ) -> (Buffer, usize, Option<Position>) {
+        let task = Item::new(ItemKind::Task, "Pack");
+        let mut books = Item::new(ItemKind::ChecklistItem, "Books");
+        books.completed = Some(crate::domain::Completion::Undated);
+        let novels = Item::new(ItemKind::ChecklistItem, "Novels");
+        let mut plates = Item::new(ItemKind::ChecklistItem, "Plates");
+        plates.tags = vec![crate::domain::Tag {
+            name: "home".to_owned(),
+            value: Some("kitchen".to_owned()),
+        }];
+        let theme = BuiltIn::default().colors();
+        let view = AttachmentsView {
+            id: ItemId::new(1),
+            item: &task,
+            selected,
+            checklist: Some(vec![
+                line(&books, 2, 0, true),
+                line(&novels, 3, 1, true),
+                line(&plates, 4, 0, false),
+            ]),
+            editing,
+        };
+        let area = Rect::new(0, 0, 40, height);
+        let mut buf = Buffer::empty(area);
+        let mut scrolled = Scrolled {
+            top,
+            drawn: Some(selected),
+        };
+        AttachmentsPanel::new(view.clone(), &theme, IconSet::Plain).render(
+            area,
+            &mut buf,
+            &mut scrolled,
+        );
+        let caret = AttachmentsPanel::new(view, &theme, IconSet::Plain).caret(area, scrolled.top);
+        (buf, scrolled.top, caret)
+    }
+
+    // FR-CHK-02, FR-CHK-04
+    #[test]
+    fn the_checklist_shows_between_the_note_and_the_comments_checked_items_dimmed() {
+        let selected = Selected::Checklist(Some(ItemId::new(3)));
+        let (buf, top, caret) = draw_checklist(selected, None, 16, 0);
+        assert_eq!((top, caret), (0, None));
+        assert_eq!(
+            rows(&buf),
+            [
+                "┌ Pack ────────────────────────────────┐",
+                "│                               ≡ Note │",
+                "│ No note                              │",
+                "│                                      │",
+                "│                          ☑ Checklist │",
+                "│ ✔ Books                              │",
+                "│   - Novels                           │",
+                "│ - Plates @home(kitchen)              │",
+                "│                                      │",
+                "│                           ❞ Comments │",
+                "│ No comments                          │",
+                "│                                      │",
+                "│                                      │",
+                "│                                      │",
+                "│ o add · x check · d del · Esc close  │",
+                "└──────────────────────────────────────┘",
+            ]
+        );
+        let theme = BuiltIn::default().colors();
+        let books = &buf[(4, 5)];
+        assert_eq!(books.fg, theme.done);
+        assert!(
+            books
+                .modifier
+                .contains(Modifier::DIM | Modifier::CROSSED_OUT)
+        );
+        let novels = &buf[(6, 6)];
+        assert!(
+            novels.modifier.contains(Modifier::DIM),
+            "under a checked item"
+        );
+        assert!(!novels.modifier.contains(Modifier::CROSSED_OUT));
+        assert_eq!(
+            novels.bg, theme.current_line,
+            "the item selected is on the band"
+        );
+        assert_eq!(
+            buf[(1, 6)].bg,
+            theme.current_line,
+            "the band spans the panel"
+        );
+        assert_eq!(buf[(4, 7)].bg, theme.background);
+        assert!(!buf[(4, 7)].modifier.contains(Modifier::DIM));
+        assert_eq!(buf[(11, 7)].fg, theme.tag);
+    }
+
+    // FR-CHK-02
+    #[test]
+    fn the_first_item_takes_the_heading_with_it() {
+        let selected = Selected::Checklist(Some(ItemId::new(2)));
+        let (buf, top, _) = draw_checklist(selected, None, 7, 0);
+        assert_eq!(top, 2, "the heading above it in view");
+        assert_eq!(rows(&buf)[2], "│                          ☑ Checklist │");
+        assert_eq!(
+            buf[(1, 2)].bg,
+            BuiltIn::default().colors().current_line,
+            "on the band with it"
+        );
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn an_item_edited_shows_its_text_as_typed_with_the_caret() {
+        let field = TextField::new("Plates and bowls and cups".to_owned());
+        let selected = Selected::Checklist(Some(ItemId::new(4)));
+        let (buf, top, caret) = draw_checklist(selected, Some(&field), 16, 0);
+        assert_eq!(top, 0);
+        assert_eq!(
+            (rows(&buf)[7].as_str(), rows(&buf)[14].as_str()),
+            (
+                "│ - Plates and bowls and cups          │",
+                "│ Enter next · Esc done                │",
+            )
+        );
+        assert_eq!(caret, Some(Position::new(29, 7)));
+        let long = TextField::new("Plates and bowls and cups and glasses".to_owned());
+        let (buf, _, caret) = draw_checklist(selected, Some(&long), 16, 0);
+        assert_eq!(
+            rows(&buf)[7..9],
+            [
+                "│ - Plates and bowls and cups and      │",
+                "│   glasses                            │",
+            ],
+            "wrapping after the marker"
+        );
+        assert_eq!(caret, Some(Position::new(11, 8)));
+    }
+
+    // FR-CHK-02
+    #[test]
+    fn an_empty_checklist_says_so() {
+        let task = Item::new(ItemKind::Task, "Pack");
+        let theme = BuiltIn::default().colors();
+        let view = AttachmentsView {
+            id: ItemId::new(1),
+            item: &task,
+            selected: Selected::Checklist(None),
+            checklist: Some(Vec::new()),
+            editing: None,
+        };
+        let area = Rect::new(0, 0, 40, 12);
+        let mut buf = Buffer::empty(area);
+        AttachmentsPanel::new(view.clone(), &theme, IconSet::Plain).render(
+            area,
+            &mut buf,
+            &mut Scrolled::default(),
+        );
+        assert_eq!(rows(&buf)[5], "│ No checklist                         │");
+        assert_eq!(buf[(2, 5)].bg, theme.current_line);
+        assert_eq!(
+            AttachmentsPanel::new(view, &theme, IconSet::Plain).selected_lines(area),
+            (3, 8),
+            "its heading and line, running to the end with no comments after it"
+        );
     }
 }
