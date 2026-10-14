@@ -109,6 +109,9 @@ mod tests {
         let path = dir.path().join("todo.taskpaper");
         fs::write(&path, "- a\n")?;
         let (_watcher, received) = checks(&path)?;
+        // macOS's FSEvents can report the folder's and the file's creation just before watching
+        // began, so the test waits for the folder to go quiet first.
+        while received.recv_timeout(Duration::from_millis(600)).is_ok() {}
         fs::read_to_string(&path)?;
         assert!(
             received.recv_timeout(Duration::from_millis(600)).is_err(),
