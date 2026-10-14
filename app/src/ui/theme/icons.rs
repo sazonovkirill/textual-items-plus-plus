@@ -7,6 +7,8 @@ use crate::app::IconSet;
 /// Something the UI marks with an icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
+    /// An area.
+    Area,
     /// A project.
     Project,
     /// A section.
@@ -73,6 +75,8 @@ impl Icon {
     /// The table: each Nerd Fonts v3 code point beside its plain marker, every one a single cell.
     const fn glyphs(self) -> (&'static str, &'static str) {
         match self {
+            // nf-md-cube_outline
+            Self::Area => ("\u{f01a7}", "◆"),
             // The owner's markers, as Todoist marks a project with `#`, with Nerd Fonts icons too
             // (D-66).
             Self::Project => ("#", "#"),
@@ -131,7 +135,8 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 25] = [
+    const ICONS: [Icon; 26] = [
+        Icon::Area,
         Icon::Project,
         Icon::Section,
         Icon::Task,

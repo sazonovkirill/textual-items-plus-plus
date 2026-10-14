@@ -139,6 +139,7 @@ mod tests {
         let document = document(TODAY);
         let items = items(&document);
         for kind in [
+            ItemKind::Area,
             ItemKind::Project,
             ItemKind::Section,
             ItemKind::Task,
@@ -166,13 +167,12 @@ mod tests {
         has("a completed task", &|item| {
             item.completed == Some(Completion::On(date(2026, 10, 4)))
         });
-        let project = |id: &ItemId| matches!(document.node(*id), Some(Node::Item(item)) if item.kind == ItemKind::Project);
         assert!(
             document
                 .top_level()
                 .iter()
-                .any(|id| project(id) && document.children(*id).iter().any(project)),
-            "demo lacks a project inside a project"
+                .any(|&id| matches!(document.node(id), Some(Node::Item(item)) if item.kind == ItemKind::Project)),
+            "demo lacks a project outside any area"
         );
         assert!(
             document

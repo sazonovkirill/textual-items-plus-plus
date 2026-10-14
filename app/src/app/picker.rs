@@ -18,7 +18,7 @@ pub struct Candidate<T> {
     pub value: T,
     /// The text the query matches.
     pub text: String,
-    /// What a frontend shows beside the text to tell candidates apart, such as the project a
+    /// What a frontend shows beside the text to tell candidates apart, such as the area a
     /// project is in; empty when nothing needs telling apart.
     pub detail: String,
 }

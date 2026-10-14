@@ -362,7 +362,21 @@ impl State {
     pub(super) fn open_date_prompt(&mut self, kind: DateKind, today: Date) {
         let items = self.described();
         let focused = self.pane().selection.focused();
-        self.date_prompt = DatePrompt::open(&self.document, items, kind, today, focused);
+        self.open_date_prompt_for(items, kind, today, focused);
+    }
+
+    /// Opens the date prompt for the `kind` date of `items`, with the date of `focused` typed;
+    /// on areas alone the status line says they have none (D-75).
+    fn open_date_prompt_for(
+        &mut self,
+        items: Vec<ItemId>,
+        kind: DateKind,
+        today: Date,
+        focused: Option<ItemId>,
+    ) {
+        if !self.refuses_areas(&items, Notice::AreaUndated) {
+            self.date_prompt = DatePrompt::open(&self.document, items, kind, today, focused);
+        }
     }
 
     /// Applies `input` to the open date prompt: applying a date, or a blank text, closes it and
@@ -387,8 +401,32 @@ impl State {
     /// Sets the start date of the selected items to `today`, as one step to undo.
     pub(super) fn start_today(&mut self, today: Date) {
         let items = self.described();
-        let transaction = date_prompt::set(&self.document, items, DateKind::Start, Some(today));
-        self.change(transaction);
+        self.start_today_for(items, today);
+    }
+
+    /// Sets the start date of `items` to `today`, as one step to undo; on areas alone the status
+    /// line says they have none (D-75).
+    fn start_today_for(&mut self, items: Vec<ItemId>, today: Date) {
+        if !self.refuses_areas(&items, Notice::AreaUndated) {
+            let transaction = date_prompt::set(&self.document, items, DateKind::Start, Some(today));
+            self.change(transaction);
+        }
+    }
+
+    /// Whether `items` are all areas, which have no tags or dates, saying so with `notice` when
+    /// they are (D-75).
+    fn refuses_areas(&mut self, items: &[ItemId], notice: Notice) -> bool {
+        let areas = !items.is_empty()
+            && items.iter().all(|&id| {
+                self.document
+                    .node(id)
+                    .and_then(Node::item)
+                    .is_some_and(|item| item.kind == ItemKind::Area)
+            });
+        if areas {
+            self.notify(notice);
+        }
+        areas
     }
 
     /// Moves the selected items to the Trash on `today`, or in the Trash deletes them for good,
@@ -516,6 +554,9 @@ impl State {
     }
 
     fn open_tags_for(&mut self, items: Vec<ItemId>) {
+        if self.refuses_areas(&items, Notice::AreaUntagged) {
+            return;
+        }
         self.navigator = None;
         self.move_to = None;
         self.tags = TagPicker::for_items(&self.document, items);
@@ -602,37 +643,6 @@ impl State {
                 )
             });
         self.change(transaction);
-    }
-
-    /// Indents the selected items into the item of their kind above them, as one step to undo,
-    /// focusing the item the focused one went into, since what it holds is not shown; the status
-    /// line says why when the hierarchy refuses every one (FR-OPS-03). A view has no tree to
-    /// indent in, so nothing happens there.
-    pub(super) fn indent(&mut self) {
-        if self.container().is_none() {
-            return;
-        }
-        match moving::indent_all(&self.document, &self.targets()) {
-            Ok((transaction, moved)) => {
-                let focused = self.selection().focused();
-                let into = moved.iter().find(|&&(id, _)| Some(id) == focused);
-                self.change_focusing(transaction, into.map_or(focused, |&(_, into)| Some(into)));
-            }
-            Err(refusal) => self.notify(Notice::Refused(refusal)),
-        }
-    }
-
-    /// Outdents the selected items out of the item of their kind they are in, as one step to
-    /// undo, moving the focus on when it leaves the rows; the status line says why when the
-    /// hierarchy refuses every one (FR-OPS-03). Nothing happens in a view, as for indenting.
-    pub(super) fn outdent(&mut self) {
-        if self.container().is_none() {
-            return;
-        }
-        match moving::outdent_all(&self.document, &self.targets()) {
-            Ok(transaction) => self.change(transaction),
-            Err(refusal) => self.notify(Notice::Refused(refusal)),
-        }
     }
 
     /// Converts the selected items in their place to projects, or to sections when all are
@@ -964,8 +974,8 @@ impl State {
 
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, editing its description
-    /// in the pane, adding a project, as `o` and `O` do since it lists no tasks, collapsing it,
-    /// deleting, moving, indenting, outdenting, converting and setting its dates, each one step to
+    /// in the pane, adding an area or a project, collapsing it, deleting, moving, converting and
+    /// setting its dates, each one step to
     /// undo, opening Move to for it or the attachments panel on it, and opening the entry in the
     /// pane, `Enter` giving the pane the keys, or in a new pane, which gets them; a view's entry is
     /// only opened. Quitting, undo and redo, the Navigator, Go to Symbol, searching, the sidebar's
@@ -1003,14 +1013,19 @@ impl State {
         match (command, focused) {
             (Command::Focus(motion), _) => self.sidebar.move_focus(&entries, motion),
             (Command::Collapse, _) => self.sidebar.toggle_collapsed(&self.document),
-            // The sidebar lists only projects, so its adding keys add projects: beside the focused
-            // one, at either end of the top level, or in the focused one (owner, D-45).
-            (Command::NewLike(side), _) => {
-                self.sidebar_add_at(sidebar::beside(&self.document, focused, side));
+            (Command::NewLike(side), _) => self.sidebar_new(&entries, side),
+            // The task keys add an area, `p` a project at the top level and `i` one in the area
+            // focused or holding the project focused (owner, D-75).
+            (Command::AddTask(end), _) => {
+                self.sidebar_add(self.document.inbox(), ItemKind::Area, end);
             }
-            (Command::AddProject(end), _) => self.sidebar_add(self.document.inbox(), end),
-            (Command::AddSubproject(end), Some(Shown::Container(id))) => {
-                self.sidebar_add(id, end);
+            (Command::AddProject(end), _) => {
+                self.sidebar_add(self.document.inbox(), ItemKind::Project, end);
+            }
+            (Command::AddProjectInArea(end), Some(Shown::Container(id))) => {
+                if let Some(area) = sidebar::area(&self.document, id) {
+                    self.sidebar_add(area, ItemKind::Project, end);
+                }
             }
             (Command::EditTitle, Some(shown)) => {
                 self.show(shown, None);
@@ -1041,26 +1056,18 @@ impl State {
             (Command::Move(direction), Some(Shown::Container(id))) => {
                 self.change(sidebar::shift(&self.document, id, direction));
             }
-            (Command::Indent, Some(Shown::Container(id))) => {
-                apply(self, sidebar::indent(&self.document, id));
-            }
             (Command::Convert, Some(Shown::Container(id))) => {
                 apply(self, converting::convert_all(&self.document, &[id]));
-            }
-            (Command::Outdent, Some(Shown::Container(id))) => {
-                apply(self, sidebar::outdent(&self.document, id));
             }
             (Command::MoveTo, Some(Shown::Container(id))) if id != self.document.inbox() => {
                 self.navigator = None;
                 self.move_to = MoveTo::open(&self.document, [id]);
             }
             (Command::SetDate(kind), Some(Shown::Container(id))) => {
-                self.date_prompt = DatePrompt::open(&self.document, [id], kind, today, Some(id));
+                self.open_date_prompt_for(vec![id], kind, today, Some(id));
             }
             (Command::StartToday, Some(Shown::Container(id))) => {
-                let transaction =
-                    date_prompt::set(&self.document, [id], DateKind::Start, Some(today));
-                self.change(transaction);
+                self.start_today_for(vec![id], today);
             }
             (Command::Tags, Some(Shown::Container(id))) => self.open_tags_for(vec![id]),
             (Command::OpenNote(_), Some(Shown::Container(id))) => {
@@ -1075,20 +1082,39 @@ impl State {
         true
     }
 
-    /// Adds an empty project from the sidebar at `end` of the projects in `container`, the top
-    /// level for the Inbox, focuses it and starts editing its title in the sidebar (D-45).
-    fn sidebar_add(&mut self, container: ItemId, end: End) {
-        let place = adding::end_place(&self.document, container, ItemKind::Project, end)
-            .expect("a project goes in a project or at the top level");
-        self.sidebar_add_at(place);
+    /// Adds an empty area beside the sidebar's focused area, or else an empty project, among
+    /// `entries` on `side` of the focused entry, focuses it and starts editing its title in the
+    /// sidebar. The sidebar lists no tasks or sections, so beside a view or the Inbox it adds a
+    /// project (D-45).
+    fn sidebar_new(&mut self, entries: &[Stop], side: Side) {
+        let focused = self.sidebar.focused();
+        let area = |id| {
+            let item = self.document.node(id).and_then(Node::item);
+            item.is_some_and(|item| item.kind == ItemKind::Area)
+        };
+        let kind = match focused {
+            Some(Shown::Container(id)) if area(id) => ItemKind::Area,
+            _ => ItemKind::Project,
+        };
+        let place = sidebar::place(&self.document, entries, focused, kind, side)
+            .expect("the sidebar focuses one of its entries, beside which a project or area goes");
+        self.sidebar_add_at(kind, place);
     }
 
-    /// Adds an empty project at `place` from the sidebar, focuses it and starts editing its title
-    /// there.
-    fn sidebar_add_at(&mut self, place: (Option<ItemId>, usize)) {
+    /// Adds an empty project or area, as `kind` says, at `end` of its kind in `container`, or at
+    /// the top level from the Inbox, focuses it and starts editing its title in the sidebar
+    /// (D-45, D-75).
+    fn sidebar_add(&mut self, container: ItemId, kind: ItemKind, end: End) {
+        let place = adding::end_place(&self.document, container, kind, end)
+            .expect("a project or an area goes at the top level when nowhere nearer");
+        self.sidebar_add_at(kind, place);
+    }
+
+    /// Adds an empty item of `kind` at `place` from the sidebar, focuses it and starts editing
+    /// its title there.
+    fn sidebar_add_at(&mut self, kind: ItemKind, place: (Option<ItemId>, usize)) {
         let selection = self.pane().selection.clone();
-        let project = Item::new(ItemKind::Project, "");
-        let editing = Editing::new_item(&mut self.document, project, place, selection);
+        let editing = Editing::new_item(&mut self.document, Item::new(kind, ""), place, selection);
         self.sidebar.focus_new(editing.id());
         self.editing = Some(editing);
     }
@@ -1408,7 +1434,7 @@ mod tests {
         Ok(())
     }
 
-    /// A state on the Inbox, holding task `inbox_task`, beside project `work` holding task `loose`,
+    /// A state on the Inbox, holding task `inbox_task`, beside area `work` holding task `loose`,
     /// section `section` with task `in_section` and project `site` with task `in_site`.
     struct Fixture {
         state: State,
@@ -1428,7 +1454,7 @@ mod tests {
         };
         let inbox = document.inbox();
         let inbox_task = add(&mut document, inbox, ItemKind::Task, "i")?;
-        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         let loose = add(&mut document, work, ItemKind::Task, "loose")?;
         let section = add(&mut document, work, ItemKind::Section, "S")?;
         let in_section = add(&mut document, section, ItemKind::Task, "s")?;
@@ -1496,7 +1522,7 @@ mod tests {
         assert_eq!(
             at(&state),
             (Some(work), Some(site)),
-            "nothing is above a top-level project"
+            "nothing is above an area"
         );
         Ok(())
     }
@@ -1658,7 +1684,10 @@ mod tests {
     fn the_heading_takes_the_focus_and_the_commands_on_its_own_item() -> Result<(), PlacementError>
     {
         let Fixture {
-            mut state, work, ..
+            mut state,
+            work,
+            site,
+            ..
         } = fixture()?;
         navigate(&mut state, "Work");
         state.move_focus(Focus::First);
@@ -1672,15 +1701,33 @@ mod tests {
             .map(|it| it.completed);
         assert_eq!(done, Some(None), "nothing picked, nothing completed");
         state.open_tags();
-        assert!(state.tags().is_some());
+        assert_eq!(state.tags(), None);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::AreaUntagged),
+            "Work is an area"
+        );
+        state.start_today(TODAY);
+        state.open_date_prompt(DateKind::Due, TODAY);
+        assert_eq!(state.date_prompt(), None);
+        assert_eq!(state.notice(), Some(&Notice::AreaUndated));
+        navigate(&mut state, "Site");
+        state.move_focus(Focus::First);
+        state.open_tags();
+        assert!(state.tags().is_some(), "Site is a project");
         state.tags = None;
         state.start_today(TODAY);
-        let start = state
-            .document()
-            .node(work)
-            .and_then(Node::item)
-            .map(|it| it.start);
-        assert_eq!(start, Some(Some(TODAY)));
+        let start = |state: &State, id| {
+            state
+                .document()
+                .node(id)
+                .and_then(Node::item)
+                .map(|it| it.start)
+        };
+        assert_eq!(start(&state, site), Some(Some(TODAY)));
+        assert_eq!(start(&state, work), Some(None), "the area takes none");
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::First);
         state.new_like(Side::Above);
         assert!(
             state.editing().is_none(),
@@ -1868,12 +1915,12 @@ mod tests {
         assert_eq!(
             at(&state),
             (Some(work), Some(loose)),
-            "the section is gone, so its project opens on its first row"
+            "the section is gone, so its area opens on its first row"
         );
         // With everything above gone too, home is left.
         state.undo();
         state.go(Go::Into);
-        let mut gone = Item::new(ItemKind::Project, "Work");
+        let mut gone = Item::new(ItemKind::Area, "Work");
         gone.deleted = Some(TODAY);
         state.document.set(work, gone)?;
         state.redo();
@@ -2083,7 +2130,7 @@ mod tests {
             ..
         } = fixture()?;
         let inbox = state.document().inbox();
-        state.new_container(ItemKind::Project, Side::Below);
+        state.new_container(ItemKind::Area, Side::Below);
         let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(at(&state), (Some(area), Some(area)), "its heading focused");
         assert_eq!(state.document().top_level(), [area, work]);
@@ -2095,9 +2142,9 @@ mod tests {
         assert_eq!(
             state.container(),
             Some(inbox),
-            "the project left empty is not there"
+            "the area left empty is not there"
         );
-        state.new_container(ItemKind::Project, Side::Above);
+        state.new_container(ItemKind::Area, Side::Above);
         type_text(&mut state, "Home");
         state.edit_input(EditInput::Done);
         let home = state.document().top_level()[0];
@@ -2118,14 +2165,17 @@ mod tests {
         state.new_container(ItemKind::Section, Side::Below);
         assert_eq!(state, before, "the Inbox holds no section");
         navigate(&mut state, "Work");
-        let mut done = Item::new(ItemKind::Project, "Work");
+        let mut done = Item::new(ItemKind::Area, "Work");
         done.completed = Some(crate::domain::Completion::Undated);
         state.document.set(work, done)?;
         let before = state.clone();
         for kind in [ItemKind::Section, ItemKind::Project] {
             state.new_container(kind, Side::Below);
-            assert_eq!(state, before, "{kind:?} in a completed project");
+            assert_eq!(state, before, "{kind:?} in a completed area");
         }
+        state.new_container(ItemKind::Area, Side::Below);
+        let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(state.document().top_level(), [work, area]);
         Ok(())
     }
 
@@ -2181,15 +2231,16 @@ mod tests {
             "a section beside the focused section"
         );
         navigate(&mut state, "Site");
-        let site = state.container();
         add(&mut state, ItemKind::Project, End::Bottom, "Next");
-        let last = site.and_then(|site| state.document().children(site).last().copied());
         assert_eq!(
-            last.and_then(|id| title(&state, id)),
+            titles(&state).last().map(String::as_str),
             Some("Next"),
-            "a project goes into the project shown, as its row"
+            "a project goes into the area holding the one shown, and opens"
         );
-        assert_eq!(state.container(), site);
+        assert_eq!(
+            state.container().and_then(|id| title(&state, id)),
+            Some("Next")
+        );
         Ok(())
     }
 
@@ -2332,9 +2383,9 @@ mod tests {
         Ok(())
     }
 
-    // FR-OPS-01, FR-OPS-02, FR-OPS-03
+    // FR-OPS-01, FR-OPS-02
     #[test]
-    fn picked_items_move_and_indent_together() -> Result<(), PlacementError> {
+    fn picked_items_move_together() -> Result<(), PlacementError> {
         let Fixture {
             mut state,
             work,
@@ -2342,7 +2393,6 @@ mod tests {
             section,
             in_section,
             site,
-            in_site,
             ..
         } = fixture()?;
         let mut document = state.document().clone();
@@ -2371,39 +2421,10 @@ mod tests {
         state.extend_selection(Direction::Up);
         state.extend_selection(Direction::Up);
         assert_eq!(picked(&state), [site, two, three]);
-        state.indent();
-        assert_eq!(
-            state.notice(),
-            Some(&Notice::Refused(moving::Refusal::NothingAbove))
-        );
-        state.toggle_picked();
-        state.indent();
-        assert_eq!(state.document().children(site), [in_site, two, three]);
-        assert_eq!(
-            state.selection().focused(),
-            Some(site),
-            "the item the focused one went into"
-        );
-        state.extend_selection(Direction::Up);
-        state.outdent();
-        assert_eq!(
-            state.document().position(site).map(|(parent, _)| parent),
-            Some(None),
-            "out of the project Work"
-        );
-        state.undo();
-        state.undo();
-        assert_eq!(picked(&state), [two, three]);
-        state.indent();
-        assert_eq!(
-            state.selection().focused(),
-            Some(site),
-            "the focus, not on an item indented, stays"
-        );
         Ok(())
     }
 
-    /// A state on the Inbox, holding `inbox_task @work` starting today, beside project `work`
+    /// A state on the Inbox, holding `inbox_task @work` starting today, beside area `work`
     /// holding `overdue @home`, due yesterday, and project `site` due today, holding
     /// `in_launch`, starting today in section `launch`, and `tomorrow`, starting tomorrow.
     struct Dated {
@@ -2431,7 +2452,7 @@ mod tests {
         };
         let (yesterday, tomorrow) = (date(2026, 10, 13), date(2026, 10, 15));
         let inbox_task = add(Some(inbox), ItemKind::Task, Some(TODAY), None, &["work"])?;
-        let work = add(None, ItemKind::Project, None, None, &[])?;
+        let work = add(None, ItemKind::Area, None, None, &[])?;
         let overdue = add(Some(work), ItemKind::Task, None, Some(yesterday), &["home"])?;
         let site = add(Some(work), ItemKind::Project, None, Some(TODAY), &[])?;
         let launch = add(Some(site), ItemKind::Section, None, None, &[])?;
@@ -2615,7 +2636,7 @@ mod tests {
         state.pane_mut().selection.focus(Some(inbox_task));
         let before = state.document().clone();
         state.new_task(Side::Below);
-        for kind in [ItemKind::Section, ItemKind::Project, ItemKind::Project] {
+        for kind in [ItemKind::Section, ItemKind::Project, ItemKind::Area] {
             state.new_container(kind, Side::Below);
         }
         let branch = Branch {
@@ -2624,8 +2645,6 @@ mod tests {
         };
         state.paste(Side::Below, &[branch]);
         state.move_item(Direction::Down);
-        state.indent();
-        state.outdent();
         state.group(ItemKind::Section);
         state.delete_container(TODAY);
         state.go(Go::Up);

@@ -185,7 +185,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::NewLike(side) => state.new_like(side),
         Command::AddTask(end) => state.add(ItemKind::Task, end),
         Command::AddSection(end) => state.add(ItemKind::Section, end),
-        Command::AddProject(end) | Command::AddSubproject(end) => {
+        Command::AddProject(end) | Command::AddProjectInArea(end) => {
             state.add(ItemKind::Project, end);
         }
         Command::SetDate(kind) => state.open_date_prompt(kind, today),
@@ -201,8 +201,6 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::RenameContainer => state.rename_container(),
         Command::DeleteContainer => state.delete_container(today),
         Command::Move(direction) => state.move_item(direction),
-        Command::Indent => state.indent(),
-        Command::Outdent => state.outdent(),
         Command::Convert => state.convert(),
         Command::GroupIntoSection => state.group(ItemKind::Section),
         Command::GroupIntoProject => state.group(ItemKind::Project),
@@ -218,8 +216,9 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::FilterTags => state.open_tag_filter(),
         Command::ClearTagFilter => state.clear_tag_filter(),
         Command::Sidebar => state.toggle_sidebar(),
-        // The pane shows a child project as one row, with nothing to fold; the sidebar takes it.
-        Command::Collapse => {}
+        // The pane shows a child project as one row, with nothing to fold, and only checklist
+        // items nest, in the attachments panel, which takes these first (D-75).
+        Command::Collapse | Command::Indent | Command::Outdent => {}
         Command::FocusLeft => state.focus_left(),
         Command::FocusRight => state.focus_right(),
         Command::FocusPane(number) => state.focus_pane(number),
@@ -455,8 +454,8 @@ mod tests {
             [a; 2]
         );
         assert!(!state.refused());
-        give(&mut state, Command::Indent);
-        assert!(state.refused());
+        give(&mut state, Command::Convert);
+        assert!(state.refused(), "the Inbox holds no project");
         assert_eq!(state.changed(), []);
         update(&mut state, Message::Tick(Duration::from_secs(1)), TODAY);
         assert!(!state.refused(), "the next message forgets the refusal");
@@ -469,30 +468,16 @@ mod tests {
 
     // FR-OPS-02, FR-OPS-03
     #[test]
-    fn moving_and_indenting_change_the_state_with_no_effect() -> Result<(), PlacementError> {
+    fn moving_changes_the_state_with_no_effect_and_indenting_does_nothing_in_the_pane()
+    -> Result<(), PlacementError> {
         let mut state = state()?;
         give(&mut state, Command::Move(Direction::Down));
         assert_eq!(titles(&state), ["b", "a"]);
         assert_eq!(focused(&state), Some("a"));
-        give(&mut state, Command::Indent);
-        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
-        give(&mut state, Command::Outdent);
-        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
         give(&mut state, Command::Move(Direction::Up));
-        assert_eq!(state.notice(), None);
         assert_eq!(titles(&state), ["a", "b"]);
-        let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
-        let before = empty.clone();
-        for command in [
-            Command::Move(Direction::Up),
-            Command::Indent,
-            Command::Outdent,
-        ] {
-            give(&mut empty, command);
-        }
-        assert_eq!(empty, before, "with nothing focused nothing happens");
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         for title in ["A", "B"] {
             document.push(Some(area), Node::Item(Item::new(ItemKind::Project, title)))?;
         }
@@ -502,18 +487,14 @@ mod tests {
             Message::Navigator(PickerInput::Edit(TextEdit::Insert('W'))),
             Message::Navigator(PickerInput::Choose),
             Message::Command(Command::Focus(Focus::Last)),
-            Message::Command(Command::Indent),
         ] {
             assert_eq!(update(&mut state, message, TODAY), []);
         }
-        assert_eq!(titles(&state), ["A"]);
-        assert_eq!(focused(&state), Some("A"), "the project it went into");
-        give(&mut state, Command::Go(Go::Into));
-        assert_eq!(focused(&state), Some("B"));
-        give(&mut state, Command::Outdent);
-        assert_eq!(titles(&state), Vec::<&str>::new());
-        give(&mut state, Command::Go(Go::Up));
-        assert_eq!(titles(&state), ["A", "B"]);
+        let before = state.clone();
+        for command in [Command::Indent, Command::Outdent] {
+            assert_eq!(update(&mut state, Message::Command(command), TODAY), []);
+        }
+        assert_eq!(state, before, "only checklist items nest (D-75)");
         Ok(())
     }
 
@@ -565,11 +546,11 @@ mod tests {
         assert_eq!(update(state, Message::Edit(input), TODAY), []);
     }
 
-    // FR-VIEW-10, FR-OPS-02, FR-OPS-03, FR-EDIT-06
+    // FR-VIEW-10, FR-OPS-02, FR-EDIT-06
     #[test]
-    fn the_sidebar_moves_indents_and_outdents_its_focused_entry() -> Result<(), PlacementError> {
+    fn the_sidebar_moves_its_focused_entry() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         for title in ["A", "B"] {
             document.push(Some(work), Node::Item(Item::new(ItemKind::Project, title)))?;
         }
@@ -596,22 +577,6 @@ mod tests {
                 vec!["Work".into(), "  A".into(), "  B".into()]
             )
         );
-        give(&mut state, Command::Indent);
-        assert_eq!(
-            state.notice(),
-            Some(&Notice::Refused(Refusal::NothingAbove))
-        );
-        give(&mut state, Command::Focus(Focus::Next));
-        give(&mut state, Command::Indent);
-        assert_eq!(
-            sidebar(&state),
-            (
-                Some("B".into()),
-                vec!["Work".into(), "  A".into(), "    B".into()]
-            )
-        );
-        give(&mut state, Command::Outdent);
-        assert_eq!(sidebar(&state).1, ["Work", "  A", "  B"]);
         give(&mut state, Command::MoveTo);
         assert!(
             state.move_to().is_some(),
@@ -620,11 +585,10 @@ mod tests {
         update(&mut state, Message::MoveTo(PickerInput::Dismiss), TODAY);
         give(&mut state, Command::Focus(Focus::First));
         past_the_views(&mut state);
-        give(&mut state, Command::Outdent);
-        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::NotNested)));
         let before = state.document().clone();
         for command in [
-            Command::AddTask(End::Bottom),
+            Command::Indent,
+            Command::Outdent,
             Command::AddSection(End::Bottom),
             Command::ShowCompleted,
             Command::ToggleCompleted,
@@ -660,12 +624,18 @@ mod tests {
 
     // FR-TAG-01, FR-TAG-02, FR-VIEW-10
     #[test]
-    fn the_sidebar_tags_its_focused_entry() -> Result<(), PlacementError> {
+    fn the_sidebar_tags_its_focused_entry_but_no_area() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        document.push(None, Node::Item(Item::new(ItemKind::Area, "Home")))?;
         let mut state = State::new(document, Opened::Demo, TODAY);
         give(&mut state, Command::Sidebar);
         give(&mut state, Command::Focus(Focus::Last));
+        assert_eq!(sidebar(&state).0.as_deref(), Some("Home"));
+        give(&mut state, Command::Tags);
+        assert_eq!(state.tags(), None);
+        assert_eq!(state.notice(), Some(&Notice::AreaUntagged));
+        give(&mut state, Command::Focus(Focus::Previous));
         assert_eq!(sidebar(&state).0.as_deref(), Some("Work"));
         give(&mut state, Command::Tags);
         let typed = Message::Tags(PickerInput::Edit(TextEdit::Insert('x')));
@@ -717,7 +687,7 @@ mod tests {
     {
         let mut state = state()?;
         let mut document = state.document().clone();
-        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         state = State::new(document, Opened::Demo, TODAY);
         let pane = state.selection().clone();
         give(&mut state, Command::Sidebar);
@@ -728,10 +698,11 @@ mod tests {
         assert!(state.editing().is_none(), "Enter only ends editing");
         assert_eq!(sidebar(&state).1, ["Works"]);
         assert_eq!(state.selection(), &pane, "the pane keeps its focus");
-        give(&mut state, Command::AddSubproject(End::Bottom));
+        give(&mut state, Command::AddProjectInArea(End::Bottom));
         assert_eq!(
             sidebar(&state),
-            (Some(String::new()), vec!["Works".into(), "  ".into()])
+            (Some(String::new()), vec!["Works".into(), "  ".into()]),
+            "`i` adds a project in the focused area"
         );
         edit(&mut state, EditInput::Done);
         assert_eq!(
@@ -741,10 +712,11 @@ mod tests {
         give(&mut state, Command::AddProject(End::Bottom));
         assert_eq!(
             sidebar(&state),
-            (Some(String::new()), vec!["Works".into(), String::new()])
+            (Some(String::new()), vec![String::new(), "Works".into()]),
+            "`p` adds one at the top level, listed before the areas"
         );
         edit(&mut state, EditInput::Done);
-        give(&mut state, Command::AddProject(End::Top));
+        give(&mut state, Command::AddTask(End::Top));
         type_into(&mut state, "Home");
         give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(
@@ -759,7 +731,7 @@ mod tests {
                 Some(String::new()),
                 vec!["Home".into(), "Works".into(), String::new()]
             ),
-            "`o` adds a project beside the focused one"
+            "`o` beside an area adds an area"
         );
         edit(&mut state, EditInput::Done);
         give(&mut state, Command::Go(Go::Into));
@@ -938,22 +910,33 @@ mod tests {
 
     // FR-DATE-01, FR-DATE-05, FR-VIEW-10
     #[test]
-    fn the_sidebar_dates_its_focused_entry() -> Result<(), PlacementError> {
+    fn the_sidebar_dates_its_focused_entry_but_no_area() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let home = document.push(None, Node::Item(Item::new(ItemKind::Area, "Home")))?;
         let mut state = State::new(document, Opened::Demo, TODAY);
-        let dated = |state: &State| {
-            let item = state.document().node(work).and_then(Node::item);
+        let dated = |state: &State, id| {
+            let item = state.document().node(id).and_then(Node::item);
             item.map(|item| (item.start, item.due))
         };
         give(&mut state, Command::Sidebar);
-        past_the_views(&mut state);
+        give(&mut state, Command::Focus(Focus::Last));
+        for command in [Command::StartToday, Command::SetDate(DateKind::Due)] {
+            give(&mut state, command);
+            assert_eq!(state.notice(), Some(&Notice::AreaUndated));
+        }
+        assert_eq!(state.date_prompt(), None);
+        assert_eq!(dated(&state, home), Some((None, None)));
+        give(&mut state, Command::Focus(Focus::Previous));
         give(&mut state, Command::StartToday);
-        assert_eq!(dated(&state), Some((Some(TODAY), None)));
+        assert_eq!(dated(&state, work), Some((Some(TODAY), None)));
         give(&mut state, Command::SetDate(DateKind::Due));
         type_date(&mut state, "tomorrow");
         prompt(&mut state, DateInput::Apply);
-        assert_eq!(dated(&state), Some((Some(TODAY), Some(date(2026, 10, 15)))));
+        assert_eq!(
+            dated(&state, work),
+            Some((Some(TODAY), Some(date(2026, 10, 15))))
+        );
         let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut empty, Command::Sidebar);
         let before = empty.clone();
@@ -968,7 +951,7 @@ mod tests {
     fn the_sidebar_lists_the_views_after_the_inbox_and_only_opens_them()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         let mut task = Item::new(ItemKind::Task, "due");
         task.due = Some(TODAY);
         document.push(Some(work), Node::Item(task))?;
@@ -1017,7 +1000,7 @@ mod tests {
     fn going_and_the_navigator_change_the_state_with_no_effect() -> Result<(), PlacementError> {
         let mut state = state()?;
         let mut document = state.document().clone();
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         state = State::new(document, Opened::Demo, TODAY);
         for message in [
             Message::Command(Command::Navigator),
@@ -1060,7 +1043,7 @@ mod tests {
         }
         assert_eq!(empty, before, "with nothing selected nothing happens");
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         for title in ["a", "b", "c"] {
             document.push(Some(area), Node::Item(Item::new(ItemKind::Task, title)))?;
         }
@@ -1131,7 +1114,7 @@ mod tests {
     #[test]
     fn panes_open_from_the_sidebar_and_take_the_keys_beside_it() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         let mut state = State::new(document, Opened::Demo, TODAY);
         give(&mut state, Command::Sidebar);
         give(&mut state, Command::Focus(Focus::Last));

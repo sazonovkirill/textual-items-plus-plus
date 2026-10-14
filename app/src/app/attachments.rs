@@ -12,7 +12,6 @@ use super::{
     Command, Focus, Notice, Refusal, Side, State, TextField, Whose,
     checklist::{self, ChecklistLine},
     editing::Editing,
-    moving,
 };
 use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Node, Op, Transaction, comments};
 
@@ -226,9 +225,9 @@ impl State {
                 }
             }
             (Command::Outdent, Some(Selected::Checklist(Some(item)))) => {
-                match moving::outdent_all(&self.document, &[item]) {
-                    Ok(transaction) => self.change(transaction),
-                    Err(refusal) => self.notify(Notice::Refused(refusal)),
+                match checklist::outdent(&self.document, item) {
+                    Some(transaction) => self.change(transaction),
+                    None => self.notify(Notice::Refused(Refusal::NotNested)),
                 }
             }
             _ => {}

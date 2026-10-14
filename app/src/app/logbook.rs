@@ -12,7 +12,7 @@ use super::{
 };
 use crate::domain::{Completion, Document, ItemId, ItemKind, Node};
 
-/// The groups the Logbook shows of `document`: the completed projects, sections and tasks
+/// The groups the Logbook shows of `document`: the completed areas, projects, sections and tasks
 /// under the day each was completed, the newest day first and those with no day recorded last, in
 /// file order within a day, whatever Show Completed says (FR-VIEW-11). Items in the Trash, kept
 /// content and the contents of a completed item, shown nowhere (FR-ORG-09), are left out;
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn lists_completed_items_by_day_newest_first_in_file_order_within_a_day()
     -> Result<(), PlacementError> {
-        use ItemKind::{Project, Section, Task};
+        use ItemKind::{Area, Project, Section, Task};
         let (monday, tuesday) = (
             Some(Completion::On(date(2026, 10, 12))),
             Some(Completion::On(date(2026, 10, 13))),
@@ -114,7 +114,7 @@ mod tests {
         let undated = Some(Completion::Undated);
         push(&mut document, inbox, Task, "Undated", undated)?;
         push(&mut document, inbox, Task, "Called", monday)?;
-        let work = Some(push(&mut document, None, Project, "Work", None)?);
+        let work = Some(push(&mut document, None, Area, "Work", None)?);
         let site = Some(push(&mut document, work, Project, "Site", None)?);
         push(&mut document, site, Task, "Drafted", tuesday)?;
         push(&mut document, site, Section, "Launch", monday)?;

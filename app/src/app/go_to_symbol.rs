@@ -1,4 +1,4 @@
-//! Go to Symbol: every project, section and task by its title, filtered as the user types, opening
+//! Go to Symbol: every area, project, section and task by its title, filtered as the user types, opening
 //! the one chosen where it is, as VS Code's Go to Symbol does (FR-NAV-05, D-4). Hides which items
 //! it lists and where each one opens.
 
@@ -16,7 +16,7 @@ use crate::domain::{Document, ItemId, ItemKind};
 pub struct Symbol {
     /// The item.
     pub id: ItemId,
-    /// What the item is: a project, a section or a task.
+    /// What the item is: an area, a project, a section or a task.
     pub kind: ItemKind,
 }
 
@@ -69,7 +69,7 @@ pub(super) fn reopen(document: &Document, query: &str) -> Picker<Symbol> {
     picker
 }
 
-/// Every project and section, then every task, each in the order of the file, so that an empty
+/// Every area, project and section, then every task, each in the order of the file, so that an empty
 /// query lists the places first. Each matches by its title and is told apart by the titles above
 /// it. Items in the Trash and completed ones are left out with what they hold, as the Navigator
 /// leaves them out (FR-ORG-09).
@@ -96,7 +96,7 @@ fn list<'a>(
     };
     if matches!(
         item.kind,
-        ItemKind::Project | ItemKind::Section | ItemKind::Task
+        ItemKind::Area | ItemKind::Project | ItemKind::Section | ItemKind::Task
     ) {
         symbols.push(Candidate {
             value: Symbol {
@@ -114,14 +114,14 @@ fn list<'a>(
     above.pop();
 }
 
-/// Where `symbol` opens in `document` on `today`: a project shows itself, as the Navigator opens
+/// Where `symbol` opens in `document` on `today`: an area or a project shows itself, as the Navigator opens
 /// it; a section shows its project, focused on its heading; a task shows the container listing
 /// it, else the first view that lists it, as a scheduled task in the Inbox, focused on it. All
 /// lists every task Go to Symbol does.
 fn visit(document: &Document, today: Date, symbol: Symbol) -> Visit {
     let Symbol { id, kind } = symbol;
     let shown = match kind {
-        ItemKind::Project => {
+        ItemKind::Area | ItemKind::Project => {
             return Visit {
                 shown: Shown::Container(id),
                 focused: None,
@@ -131,7 +131,7 @@ fn visit(document: &Document, today: Date, symbol: Symbol) -> Visit {
             document
                 .position(id)
                 .and_then(|(parent, _)| parent)
-                .expect("a section sits in a project"),
+                .expect("a section sits in an area or a project"),
         ),
         _ => container::listing(document, id).map_or_else(
             || {
@@ -163,7 +163,7 @@ mod tests {
         app::{Command, Go, Message, Opened, update},
         domain::{Completion, Item, Node, PlacementError},
     };
-    use ItemKind::{ChecklistItem, Project, Section, Task};
+    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
     const TODAY: Date = date(2026, 10, 14);
 
@@ -194,7 +194,7 @@ mod tests {
         let mut later = Item::new(Task, "Plan the trip");
         later.start = Some(date(2026, 10, 20));
         let later = document.push(Some(inbox), Node::Item(later))?;
-        let work = add(&mut document, None, Project, "Work")?;
+        let work = add(&mut document, None, Area, "Work")?;
         let recruiter = add(&mut document, Some(work), Task, "Answer the recruiter")?;
         let site = add(&mut document, Some(work), Project, "Site")?;
         let launch = add(&mut document, Some(site), Section, "Launch")?;
@@ -240,7 +240,7 @@ mod tests {
 
     // FR-NAV-05
     #[test]
-    fn lists_projects_and_sections_then_tasks_each_in_file_order_under_the_titles_above_them()
+    fn lists_areas_projects_and_sections_then_tasks_each_in_file_order_under_the_titles_above_them()
     -> Result<(), PlacementError> {
         let sample = sample()?;
         let listed: Vec<(String, String)> = symbols(&sample.document)
@@ -266,10 +266,12 @@ mod tests {
 
     // FR-NAV-05, FR-UI-09
     #[test]
-    fn a_project_opens_itself_a_section_its_project_and_a_task_its_container_focused_on_it()
+    fn an_area_or_project_opens_itself_a_section_its_project_and_a_task_its_container_focused_on_it()
     -> Result<(), PlacementError> {
         let sample = sample()?;
         let mut state = State::new(sample.document, Opened::Demo, TODAY);
+        go_to(&mut state, "work", PickerInput::Choose);
+        assert_eq!(state.shown(), Shown::Container(sample.work));
         go_to(&mut state, "site", PickerInput::Choose);
         assert!(state.go_to_symbol().is_none(), "choosing closes it");
         assert_eq!(state.shown(), Shown::Container(sample.site));

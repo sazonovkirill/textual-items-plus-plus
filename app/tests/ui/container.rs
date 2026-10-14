@@ -143,7 +143,7 @@ fn section_motions_move_between_headings_and_to_the_section_of_a_task() {
 // FR-STORE-01, FR-VIEW-05
 #[test]
 fn a_file_opens_on_its_inbox_saved() {
-    let text = "Inbox:\n\t- Renew the passport @due(2026-11-01)\n\t- Book flights @travel\nWork:\n\t- Not in the Inbox\n";
+    let text = "Inbox:\n\t- Renew the passport @due(2026-11-01)\n\t- Book flights @travel\nWork: @area\n\t- Not in the Inbox\n";
     let (dir, mut harness) = on_file(text, 60, 8);
     let path = dir.path().join("todo.taskpaper");
     assert_eq!(

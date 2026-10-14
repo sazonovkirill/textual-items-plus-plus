@@ -195,7 +195,7 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-    /// The Inbox holding `i`, and the project Work holding the task `loose` and the project Site,
+    /// The Inbox holding `i`, and the area Work holding the task `loose` and the project Site,
     /// which holds the tasks `p` and `q`; with the ids of Work, Site and `q`.
     fn document() -> Result<(Document, [ItemId; 3]), PlacementError> {
         changed("Site", None)
@@ -212,7 +212,7 @@ mod tests {
         };
         let inbox = document.inbox();
         add(&mut document, Some(inbox), ItemKind::Task, "i")?;
-        let mut area = Item::new(ItemKind::Project, "Work");
+        let mut area = Item::new(ItemKind::Area, "Work");
         area.deleted = deleted;
         let work = document.push(None, Node::Item(area))?;
         add(&mut document, Some(work), ItemKind::Task, "loose")?;
@@ -353,7 +353,7 @@ mod tests {
         let layout = site_and_today(document).layout();
         let json = serde_json::to_value(&layout)?;
         let site = serde_json::json!([
-            {"kind": "project", "title": "Work", "nth": 0},
+            {"kind": "area", "title": "Work", "nth": 0},
             {"kind": "project", "title": "Site", "nth": 0}
         ]);
         assert_eq!(json["panes"][0]["at"]["shown"]["container"], site);
@@ -362,15 +362,8 @@ mod tests {
             json["panes"][0]["back"][0]["shown"]["container"],
             serde_json::json!([{"kind": "inbox", "title": "Inbox", "nth": 0}])
         );
-        let mut old = json.clone();
-        old["panes"][0]["at"]["shown"]["container"][0]["kind"] = "area".into();
         let back: Layout = serde_json::from_value(json)?;
         assert_eq!(back, layout);
-        let old: Layout = serde_json::from_value(old)?;
-        assert_eq!(
-            old, layout,
-            "an area kept before areas went is a project now (D-66)"
-        );
         Ok(())
     }
 }

@@ -1,13 +1,13 @@
-//! The sidebar left of the pane: the Inbox, the views, the projects as a tree, each after its icon
+//! The sidebar left of the pane: the Inbox, the views, the areas and projects as a tree, each after its icon
 //! with a container's open tasks counted at the right, as the Navigator lists them, after a marker
-//! on a collapsed project, the entry of what the pane shows on the selection background, the
+//! on a collapsed area, the entry of what the pane shows on the selection background, the
 //! focused one marked while the sidebar has the keys and the title being edited there as a text
 //! field in its row (FR-VIEW-10).
 
 use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
@@ -112,7 +112,8 @@ impl<'a> SidebarPane<'a> {
     /// keep the caret in view while it is edited.
     fn title(&self, stop: Stop, content: Rect) -> Title {
         let column = |columns: usize| u16::try_from(columns).unwrap_or(u16::MAX);
-        let icon_x = content.x.saturating_add(column(stop.depth() * 2 + 1));
+        // v1 nests no project in another (D-57), so the groups' blank lines show the tree.
+        let icon_x = content.x.saturating_add(1);
         let glyph = Span::raw(super::stop_icon(stop).glyph(self.icons)).width() + 1;
         let x = icon_x.saturating_add(column(glyph));
         let shift = match self.editing {
@@ -130,9 +131,14 @@ impl<'a> SidebarPane<'a> {
         }
     }
 
-    /// How the title of `stop` is drawn: in its color.
+    /// How the title of `stop` is drawn: in its color, areas bold as headers.
     fn title_style(&self, stop: Stop) -> Style {
-        Style::new().fg(super::stop_color(self.theme, stop))
+        let style = Style::new().fg(super::stop_color(self.theme, stop));
+        if matches!(stop, Stop::Place(place) if place.kind == ItemKind::Area) {
+            style.add_modifier(Modifier::BOLD)
+        } else {
+            style
+        }
     }
 
     /// The line of the title of `stop`: its text, or the text edited with the selected part in
@@ -251,14 +257,15 @@ fn content(area: Rect) -> Rect {
     }
 }
 
-/// The line each of `entries` is drawn on: a blank line sets off the Inbox, the views and the
-/// projects (D-45).
+/// The line each of `entries` is drawn on: a blank line sets off the Inbox, the views, the
+/// projects in no area and each area with what it holds (D-45).
 fn lines(entries: &[Stop]) -> Vec<usize> {
     #[derive(PartialEq)]
     enum Group {
         Inbox,
         Views,
         Projects,
+        Area,
     }
     let mut line = 0;
     let mut group = None;
@@ -268,11 +275,15 @@ fn lines(entries: &[Stop]) -> Vec<usize> {
             let this = match stop {
                 Stop::Place(place) => match place.kind {
                     ItemKind::Inbox => Group::Inbox,
+                    ItemKind::Area => Group::Area,
                     _ => Group::Projects,
                 },
                 Stop::View(_) => Group::Views,
             };
-            if group.as_ref().is_some_and(|group| *group != this) {
+            if group
+                .as_ref()
+                .is_some_and(|group| this == Group::Area || *group != this)
+            {
                 line += 1;
             }
             group = Some(this);
@@ -294,14 +305,14 @@ mod tests {
         ui::BuiltIn,
     };
 
-    /// Project `Work` holding project `Website` with 3 open tasks, holding project `Blog`, then
+    /// Area `Work` holding project `Website` with 3 open tasks, holding project `Blog`, then
     /// project `Learn Rust`.
     fn state() -> Result<State, PlacementError> {
         let mut document = Document::new();
         let add = |document: &mut Document, parent, kind, title| {
             document.push(parent, Node::Item(Item::new(kind, title)))
         };
-        let work = add(&mut document, None, ItemKind::Project, "Work")?;
+        let work = add(&mut document, None, ItemKind::Area, "Work")?;
         let website = add(&mut document, Some(work), ItemKind::Project, "Website")?;
         for title in ["a", "b", "c"] {
             add(&mut document, Some(website), ItemKind::Task, title)?;
@@ -340,11 +351,7 @@ mod tests {
     fn draws_the_groups_with_counts_and_marks_the_focus_while_it_has_the_keys()
     -> Result<(), PlacementError> {
         let mut state = state()?;
-        for motion in [
-            crate::app::Focus::Last,
-            crate::app::Focus::Previous,
-            crate::app::Focus::Previous,
-        ] {
+        for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
             give(&mut state, Command::Focus(motion));
         }
         let (rows, buf, caret) = draw(&state, 20, 13);
@@ -358,11 +365,11 @@ mod tests {
                 " ∷ All             │",
                 " ✕ Trash           │",
                 "                   │",
-                " # Work           3│",
-                "▌  # Website      3│",
-                "     # Blog        │",
                 " # Learn Rust      │",
                 "                   │",
+                " ◆ Work           3│",
+                "▌# Website        3│",
+                " # Blog            │",
                 "                   │",
             ]
         );
@@ -381,18 +388,14 @@ mod tests {
             "the Inbox, shown in the pane"
         );
         assert_eq!(buf[(3, today)].fg, theme.primary, "a view");
-        assert_eq!(buf[(3, work)].fg, theme.primary, "a project");
-        assert_eq!(
-            buf[(7, website)].fg,
-            theme.primary,
-            "a project in a project"
-        );
+        assert_eq!(buf[(3, work)].fg, theme.headers, "an area");
+        assert_eq!(buf[(3, website)].fg, theme.primary, "a project");
         assert_eq!(buf[(17, work)].fg, theme.dim_text, "a count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusRight);
         let (rows, buf, _) = draw(&state, 20, 13);
         assert!(
-            rows[usize::from(website)].starts_with("   # Website"),
+            rows[usize::from(website)].starts_with(" # Website"),
             "no marker: {rows:?}"
         );
         assert_ne!(buf[(5, website)].bg, theme.current_line);
@@ -413,7 +416,7 @@ mod tests {
 
     // FR-VIEW-10, D-67
     #[test]
-    fn a_collapsed_project_shows_a_marker_before_its_count() -> Result<(), PlacementError> {
+    fn a_collapsed_area_shows_a_marker_before_its_count() -> Result<(), PlacementError> {
         let mut state = state()?;
         for motion in [
             crate::app::Focus::Last,
@@ -428,14 +431,14 @@ mod tests {
             rows.get(7..10),
             Some(
                 &[
-                    " # Work           3│".to_owned(),
-                    "▌  # Website    ▸ 3│".to_owned(),
                     " # Learn Rust      │".to_owned(),
+                    "                   │".to_owned(),
+                    "▌◆ Work         ▸ 3│".to_owned(),
                 ][..]
             )
         );
         let theme = BuiltIn::default().colors();
-        assert_eq!(buf[(15, 8)].fg, theme.dim_text);
+        assert_eq!(buf[(15, 9)].fg, theme.dim_text);
         Ok(())
     }
 
@@ -445,13 +448,13 @@ mod tests {
         let mut state = state()?;
         give(&mut state, Command::Focus(crate::app::Focus::Last));
         let (rows, _, _) = draw(&state, 20, 2);
-        assert_eq!(rows, ["     # Blog        │", "▌# Learn Rust      │"]);
+        assert_eq!(rows, [" # Website        3│", "▌# Blog            │"]);
         give(
             &mut state,
             Command::Focus(crate::app::Focus::PreviousSection),
         );
         let (rows, _, _) = draw(&state, 20, 2);
-        assert_eq!(rows, ["                   │", "▌# Work           3│"]);
+        assert_eq!(rows, ["                   │", "▌◆ Work           3│"]);
         let mut new = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut new, Command::Sidebar);
         let (rows, _, _) = draw(&new, 20, 2);
@@ -464,17 +467,13 @@ mod tests {
     fn the_title_edited_shows_in_its_row_scrolled_to_keep_the_caret() -> Result<(), PlacementError>
     {
         let mut state = state()?;
-        for motion in [
-            crate::app::Focus::Last,
-            crate::app::Focus::Previous,
-            crate::app::Focus::Previous,
-        ] {
+        for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
             give(&mut state, Command::Focus(motion));
         }
         give(&mut state, Command::RenameContainer);
         let (rows, _, caret) = draw(&state, 20, 3);
-        assert_eq!(rows[2], "▌  # Website       │", "no count while edited");
-        assert_eq!(caret, Some(Position::new(12, 2)));
+        assert_eq!(rows[2], "▌# Website         │", "no count while edited");
+        assert_eq!(caret, Some(Position::new(10, 2)));
         let word = Message::Edit(crate::app::EditInput::Text(TextEdit::Move {
             motion: Motion::WordLeft,
             select: true,
@@ -482,18 +481,18 @@ mod tests {
         update(&mut state, word, jiff::civil::date(2026, 10, 14));
         let (_, buf, caret) = draw(&state, 20, 3);
         let theme = BuiltIn::default().colors();
-        assert_eq!(buf[(6, 2)].bg, theme.selection, "the selected word");
-        assert_eq!(caret, Some(Position::new(5, 2)));
-        for c in " and its blog".chars() {
+        assert_eq!(buf[(4, 2)].bg, theme.selection, "the selected word");
+        assert_eq!(caret, Some(Position::new(3, 2)));
+        for c in " and its blog posts".chars() {
             let typed = Message::Edit(crate::app::EditInput::Text(TextEdit::Insert(c)));
             update(&mut state, typed, jiff::civil::date(2026, 10, 14));
         }
         let (rows, _, caret) = draw(&state, 20, 3);
-        assert_eq!(rows[2], "▌  #  and its blog │", "scrolled sideways");
+        assert_eq!(rows[2], "▌#  its blog posts │", "scrolled sideways");
         assert_eq!(caret, Some(Position::new(18, 2)));
         let (_, _, caret) = draw(&state, 20, 1);
         assert_eq!(caret, Some(Position::new(18, 0)), "scrolled into view");
-        let (_, _, caret) = draw(&state, 5, 3);
+        let (_, _, caret) = draw(&state, 3, 3);
         assert_eq!(caret, None, "too narrow");
         Ok(())
     }

@@ -71,9 +71,9 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Search, &["ctrl+f", "g s"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o` and `O` add
     // the focused row's kind, and the lower and upper case of a kind's letter add one at the
-    // bottom and the top of the container shown (owner, D-40). In the sidebar `p` adds a
-    // top-level project and `i`, for **i**nside, one in the focused project; in the pane, where
-    // the container shown is the focused project, they add the same (owner, D-66).
+    // bottom and the top of the container shown (owner, D-40). In the sidebar `a` adds an area,
+    // `p` a top-level project and `i`, for **i**nside, a project in the focused area; in the
+    // pane `i` adds a project as `p` does (owner, D-75).
     (Command::EditTitle, &["enter"]),
     (Command::NewLike(Side::Below), &["o"]),
     (Command::NewLike(Side::Above), &["O"]),
@@ -83,8 +83,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::AddSection(End::Top), &["S"]),
     (Command::AddProject(End::Bottom), &["p"]),
     (Command::AddProject(End::Top), &["P"]),
-    (Command::AddSubproject(End::Bottom), &["i"]),
-    (Command::AddSubproject(End::Top), &["I"]),
+    (Command::AddProjectInArea(End::Bottom), &["i"]),
+    (Command::AddProjectInArea(End::Top), &["I"]),
     (Command::Delete, &["d d", "delete"]),
     // In the Trash, `u` undeletes, as vim's undo would the deletion, and `de` empties it (D-55).
     (Command::Restore, &["u"]),
@@ -101,12 +101,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // The container shown, which no row of its own shows (D-40).
     (Command::RenameContainer, &["R"]),
     (Command::DeleteContainer, &["d c"]),
-    // `Alt` with a motion moves, and `]`/`[` indent and outdent beside taskpaper-terminal's
-    // `Tab`/`Shift+Tab` (D-24, D-42).
+    // `Alt` with a motion moves, and `]`/`[` nest and unnest checklist items, leaving
+    // taskpaper-terminal's `Tab`/`Shift+Tab` free (D-24, D-42, D-75).
     (Command::Move(Direction::Up), &["alt+k", "alt+up"]),
     (Command::Move(Direction::Down), &["alt+j", "alt+down"]),
-    (Command::Indent, &["]", "tab"]),
-    (Command::Outdent, &["[", "shift+tab"]),
+    (Command::Indent, &["]"]),
+    (Command::Outdent, &["["]),
     // taskpaper-terminal's convert type and group keys; `S` for a section beside its `G`, which
     // groups in a new parent as a new project does here (D-47).
     (Command::Convert, &["m y"]),
@@ -515,7 +515,7 @@ mod tests {
 
     // FR-OPS-02, FR-OPS-03, FR-KEY-02
     #[test]
-    fn alt_with_a_motion_moves_and_brackets_and_tab_indent() {
+    fn alt_with_a_motion_moves_and_brackets_indent_but_tab_does_not() {
         let mut keymap = Keymap::default();
         let alt = KeyModifiers::ALT;
         let moved = |direction| Some(Command::Move(direction));
@@ -525,15 +525,9 @@ mod tests {
             (press(KeyCode::Char('j'), alt), moved(Direction::Down)),
             (press(KeyCode::Down, alt), moved(Direction::Down)),
             (char(']'), Some(Command::Indent)),
-            (
-                press(KeyCode::Tab, KeyModifiers::NONE),
-                Some(Command::Indent),
-            ),
+            (press(KeyCode::Tab, KeyModifiers::NONE), None),
             (char('['), Some(Command::Outdent)),
-            (
-                press(KeyCode::BackTab, KeyModifiers::SHIFT),
-                Some(Command::Outdent),
-            ),
+            (press(KeyCode::BackTab, KeyModifiers::SHIFT), None),
         ] {
             assert_eq!(keymap.press(&event), command, "{event:?}");
         }
@@ -731,8 +725,8 @@ mod tests {
             ('S', Command::AddSection(End::Top)),
             ('p', Command::AddProject(End::Bottom)),
             ('P', Command::AddProject(End::Top)),
-            ('i', Command::AddSubproject(End::Bottom)),
-            ('I', Command::AddSubproject(End::Top)),
+            ('i', Command::AddProjectInArea(End::Bottom)),
+            ('I', Command::AddProjectInArea(End::Top)),
         ] {
             assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
         }

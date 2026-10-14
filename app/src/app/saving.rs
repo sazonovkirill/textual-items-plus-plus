@@ -81,6 +81,10 @@ pub enum Notice {
     Refused(Refusal),
     /// The checklist was asked for on an item that has none: only tasks have one (FR-ATT-02).
     NoChecklist,
+    /// A date was asked for on an area, which has none (FR-DATE-01, D-75).
+    AreaUndated,
+    /// Tags were asked for on an area, which has none (FR-TAG-01, D-75).
+    AreaUntagged,
     /// Typing `@` at the start of a word of a title was refused: the word would read back as a
     /// tag, and tags go on from the tag picker (FR-TAG-02).
     TagInTitle,
@@ -96,7 +100,11 @@ impl Notice {
     fn refuses(&self) -> bool {
         matches!(
             self,
-            Self::Refused(_) | Self::TagInTitle | Self::CannotTakeTheirs
+            Self::Refused(_)
+                | Self::TagInTitle
+                | Self::CannotTakeTheirs
+                | Self::AreaUndated
+                | Self::AreaUntagged
         )
     }
 }

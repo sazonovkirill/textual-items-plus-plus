@@ -107,7 +107,8 @@ fn collect(document: &Document, id: ItemId, today: Date, dated: &mut Vec<Entry>)
     let row = match item.kind {
         ItemKind::Task => Some(Row::Task { id, section: None }),
         ItemKind::Section | ItemKind::Project => Some(Row::Project(id)),
-        ItemKind::Inbox => None,
+        // An area has no dates; ones a file gives it are not shown (D-75).
+        ItemKind::Inbox | ItemKind::Area => None,
         ItemKind::ChecklistItem => return,
     };
     let date = item.start.or(item.due).filter(|&date| date > today);
@@ -302,10 +303,10 @@ mod tests {
     // FR-VIEW-02, D-13, OQ-20: containers are listed by their own dates, their contents by theirs,
     // a day's items in file order.
     #[test]
-    fn lists_areas_projects_and_sections_and_their_contents_in_file_order()
+    fn lists_projects_and_sections_and_their_contents_in_file_order_but_no_area()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = add(&mut document, None, ItemKind::Project, TOMORROW, None)?;
+        let area = add(&mut document, None, ItemKind::Area, TOMORROW, None)?;
         let project = add(&mut document, Some(area), ItemKind::Project, None, TOMORROW)?;
         let kind = ItemKind::Section;
         let section = add(&mut document, Some(project), kind, TOMORROW, None)?;
@@ -316,12 +317,13 @@ mod tests {
             listed(&document, TODAY, false),
             [(
                 Some(Heading::Period(Period::Day(date(2026, 10, 15)))),
-                vec![loose, area, project, section, inside]
-            )]
+                vec![loose, project, section, inside]
+            )],
+            "an area has no dates (D-75)"
         );
         assert_eq!(
             groups(&document, TODAY, false)[0].rows[1],
-            Row::Project(area)
+            Row::Project(project)
         );
         Ok(())
     }

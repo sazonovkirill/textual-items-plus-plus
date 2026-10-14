@@ -70,7 +70,7 @@ impl KeyGroup {
             | Command::AddTask(_)
             | Command::AddSection(_)
             | Command::AddProject(_)
-            | Command::AddSubproject(_)
+            | Command::AddProjectInArea(_)
             | Command::EditDescription(_)
             | Command::OpenNote(_)
             | Command::OpenComments(_)

@@ -43,13 +43,13 @@ fn move_a_task_to_another_project() {
         window(&harness, "Move to"),
         [
             "›",
-            " # Work",
+            " 󰆧 Work",
             "   # Website",
             "     / Launch",
             "     / Polish",
-            "     # Blog",
             "   / Hiring",
-            " # Home",
+            "   # Blog",
+            " 󰆧 Home",
             "   # Move to the new flat",
             "     / Paperwork",
             " # Learn Rust",
@@ -82,7 +82,7 @@ fn move_a_task_to_another_project() {
         pane(&harness),
         [
             "  # Learn Rust",
-            "  A project with nothing above it.",
+            "  A project outside any area.",
             "▌ - Finish the ownership chapter @rust",
             "  - Write a small CLI @rust                                          󱙭 tomorrow",
             "  - Call the bank about the card                                          󱙬 Wed",
@@ -110,20 +110,13 @@ fn move_a_task_to_another_project() {
 fn a_project_moves_to_the_top_level_and_escape_closes_the_picker() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('g');
-    harness.type_text("website");
+    harness.type_text("work");
     harness.key(KeyCode::Enter);
     harness.type_text("Ggm");
     assert_eq!(
         window(&harness, "Move to"),
-        [
-            "›",
-            " 󰋜 Home",
-            " # Work",
-            " # Home",
-            "   # Move to the new flat",
-            " # Learn Rust",
-        ],
-        "a project goes to the top level or a project, never into itself"
+        ["›", " 󰋜 Home", " 󰆧 Home"],
+        "a project goes to the top level or an area, never into a project (D-57)"
     );
     harness.key(KeyCode::Esc);
     assert_eq!(window(&harness, "Move to"), Vec::<String>::new());

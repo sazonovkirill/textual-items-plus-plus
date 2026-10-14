@@ -28,7 +28,7 @@ fn open_all() {
         "  - Plan the weekend trip                             \u{f166d} Thu",
         "  - Read the article Sam sent",
         "",
-        "  # Work",
+        "  \u{f01a7} Work",
         "  - Answer the recruiter's email                \u{f0a31} yesterday",
         "  - Review two portfolios                           \u{f166c} today",
         "",
@@ -42,7 +42,7 @@ fn open_all() {
         "  # Blog",
         "  - Pick the first three topics",
         "",
-        "  # Home",
+        "  \u{f01a7} Home",
         "  - Water the plants                            \u{f166d} yesterday",
         "",
         "  # Move to the new flat",
@@ -61,7 +61,7 @@ fn open_all() {
     assert_eq!(
         trimmed(&harness),
         all,
-        "the Inbox's tasks first, its scheduled one too, then each project's, \
+        "the Inbox's tasks first, its scheduled one too, then each area's and project's, \
          its sections' tasks after its own"
     );
 }

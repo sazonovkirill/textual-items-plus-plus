@@ -54,9 +54,10 @@ pub enum Command {
     /// Add a project at this end of the container shown, or of the top level from the sidebar,
     /// and edit its title (FR-EDIT-05, FR-ORG-06, D-40, D-45).
     AddProject(End),
-    /// Add a subproject at this end of the project shown, or of the project the sidebar focuses,
-    /// and edit its title (FR-EDIT-05, FR-ORG-06, D-45).
-    AddSubproject(End),
+    /// Add a project at this end of the area the sidebar focuses or holding the project it
+    /// focuses, or of the container shown in the pane, and edit its title (FR-EDIT-05,
+    /// FR-ORG-06, D-75).
+    AddProjectInArea(End),
     /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
     EditDescription(Whose),
     /// Open the attachments panel on an item's note (FR-ATT-01, FR-ATT-02).
@@ -385,13 +386,13 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::AddSubproject(End::Bottom),
-        title: "New Subproject at Bottom",
+        command: Command::AddProjectInArea(End::Bottom),
+        title: "New Project in Area at Bottom",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::AddSubproject(End::Top),
-        title: "New Subproject at Top",
+        command: Command::AddProjectInArea(End::Top),
+        title: "New Project in Area at Top",
         context: Context::Navigate,
     },
     Entry {
@@ -835,7 +836,7 @@ mod tests {
             Command::AddTask,
             Command::AddSection,
             Command::AddProject,
-            Command::AddSubproject,
+            Command::AddProjectInArea,
         ]
         .into_iter()
         .flat_map(|add| [add(End::Bottom), add(End::Top)]);

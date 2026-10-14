@@ -20,7 +20,7 @@ fn status(harness: &Harness) -> String {
 const PLANS: &str = "\
 Inbox:
 \t- Buy coffee
-Plans:
+Plans: @area
 \t- Paint the walls
 \t- Order paint
 \t- Call the plumber
@@ -31,7 +31,7 @@ Plans:
 \t\t- Sell the sofa
 ";
 
-/// The app on a file holding [`PLANS`], opened on its project, and the file's path.
+/// The app on a file holding [`PLANS`], opened on the area, and the file's path.
 fn plans() -> (TempDir, PathBuf, Harness) {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
@@ -71,7 +71,7 @@ fn group_three_tasks_into_a_section() {
         "\
 Inbox:
 \t- Buy coffee
-Plans:
+Plans: @area
 \tSoon: @section
 \t\t- Paint the walls
 \t\t- Order paint
@@ -123,9 +123,9 @@ fn where_the_new_kind_cannot_go_the_status_line_says_why() {
     );
     keys(&mut harness, "gi");
     keys(&mut harness, "my");
-    assert!(status(&harness).ends_with("a project can't go in a section or the Inbox"));
+    assert!(status(&harness).ends_with("a project goes only in an area or at the top level"));
     keys(&mut harness, "gS");
-    assert!(status(&harness).ends_with("a section goes only in a project"));
+    assert!(status(&harness).ends_with("a section goes only in an area or a project"));
 }
 
 // FR-OPS-08, FR-STORE-09
@@ -140,7 +140,7 @@ fn tasks_and_a_section_group_into_a_new_project() {
         "\
 Inbox:
 \t- Buy coffee
-Plans:
+Plans: @area
 \tRenovate:
 \t\t- Paint the walls
 \t\tNext: @section
@@ -159,7 +159,7 @@ Plans:
 fn a_task_whose_title_starts_like_a_task_line_stays_a_task() {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
-    let text = "Inbox:\nPlans:\n\t- - Plan\n\t\t- Pack\n";
+    let text = "Inbox:\nPlans: @area\n\t- - Plan\n\t\t- Pack\n";
     fs::write(&path, text).expect("the fixture is written");
     let mut harness = Harness::open(path.clone(), 70, 20);
     harness.ctrl('g');

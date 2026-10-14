@@ -180,7 +180,7 @@ fn an_at_sign_typed_in_a_title_points_to_the_tag_picker() {
 fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_projects() {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
-    fs::write(&path, "Inbox:\nWork:\n\tSite:\n\t\t- Ship it\n").expect("written");
+    fs::write(&path, "Inbox:\nWork: @area\n\tSite:\n\t\t- Ship it\n").expect("written");
     let mut harness = Harness::open(path.clone(), 70, 16);
     harness.ctrl('g');
     harness.type_text("work");
@@ -189,11 +189,51 @@ fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_projects() 
     harness.key(KeyCode::Char('.'));
     choose(&mut harness, "mg", "launch");
     harness.ctrl('b');
-    harness.type_text("k");
     choose(&mut harness, "mg", "home");
     harness.wait(1000);
     assert_eq!(
         fs::read_to_string(&path).expect("the file is there"),
-        "Inbox:\nWork: @home\n\tSite: @web\n\t\t- Ship it @launch\n"
+        "Inbox:\nWork: @area\n\tSite: @web @home\n\t\t- Ship it @launch\n"
+    );
+}
+
+// FR-TAG-01, FR-DATE-01, FR-STORE-10, D-75
+#[test]
+fn an_area_takes_no_tags_or_dates_and_keeps_those_its_file_gives_it() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\nWork: @area @old @due(2026-10-12)\n\t- Ship it\n";
+    fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path.clone(), 70, 16);
+    harness.ctrl('g');
+    harness.type_text("work");
+    harness.key(KeyCode::Enter);
+    harness.type_text("k");
+    let heading = harness.rows()[2].trim_end().to_owned();
+    assert_eq!(heading, "▌ 󰆧 Work", "the file's tag and date are not shown");
+    for (keys, why) in [
+        ("mg", "an area has no tags"),
+        ("md", "an area has no start or due date"),
+        ("ms", "an area has no start or due date"),
+        ("mt", "an area has no start or due date"),
+    ] {
+        harness.type_text(keys);
+        assert!(
+            status(&harness).ends_with(why),
+            "{keys}: {}",
+            status(&harness)
+        );
+        assert!(!harness.screen().contains("┌Tags"), "{keys} opens nothing");
+    }
+    harness.ctrl('b');
+    harness.type_text("md");
+    assert!(status(&harness).ends_with("an area has no start or due date"));
+    harness.ctrl('b');
+    harness.type_text("jx");
+    harness.wait(1000);
+    let file = fs::read_to_string(&path).expect("the file is there");
+    assert!(
+        file.starts_with("Inbox:\nWork: @area @old @due(2026-10-12)\n\t- Ship it @done("),
+        "{file}"
     );
 }

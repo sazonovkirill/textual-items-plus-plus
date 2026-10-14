@@ -255,7 +255,7 @@ impl Document {
 mod tests {
     use super::*;
     use crate::domain::Completion;
-    use ItemKind::{ChecklistItem, Inbox, Project, Section, Task};
+    use ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
 
     fn item(kind: ItemKind) -> Node {
         Node::Item(Item::new(kind, "x"))
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn pushed_nodes_keep_their_order_under_their_parent() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, item(Project))?;
+        let area = document.push(None, item(Area))?;
         let project = document.push(None, item(Project))?;
         let first = document.push(Some(area), item(Task))?;
         let second = document.push(Some(area), kept())?;
@@ -328,21 +328,20 @@ mod tests {
         Ok(())
     }
 
-    // FR-ORG-02, FR-ORG-03, FR-ORG-04, FR-CHK-01
+    // FR-ORG-01, FR-ORG-02, FR-ORG-03, FR-ORG-04, FR-CHK-01
     #[test]
     fn items_go_only_where_their_kind_fits() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let project = document.push(None, item(Project))?;
-        document.push(Some(project), item(Project))?;
-        let section = document.push(Some(project), item(Section))?;
+        let area = document.push(None, item(Area))?;
+        let section = document.push(Some(area), item(Section))?;
         let task = document.push(Some(section), item(Task))?;
         let check = document.push(Some(task), item(ChecklistItem))?;
         document.push(Some(check), item(ChecklistItem))?;
         let refused = [
             (None, Section),
             (None, Task),
+            (Some(area), Area),
             (Some(section), Project),
-            (Some(document.inbox()), Project),
             (Some(task), Task),
             (Some(document.inbox()), Section),
             (None, Inbox),
@@ -393,13 +392,13 @@ mod tests {
     #[test]
     fn a_completed_item_conceals_everything_inside_it() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let mut done = Item::new(Project, "done");
+        let mut done = Item::new(Area, "done");
         done.completed = Some(Completion::Undated);
         let area = document.push(None, Node::Item(done))?;
         let line = document.push(Some(area), kept())?;
         let project = document.push(Some(area), item(Project))?;
         let task = document.push(Some(project), item(Task))?;
-        let open = document.push(None, item(Project))?;
+        let open = document.push(None, item(Area))?;
         let inside_open = document.push(Some(open), item(Task))?;
         for id in [area, line, project, task] {
             assert!(document.conceals(id), "{id:?}");

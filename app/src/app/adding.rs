@@ -1,9 +1,9 @@
 //! Where a new item goes: a task below or above the focused row, among the tasks it is shown
-//! with, a section or project as near the focus as its kind can go, or any of them first or
+//! with, a section, project or area as near the focus as its kind can go, or any of them first or
 //! last among its kind in the container shown (FR-EDIT-05, FR-ORG-06, D-40). Hides how a place in
 //! the rows maps to a place in the document.
 
-use super::container::Row;
+use super::container::{self, Row};
 use crate::domain::{Document, ItemId, ItemKind, Node};
 
 /// Which side of the focused row a new task goes.
@@ -62,10 +62,11 @@ pub(super) fn place(
 }
 
 /// The parent, `None` for the top level, and the index among its children where a new item of
-/// `kind`, a section or project, goes on `side` of `focused` when `container` shows `rows`;
+/// `kind`, a section, project or area, goes on `side` of `focused` when `container` shows `rows`;
 /// `None` when it can go nowhere near, as a section from the Inbox.
 ///
-/// A section or project goes into `container` when it can hold it, nearest the focused row in the
+/// An area goes beside the top-level item holding `container`, first when that is the Inbox. A
+/// section or project goes into `container` when it can hold it, nearest the focused row in the
 /// arrangement of FR-VIEW-05, a task listed under a section standing for the section: beside it
 /// when it is of the same kind, first among the items of its kind when it comes before them and
 /// last otherwise. When `container` cannot hold it, it goes the same way beside `container` in the
@@ -78,6 +79,15 @@ pub(super) fn container_place(
     kind: ItemKind,
     side: Side,
 ) -> Option<(Option<ItemId>, usize)> {
+    let below = usize::from(side == Side::Below);
+    let beside_at_top = |id: ItemId| match document.position(id) {
+        Some((None, index)) => index + below,
+        _ => 0,
+    };
+    if kind == ItemKind::Area {
+        let top = *container::path(document, container).first()?;
+        return Some((None, beside_at_top(top)));
+    }
     if fits(document, kind, Some(container)) {
         let anchor = rows
             .iter()
@@ -103,8 +113,7 @@ pub(super) fn container_place(
                     Some(parent),
                     in_group(document, parent, kind, Some(anchor), side),
                 ),
-                // Only the Inbox stands outside the top level, a project from it going first.
-                None => (None, 0),
+                None => (None, beside_at_top(anchor)),
             });
         }
         anchor = parent?;
@@ -141,14 +150,14 @@ pub(super) fn end_place(
     Some((parent, index.unwrap_or(children.len())))
 }
 
-/// Whether an item of `kind` may go in `parent`, or at the top level for `None`.
+/// Whether a new item of `kind` goes in `parent`, or at the top level for `None`.
 fn fits(document: &Document, kind: ItemKind, parent: Option<ItemId>) -> bool {
     match parent {
         Some(id) => document
             .node(id)
             .and_then(Node::item)
-            .is_some_and(|item| kind.fits_in(Some(item.kind))),
-        None => kind.fits_in(None),
+            .is_some_and(|item| kind.goes_in(Some(item.kind))),
+        None => kind.goes_in(None),
     }
 }
 
@@ -379,15 +388,23 @@ mod tests {
 
     // FR-EDIT-05, FR-ORG-06
     #[test]
-    fn a_project_goes_among_the_child_projects_nearest_the_focus() -> Result<(), PlacementError> {
+    fn a_project_added_in_a_project_goes_beside_it() -> Result<(), PlacementError> {
         let fixture = fixture()?;
         let (p, project) = (fixture.project, ItemKind::Project);
         let at = |focused, side| container_at(&fixture, p, focused, project, side);
-        for focused in [fixture.loose, fixture.in_section, fixture.empty] {
-            assert_eq!(at(Some(focused), Side::Below), Some((Some(p), 4)));
+        for focused in [
+            fixture.loose,
+            fixture.in_section,
+            fixture.empty,
+            fixture.child,
+        ] {
+            assert_eq!(
+                at(Some(focused), Side::Below),
+                Some((None, 1)),
+                "v1 nests none"
+            );
+            assert_eq!(at(Some(focused), Side::Above), Some((None, 0)));
         }
-        assert_eq!(at(Some(fixture.child), Side::Below), Some((Some(p), 5)));
-        assert_eq!(at(Some(fixture.child), Side::Above), Some((Some(p), 4)));
         Ok(())
     }
 
@@ -409,7 +426,8 @@ mod tests {
         );
         assert_eq!(
             at(section, ItemKind::Project, Side::Above),
-            Some((Some(p), 4))
+            Some((None, 0)),
+            "beside the project, since v1 nests none"
         );
         assert_eq!(at(inbox, ItemKind::Project, Side::Below), Some((None, 0)));
         assert_eq!(at(inbox, ItemKind::Section, Side::Below), None);
@@ -418,15 +436,33 @@ mod tests {
 
     // FR-EDIT-05, FR-ORG-06
     #[test]
+    fn an_area_goes_beside_the_top_level_item_holding_the_container_shown()
+    -> Result<(), PlacementError> {
+        let mut fixture = fixture()?;
+        let area = Node::Item(Item::new(ItemKind::Area, "a"));
+        fixture.document.push(None, area)?;
+        let at = |fixture: &Fixture, shown, side| {
+            container_at(fixture, shown, None, ItemKind::Area, side)
+        };
+        assert_eq!(at(&fixture, fixture.section, Side::Below), Some((None, 1)));
+        assert_eq!(at(&fixture, fixture.section, Side::Above), Some((None, 0)));
+        let inbox = fixture.document.inbox();
+        assert_eq!(at(&fixture, inbox, Side::Below), Some((None, 0)));
+        assert_eq!(at(&fixture, ItemId::new(99), Side::Below), None);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
     fn the_first_of_its_kind_goes_last() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let project = document.push(None, Node::Item(Item::new(ItemKind::Project, "a")))?;
-        let task = document.push(Some(project), Node::Item(Item::new(ItemKind::Task, "t")))?;
-        let rows = rows(&document, project, false);
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "a")))?;
+        let task = document.push(Some(area), Node::Item(Item::new(ItemKind::Task, "t")))?;
+        let rows = rows(&document, area, false);
         for kind in [ItemKind::Section, ItemKind::Project] {
             assert_eq!(
-                container_place(&document, project, &rows, Some(task), kind, Side::Above),
-                Some((Some(project), 1))
+                container_place(&document, area, &rows, Some(task), kind, Side::Above),
+                Some((Some(area), 1))
             );
         }
         Ok(())

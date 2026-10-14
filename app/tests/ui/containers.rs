@@ -1,4 +1,4 @@
-//! Creating, renaming and deleting projects and sections.
+//! Creating, renaming and deleting areas, projects and sections.
 
 use std::fs;
 
@@ -34,10 +34,10 @@ fn crumbs(harness: &Harness) -> String {
 
 // FR-ORG-06, FR-EDIT-05, D-40
 #[test]
-fn add_a_project_with_a_subproject_and_a_section() {
+fn add_an_area_with_a_project_and_a_section() {
     let mut harness = Harness::new(60, 16);
     harness.ctrl('b');
-    harness.type_text("pHome");
+    harness.type_text("aHome");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
@@ -51,7 +51,7 @@ fn add_a_project_with_a_subproject_and_a_section() {
     harness.key(KeyCode::Esc);
     assert_eq!(
         pane(&harness),
-        ["  # Home", "", "  / Chores", "▌ - Sweep", "", "  # Garden",]
+        ["  󰆧 Home", "", "  / Chores", "▌ - Sweep", "", "  # Garden",]
     );
 }
 
@@ -86,7 +86,7 @@ fn new_containers_are_saved_with_their_kind_tags() {
     fs::write(&path, "Inbox:\n").expect("written");
     let mut harness = Harness::open(path.clone(), 60, 16);
     harness.ctrl('b');
-    harness.type_text("pHome");
+    harness.type_text("aHome");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
     harness.type_text("pGarden");
@@ -97,7 +97,7 @@ fn new_containers_are_saved_with_their_kind_tags() {
     harness.wait(1000);
     assert_eq!(
         fs::read_to_string(&path).expect("the file is there"),
-        "Inbox:\nHome:\n\tGarden:\n\t\tSpring: @section\n"
+        "Inbox:\nHome: @area\n\tGarden:\n\t\tSpring: @section\n"
     );
 }
 
@@ -111,7 +111,7 @@ fn the_title_of_the_project_shown_is_a_row_its_own_commands_act_on() {
     harness.type_text("k");
     assert_eq!(
         pane(&harness)[..2],
-        ["▌ # Blog", "▌ A project inside a project."],
+        ["▌ # Blog", "▌ A project in the Work area."],
         "the title and the description are one row"
     );
     harness.key(KeyCode::Enter);
@@ -153,11 +153,11 @@ fn describe_a_project_from_the_sidebar() {
     harness.type_text("G");
     harness.type_text("mn");
     harness.ctrl('a');
-    harness.type_text("Ownership first.");
+    harness.type_text("Pack first.");
     harness.key(KeyCode::Esc);
     assert!(
-        harness.rows()[0].contains("Learn Rust"),
+        harness.rows()[0].contains("Move to the new flat"),
         "the pane opens the project"
     );
-    assert!(harness.screen().contains("▌ Ownership first."));
+    assert!(harness.screen().contains("▌ Pack first."));
 }

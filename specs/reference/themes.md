@@ -28,8 +28,8 @@ Each theme provides an exact hex value for every role below. Roles are foregroun
 | Selection | background | Fill of the selected row(s). Text must stay at least 4.5:1 on it. |
 | Focus marker | foreground | The glyph marking the focused row or pane, such as `▌` or `›`. |
 | Current-line band | background | Subtle fill of the cursor row when it is not selected, and the zebra or hover band. |
-| Headers | foreground | Date-group headings, checklist progress and the attachment icons. |
-| Sections | foreground | Section titles: the theme's yellow, Tag 3's color, so that projects and sections never share a color. |
+| Headers | foreground | Area titles, date-group headings, checklist progress and the attachment icons. |
+| Sections | foreground | Section titles: the theme's yellow, Tag 3's color, so that areas, projects and sections never share a color. |
 | Rule lines | foreground (non-text) | Separators and box borders. 3:1 is not required, but rules must stay visible on the current-line band. |
 | Links | foreground | URLs and note links (also underlined). |
 | Start-date chip | foreground | Start/defer date label. A green hue. |

@@ -72,7 +72,7 @@ impl TagPicker {
     pub(super) fn for_items(document: &Document, items: Vec<ItemId>) -> Option<Self> {
         let items: Vec<ItemId> = items
             .into_iter()
-            .filter(|&id| item(document, id).is_some())
+            .filter(|&id| item(document, id).is_some_and(|item| item.kind.takes_tags_and_dates()))
             .collect();
         if items.is_empty() {
             return None;
@@ -298,12 +298,7 @@ fn gather(document: &Document, id: ItemId, names: &mut Vec<String>) {
     let Some(item) = item(document, id).filter(|item| item.deleted.is_none()) else {
         return;
     };
-    names.extend(
-        item.tags
-            .iter()
-            .filter(|tag| tag.is_users())
-            .map(|tag| tag.name.clone()),
-    );
+    names.extend(users_tags(item).map(|tag| tag.name.clone()));
     for &child in document.children(id) {
         gather(document, child, names);
     }
@@ -311,9 +306,12 @@ fn gather(document: &Document, id: ItemId, names: &mut Vec<String>) {
 
 /// Whether `item` carries the user's tag `name`.
 fn carries(item: &Item, name: &str) -> bool {
-    item.tags
-        .iter()
-        .any(|tag| tag.is_users() && tag.name == name)
+    users_tags(item).any(|tag| tag.name == name)
+}
+
+/// The user's tags `item` carries, as it shows them (D-75).
+fn users_tags(item: &Item) -> impl Iterator<Item = &Tag> {
+    item.shown_tags().iter().filter(|tag| tag.is_users())
 }
 
 /// The item `id` is, if it is one.
@@ -328,7 +326,7 @@ mod tests {
     use super::*;
     use crate::app::rows;
     use crate::domain::{Completion, ItemKind, PlacementError};
-    use ItemKind::{Project, Section, Task};
+    use ItemKind::{Area, Project, Section, Task};
 
     /// The Inbox holds `a @home`, `b` and `c @home @work`, and `gone @old` in the Trash; project
     /// `work @office` holds task `loose`, section `meetings` with `call @phone`, and project
@@ -442,6 +440,21 @@ mod tests {
         assert_eq!(TagPicker::for_items(&f.document, Vec::new()), None);
         let kept = f.document.new_id();
         assert_eq!(TagPicker::for_items(&f.document, vec![kept]), None);
+        Ok(())
+    }
+
+    // FR-TAG-01, FR-TAG-02, FR-TAG-04
+    #[test]
+    fn an_area_has_no_tags_even_those_a_file_gives_it() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let area = add(&mut document, None, Area, "home", &["away"])?;
+        add(&mut document, Some(area), Task, "x", &[])?;
+        assert_eq!(TagPicker::for_items(&document, vec![area]), None);
+        let rows = rows(&document, area, false);
+        let picker = TagPicker::for_filter(&document, &rows, &[]);
+        assert_eq!(listed(&picker), Vec::new(), "its tag is not offered");
+        let kept = filtered(&document, rows, &filter(&["away"]));
+        assert_eq!(titles(&document, &kept), Vec::<String>::new());
         Ok(())
     }
 

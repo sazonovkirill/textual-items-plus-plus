@@ -129,8 +129,8 @@ pub fn write_branches(branches: &[Branch]) -> String {
     serialize(&writer.outline)
 }
 
-/// The items TaskPaper `text` holds, as pasted (FR-OPS-05): each top-level line a project
-/// where the top level takes it, else an item inside a project, and a text line a task,
+/// The items TaskPaper `text` holds, as pasted (FR-OPS-05): each top-level line an area or a
+/// project where the top level takes it, else an item inside a project, and a text line a task,
 /// so that a pasted list becomes tasks. What is under each line reads as in a file. Blank lines at
 /// the top level are left out; a top-level line tagged `@hidden` is kept as read.
 ///
@@ -551,9 +551,9 @@ fn classify(read: &Line, place: Place) -> Option<ItemKind> {
             ItemKind::ChecklistItem
         }
         LineKind::Task => ItemKind::Task,
-        // An area of an earlier version reads as a project (D-66).
         LineKind::Project => match (has_bare_tag(read, "area"), has_bare_tag(read, "section")) {
-            (_, false) => ItemKind::Project,
+            (false, false) => ItemKind::Project,
+            (true, false) => ItemKind::Area,
             (false, true) => ItemKind::Section,
             (true, true) => return None,
         },
@@ -562,12 +562,9 @@ fn classify(read: &Line, place: Place) -> Option<ItemKind> {
     kind.fits_in(parent).then_some(kind)
 }
 
-/// Whether the top-level line `read` is an Inbox: a project titled `Inbox` without a kind tag,
-/// `@area` of an earlier version among them.
+/// Whether the top-level line `read` is an Inbox: a project titled `Inbox` without a kind tag.
 fn is_inbox(read: &Line) -> bool {
-    classify(read, Place::Top) == Some(ItemKind::Project)
-        && !has_bare_tag(read, "area")
-        && read.display_text() == "Inbox"
+    classify(read, Place::Top) == Some(ItemKind::Project) && read.display_text() == "Inbox"
 }
 
 /// Whether the line `read`, in `place`, holds `item`'s kind, title, dates, state and tags.
@@ -610,7 +607,7 @@ fn fields(read: &Line, kind: ItemKind) -> Item {
             ("done", Some(day)) => item.completed = Some(Completion::On(day)),
             ("done", None) if value.is_none() => item.completed = Some(Completion::Undated),
             ("deleted", Some(day)) => item.deleted = Some(day),
-            ("area", None) if value.is_none() && kind == ItemKind::Project => {}
+            ("area", None) if value.is_none() && kind == ItemKind::Area => {}
             ("section", None) if value.is_none() && kind == ItemKind::Section => {}
             _ => item.tags.push(domain::Tag {
                 name: tag.name.clone(),
@@ -634,7 +631,7 @@ fn day(value: &str) -> Option<Date> {
 fn line_text(item: &Item) -> String {
     let mut text = match item.kind {
         ItemKind::Task | ItemKind::ChecklistItem => format!("- {}", item.title),
-        ItemKind::Inbox | ItemKind::Project | ItemKind::Section => {
+        ItemKind::Inbox | ItemKind::Area | ItemKind::Project | ItemKind::Section => {
             format!("{}:", item.title)
         }
     };
@@ -648,6 +645,7 @@ fn line_text(item: &Item) -> String {
         }
     };
     match item.kind {
+        ItemKind::Area => add("area", None),
         ItemKind::Section => add("section", None),
         ItemKind::Inbox | ItemKind::Project | ItemKind::Task | ItemKind::ChecklistItem => {}
     }
@@ -821,11 +819,7 @@ Work: @area
         let [work] = children(&document, None);
         let branch = document.branch(work).unwrap();
         let text = write_branches(std::slice::from_ref(&branch));
-        let written = EXAMPLE[EXAMPLE.find("Work").unwrap()..].replacen(" @area", "", 1);
-        assert_eq!(
-            text, written,
-            "an area of an earlier version is copied as a project"
-        );
+        assert_eq!(text, &EXAMPLE[EXAMPLE.find("Work").unwrap()..]);
         assert_eq!(read_branches(&text), [branch]);
         assert_eq!(write_branches(&[]), "");
     }
@@ -863,7 +857,7 @@ Secret @hidden
                 Some((ItemKind::Task, "Eggs")),
                 Some((ItemKind::Project, "Groceries")),
                 Some((ItemKind::Section, "Later")),
-                Some((ItemKind::Project, "Home")),
+                Some((ItemKind::Area, "Home")),
                 None,
             ]
         );
@@ -933,7 +927,7 @@ Secret @hidden
 
         let [work] = children(&document, None);
         let work_item = item(&document, work);
-        assert_eq!(work_item.kind, ItemKind::Project);
+        assert_eq!(work_item.kind, ItemKind::Area);
         assert_eq!(work_item.description, "Everything for the day job.");
         assert_eq!(work_item.tags, [], "the kind tag is not a user tag");
         let website = only_child(&document, work);
@@ -998,7 +992,7 @@ Secret @hidden
             lines in prop::collection::vec(
                 (0..4_usize, prop::sample::select(vec![
                     "- task", "- done @done(2026-10-13)", "- odd @done(x)", "Project:",
-                    "Project: @area", "Section: @section", "text", "", "NOTE @hidden",
+                    "Area: @area", "Section: @section", "text", "", "NOTE @hidden",
                     "COMMENTS @hidden", "\u{200B}- guarded", "Goals:\u{200B}", "X: @hidden",
                     "- t @start(2026-01-02) @due(2026-01-03) @x(y)", "Inbox:", "\u{200B}",
                     "L @hidden", "\u{200B}L @hidden",
@@ -1199,7 +1193,7 @@ Secret @hidden
     fn only_the_first_top_level_project_named_inbox_without_a_kind_tag_is_the_inbox() {
         let (document, _) = load("Inbox: @area\n\tInbox:\nInbox: @tag\nInbox:\n");
         let [area, second] = children(&document, None);
-        assert_eq!(item(&document, area).kind, ItemKind::Project);
+        assert_eq!(item(&document, area).kind, ItemKind::Area);
         assert_eq!(
             item(&document, only_child(&document, area)).kind,
             ItemKind::Project
@@ -1233,12 +1227,8 @@ Secret @hidden
             "- under it"
         ));
         assert!(is_kept(&document, section, "S: @section"));
-        let [nested, inner] = children(&document, Some(area));
-        assert_eq!(
-            item(&document, nested).kind,
-            ItemKind::Project,
-            "an area of an earlier version is a project, which nests"
-        );
+        let [nested_area, inner] = children(&document, Some(area));
+        assert!(is_kept(&document, nested_area, "B: @area"));
         assert_eq!(item(&document, inner).kind, ItemKind::Section);
         assert!(is_kept(&document, only_child(&document, inner), "P:"));
         assert!(is_kept(&document, both, "Both: @area @section"));
@@ -1519,11 +1509,10 @@ Secret @hidden
             "Inbox:\n\t- a\n"
         );
         assert_eq!(
-            edited("Work: @area\n", first_top_level, |project| {
-                project.title = "Home".to_owned();
+            edited("Work: @area\n", first_top_level, |area| {
+                area.title = "Home".to_owned();
             }),
-            "Inbox:\nHome:\n",
-            "an area of an earlier version is a project now, written without its tag (D-66)"
+            "Inbox:\nHome: @area\n"
         );
     }
 
@@ -1540,14 +1529,14 @@ Secret @hidden
             line_text(&item),
             r"Launch: @section @start(2026-10-01) @due(2026-10-02) @home @note(a \(b\) c) @done @deleted(2026-10-03)"
         );
-        item.kind = ItemKind::Project;
+        item.kind = ItemKind::Area;
         item.completed = Some(Completion::On(date(2026, 10, 4)));
-        assert!(line_text(&item).starts_with("Launch: @start"));
+        assert!(line_text(&item).starts_with("Launch: @area @start"));
         let read = parse(&line_text(&item));
         let line = read
             .get(read.get(read.root()).unwrap().children()[0])
             .unwrap();
-        assert_eq!(fields(line, ItemKind::Project), item);
+        assert_eq!(fields(line, ItemKind::Area), item);
         for kind in [
             ItemKind::Inbox,
             ItemKind::Project,
@@ -1568,14 +1557,11 @@ Secret @hidden
     #[test]
     fn a_new_document_is_written_from_its_items() {
         let mut document = Document::new();
-        let project = document
-            .push(None, Node::Item(Item::new(ItemKind::Project, "Work")))
+        let area = document
+            .push(None, Node::Item(Item::new(ItemKind::Area, "Work")))
             .unwrap();
         let section = document
-            .push(
-                Some(project),
-                Node::Item(Item::new(ItemKind::Section, "Next")),
-            )
+            .push(Some(area), Node::Item(Item::new(ItemKind::Section, "Next")))
             .unwrap();
         let task = document
             .push(Some(section), Node::Item(Item::new(ItemKind::Task, "Plan")))
@@ -1587,19 +1573,19 @@ Secret @hidden
             )
             .unwrap();
         document
-            .push(Some(project), Node::Kept("free text".to_owned()))
+            .push(Some(area), Node::Kept("free text".to_owned()))
             .unwrap();
         let text = save(&document, &Source::default());
         assert_eq!(
             text,
-            "Inbox:\nWork:\n\tNext: @section\n\t\t- Plan\n\t\t\t- Step\n\tfree text\n"
+            "Inbox:\nWork: @area\n\tNext: @section\n\t\t- Plan\n\t\t\t- Step\n\tfree text\n"
         );
         let (reread, _) = load(&text);
-        let reread_project = reread.top_level()[0];
-        assert_eq!(item(&reread, reread_project).kind, ItemKind::Project);
+        let reread_area = reread.top_level()[0];
+        assert_eq!(item(&reread, reread_area).kind, ItemKind::Area);
         assert!(is_kept(
             &reread,
-            reread.children(reread_project)[1],
+            reread.children(reread_area)[1],
             "free text"
         ));
     }
@@ -1607,18 +1593,15 @@ Secret @hidden
     // FR-ORG-06
     #[test]
     fn an_item_changed_into_another_kind_gets_a_new_line() {
-        let (document, source) = load("Inbox:\nW:\n\tP:\n\t\t- t\n");
+        let (document, source) = load("Inbox:\nP:\n\t- t\n");
         let mut changed = Document::new();
-        let work = changed
-            .push(None, Node::Item(Item::new(ItemKind::Project, "W")))
+        let area = changed
+            .push(None, Node::Item(Item::new(ItemKind::Area, "P")))
             .unwrap();
-        let section = changed
-            .push(Some(work), Node::Item(Item::new(ItemKind::Section, "P")))
-            .unwrap();
-        // Numbered as the read document was, the section stands where the project's line was
-        // read, as a converted item will (FR-ORG-06); its line must say it is a section.
-        assert_eq!(section, document.children(document.top_level()[0])[0]);
-        assert_eq!(save(&changed, &source), "Inbox:\nW:\n\tP: @section\n");
+        // Numbered as the read document was, the area stands where the project's line was read,
+        // as a converted item will (FR-ORG-06); its line must say it is an area.
+        assert_eq!(area, document.top_level()[0]);
+        assert_eq!(save(&changed, &source), "Inbox:\nP: @area\n");
     }
 
     #[test]

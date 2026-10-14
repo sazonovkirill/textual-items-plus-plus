@@ -122,7 +122,7 @@ pub struct Group {
 /// What a group of a view's rows is listed under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Heading {
-    /// The project they are in.
+    /// The area or project they are in.
     Item(ItemId),
     /// The days they are dated in.
     Period(Period),

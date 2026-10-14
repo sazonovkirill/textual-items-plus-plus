@@ -1,5 +1,5 @@
 //! The Navigator: the places a user can go, the Inbox, the views of the view registry and every
-//! project as a tree, in the fuzzy picker a key opens over the panes (FR-VIEW-07, OQ-10).
+//! area and project as a tree, in the fuzzy picker a key opens over the panes (FR-VIEW-07, OQ-10).
 //! Hides how the tree and its counts follow from the document.
 
 use super::{
@@ -101,7 +101,7 @@ pub(super) fn stops(document: &Document) -> Vec<Candidate<Stop>> {
         .collect()
 }
 
-/// Every place, in the order of the tree: the Inbox, then each project at the top level
+/// Every place, in the order of the tree: the Inbox, then each area and project at the top level
 /// in file order, each followed by the projects inside it. Each matches by its title and is told
 /// apart by the titles above it. Items in the Trash and completed ones are left out with what
 /// they hold, as Things 3 takes completed projects out of its sidebar (FR-ORG-09).
@@ -109,9 +109,8 @@ pub(super) fn places(document: &Document) -> Vec<Candidate<Place>> {
     let mut places = Vec::new();
     let tops = std::iter::once(document.inbox()).chain(document.top_level().iter().copied());
     for id in tops {
-        if let Some(item) = shown(document, id)
-            && matches!(item.kind, ItemKind::Inbox | ItemKind::Project)
-        {
+        // Only an area or a project sits at the top level beside the Inbox (FR-ORG-01).
+        if let Some(item) = shown(document, id) {
             list(document, id, item, &mut Vec::new(), &mut places);
         }
     }
@@ -193,7 +192,7 @@ mod tests {
     use super::*;
     use crate::app::{Picked, PickerInput};
     use crate::domain::{Completion, PlacementError};
-    use ItemKind::{ChecklistItem, Project, Section, Task};
+    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
     fn add(
         document: &mut Document,
@@ -223,7 +222,7 @@ mod tests {
     fn lists_the_inbox_then_areas_and_projects_as_a_tree() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let inbox = document.inbox();
-        let work = add(&mut document, None, Project, "Work")?;
+        let work = add(&mut document, None, Area, "Work")?;
         let site = add(&mut document, Some(work), Project, "Site")?;
         add(&mut document, Some(work), Section, "Hiring")?;
         let blog = add(&mut document, Some(site), Project, "Blog")?;
@@ -243,7 +242,7 @@ mod tests {
                     String::new(),
                     place(inbox, ItemKind::Inbox, 0)
                 ),
-                ("Work".into(), String::new(), place(work, Project, 0)),
+                ("Work".into(), String::new(), place(work, Area, 0)),
                 ("Site".into(), "Work".into(), place(site, Project, 1)),
                 ("Blog".into(), "Work › Site".into(), place(blog, Project, 2)),
                 ("Solo".into(), String::new(), place(solo, Project, 0)),
@@ -262,7 +261,7 @@ mod tests {
         let mut scheduled = Item::new(Task, "later");
         scheduled.start = Some(date(2026, 10, 20));
         document.push(Some(inbox), Node::Item(scheduled))?;
-        let work = add(&mut document, None, Project, "Work")?;
+        let work = add(&mut document, None, Area, "Work")?;
         let task = add(&mut document, Some(work), Task, "b")?;
         add(&mut document, Some(task), ChecklistItem, "not a task")?;
         let section = add(&mut document, Some(work), Section, "S")?;
@@ -276,7 +275,7 @@ mod tests {
         let trashed = document.push(Some(work), deleted(Project, "Trashed"))?;
         add(&mut document, Some(trashed), Task, "e")?;
         add(&mut document, Some(trashed), Project, "Inner")?;
-        document.push(None, deleted(Project, "Old"))?;
+        document.push(None, deleted(Area, "Old"))?;
         let mut finished = Item::new(Project, "Finished");
         finished.completed = Some(Completion::Undated);
         let finished = document.push(Some(work), Node::Item(finished))?;
@@ -298,7 +297,7 @@ mod tests {
     fn opens_on_the_shown_container_or_the_closest_one_above_it_listed_or_on_the_view_shown()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let work = add(&mut document, None, Project, "Work")?;
+        let work = add(&mut document, None, Area, "Work")?;
         let site = add(&mut document, Some(work), Project, "Site")?;
         let section = add(&mut document, Some(site), Section, "Launch")?;
         let chosen = |shown| {
@@ -331,7 +330,7 @@ mod tests {
     #[test]
     fn lists_the_views_after_the_inbox() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let work = add(&mut document, None, Project, "Work")?;
+        let work = add(&mut document, None, Area, "Work")?;
         let listed: Vec<(String, Stop)> = stops(&document)
             .into_iter()
             .map(|candidate| (candidate.text, candidate.value))
@@ -350,7 +349,7 @@ mod tests {
                 .iter()
                 .map(|entry| (entry.title.to_owned(), Stop::View(entry.view))),
         );
-        expected.push(("Work".to_owned(), place(work, Project)));
+        expected.push(("Work".to_owned(), place(work, Area)));
         assert_eq!(listed, expected);
         assert!(listed.contains(&("Logbook".to_owned(), Stop::View(View::Logbook))));
         Ok(())

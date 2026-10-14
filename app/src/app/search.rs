@@ -124,7 +124,7 @@ impl Query {
         checklist_titles(document, id, &mut checklist);
         self.words.iter().all(|word| {
             holds(&item.title, word)
-                || item.tags.iter().any(|tag| holds(&named_tag(tag), word))
+                || (item.shown_tags().iter()).any(|tag| holds(&named_tag(tag), word))
                 || holds(&item.description, word)
                 || holds(&item.note, word)
                 || (item.comments.iter()).any(|comment| holds(comments::split(comment).1, word))
@@ -246,7 +246,7 @@ fn visit(document: &Document, query: &Query, id: ItemId, found: &mut Vec<(bool, 
     }
     let row = match item.kind {
         ItemKind::Task => Some(Row::Task { id, section: None }),
-        ItemKind::Section | ItemKind::Project => Some(Row::Project(id)),
+        ItemKind::Area | ItemKind::Section | ItemKind::Project => Some(Row::Project(id)),
         ItemKind::Inbox | ItemKind::ChecklistItem => None,
     };
     if let Some(row) = row
@@ -264,7 +264,7 @@ fn visit(document: &Document, query: &Query, id: ItemId, found: &mut Vec<(bool, 
 /// `item`'s title and its tags as a row shows them.
 fn named(item: &Item) -> String {
     let mut text = item.title.clone();
-    for tag in &item.tags {
+    for tag in item.shown_tags() {
         text.push(' ');
         text.push_str(&named_tag(tag));
     }

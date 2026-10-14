@@ -128,11 +128,11 @@ fn completing_a_task_fades_what_it_changed_from_how_it_was_drawn() {
 
 // FR-UI-07
 #[test]
-fn a_refused_indent_flashes_the_focused_row_in_the_error_color() {
+fn a_refused_conversion_flashes_the_focused_row_in_the_error_color() {
     let mut both = pair(RGB);
     type_both(&mut both, "j");
     wait_both(&mut both, 300);
-    type_both(&mut both, "]");
+    type_both(&mut both, "my");
     let (animated, still) = &both;
     let red = |harness| match focused_bg(harness) {
         Some(Color::Rgb(red, ..)) => red,

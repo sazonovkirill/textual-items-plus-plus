@@ -931,7 +931,8 @@ fn navigator_popup<'a>(
 ) -> PickerPopup<'a, Stop> {
     let icon: &dyn Fn(&Stop) -> Icon = &|&stop| stop_icon(stop);
     PickerPopup::new("Navigator", view, icon, icons, theme)
-        .tree(&|stop| stop.depth())
+        // v1 nests no project in another (D-57), so no entry is indented.
+        .tree(&|_| 0)
         .color(|theme, &stop| stop_color(theme, stop))
         .badge(&|stop| match stop {
             Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
@@ -957,6 +958,7 @@ fn go_to_symbol_popup<'a>(
     icons: IconSet,
 ) -> PickerPopup<'a, Symbol> {
     let icon: &dyn Fn(&Symbol) -> Icon = &|symbol| match symbol.kind {
+        ItemKind::Area => Icon::Area,
         ItemKind::Project => Icon::Project,
         ItemKind::Section => Icon::Section,
         _ => Icon::Task,
@@ -970,6 +972,7 @@ fn stop_icon(stop: Stop) -> Icon {
     match stop {
         Stop::Place(place) => match place.kind {
             ItemKind::Inbox => Icon::Inbox,
+            ItemKind::Area => Icon::Area,
             _ => Icon::Project,
         },
         Stop::View(view) => view_icon(view),
@@ -1007,6 +1010,7 @@ fn move_to_popup<'a>(
         Destination::Home => Icon::Home,
         Destination::Container { kind, .. } => match kind {
             ItemKind::Inbox => Icon::Inbox,
+            ItemKind::Area => Icon::Area,
             ItemKind::Section => Icon::Section,
             _ => Icon::Project,
         },

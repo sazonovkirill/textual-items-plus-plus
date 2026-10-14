@@ -807,7 +807,7 @@ impl<'a> ContainerPane<'a> {
         piece
     }
 
-    /// The line naming what a view's group is listed under: a project as its title
+    /// The line naming what a view's group is listed under: an area or project as its title
     /// line without chips, or a period of days or the day of completion in bold; none for an item
     /// that is not one.
     fn heading(&self, heading: Heading) -> Option<Piece<'a>> {
@@ -845,7 +845,7 @@ impl<'a> ContainerPane<'a> {
     /// tags.
     fn title_then(&self, item: &'a Item, row: Option<usize>, after: Option<Span<'a>>) -> Piece<'a> {
         let mut spans = self.marked(Cow::Borrowed(&item.title), self.title_style(item));
-        for tag in &item.tags {
+        for tag in item.shown_tags() {
             spans.extend(self.marked(Cow::Owned(tag_text(tag)), self.tag_style(item)));
         }
         spans.extend(after);
@@ -969,11 +969,14 @@ impl<'a> ContainerPane<'a> {
         Line::from(spans)
     }
 
-    /// The chips of `item`'s start and due dates, each its icon and the date named relative to
-    /// today, a space after each: start in the start color and due in the due color, or, when it
-    /// is overdue, with the overdue icon, bold and reversed in the overdue color; all dimmed once
-    /// it is completed (FR-DATE-02, FR-DATE-04).
+    /// The chips of `item`'s start and due dates, none for an area, which has no dates (D-75),
+    /// each its icon and the date named relative to today, a space after each: start in the start
+    /// color and due in the due color, or, when it is overdue, with the overdue icon, bold and
+    /// reversed in the overdue color; all dimmed once it is completed (FR-DATE-02, FR-DATE-04).
     fn chips(&self, item: &Item) -> Vec<Span<'a>> {
+        if !item.kind.takes_tags_and_dates() {
+            return Vec::new();
+        }
         let theme = self.theme;
         let chip = |icon: Icon, date: Date, style: Style| {
             let style = if item.completed.is_some() {
@@ -1005,6 +1008,7 @@ impl<'a> ContainerPane<'a> {
     fn marker(&self, item: &Item) -> &'static str {
         let icon = match item.kind {
             ItemKind::Inbox => Icon::Inbox,
+            ItemKind::Area => Icon::Area,
             ItemKind::Project => Icon::Project,
             ItemKind::Section => Icon::Section,
             ItemKind::Task | ItemKind::ChecklistItem if item.completed.is_some() => Icon::DoneTask,
@@ -1018,7 +1022,9 @@ impl<'a> ContainerPane<'a> {
     fn title_style(&self, item: &Item) -> Style {
         let theme = self.theme;
         let style = match item.kind {
-            ItemKind::Inbox | ItemKind::Project => Style::new().fg(theme.kind(item.kind)).bold(),
+            ItemKind::Inbox | ItemKind::Project | ItemKind::Area => {
+                Style::new().fg(theme.kind(item.kind)).bold()
+            }
             ItemKind::Section => Style::new().fg(theme.kind(item.kind)).bold().italic(),
             ItemKind::Task | ItemKind::ChecklistItem => Style::new(),
         };
@@ -1725,7 +1731,7 @@ mod tests {
 
     // FR-VIEW-05, FR-ORG-05, FR-ORG-10, FR-TASK-03, FR-TAG-03, FR-UI-02, FR-DATE-02, FR-DATE-05
     #[test]
-    fn a_project_shows_its_title_description_tasks_sections_and_projects() {
+    fn a_project_shows_its_title_description_tasks_and_sections() {
         let document = demo();
         let website = find(&document, "Website");
         let buf = draw_pane(
@@ -1757,8 +1763,8 @@ mod tests {
                     "  - Fix the footer links",
                     "  ✔ Compress the hero image",
                     "",
-                    "  # Blog",
-                    "    A project inside a project.",
+                    "",
+                    "",
                     "",
                 ]
             )
@@ -1793,7 +1799,7 @@ mod tests {
 
     // FR-VIEW-05, D-26
     #[test]
-    fn a_project_shows_its_child_projects_as_one_row_each() {
+    fn an_area_shows_its_child_projects_as_one_row_each() {
         let document = demo();
         let home = find(&document, "Home");
         let buf = draw_pane(&document, home, None, (40, 6), &mut Top::default());
@@ -1802,7 +1808,7 @@ mod tests {
             padded(
                 40,
                 &[
-                    "  # Home",
+                    "  ◆ Home",
                     "",
                     "  - Water the plants        ↦ yesterday",
                     "",

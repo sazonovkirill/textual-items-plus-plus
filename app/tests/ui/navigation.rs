@@ -65,11 +65,11 @@ fn the_navigator_lists_the_inbox_views_areas_and_projects_as_a_tree_with_open_ta
             " 󰉹 All",
             " 󱓳 Logbook",
             " 󰩺 Trash",
-            " # Work                                                                     7",
-            "   # Website                                                                5",
-            "     # Blog                                                                 1",
-            " # Home                                                                     5",
-            "   # Move to the new flat                                                   4",
+            " 󰆧 Work                                                                     7",
+            " # Website                                                                  4",
+            " # Blog                                                                     1",
+            " 󰆧 Home                                                                     5",
+            " # Move to the new flat                                                     4",
             " # Learn Rust                                                               2",
         ]
     );
@@ -91,7 +91,7 @@ fn open_work_website_from_the_navigator_and_come_back() {
         navigator(&harness),
         [
             "› web",
-            " # Website  Work                                                            5"
+            " # Website  Work                                                            4"
         ],
         "a filtered entry names the places above it"
     );
@@ -175,15 +175,15 @@ fn the_navigator_keeps_the_keys_but_ctrl_q_still_quits() {
 fn opening_going_up_and_home_with_the_keys() {
     let mut harness = Harness::new(80, 24);
     open_website(&mut harness);
-    harness.type_text("G");
-    assert_eq!(focused(&harness).as_deref(), Some("# Blog"));
+    harness.type_text("jj#");
+    assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.press(KeyCode::Right, KeyModifiers::ALT);
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Blog");
+    assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Launch");
     harness.type_text(">");
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
     assert_eq!(
         focused(&harness).as_deref(),
-        Some("# Blog"),
+        Some("/ Launch"),
         "going up focuses where the pane was"
     );
     harness.type_text("gu");
@@ -240,12 +240,12 @@ fn back_and_forward_return_with_the_focus_where_it_was() {
 fn breadcrumbs_too_wide_give_way_from_the_start() {
     let mut harness = Harness::new(24, 12);
     open_website(&mut harness);
-    harness.type_text("G.");
-    assert_eq!(crumbs(&harness), "  󰋜 … › Website › Blog");
+    harness.type_text("jj#.");
+    assert_eq!(crumbs(&harness), "  󰋜 … › Website › Launch");
     let mut harness = Harness::new(14, 12);
     open_website(&mut harness);
-    harness.type_text("G.");
-    assert_eq!(crumbs(&harness), "  󰋜 … › Blog");
+    harness.type_text("jj#.");
+    assert_eq!(crumbs(&harness), "  󰋜 … › Launch");
     let mut harness = Harness::new(9, 12);
     open_website(&mut harness);
     assert_eq!(crumbs(&harness), "  󰋜 … › W");

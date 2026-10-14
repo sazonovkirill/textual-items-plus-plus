@@ -53,11 +53,13 @@ impl Node {
 pub enum ItemKind {
     /// The built-in container for tasks not yet organized (FR-ORG-07).
     Inbox,
-    /// A goal made of tasks, which can hold other projects to any depth, as Todoist's (D-65).
-    /// A layout kept before areas went names an area `area`, which is now a project (D-66).
-    #[serde(alias = "area")]
+    /// A top-level area of responsibility, holding projects, sections and tasks, with no tags or
+    /// dates (D-75).
+    Area,
+    /// A goal made of tasks, in an area or at the top level; a file may nest one in another,
+    /// which the app keeps but never makes (D-57, D-75).
     Project,
-    /// A titled group of tasks inside a project.
+    /// A titled group of tasks inside an area or a project.
     Section,
     /// One thing to do.
     Task,
@@ -66,16 +68,33 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
+    /// Whether an item of this kind goes in an item of kind `parent`, or at the top level for
+    /// `None`, when the app adds, moves, converts or pastes it: where it [fits](Self::fits_in),
+    /// except that v1 nests no project in another, which a file may still hold and the app keeps
+    /// (D-57).
+    #[must_use]
+    pub fn goes_in(self, parent: Option<Self>) -> bool {
+        self.fits_in(parent) && !(self == Self::Project && parent == Some(Self::Project))
+    }
+
+    /// Whether an item of this kind has tags and start and due dates: every kind but an area;
+    /// tags or dates a file gives an area are kept, unseen (D-75).
+    #[must_use]
+    pub fn takes_tags_and_dates(self) -> bool {
+        self != Self::Area
+    }
+
     /// Whether an item of this kind may sit in an item of kind `parent`, or at the top level when
     /// `parent` is `None`. The Inbox sits nowhere: a document has exactly one, of its own.
     #[must_use]
     pub fn fits_in(self, parent: Option<Self>) -> bool {
-        use ItemKind::{ChecklistItem, Inbox, Project, Section, Task};
+        use ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
         match self {
             Inbox => false,
-            Project => matches!(parent, None | Some(Project)),
-            Section => parent == Some(Project),
-            Task => matches!(parent, Some(Inbox | Project | Section)),
+            Area => parent.is_none(),
+            Project => matches!(parent, None | Some(Area | Project)),
+            Section => matches!(parent, Some(Area | Project)),
+            Task => matches!(parent, Some(Inbox | Area | Project | Section)),
             ChecklistItem => matches!(parent, Some(Task | ChecklistItem)),
         }
     }
@@ -131,6 +150,17 @@ impl Item {
         match kind {
             DateKind::Start => self.start,
             DateKind::Due => self.due,
+        }
+    }
+
+    /// The tags the app shows and finds it by: none on an area, which has no tags, though a file
+    /// may give it some (D-75).
+    #[must_use]
+    pub fn shown_tags(&self) -> &[Tag] {
+        if self.kind.takes_tags_and_dates() {
+            &self.tags
+        } else {
+            &[]
         }
     }
 
@@ -212,7 +242,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use ItemKind::{ChecklistItem, Inbox, Project, Section, Task};
+    use ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
 
     #[test]
     fn identifiers_are_equal_only_with_the_same_number() {
@@ -221,12 +251,13 @@ mod tests {
         assert!(ItemId::new(7) < ItemId::new(8));
     }
 
-    // FR-ORG-02, FR-ORG-03, FR-ORG-04, FR-ORG-07, FR-CHK-01
+    // FR-ORG-01, FR-ORG-02, FR-ORG-03, FR-ORG-04, FR-ORG-07, FR-CHK-01
     #[test]
     fn each_kind_fits_only_where_the_hierarchy_allows() {
         let places = [
             None,
             Some(Inbox),
+            Some(Area),
             Some(Project),
             Some(Section),
             Some(Task),
@@ -239,10 +270,56 @@ mod tests {
                 .collect()
         };
         assert_eq!(allowed(Inbox), []);
-        assert_eq!(allowed(Project), [None, Some(Project)]);
-        assert_eq!(allowed(Section), [Some(Project)]);
-        assert_eq!(allowed(Task), [Some(Inbox), Some(Project), Some(Section)]);
+        assert_eq!(allowed(Area), [None]);
+        assert_eq!(allowed(Project), [None, Some(Area), Some(Project)]);
+        assert_eq!(allowed(Section), [Some(Area), Some(Project)]);
+        assert_eq!(
+            allowed(Task),
+            [Some(Inbox), Some(Area), Some(Project), Some(Section)]
+        );
         assert_eq!(allowed(ChecklistItem), [Some(Task), Some(ChecklistItem)]);
+    }
+
+    // FR-ORG-01, FR-ORG-02, D-57
+    #[test]
+    fn the_app_puts_an_item_where_it_fits_but_no_project_in_a_project() {
+        let places = [None, Some(Inbox), Some(Area), Some(Project), Some(Section)];
+        for kind in [Area, Project, Section, Task] {
+            for place in places {
+                let nests = kind == Project && place == Some(Project);
+                assert_eq!(
+                    kind.goes_in(place),
+                    kind.fits_in(place) && !nests,
+                    "{kind:?} in {place:?}"
+                );
+            }
+        }
+        assert!(Project.fits_in(Some(Project)), "a file may nest one");
+    }
+
+    // FR-ORG-01, FR-TAG-01, FR-DATE-01
+    #[test]
+    fn every_kind_but_an_area_takes_tags_and_dates() {
+        let kinds = [Inbox, Area, Project, Section, Task, ChecklistItem];
+        let taking: Vec<ItemKind> = kinds
+            .into_iter()
+            .filter(|kind| kind.takes_tags_and_dates())
+            .collect();
+        assert_eq!(taking, [Inbox, Project, Section, Task, ChecklistItem]);
+    }
+
+    #[test]
+    fn an_area_shows_no_tags_a_file_gives_it() {
+        let tag = Tag {
+            name: "home".to_owned(),
+            value: None,
+        };
+        let mut area = Item::new(Area, "Home");
+        area.tags.push(tag.clone());
+        assert_eq!(area.shown_tags(), []);
+        let mut project = Item::new(Project, "Garden");
+        project.tags.push(tag.clone());
+        assert_eq!(project.shown_tags(), [tag]);
     }
 
     #[test]

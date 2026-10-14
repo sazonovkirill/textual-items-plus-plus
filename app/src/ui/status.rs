@@ -110,6 +110,8 @@ fn kept(state: &State) -> String {
         ),
         Notice::Refused(refusal) => why(*refusal).to_owned(),
         Notice::NoChecklist => "only a task has a checklist".to_owned(),
+        Notice::AreaUndated => "an area has no start or due date".to_owned(),
+        Notice::AreaUntagged => "an area has no tags".to_owned(),
         Notice::Settings(problem) => format!("config.toml: {problem}"),
         Notice::NoWeather => "no weather in summer".to_owned(),
         Notice::TagInTitle => format!(
@@ -134,11 +136,10 @@ fn kept(state: &State) -> String {
 /// Why the hierarchy refused a move or a change of kind.
 const fn why(refusal: Refusal) -> &'static str {
     match refusal {
-        Refusal::DoesNotNest => "only projects and checklist items nest",
         Refusal::NothingAbove => "nothing above to indent into",
         Refusal::NotNested => "nothing to outdent from",
-        Refusal::NoRoomForSection => "a section goes only in a project",
-        Refusal::NoRoomForProject => "a project can't go in a section or the Inbox",
+        Refusal::NoRoomForSection => "a section goes only in an area or a project",
+        Refusal::NoRoomForProject => "a project goes only in an area or at the top level",
         Refusal::SectionHoldsTasks => "a section holds only tasks",
         Refusal::ReadsAsTask => "only a task's title can start with \"- \"",
     }
@@ -255,11 +256,10 @@ mod tests {
         check(&long, "g", 31, " ↕ NAVIGATE · …paper · saved g ");
     }
 
-    // FR-OPS-03, FR-OPS-07, FR-TASK-06, D-65
+    // FR-OPS-03, FR-OPS-07, FR-TASK-06, D-57
     #[test]
     fn each_refusal_says_why() {
         let reasons = [
-            Refusal::DoesNotNest,
             Refusal::NothingAbove,
             Refusal::NotNested,
             Refusal::NoRoomForSection,
@@ -271,11 +271,10 @@ mod tests {
         assert_eq!(
             reasons,
             [
-                "only projects and checklist items nest",
                 "nothing above to indent into",
                 "nothing to outdent from",
-                "a section goes only in a project",
-                "a project can't go in a section or the Inbox",
+                "a section goes only in an area or a project",
+                "a project goes only in an area or at the top level",
                 "a section holds only tasks",
                 "only a task's title can start with \"- \"",
             ]

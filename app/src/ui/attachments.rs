@@ -447,7 +447,7 @@ impl<'a> AttachmentsPanel<'a> {
         } else {
             self.theme.tag
         };
-        for tag in &item.tags {
+        for tag in item.shown_tags() {
             spans.push(Span::styled(
                 tag_text(tag),
                 dim.fg(tag_color).add_modifier(Modifier::DIM),

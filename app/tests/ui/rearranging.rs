@@ -1,4 +1,4 @@
-//! Moving items up and down, from one section into the next, and indenting and outdenting them.
+//! Moving items up and down, from one section into the next; only checklist items indent.
 
 use std::{fs, path::PathBuf};
 
@@ -103,32 +103,29 @@ fn sections_move_among_the_sections() {
     let after = listed(&harness);
     let polish = after.iter().position(|row| row.ends_with("Polish"));
     let launch = after.iter().position(|row| row.ends_with("Launch"));
-    let blog = after.iter().position(|row| row.ends_with("Blog"));
-    assert!(polish < launch && launch < blog, "{after:?}");
+    assert!(polish < launch, "{after:?}");
 }
 
-// FR-OPS-03
+// FR-OPS-03, D-75
 #[test]
-fn a_task_or_a_section_is_not_indented_and_the_status_line_says_why() {
-    let mut harness = website(0);
+fn tab_and_the_brackets_leave_tasks_and_sections_where_they_are() {
+    let mut harness = website(1);
+    let before = listed(&harness);
     harness.key(KeyCode::Tab);
+    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
+    harness.type_text("j][");
+    harness.type_text("k");
+    assert_eq!(listed(&harness), before);
     assert!(
-        status(&harness).ends_with("only projects and checklist items nest"),
+        status(&harness).ends_with("not saved"),
         "{}",
         status(&harness)
     );
-    harness.key(KeyCode::Char('j'));
-    assert!(
-        status(&harness).ends_with("not saved"),
-        "the next command clears it"
-    );
-    harness.key(KeyCode::Char('['));
-    assert!(status(&harness).ends_with("only projects and checklist items nest"));
 }
 
 const PLANS: &str = "\
 Inbox:
-Plans:
+Plans: @area
 \tGarden:
 \tKitchen:
 \t\t- Paint the walls
@@ -138,7 +135,7 @@ Plans:
 \t\t- Call the plumber
 ";
 
-/// The app on a file holding [`PLANS`], opened on its project, and the file's path.
+/// The app on a file holding [`PLANS`], opened on the area, and the file's path.
 fn plans() -> (TempDir, PathBuf, Harness) {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
@@ -165,7 +162,7 @@ fn a_task_moved_into_the_next_section_is_saved_there() {
         saved(&mut harness, &path),
         "\
 Inbox:
-Plans:
+Plans: @area
 \tGarden:
 \tKitchen:
 \t\t- Paint the walls
@@ -177,28 +174,15 @@ Plans:
     );
 }
 
-// FR-OPS-03, FR-ORG-02, FR-ORG-06
+// FR-OPS-03, FR-ORG-02, FR-ORG-06, D-75
 #[test]
-fn a_project_indents_into_the_project_above_and_outdents_out_of_it() {
+fn a_project_does_not_indent_or_outdent() {
     let (_dir, path, mut harness) = plans();
     harness.key(KeyCode::Char('G'));
-    harness.key(KeyCode::Char(']'));
-    let indented = listed(&harness);
-    assert!(
-        indented
-            .iter()
-            .any(|row| row.ends_with("Garden") && row.starts_with('*'))
+    harness.type_text("][");
+    assert_eq!(
+        saved(&mut harness, &path),
+        PLANS,
+        "Kitchen stays beside Garden"
     );
-    assert!(!indented.iter().any(|row| row.ends_with("Kitchen")));
-    let file = saved(&mut harness, &path);
-    assert!(
-        file.contains("\tGarden:\n\t\tKitchen:\n\t\t\t- Paint the walls\n"),
-        "{file}"
-    );
-    harness.key(KeyCode::Char('.'));
-    harness.key(KeyCode::Char(']'));
-    assert!(status(&harness).ends_with("nothing above to indent into"));
-    harness.key(KeyCode::Char('['));
-    assert!(!listed(&harness).iter().any(|row| row.ends_with("Kitchen")));
-    assert_eq!(saved(&mut harness, &path), PLANS, "back where it was");
 }

@@ -9,10 +9,11 @@ use super::{
 use crate::domain::{Document, ItemId, ItemKind, Node, Transaction};
 
 /// The transaction that converts each of `items` in its place to a project, or to a section when
-/// every one is a project (D-25); items already of that kind
-/// stay as they are, and so does each one the hierarchy refuses, or whose title, as a task's
-/// can, starts with `-` and a space, which would read back as a task (FR-TASK-06, FR-ORG-06,
-/// D-47).
+/// every one is a project, as a project can't become an area (D-25); items already of that kind
+/// stay as they are, and so does each one the hierarchy refuses, such as an area holding projects
+/// or a section in a project, since no project goes in a project (D-75), or whose title, as a
+/// task's can, starts with `-` and a space, which would read back as a task (FR-TASK-06,
+/// FR-ORG-06, D-47).
 ///
 /// # Errors
 ///
@@ -35,13 +36,16 @@ pub(super) fn convert_all(document: &Document, items: &[ItemId]) -> Result<Trans
         if title.is_some_and(editing::reads_as_task) {
             return Err(Refusal::ReadsAsTask);
         }
-        document.convert(id, to).map_err(|_| {
-            if fits(document, id, to) {
-                Refusal::SectionHoldsTasks
-            } else {
-                no_room(to)
-            }
-        })
+        // The file's rule lets a project hold one, which the app never makes (D-57, D-75).
+        if !fits(document, id, to) {
+            return Err(no_room(to));
+        }
+        if to == ItemKind::Project && holds_projects(document, id) {
+            return Err(Refusal::NoRoomForProject);
+        }
+        document
+            .convert(id, to)
+            .map_err(|_| Refusal::SectionHoldsTasks)
     }) {
         (transaction, Some(refusal)) if transaction.ops().is_empty() => Err(refusal),
         (transaction, _) => Ok(transaction),
@@ -50,8 +54,9 @@ pub(super) fn convert_all(document: &Document, items: &[ItemId]) -> Result<Trans
 
 /// Where a new item of `kind`, a section or a project, goes to group `items`, given in the order
 /// of the rows: where the first of them is, among the children of its parent (D-25). A section
-/// groups only tasks in a project (FR-OPS-07); a project groups tasks, sections and
-/// projects anywhere but in a section or the Inbox (FR-OPS-08). `None` with no items.
+/// groups only tasks in an area or a project (FR-OPS-07); a project groups tasks and sections in
+/// an area, a project or the top level, but no project, since no project goes in a project
+/// (FR-OPS-08, D-75). `None` with no items.
 ///
 /// # Errors
 ///
@@ -75,7 +80,10 @@ pub(super) fn group_place(
             }
         })
     } else {
-        (!fits(document, first, kind)).then_some(Refusal::NoRoomForProject)
+        let holds_project = items
+            .iter()
+            .any(|&id| self::kind(document, id) == Some(ItemKind::Project));
+        (holds_project || !fits(document, first, kind)).then_some(Refusal::NoRoomForProject)
     };
     refused.map_or_else(|| Ok(document.position(first)), Err)
 }
@@ -89,10 +97,18 @@ fn no_room(kind: ItemKind) -> Refusal {
     }
 }
 
+/// Whether `id` holds a project.
+fn holds_projects(document: &Document, id: ItemId) -> bool {
+    document
+        .children(id)
+        .iter()
+        .any(|&child| kind(document, child) == Some(ItemKind::Project))
+}
+
 /// Whether an item of `kind` may go beside `id`, among the children of its parent.
 fn fits(document: &Document, id: ItemId, kind: ItemKind) -> bool {
     let parent = document.position(id).and_then(|(parent, _)| parent);
-    kind.fits_in(parent.and_then(|parent| self::kind(document, parent)))
+    kind.goes_in(parent.and_then(|parent| self::kind(document, parent)))
 }
 
 /// The kind of the item `id`, or `None` when it is no item.
@@ -104,15 +120,15 @@ fn kind(document: &Document, id: ItemId) -> Option<ItemKind> {
 mod tests {
     use super::*;
     use crate::domain::{Item, PlacementError};
-    use ItemKind::{ChecklistItem, Project, Section, Task};
+    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
-    /// The Inbox holds `inboxed`; project Work holds tasks `paint` and `order`, section `section`
+    /// The Inbox holds `inboxed`; area Work holds tasks `paint` and `order`, section `section`
     /// holding task `sell`, and projects `site` and `holder`, which holds a section; project `top`
     /// is at the top level.
     struct Fixture {
         document: Document,
         inboxed: ItemId,
-        work: ItemId,
+        area: ItemId,
         paint: ItemId,
         order: ItemId,
         section: ItemId,
@@ -126,19 +142,19 @@ mod tests {
         let mut document = Document::new();
         let item = |kind, title| Node::Item(Item::new(kind, title));
         let inboxed = document.push(Some(document.inbox()), item(Task, "inboxed"))?;
-        let work = document.push(None, item(Project, "Work"))?;
-        let paint = document.push(Some(work), item(Task, "paint"))?;
-        let order = document.push(Some(work), item(Task, "order"))?;
-        let section = document.push(Some(work), item(Section, "Soon"))?;
+        let area = document.push(None, item(Area, "Work"))?;
+        let paint = document.push(Some(area), item(Task, "paint"))?;
+        let order = document.push(Some(area), item(Task, "order"))?;
+        let section = document.push(Some(area), item(Section, "Soon"))?;
         let sell = document.push(Some(section), item(Task, "sell"))?;
-        let site = document.push(Some(work), item(Project, "site"))?;
-        let holder = document.push(Some(work), item(Project, "holder"))?;
+        let site = document.push(Some(area), item(Project, "site"))?;
+        let holder = document.push(Some(area), item(Project, "holder"))?;
         document.push(Some(holder), item(Section, "inner"))?;
         let top = document.push(None, item(Project, "top"))?;
         Ok(Fixture {
             document,
             inboxed,
-            work,
+            area,
             paint,
             order,
             section,
@@ -164,6 +180,7 @@ mod tests {
     fn items_become_projects_or_all_projects_sections() -> Result<(), PlacementError> {
         let Fixture {
             document,
+            area,
             paint,
             section,
             site,
@@ -176,6 +193,21 @@ mod tests {
         let back = converted(&mixed, &[paint, section]);
         assert_eq!(kind(&back, paint), Some(Section));
         assert_eq!(kind(&back, section), Some(Section));
+        let mut chores = document.clone();
+        let home = chores.push(None, Node::Item(Item::new(Area, "Home")))?;
+        chores.push(Some(home), Node::Item(Item::new(Task, "Sweep")))?;
+        chores.push(Some(home), Node::Item(Item::new(Section, "Soon")))?;
+        let home_converted = converted(&chores, &[home]);
+        assert_eq!(
+            kind(&home_converted, home),
+            Some(Project),
+            "an area becomes a project"
+        );
+        assert_eq!(
+            convert_all(&document, &[area]),
+            Err(Refusal::NoRoomForProject),
+            "but not one holding projects, since no project goes in a project"
+        );
         assert_eq!(convert_all(&document, &[]), Ok(Transaction::default()));
         Ok(())
     }
@@ -186,7 +218,7 @@ mod tests {
         let Fixture {
             document,
             inboxed,
-            work,
+            area,
             paint,
             sell,
             holder,
@@ -207,11 +239,15 @@ mod tests {
             (vec![top], Refusal::NoRoomForSection),
             (vec![holder], Refusal::SectionHoldsTasks),
             (vec![holder, top], Refusal::SectionHoldsTasks),
+            (
+                document.children(holder).to_vec(),
+                Refusal::NoRoomForProject,
+            ),
         ] {
             assert_eq!(convert_all(&document, &items), Err(refusal), "{items:?}");
         }
         let mut dashed = document.clone();
-        let plan = dashed.push(Some(work), Node::Item(Item::new(Task, "- Plan")))?;
+        let plan = dashed.push(Some(area), Node::Item(Item::new(Task, "- Plan")))?;
         assert_eq!(
             convert_all(&dashed, &[plan]),
             Err(Refusal::ReadsAsTask),
@@ -230,20 +266,19 @@ mod tests {
     fn a_group_goes_where_its_first_item_is() -> Result<(), PlacementError> {
         let Fixture {
             document,
-            work,
+            area,
             paint,
             order,
             section,
-            site,
             ..
         } = fixture()?;
         assert_eq!(
             group_place(&document, &[order, paint], Section),
-            Ok(Some((Some(work), 1)))
+            Ok(Some((Some(area), 1)))
         );
         assert_eq!(
-            group_place(&document, &[section, paint, site], Project),
-            Ok(Some((Some(work), 2)))
+            group_place(&document, &[section, paint], Project),
+            Ok(Some((Some(area), 2)))
         );
         assert_eq!(group_place(&document, &[], Section), Ok(None));
         Ok(())
@@ -269,6 +304,7 @@ mod tests {
             (vec![site], Section, Refusal::SectionHoldsTasks),
             (vec![sell, paint], Project, Refusal::NoRoomForProject),
             (vec![inboxed], Project, Refusal::NoRoomForProject),
+            (vec![paint, site], Project, Refusal::NoRoomForProject),
         ] {
             assert_eq!(
                 group_place(&document, &items, kind),

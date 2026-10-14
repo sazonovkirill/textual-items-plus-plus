@@ -114,7 +114,7 @@ impl DatePrompt {
 }
 
 /// The transaction that sets the `kind` date of `items` to `date`, or removes it for `None`.
-/// Only projects, sections and tasks take dates (FR-DATE-01); anything else among
+/// Only projects, sections and tasks take dates (FR-DATE-01, D-75); anything else among
 /// `items`, and an item whose date is that already, is left alone.
 pub(super) fn set(
     document: &Document,
@@ -142,7 +142,8 @@ pub(super) fn set(
     Transaction::new(ops)
 }
 
-/// The item `id` when it is an area, project, section or task, which take dates.
+/// The item `id` when it is a project, section or task, which take dates; an area takes none
+/// (D-75).
 fn dated(document: &Document, id: ItemId) -> Option<&Item> {
     document.node(id).and_then(Node::item).filter(|item| {
         matches!(
@@ -189,18 +190,20 @@ mod tests {
     fn setting_a_date_changes_only_the_items_that_take_it_and_lack_it() -> Result<(), PlacementError>
     {
         let (mut document, a, b, check) = document()?;
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "x")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "x")))?;
         let section = document.push(Some(area), Node::Item(Item::new(ItemKind::Section, "s")))?;
         let project = document.push(Some(area), Node::Item(Item::new(ItemKind::Project, "p")))?;
         let line = document.push(None, Node::Kept("text".to_owned()))?;
-        let others = [document.inbox(), check, line, ItemId::new(99)];
+        let others = [document.inbox(), area, check, line, ItemId::new(99)];
         assert_eq!(
             set(&document, others, DateKind::Due, Some(TODAY)),
-            Transaction::default()
+            Transaction::default(),
+            "an area has no dates (D-75)"
         );
-        let all = [a, b, area, section, project];
+        assert!(DatePrompt::open(&document, [area], DateKind::Due, TODAY, Some(area)).is_none());
+        let all = [a, b, section, project];
         let start = set(&document, all, DateKind::Start, Some(date(2026, 10, 1)));
-        assert_eq!(start.ops().len(), 4, "a starts on that day already");
+        assert_eq!(start.ops().len(), 3, "a starts on that day already");
         document.apply(&set(&document, all, DateKind::Due, Some(TODAY)))?;
         for id in all {
             assert_eq!(item(&document, id).due, Some(TODAY));

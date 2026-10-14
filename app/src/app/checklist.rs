@@ -131,6 +131,19 @@ pub(super) fn indent(document: &Document, id: ItemId) -> Option<Transaction> {
     Some(transaction)
 }
 
+/// The transaction that takes checklist item `id` out of the checklist item holding it, right
+/// after it (FR-CHK-03); `None` when the task holds it.
+pub(super) fn outdent(document: &Document, id: ItemId) -> Option<Transaction> {
+    let (parent, _) = document.position(id)?;
+    let parent = parent.filter(|&parent| {
+        item(document, parent).is_some_and(|it| it.kind == ItemKind::ChecklistItem)
+    })?;
+    let transaction = document
+        .move_to(id, Destination::After(parent))
+        .expect("a checklist item fits beside the one holding it");
+    Some(transaction)
+}
+
 /// Where a new checklist item of `task` goes on `side` of its item `selected`: beside it, in the
 /// same item; with none selected, first or last in the task.
 pub(super) fn place(
@@ -359,6 +372,22 @@ mod tests {
             titles(&document, task)[3..],
             [("d", 0, true), ("e", 1, true), ("f", 1, true)],
             "under the checked item, dimmed with it"
+        );
+        Ok(())
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn an_item_comes_out_of_the_item_holding_it_right_after_it() -> Result<(), PlacementError> {
+        let (mut document, [task, pack, books, novels, ..]) = document()?;
+        assert_eq!(outdent(&document, pack), None, "the task holds it");
+        assert_eq!(outdent(&document, ItemId::new(99)), None);
+        let transaction = outdent(&document, novels).ok_or(PlacementError::DoesNotFit)?;
+        document.apply(&transaction)?;
+        assert_eq!(document.children(pack), [books, novels]);
+        assert_eq!(
+            titles(&document, task)[..3],
+            [("a", 0, false), ("b", 1, false), ("c", 1, false)]
         );
         Ok(())
     }

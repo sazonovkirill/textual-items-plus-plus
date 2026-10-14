@@ -34,7 +34,7 @@ fn focused(harness: &Harness) -> Vec<String> {
 
 // FR-NAV-05, FR-UI-09
 #[test]
-fn slash_lists_projects_and_sections_then_tasks_where_they_are_and_typing_filters_them() {
+fn slash_lists_areas_projects_and_sections_then_tasks_where_they_are_and_typing_filters_them() {
     let mut harness = Harness::new(80, 24);
     harness.type_text("/");
     let listed = window(&harness);
@@ -43,7 +43,7 @@ fn slash_lists_projects_and_sections_then_tasks_where_they_are_and_typing_filter
         Some(
             [
                 "›",
-                " # Work",
+                " \u{f01a7} Work",
                 " # Website  Work",
                 " / Launch  Work › Website",
             ]

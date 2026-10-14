@@ -121,8 +121,7 @@ mod tests {
     fn finds_an_item_by_the_titles_above_it_and_its_place_among_equal_siblings()
     -> Result<(), PlacementError> {
         let mut old = Document::new();
-        add(&mut old, None, ItemKind::Project, "Work")?;
-        let work = add(&mut old, None, ItemKind::Project, "Work")?;
+        let work = add(&mut old, None, ItemKind::Area, "Work")?;
         add(&mut old, Some(work), ItemKind::Task, "x")?;
         let second = add(&mut old, Some(work), ItemKind::Task, "x")?;
         let inbox = old.inbox();
@@ -130,7 +129,7 @@ mod tests {
         let mut new = Document::new();
         new.push(None, Node::Kept("text".to_owned()))?;
         add(&mut new, None, ItemKind::Project, "Work")?;
-        let new_work = add(&mut new, None, ItemKind::Project, "Work")?;
+        let new_work = add(&mut new, None, ItemKind::Area, "Work")?;
         add(&mut new, Some(new_work), ItemKind::Task, "y")?;
         add(&mut new, Some(new_work), ItemKind::Task, "x")?;
         let new_second = add(&mut new, Some(new_work), ItemKind::Task, "x")?;
@@ -148,13 +147,13 @@ mod tests {
     fn an_item_not_found_gives_way_to_the_deepest_item_above_it_found() -> Result<(), PlacementError>
     {
         let mut old = Document::new();
-        let work = add(&mut old, None, ItemKind::Project, "Work")?;
+        let work = add(&mut old, None, ItemKind::Area, "Work")?;
         let site = add(&mut old, Some(work), ItemKind::Project, "Site")?;
         let task = add(&mut old, Some(site), ItemKind::Task, "t")?;
         let inbox = old.inbox();
         let inboxed = add(&mut old, Some(inbox), ItemKind::Task, "i")?;
         let mut new = Document::new();
-        let new_work = add(&mut new, None, ItemKind::Project, "Work")?;
+        let new_work = add(&mut new, None, ItemKind::Area, "Work")?;
         assert_eq!(find(&old, &new, task), Some((new_work, false)));
         assert_eq!(find(&old, &new, inboxed), Some((new.inbox(), false)));
         assert_eq!(find(&old, &Document::new(), task), None);

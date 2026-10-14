@@ -28,9 +28,9 @@ pub struct Theme {
     /// Text in no color of its own on the current-line band and on selected rows, so it reads
     /// on them whatever the terminal's own text color.
     pub band_text: Color,
-    /// Date-group headings, checklist progress and the attachment icons.
+    /// The titles of areas, date-group headings, checklist progress and the attachment icons.
     pub headers: Color,
-    /// The titles of sections, a color projects don't take.
+    /// The titles of sections, a color neither areas nor projects take.
     pub sections: Color,
     /// Separators and box borders.
     pub rule: Color,
@@ -57,6 +57,7 @@ impl Theme {
     pub fn kind(&self, kind: ItemKind) -> Color {
         match kind {
             ItemKind::Inbox | ItemKind::Project => self.primary,
+            ItemKind::Area => self.headers,
             ItemKind::Section => self.sections,
             ItemKind::Task | ItemKind::ChecklistItem => self.text,
         }
@@ -278,11 +279,16 @@ mod tests {
 
     // FR-UI-02
     #[test]
-    fn projects_and_sections_each_have_a_color_of_their_own() {
+    fn areas_projects_and_sections_each_have_a_color_of_their_own() {
         for theme in BuiltIn::ALL {
             let colors = theme.colors();
-            let project = colors.kind(ItemKind::Project);
-            assert_ne!(project, colors.kind(ItemKind::Section), "{}", theme.id());
+            let [area, project, section] = [ItemKind::Area, ItemKind::Project, ItemKind::Section]
+                .map(|kind| colors.kind(kind));
+            let id = theme.id();
+            assert!(
+                area != project && project != section && section != area,
+                "{id}"
+            );
             assert_eq!(colors.kind(ItemKind::Inbox), project);
             assert_eq!(colors.kind(ItemKind::Task), colors.text);
         }
