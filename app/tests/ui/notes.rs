@@ -135,13 +135,23 @@ fn a_long_note_scrolls() {
     harness.ctrl('d');
     assert_eq!(
         panel(&harness)[1],
-        "│ line 7                               │",
+        "│ line 9                               │"
+    );
+    harness.ctrl('d');
+    assert_eq!(
+        panel(&harness)[1],
+        "│ line 10                              │",
         "a page down stops at the end"
     );
     harness.type_text("gG");
     assert_eq!(
-        panel(&harness)[7],
-        "│ end                                  │"
+        panel(&harness)[4..8],
+        [
+            "│ end                                  │",
+            "│                                      │",
+            "│                           󰆉 Comments │",
+            "│ No comments                          │",
+        ]
     );
     harness.key(KeyCode::Esc);
     harness.type_text("n");

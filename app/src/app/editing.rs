@@ -1,12 +1,12 @@
 //! Editing the title of a task, section, project or area in place, an existing one's or one just
-//! added, any item's description in place, or its note in the attachments panel (FR-EDIT-01,
-//! FR-EDIT-02, FR-EDIT-03, FR-EDIT-05, FR-ORG-06, FR-ORG-10, FR-ATT-03). The text is written to
-//! the document as it is typed, so the item is drawn like any other, and the whole session becomes
-//! one change to undo when it ends.
+//! added, any item's description in place, or its note or a comment, an existing one or one just
+//! added, in the attachments panel (FR-EDIT-01, FR-EDIT-02, FR-EDIT-03, FR-EDIT-05, FR-ORG-06,
+//! FR-ORG-10, FR-ATT-03, FR-ATT-04). The text is written to the document as it is typed, so the
+//! item is drawn like any other, and the whole session becomes one change to undo when it ends.
 
 use super::{Selection, TextEdit, TextField};
 use crate::domain::{
-    Destination, Document, Item, ItemId, ItemKind, Node, Op, Snapshot, Transaction,
+    Destination, Document, Item, ItemId, ItemKind, Node, Op, Snapshot, Transaction, comments,
 };
 
 /// What the user does while a title or a description is edited.
@@ -19,6 +19,8 @@ pub enum EditInput {
     Next,
     /// Ends editing.
     Done,
+    /// Ends editing without what was typed, as a comment's input does on `Esc` (FR-ATT-04).
+    Cancel,
 }
 
 /// Which text of an item is edited.
@@ -30,20 +32,32 @@ pub enum Part {
     Description,
     /// Its note, Markdown on any number of lines, in the attachments panel (FR-ATT-03).
     Note,
+    /// The text of its comment at this index, newest first, on one line after the timestamp it
+    /// keeps, in the attachments panel (FR-ATT-04).
+    Comment(usize),
 }
 
-/// An item whose title, description or note is being edited, its kind, which text is edited,
-/// the text edited, the selection before editing started and how the item was before it, and the
-/// document's revision then.
+/// An item whose title, description, note or comment is being edited, its kind, which text is
+/// edited, the text edited, how a comment edited is written, the selection before editing started
+/// and how the item was before it, and the document's revision then.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Editing {
     id: ItemId,
     kind: ItemKind,
     part: Part,
     field: TextField,
+    comment: Option<Comment>,
     before: Selection,
     origin: Origin,
     revision: u64,
+}
+
+/// How the comment edited is written: after the timestamp it keeps, and added at its index or
+/// replacing the comment there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Comment {
+    stamp: String,
+    added: bool,
 }
 
 /// How the edited item was before editing started.
@@ -86,6 +100,7 @@ impl Editing {
             kind: item.kind,
             part: Part::Title,
             field: TextField::new(text(item, Part::Title).to_owned()),
+            comment: None,
             before,
             origin: Origin::Existing(item.clone()),
             revision: document.revision(),
@@ -117,10 +132,64 @@ impl Editing {
             kind: item.kind,
             part,
             field: TextField::multi_line(text(item, part)),
+            comment: None,
             before,
             origin: Origin::Existing(item.clone()),
             revision: document.revision(),
         })
+    }
+
+    /// Starts editing the text of `id`'s comment at `index`, newest first, the caret at its end,
+    /// keeping its timestamp, when it has one there (FR-ATT-04); `before` is the selection to
+    /// restore when the session is undone.
+    pub(super) fn comment(
+        document: &Document,
+        id: ItemId,
+        index: usize,
+        before: Selection,
+    ) -> Option<Self> {
+        let item = document.node(id).and_then(Node::item)?;
+        let (stamp, text) = comments::split(item.comments.get(index)?);
+        Some(Self {
+            id,
+            kind: item.kind,
+            part: Part::Comment(index),
+            field: TextField::new(text.to_owned()),
+            comment: Some(Comment {
+                stamp: stamp.to_owned(),
+                added: false,
+            }),
+            before,
+            origin: Origin::Existing(item.clone()),
+            revision: document.revision(),
+        })
+    }
+
+    /// Adds a comment stamped `stamp`, with no text yet, as the newest of `id`'s, and starts
+    /// editing its text, unless `id` is a checklist item, which has none (FR-ATT-04); `before`
+    /// is the selection to restore when it is undone. Leaving it empty adds nothing.
+    pub(super) fn new_comment(
+        document: &mut Document,
+        id: ItemId,
+        stamp: String,
+        before: Selection,
+    ) -> Option<Self> {
+        let item = document
+            .node(id)
+            .and_then(Node::item)
+            .filter(|item| item.kind != ItemKind::ChecklistItem)?;
+        let editing = Self {
+            id,
+            kind: item.kind,
+            part: Part::Comment(0),
+            field: TextField::new(String::new()),
+            comment: Some(Comment { stamp, added: true }),
+            before,
+            origin: Origin::Existing(item.clone()),
+            revision: document.revision(),
+        };
+        editing.show(document);
+        Some(editing)
     }
 
     /// Adds `item`, which has no title, at `index` among `parent`'s children, or the top-level
@@ -166,6 +235,7 @@ impl Editing {
             kind: item.kind,
             part: Part::Title,
             field: TextField::new(String::new()),
+            comment: None,
             before,
             origin: Origin::New {
                 item,
@@ -223,18 +293,33 @@ impl Editing {
             }
         }
         self.field = edited;
-        let item = document
-            .node(self.id)
-            .and_then(Node::item)
-            .expect("the edited item stays in the document while it is edited");
+        self.show(document);
+        Ok(())
+    }
+
+    /// Puts the text back as it was before editing, or empty for a comment or an item added for
+    /// editing, so that finishing makes no change.
+    pub(super) fn revert(&mut self, document: &mut Document) {
+        let text = match (&self.origin, &self.comment) {
+            (Origin::Existing(item), None | Some(Comment { added: false, .. })) => {
+                text(item, self.part)
+            }
+            _ => "",
+        };
+        self.field = TextField::new(text.to_owned());
+        self.show(document);
+    }
+
+    /// Shows the text edited as the item's part edited.
+    fn show(&self, document: &mut Document) {
+        let (Origin::Existing(item) | Origin::New { item, .. }) = &self.origin;
         let item = self.with_text(item, self.field.text().to_owned());
         document
             .set(self.id, item)
             .expect("an item keeps its kind when its text changes");
-        Ok(())
     }
 
-    /// `item` with `text` as the part edited.
+    /// `item`, as it was before editing, with `text` as the part edited.
     fn with_text(&self, item: &Item, text: String) -> Item {
         match self.part {
             Part::Title => Item {
@@ -249,19 +334,38 @@ impl Editing {
                 note: text,
                 ..item.clone()
             },
+            Part::Comment(index) => {
+                let Comment { stamp, added } = self
+                    .comment
+                    .as_ref()
+                    .expect("a comment is edited with how it is written");
+                let mut comments = item.comments.clone();
+                let line = format!("{stamp}{text}");
+                if *added {
+                    comments.insert(index, line);
+                } else if let Some(comment) = comments.get_mut(index) {
+                    *comment = line;
+                }
+                Item {
+                    comments,
+                    ..item.clone()
+                }
+            }
         }
     }
 
     /// Ends editing: puts the document back as it was before and returns the change the session
-    /// made, to apply as one step, with the selection from before it. A title is trimmed: a new
-    /// item left empty is not added, and an existing one emptied keeps its title, so either
-    /// makes no change. A description or a note loses the space and empty lines at its end,
-    /// which the file does not keep, so emptying it removes it. Text left as it was makes no
-    /// change.
+    /// made, to apply as one step, with the selection from before it. A title or a comment is
+    /// trimmed: a new item or comment left empty is not added, and an existing one emptied keeps
+    /// its text, so either makes no change. A description or a note loses the space and empty
+    /// lines at its end, which the file does not keep, so emptying it removes it. Text left as it
+    /// was makes no change.
     pub(super) fn finish(self, document: &mut Document) -> (Transaction, Selection) {
-        let text = match self.part {
-            Part::Title => self.field.text().trim(),
-            Part::Description | Part::Note => self.field.text().trim_end(),
+        let one_line = matches!(self.part, Part::Title | Part::Comment(_));
+        let text = if one_line {
+            self.field.text().trim()
+        } else {
+            self.field.text().trim_end()
         };
         let transaction = match &self.origin {
             Origin::Existing(item) => {
@@ -269,7 +373,7 @@ impl Editing {
                 document
                     .set(self.id, item.clone())
                     .expect("an item keeps its kind when its text changes");
-                if (self.part == Part::Title && text.is_empty()) || after == *item {
+                if (one_line && text.is_empty()) || after == *item {
                     Transaction::default()
                 } else {
                     Transaction::new(vec![Op::Set {
@@ -310,6 +414,10 @@ fn text(item: &Item, part: Part) -> &str {
         Part::Title => &item.title,
         Part::Description => &item.description,
         Part::Note => &item.note,
+        Part::Comment(index) => item
+            .comments
+            .get(index)
+            .map_or("", |line| comments::split(line).1),
     }
 }
 

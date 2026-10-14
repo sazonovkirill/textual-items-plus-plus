@@ -1,6 +1,7 @@
 //! The Domain layer: the data model and the rules that change it, free of storage and terminal
 //! concerns.
 
+pub mod comments;
 pub mod dates;
 mod document;
 mod item;

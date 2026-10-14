@@ -25,7 +25,7 @@ use std::{
 };
 
 use crossterm::event::{Event, KeyModifiers};
-use jiff::civil::Date;
+use jiff::civil::{Date, DateTime};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Position, Rect},
@@ -42,14 +42,15 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
     app::{
-        self, Command, DateInput, Destination, Direction, EditInput, Effect, Message, Opened, Part,
-        PickerInput, Place, Side, State, Stop, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
+        self, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput, Effect,
+        Focus, Message, Opened, Part, PickerInput, Place, Side, State, Stop, TagEntry, TagMark,
+        TagsFor, TagsView, TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
 };
-use attachments::{AttachmentsPanel, PanelKey};
+use attachments::{AttachmentsPanel, PanelKey, Scroll, Scrolled};
 use clipboard::Clipboard;
 use conflict::ConflictPrompt;
 use container::ContainerPane;
@@ -85,8 +86,8 @@ pub struct Tui {
     icons: IconSet,
     /// The first line of the container pane's content on screen.
     top: usize,
-    /// The first line of the attachments panel's content on screen.
-    panel_top: usize,
+    /// How the attachments panel is scrolled.
+    panel: Scrolled,
     /// Where the app was last drawn.
     area: Rect,
     quit: bool,
@@ -101,19 +102,22 @@ pub struct Tui {
     shortcuts_scroll: (usize, Option<Window>),
     /// How many lines a page of the shortcuts panel was at the last draw, which its keys scroll.
     shortcuts_page: usize,
+    /// The local time now, which stamps comments (FR-ATT-04).
+    clock: fn() -> DateTime,
 }
 
 impl Tui {
-    /// The app on `state`, without a file, in the default theme and icons (D-30).
+    /// The app on `state`, without a file, in the default theme and icons (D-30), its local time
+    /// read from `clock`.
     #[must_use]
-    pub fn new(state: State, today: Date) -> Self {
+    pub fn new(state: State, today: Date, clock: fn() -> DateTime) -> Self {
         Self {
             state,
             keymap: Keymap::default(),
             theme: BuiltIn::default().colors(),
             icons: IconSet::default(),
             top: 0,
-            panel_top: 0,
+            panel: Scrolled::default(),
             area: Rect::default(),
             quit: false,
             file: None,
@@ -122,6 +126,7 @@ impl Tui {
             keyboard: Keyboard::default(),
             shortcuts_scroll: (0, None),
             shortcuts_page: 1,
+            clock,
         }
     }
 
@@ -154,12 +159,13 @@ impl Tui {
             return Ok(Self::new(
                 State::new(store::demo::document(today), Opened::Demo, today),
                 today,
+                edge.clock,
             ));
         };
         let (file, state) = File::open(path, recovered, today, edge)?;
         Ok(Self {
             file: Some(file),
-            ..Self::new(state, today)
+            ..Self::new(state, today, edge.clock)
         })
     }
 
@@ -248,18 +254,21 @@ impl Tui {
                     edit_keys::description_input(event, self.description_columns())
                 }
                 Part::Note => edit_keys::description_input(event, self.note_columns()),
+                Part::Comment(_) => edit_keys::comment_input(event),
             }
             .map(Message::Edit)
             .or_else(|| self.global(event))
         } else if self.state.attachments().is_some() {
             match attachments::panel_input(event) {
                 Some(PanelKey::Input(input)) => Some(Message::Attachments(input)),
-                Some(PanelKey::Scroll(scroll)) => {
-                    let [panes, ..] = self.layout(self.area);
-                    let page = AttachmentsPanel::page(AttachmentsPanel::area(self.strip(panes)));
-                    self.panel_top = scroll.from(self.panel_top, page);
-                    None
+                Some(PanelKey::AddComment) => {
+                    Some(Message::Attachments(AttachmentsInput::AddComment((self
+                        .clock)(
+                    ))))
                 }
+                Some(PanelKey::Scroll(scroll)) => self
+                    .panel_scroll(scroll)
+                    .map(|motion| Message::Attachments(AttachmentsInput::Select(motion))),
                 None => self.global(event),
             }
         } else if self.state.date_prompt().is_some() {
@@ -278,12 +287,26 @@ impl Tui {
         }
     }
 
+    /// Scrolls the open attachments panel as `scroll` says, through what is selected while it
+    /// goes past the panel's edge, and returns the motion that selects another otherwise
+    /// (FR-ATT-01).
+    fn panel_scroll(&mut self, scroll: Scroll) -> Option<Focus> {
+        let view = self.state.attachments()?;
+        let [panes, ..] = self.layout(self.area);
+        let area = AttachmentsPanel::area(self.strip(panes));
+        let selected = AttachmentsPanel::new(view, &self.theme, self.icons).selected_lines(area);
+        let (top, motion) = scroll.from(self.panel.top, AttachmentsPanel::page(area), selected);
+        self.panel.top = top;
+        motion
+    }
+
     /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
     /// it: a description or a note being edited takes it whole; a title being edited takes a
-    /// single line, while several lines end editing and paste as items below; the query of the
-    /// open Navigator, Move to or tag picker and the open date prompt take it with its line breaks
-    /// as spaces; otherwise the items it holds paste below the focus. The conflict prompt takes
-    /// none, nor does the attachments panel while its note is not edited.
+    /// single line, while several lines end editing and paste as items below; a comment being
+    /// edited, the query of the open Navigator, Move to or tag picker and the open date prompt
+    /// take it with its line breaks as spaces; otherwise the items it holds paste below the
+    /// focus. The conflict prompt takes none, nor does the attachments panel while nothing in it
+    /// is edited.
     fn paste(&mut self, text: &str) {
         let panel = self.state.attachments().is_some() && self.state.editing().is_none();
         if self.state.conflict().is_some() || panel {
@@ -294,6 +317,11 @@ impl Tui {
         let part = self.state.editing().map(|(_, part, _)| part);
         if matches!(part, Some(Part::Description | Part::Note)) {
             for c in text.replace("\r\n", "\n").replace('\r', "\n").chars() {
+                self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
+            }
+        } else if matches!(part, Some(Part::Comment(_))) {
+            for c in text.replace("\r\n", "\n").chars() {
+                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
                 self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
             }
         } else if part.is_some() && !several {
@@ -370,7 +398,7 @@ impl Tui {
         let [panes, prompt, _] = self.layout(area);
         if let Some(view) = self.state.attachments() {
             return AttachmentsPanel::new(view, &self.theme, self.icons)
-                .caret(AttachmentsPanel::area(self.strip(panes)), self.panel_top);
+                .caret(AttachmentsPanel::area(self.strip(panes)), self.panel.top);
         }
         if let Some(view) = self.state.date_prompt() {
             return Some(DatePromptPanel::new(&view, &self.theme).caret(prompt));
@@ -754,9 +782,9 @@ impl Widget for &mut Tui {
             Some(view) => AttachmentsPanel::new(view, &self.theme, self.icons).render(
                 self.strip(panes),
                 buf,
-                &mut self.panel_top,
+                &mut self.panel,
             ),
-            None => self.panel_top = 0,
+            None => self.panel = Scrolled::default(),
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
             let (theirs, mine) = if view.diff {

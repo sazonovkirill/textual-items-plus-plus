@@ -6,8 +6,10 @@ use jiff::civil::Date;
 
 use super::{
     Command, DateInput, DatePromptView, Direction, EditInput, Effect, Go, History, Notice, Part,
-    Picked, Picker, PickerInput, PickerView, Selection, Side, SidebarView, TextField, Whose,
-    adding, clipboard, completion,
+    Picked, Picker, PickerInput, PickerView, Selected, Selection, Side, SidebarView, TextField,
+    Whose, adding,
+    attachments::Panel,
+    clipboard, completion,
     container::{self, Row},
     converting,
     date_prompt::{self, DatePrompt},
@@ -53,8 +55,8 @@ pub struct State {
     /// The item whose title, description or note is edited, in edit mode (FR-EDIT-01), in the
     /// sidebar while it has the keys.
     editing: Option<Editing>,
-    /// The item the attachments panel is on, while it is open (FR-ATT-01).
-    pub(super) panel: Option<ItemId>,
+    /// The attachments panel, while it is open (FR-ATT-01).
+    pub(super) panel: Option<Panel>,
     sidebar: Sidebar,
     /// Whether the shortcuts panel shows (FR-KEY-03).
     pub(super) shortcuts: bool,
@@ -704,6 +706,10 @@ impl State {
             EditInput::Done => {
                 self.finish_editing();
             }
+            EditInput::Cancel => {
+                editing.revert(&mut self.document);
+                self.finish_editing();
+            }
         }
     }
 
@@ -742,7 +748,7 @@ impl State {
     }
 
     /// Applies `transaction` as one step to undo, moving the focus on when its row leaves.
-    fn change(&mut self, transaction: Transaction) {
+    pub(super) fn change(&mut self, transaction: Transaction) {
         self.change_focusing(transaction, self.pane().selection.focused());
     }
 
@@ -866,7 +872,12 @@ impl State {
                 self.change(transaction);
             }
             (Command::Tags, Some(Shown::Container(id))) => self.open_tags_for(vec![id]),
-            (Command::OpenNote(_), Some(Shown::Container(id))) => self.open_panel(id),
+            (Command::OpenNote(_), Some(Shown::Container(id))) => {
+                self.open_panel(id, Selected::Note);
+            }
+            (Command::OpenComments(_), Some(Shown::Container(id))) => {
+                self.open_panel(id, Selected::Comment(0));
+            }
             _ => {}
         }
         true

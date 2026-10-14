@@ -1,9 +1,10 @@
-//! The attachments panel in the terminal (FR-ATT-01–03): the keys that drive it and the panel
+//! The attachments panel in the terminal (FR-ATT-01–04): the keys that drive it and the panel
 //! itself, over the right side of the screen from its top to the status line, as
 //! taskpaper-terminal draws it
-//! ([attachments.md §3, §4](../../../specs/reference/taskpaper-terminal/specs/attachments.md#3-attachments-panel-fr-att-03)):
+//! ([attachments.md §3–5](../../../specs/reference/taskpaper-terminal/specs/attachments.md#3-attachments-panel-fr-att-03)):
 //! a border titled with the item, the Note section under its heading, the note rendered as
-//! Markdown or, while it is edited, as typed, and a hint naming the keys.
+//! Markdown or, while it is edited, as typed, the Comments section under its heading, newest
+//! first, the selected one of them on the current-line band, and a hint naming the keys.
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
@@ -19,22 +20,27 @@ use super::{
     keymap::{self, Key},
     markdown::{self, Format, NoteLine},
 };
-use crate::app::{AttachmentsInput, AttachmentsView};
+use crate::{
+    app::{AttachmentsInput, AttachmentsView, Focus, Selected},
+    domain::comments,
+};
 
 /// The narrowest and widest the panel is drawn, screen width allowing.
 const WIDTH: (u16, u16) = (40, 72);
 
-/// What a key of the open panel does: something the core does, or scrolling, which only the
-/// frontend knows how far goes.
+/// What a key of the open panel does: something the core does, adding a comment, which takes the
+/// frontend's clock, or a motion, which only the frontend knows how far goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PanelKey {
     /// Gives the core this input.
     Input(AttachmentsInput),
-    /// Scrolls the content.
+    /// Adds a comment stamped now.
+    AddComment,
+    /// Scrolls through what is selected, or selects another.
     Scroll(Scroll),
 }
 
-/// How far the panel's content scrolls.
+/// How far a motion of the panel goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Scroll {
     /// This many lines down, or up when negative.
@@ -48,21 +54,40 @@ pub(super) enum Scroll {
 }
 
 impl Scroll {
-    /// The first line shown after scrolling from `top` with pages of `page` lines. The bottom is
-    /// as far as there is; drawing keeps the content in view.
-    pub(super) fn from(self, top: usize, page: usize) -> usize {
-        match self {
-            Self::Lines(lines) => top.saturating_add_signed(lines),
-            Self::Pages(pages) => {
-                top.saturating_add_signed(pages.saturating_mul(page.cast_signed()))
-            }
-            Self::Top => 0,
-            Self::Bottom => usize::MAX,
+    /// Where the motion goes from the content shown from line `top`, with pages of `page` lines,
+    /// when what is selected takes lines `selected`: the first line shown, and what else to
+    /// select. While what is selected goes past the panel's edge that way the content scrolls
+    /// through it, no further than its end; otherwise the next or previous is selected, and
+    /// drawing scrolls it into view. The top selects the first with the first line, and the
+    /// bottom the last with the last line, as far as there is; drawing keeps the content in view.
+    pub(super) fn from(
+        self,
+        top: usize,
+        page: usize,
+        selected: (usize, usize),
+    ) -> (usize, Option<Focus>) {
+        let lines = match self {
+            Self::Lines(lines) => lines,
+            Self::Pages(pages) => pages.saturating_mul(page.cast_signed()),
+            Self::Top => return (0, Some(Focus::First)),
+            Self::Bottom => return (usize::MAX, Some(Focus::Last)),
+        };
+        let (start, end) = selected;
+        let (beyond, focus) = if lines < 0 {
+            (top.saturating_sub(start), Focus::Previous)
+        } else {
+            (end.saturating_sub(top + page), Focus::Next)
+        };
+        let lines = lines.unsigned_abs().min(beyond);
+        match (lines, focus) {
+            (0, focus) => (top, Some(focus)),
+            (lines, Focus::Previous) => (top - lines, None),
+            (lines, _) => (top + lines, None),
         }
     }
 }
 
-/// The keys of the open panel while the note is not edited, as taskpaper-terminal's
+/// The keys of the open panel while nothing in it is edited, as taskpaper-terminal's
 /// (keybindings.md §4).
 pub(super) const KEYS: &[(Key, PanelKey)] = &[
     (
@@ -71,11 +96,23 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
     ),
     (
         (KeyModifiers::NONE, KeyCode::Char('e')),
-        PanelKey::Input(AttachmentsInput::EditNote),
+        PanelKey::Input(AttachmentsInput::Edit),
     ),
     (
         (KeyModifiers::NONE, KeyCode::Enter),
-        PanelKey::Input(AttachmentsInput::EditNote),
+        PanelKey::Input(AttachmentsInput::Edit),
+    ),
+    (
+        (KeyModifiers::NONE, KeyCode::Char('d')),
+        PanelKey::Input(AttachmentsInput::Delete),
+    ),
+    (
+        (KeyModifiers::NONE, KeyCode::Delete),
+        PanelKey::Input(AttachmentsInput::Delete),
+    ),
+    (
+        (KeyModifiers::NONE, KeyCode::Char('a')),
+        PanelKey::AddComment,
     ),
     (
         (KeyModifiers::NONE, KeyCode::Char('j')),
@@ -127,8 +164,9 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
     ),
 ];
 
-/// What `event` does in the open panel while the note is not edited: `Esc` closes it, `e` and
-/// `Enter` edit the note, and the motion keys scroll. Only key presses count.
+/// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
+/// `Enter` edit what is selected, `d` and `Delete` delete the selected comment, `a` adds one,
+/// and the motion keys scroll or select. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()
@@ -136,8 +174,26 @@ pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
         .map(|&(_, input)| input)
 }
 
-/// The open panel. Its state is the first line of the content shown, which it keeps within the
-/// content, and on the caret while the note is edited.
+/// The panel's content laid out: its lines, the first line of each of the note and the comments
+/// in the order they show, how many lines it takes, and the line and column of the caret while
+/// something is edited.
+struct Content<'a> {
+    lines: Vec<Line<'a>>,
+    starts: Vec<usize>,
+    total: usize,
+    caret: Option<(usize, usize)>,
+}
+
+/// How the open panel is scrolled: the first line of the content shown, and what was selected
+/// when it was last drawn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Scrolled {
+    pub(super) top: usize,
+    drawn: Option<Selected>,
+}
+
+/// The open panel. Its state is how it is scrolled, which it keeps within the content, on what is
+/// selected and on the caret while something is edited.
 pub(super) struct AttachmentsPanel<'a> {
     view: AttachmentsView<'a>,
     theme: &'a Theme,
@@ -180,18 +236,18 @@ impl<'a> AttachmentsPanel<'a> {
         usize::from(Self::content(area).height).max(1)
     }
 
-    /// The columns the note being edited wraps in when the panel is drawn over `area`: all the
+    /// The columns the text being edited wraps in when the panel is drawn over `area`: all the
     /// content has but the last, kept for the caret at the end of a line.
     pub(super) fn columns(area: Rect) -> usize {
         usize::from(Self::content(area).width).saturating_sub(1)
     }
 
     /// Where the terminal's cursor goes when the panel is drawn over `area` scrolled to line
-    /// `top`: at the caret of the note being edited, while its line is in view.
+    /// `top`: at the caret of the text being edited, while its line is in view.
     pub(super) fn caret(&self, area: Rect, top: usize) -> Option<Position> {
         let content = Self::content(area);
-        let (_, (line, column)) = self.edited(Self::columns(area))?;
-        let y = (line + 1).checked_sub(top)?;
+        let (line, column) = self.laid_out(area).caret?;
+        let y = line.checked_sub(top)?;
         (y < usize::from(content.height)).then(|| {
             let offset = |n: usize| u16::try_from(n).unwrap_or(u16::MAX);
             Position::new(
@@ -201,40 +257,104 @@ impl<'a> AttachmentsPanel<'a> {
         })
     }
 
-    /// The note being edited wrapped in `columns`, and the caret's line and column among its
-    /// lines, while it is edited.
-    fn edited(&self, columns: usize) -> Option<(Vec<Line<'a>>, (usize, usize))> {
-        let field = self.view.editing?;
-        Some(field::wrapped(field, columns, self.theme))
+    /// The content lines from the first to past the last of what is selected when the panel is
+    /// drawn over `area`. The last of the note and the comments runs to the end of the content.
+    pub(super) fn selected_lines(&self, area: Rect) -> (usize, usize) {
+        self.selected_in(&self.laid_out(area))
     }
 
-    /// The Note section laid out in `area`: its heading, then the note, rendered and wrapping,
-    /// or a dimmed "No note"; while it is edited, its text as typed, wrapped as the field wraps
-    /// it, and the content's line with the caret.
-    fn section(&self, area: Rect) -> (Paragraph<'a>, Option<usize>) {
-        let heading = Line::styled(
-            format!("{} Note", Icon::Notes.glyph(self.icons)),
+    /// The lines of `content` from the first to past the last of what is selected.
+    fn selected_in(&self, content: &Content<'a>) -> (usize, usize) {
+        let at = match self.view.selected {
+            Selected::Note => 0,
+            Selected::Comment(index) => index + 1,
+        };
+        let start = content.starts.get(at).copied().unwrap_or_default();
+        let end = content.starts.get(at + 1).copied().unwrap_or(content.total);
+        (start, end)
+    }
+
+    /// The content laid out in the panel drawn over `area`: the Note section, its heading, then
+    /// the note, rendered and wrapping, or a dimmed "No note", or while it is edited its text as
+    /// typed, wrapped as the field wraps it; a blank line; the Comments section, its heading,
+    /// then each comment, its timestamp dimmed and its text with its inline formatting, or a
+    /// dimmed "No comments", the one edited as its timestamp above its text as typed.
+    fn laid_out(&self, area: Rect) -> Content<'a> {
+        let width = Self::content(area).width;
+        let columns = Self::columns(area);
+        // Lines wrap one by one, so the lines so far take what each takes.
+        let mut counted = (0, 0);
+        let mut height = |lines: &[Line<'a>]| {
+            let (measured, total) = counted;
+            let more = Paragraph::new(lines.get(measured..).unwrap_or_default().to_vec())
+                .wrap(Wrap { trim: false })
+                .line_count(width);
+            counted = (lines.len(), total + more);
+            counted.1
+        };
+        let dim = Style::new().fg(self.theme.dim_text);
+        let item = self.view.item;
+        let edited = self
+            .view
+            .editing
+            .map(|field| field::wrapped(field, columns, self.theme));
+        let editing = |at| edited.as_ref().filter(|_| self.view.selected == at);
+        let mut lines = vec![self.heading(Icon::Notes, "Note")];
+        let mut caret = None;
+        if let Some((field, (line, column))) = editing(Selected::Note) {
+            caret = Some((line + 1, *column));
+            lines.extend(field.iter().cloned());
+        } else {
+            if item.note.is_empty() {
+                lines.push(Line::styled("No note", dim));
+            }
+            lines.extend(
+                markdown::note_lines(&item.note)
+                    .into_iter()
+                    .map(|line| self.line(line)),
+            );
+        }
+        lines.push(Line::default());
+        let mut starts = vec![0, height(&lines)];
+        lines.push(self.heading(Icon::Comments, "Comments"));
+        if item.comments.is_empty() {
+            lines.push(Line::styled("No comments", dim));
+        }
+        for (index, comment) in item.comments.iter().enumerate() {
+            if index > 0 {
+                starts.push(height(&lines));
+            }
+            let (stamp, text) = comments::split(comment);
+            if let Some((field, (line, column))) = editing(Selected::Comment(index)) {
+                if !stamp.is_empty() {
+                    lines.push(Line::styled(stamp.trim_end(), dim));
+                }
+                caret = Some((height(&lines) + line, *column));
+                lines.extend(field.iter().cloned());
+            } else {
+                let mut line = Line::from(Span::styled(stamp, dim));
+                line.spans.extend(self.formatted(text, Style::new()));
+                lines.push(line);
+            }
+        }
+        if item.comments.is_empty() {
+            starts.pop();
+        }
+        Content {
+            total: height(&lines),
+            lines,
+            starts,
+            caret,
+        }
+    }
+
+    /// A section's heading, with its icon, aligned to the right in the headers color.
+    fn heading(&self, icon: Icon, name: &str) -> Line<'a> {
+        Line::styled(
+            format!("{} {name}", icon.glyph(self.icons)),
             Style::new().fg(self.theme.headers).bold(),
         )
-        .right_aligned();
-        let mut lines = vec![heading];
-        if let Some((edited, (line, _))) = self.edited(Self::columns(area)) {
-            lines.extend(edited);
-            return (Paragraph::new(lines), Some(line + 1));
-        }
-        let note = &self.view.item.note;
-        if note.is_empty() {
-            lines.push(Line::styled(
-                "No note",
-                Style::new().fg(self.theme.dim_text),
-            ));
-        }
-        lines.extend(
-            markdown::note_lines(note)
-                .into_iter()
-                .map(|line| self.line(line)),
-        );
-        (Paragraph::new(lines).wrap(Wrap { trim: false }), None)
+        .right_aligned()
     }
 
     /// A line of the note as Markdown shows it: a heading bold, the first level also
@@ -310,12 +430,13 @@ impl<'a> AttachmentsPanel<'a> {
             .collect()
     }
 
-    /// The hint naming the keys of the note, or of the note being edited.
+    /// The hint naming the keys of what is selected, or of what is edited.
     fn hint(&self) -> Line<'static> {
-        let keys = if self.view.editing.is_some() {
-            "Enter new line · Esc done"
-        } else {
-            "e edit · Esc close"
+        let keys = match (self.view.editing, self.view.selected) {
+            (Some(_), Selected::Note) => "Enter new line · Esc done",
+            (Some(_), Selected::Comment(_)) => "Enter done · Esc cancel",
+            (None, Selected::Note) => "a add · e edit · Esc close",
+            (None, Selected::Comment(_)) => "a add · e edit · d del · Esc close",
         };
         Line::styled(keys, Style::new().fg(self.theme.dim_text))
     }
@@ -327,11 +448,15 @@ fn drawable(text: &str) -> String {
 }
 
 impl StatefulWidget for AttachmentsPanel<'_> {
-    type State = usize;
+    type State = Scrolled;
 
-    /// Draws the panel over the right side of `area`, its content from line `top`, which it keeps
-    /// within the content and, while the note is edited, on the caret's line.
-    fn render(self, area: Rect, buf: &mut Buffer, top: &mut usize) {
+    /// Draws the panel over the right side of `area`, its content from line `scrolled.top`, which
+    /// it keeps within the content and on what is selected, scrolling a newly selected one into
+    /// view from its start when it is taller than the panel, and while something is edited on the
+    /// caret's line.
+    fn render(self, area: Rect, buf: &mut Buffer, scrolled: &mut Scrolled) {
+        let newly = scrolled.drawn.replace(self.view.selected) != Some(self.view.selected);
+        let top = &mut scrolled.top;
         let area = Self::area(area);
         let theme = self.theme;
         Clear.render(area, buf);
@@ -344,14 +469,26 @@ impl StatefulWidget for AttachmentsPanel<'_> {
         let inner = frame.inner(area);
         frame.render(area, buf);
         let content = Self::content(area);
-        let (section, caret) = self.section(area);
+        let laid_out = self.laid_out(area);
         let page = Self::page(area);
-        let total = section.line_count(content.width);
-        *top = (*top).min(total.saturating_sub(page));
-        if let Some(line) = caret {
+        let (start, end) = self.selected_in(&laid_out);
+        *top = (*top).min(laid_out.total.saturating_sub(page));
+        if let Some((line, _)) = laid_out.caret {
             *top = (*top).clamp((line + 1).saturating_sub(page), line);
+        } else if end - start > page {
+            if newly || end <= *top || start >= *top + page {
+                *top = start;
+            }
+        } else {
+            *top = (*top).clamp(end.saturating_sub(page), start);
         }
-        section
+        let band = Style::new().bg(theme.current_line);
+        for line in start.max(*top)..end.min(*top + page) {
+            let y = content.y + u16::try_from(line - *top).unwrap_or(u16::MAX);
+            buf.set_style(Rect::new(inner.x, y, inner.width, 1), band);
+        }
+        Paragraph::new(laid_out.lines)
+            .wrap(Wrap { trim: false })
             .scroll((u16::try_from(*top).unwrap_or(u16::MAX), 0))
             .render(content, buf);
         if inner.height >= 2 {
@@ -377,22 +514,33 @@ mod tests {
         Event::Key(KeyEvent::new(code, modifiers))
     }
 
-    // FR-ATT-02, FR-ATT-03
+    // FR-ATT-02, FR-ATT-03, FR-ATT-04
     #[test]
-    fn escape_closes_e_and_enter_edit_and_the_motion_keys_scroll() {
+    fn escape_closes_e_and_enter_edit_d_deletes_a_adds_and_the_motion_keys_scroll() {
         let none = KeyModifiers::NONE;
         for (code, modifiers, key) in [
             (KeyCode::Esc, none, PanelKey::Input(AttachmentsInput::Close)),
             (
                 KeyCode::Char('e'),
                 none,
-                PanelKey::Input(AttachmentsInput::EditNote),
+                PanelKey::Input(AttachmentsInput::Edit),
             ),
             (
                 KeyCode::Enter,
                 none,
-                PanelKey::Input(AttachmentsInput::EditNote),
+                PanelKey::Input(AttachmentsInput::Edit),
             ),
+            (
+                KeyCode::Char('d'),
+                none,
+                PanelKey::Input(AttachmentsInput::Delete),
+            ),
+            (
+                KeyCode::Delete,
+                none,
+                PanelKey::Input(AttachmentsInput::Delete),
+            ),
+            (KeyCode::Char('a'), none, PanelKey::AddComment),
             (KeyCode::Char('j'), none, PanelKey::Scroll(Scroll::Lines(1))),
             (KeyCode::Up, none, PanelKey::Scroll(Scroll::Lines(-1))),
             (
@@ -417,14 +565,35 @@ mod tests {
         assert_eq!(panel_input(&press(KeyCode::Char('x'), none)), None);
     }
 
+    // FR-ATT-01
     #[test]
-    fn scrolling_moves_by_lines_and_pages_and_goes_to_either_end() {
-        assert_eq!(Scroll::Lines(1).from(3, 10), 4);
-        assert_eq!(Scroll::Lines(-5).from(3, 10), 0);
-        assert_eq!(Scroll::Pages(2).from(3, 10), 23);
-        assert_eq!(Scroll::Pages(-1).from(3, 10), 0);
-        assert_eq!(Scroll::Top.from(3, 10), 0);
-        assert_eq!(Scroll::Bottom.from(3, 10), usize::MAX);
+    fn motions_scroll_through_what_is_selected_past_the_edge_else_select_another() {
+        let tall = (2, 40);
+        assert_eq!(Scroll::Lines(1).from(3, 10, tall), (4, None));
+        assert_eq!(Scroll::Pages(2).from(3, 10, tall), (23, None));
+        assert_eq!(Scroll::Pages(3).from(3, 10, tall), (30, None), "to its end");
+        assert_eq!(Scroll::Lines(1).from(30, 10, tall), (30, Some(Focus::Next)));
+        assert_eq!(Scroll::Lines(-1).from(3, 10, tall), (2, None));
+        assert_eq!(
+            Scroll::Pages(-1).from(5, 10, tall),
+            (2, None),
+            "to its start"
+        );
+        assert_eq!(
+            Scroll::Lines(-5).from(2, 10, tall),
+            (2, Some(Focus::Previous))
+        );
+        let short = (4, 6);
+        assert_eq!(Scroll::Lines(1).from(3, 10, short), (3, Some(Focus::Next)));
+        assert_eq!(
+            Scroll::Pages(-1).from(3, 10, short),
+            (3, Some(Focus::Previous))
+        );
+        assert_eq!(Scroll::Top.from(3, 10, short), (0, Some(Focus::First)));
+        assert_eq!(
+            Scroll::Bottom.from(3, 10, short),
+            (usize::MAX, Some(Focus::Last))
+        );
     }
 
     /// Every row of `buf`, without trailing spaces.
@@ -440,32 +609,49 @@ mod tests {
             .collect()
     }
 
-    /// The panel on an item titled `Milk` with note `note`, edited in `editing` if given, drawn
-    /// in Plain icons over `width` × `height` cells from line `top`; the rows, the line drawn
-    /// from and the caret.
+    /// The panel on an item titled `Milk` with note `note`, its note selected and edited in
+    /// `editing` if given, drawn in Plain icons over `width` × `height` cells from line `top`;
+    /// the rows, the line drawn from and the caret.
     fn draw(
         note: &str,
         editing: Option<&TextField>,
-        (width, height): (u16, u16),
+        size: (u16, u16),
         top: usize,
     ) -> (Buffer, usize, Option<Position>) {
         let item = Item {
             note: note.to_owned(),
             ..Item::new(ItemKind::Task, "Milk")
         };
+        draw_item(&item, Selected::Note, editing, size, top)
+    }
+
+    /// The panel on `item` with `selected` selected and edited in `editing` if given, drawn in
+    /// Plain icons over `width` × `height` cells from line `top`; the rows, the line drawn from
+    /// and the caret.
+    fn draw_item(
+        item: &Item,
+        selected: Selected,
+        editing: Option<&TextField>,
+        (width, height): (u16, u16),
+        top: usize,
+    ) -> (Buffer, usize, Option<Position>) {
         let theme = BuiltIn::default().colors();
         let view = AttachmentsView {
             id: ItemId::new(1),
-            item: &item,
+            item,
+            selected,
             editing,
         };
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        let mut top = top;
-        AttachmentsPanel::new(view, &theme, IconSet::Plain).render(area, &mut buf, &mut top);
+        let mut scrolled = Scrolled {
+            top,
+            drawn: Some(selected),
+        };
+        AttachmentsPanel::new(view, &theme, IconSet::Plain).render(area, &mut buf, &mut scrolled);
         let caret = AttachmentsPanel::new(view, &theme, IconSet::Plain)
-            .caret(AttachmentsPanel::area(area), top);
-        (buf, top, caret)
+            .caret(AttachmentsPanel::area(area), scrolled.top);
+        (buf, scrolled.top, caret)
     }
 
     // FR-ATT-01
@@ -517,10 +703,10 @@ mod tests {
                 "│   code                               │",
                 "│  indented                            │",
                 "│                                      │",
+                "│                           ❞ Comments │",
+                "│ No comments                          │",
                 "│                                      │",
-                "│                                      │",
-                "│                                      │",
-                "│ e edit · Esc close                   │",
+                "│ a add · e edit · Esc close           │",
                 "└──────────────────────────────────────┘",
             ]
         );
@@ -564,14 +750,14 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let (buf, top, _) = draw(&note, None, (40, 8), usize::MAX);
-        assert_eq!(top, 7, "eleven lines, four in view");
+        assert_eq!(top, 10, "fourteen lines, four in view");
         assert_eq!(
             rows(&buf)[1..5].to_vec(),
             [
-                "│ line 7                               │",
-                "│ line 8                               │",
-                "│ line 9                               │",
                 "│ line 10                              │",
+                "│                                      │",
+                "│                           ❞ Comments │",
+                "│ No comments                          │",
             ]
         );
         let long = "word ".repeat(12);
@@ -614,6 +800,7 @@ mod tests {
                 AttachmentsView {
                     id: ItemId::new(1),
                     item: &Item::new(ItemKind::Task, "x"),
+                    selected: Selected::Note,
                     editing: Some(&field),
                 },
                 &BuiltIn::default().colors(),
@@ -625,5 +812,139 @@ mod tests {
         );
         let (_, _, caret) = draw(&text, Some(&field), (40, 4), 0);
         assert_eq!(caret, None, "a panel too short for its content still draws");
+    }
+
+    /// An item titled `Milk` with note `note` and comments `comments`.
+    fn commented(note: &str, comments: &[&str]) -> Item {
+        Item {
+            note: note.to_owned(),
+            comments: comments.iter().map(|&comment| comment.to_owned()).collect(),
+            ..Item::new(ItemKind::Task, "Milk")
+        }
+    }
+
+    // FR-ATT-01, FR-ATT-04
+    #[test]
+    fn comments_show_newest_first_under_their_heading_the_selected_one_on_the_band() {
+        let item = commented(
+            "n",
+            &[
+                "[2026-10-05 09:30] **Done**",
+                "plain by hand",
+                "[2026-10-04 18:02] Called",
+            ],
+        );
+        let (buf, top, caret) = draw_item(&item, Selected::Comment(1), None, (40, 12), 0);
+        assert_eq!((top, caret), (0, None));
+        assert_eq!(
+            rows(&buf),
+            [
+                "┌ Milk ────────────────────────────────┐",
+                "│                               ≡ Note │",
+                "│ n                                    │",
+                "│                                      │",
+                "│                           ❞ Comments │",
+                "│ [2026-10-05 09:30] Done              │",
+                "│ plain by hand                        │",
+                "│ [2026-10-04 18:02] Called            │",
+                "│                                      │",
+                "│                                      │",
+                "│ a add · e edit · d del · Esc close   │",
+                "└──────────────────────────────────────┘",
+            ]
+        );
+        let theme = BuiltIn::default().colors();
+        assert_eq!(buf[(2, 5)].fg, theme.dim_text, "the timestamp is dimmed");
+        assert!(
+            buf[(21, 5)].modifier.contains(Modifier::BOLD),
+            "inline Markdown"
+        );
+        let banded = |y: u16| (1..39).all(|x| buf[(x, y)].bg == theme.current_line);
+        assert!(banded(6));
+        assert!(!banded(5) && !banded(7) && !banded(2));
+        let (buf, ..) = draw_item(&item, Selected::Comment(0), None, (40, 12), 0);
+        assert!(
+            (4..6).all(|y| buf[(1, y)].bg == theme.current_line),
+            "the first comment takes the heading with it"
+        );
+        let (buf, ..) = draw_item(&item, Selected::Note, None, (40, 12), 0);
+        assert!((1..4).all(|y| buf[(1, y)].bg == theme.current_line));
+        assert_ne!(buf[(1, 4)].bg, theme.current_line);
+    }
+
+    // FR-ATT-04
+    #[test]
+    fn a_comment_edited_shows_its_timestamp_above_its_text_as_typed() {
+        let item = commented("", &["[2026-10-05 09:30] Called", "by hand"]);
+        let field = TextField::new("Called them".to_owned());
+        let (buf, _, caret) = draw_item(&item, Selected::Comment(0), Some(&field), (40, 11), 0);
+        assert_eq!(
+            rows(&buf)[4..8].to_vec(),
+            [
+                "│                           ❞ Comments │",
+                "│ [2026-10-05 09:30]                   │",
+                "│ Called them                          │",
+                "│ by hand                              │",
+            ]
+        );
+        assert_eq!(rows(&buf)[9], "│ Enter done · Esc cancel              │");
+        assert_eq!(caret, Some(Position::new(13, 6)));
+        let (buf, _, caret) = draw_item(&item, Selected::Comment(1), Some(&field), (40, 11), 0);
+        assert_eq!(
+            rows(&buf)[6],
+            "│ Called them                          │",
+            "no timestamp"
+        );
+        assert_eq!(caret, Some(Position::new(13, 6)));
+    }
+
+    // FR-ATT-01, FR-ATT-04
+    #[test]
+    fn a_newly_selected_item_scrolls_into_view_from_its_start_when_taller() {
+        let lines = (1..=10).map(|n| format!("c{n}")).collect::<Vec<_>>();
+        let comments: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let item = commented("", &comments);
+        let (_, top, _) = draw_item(&item, Selected::Comment(9), None, (40, 8), 0);
+        assert_eq!(top, 10, "the last comment is the last line in view");
+        let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 8), 10);
+        assert_eq!(top, 0);
+        let note = (1..=10)
+            .map(|n| format!("n{n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let item = commented(&note, &["c"]);
+        let theme = BuiltIn::default().colors();
+        let view = |selected| AttachmentsView {
+            id: ItemId::new(1),
+            item: &item,
+            selected,
+            editing: None,
+        };
+        let area = Rect::new(0, 0, 40, 8);
+        let mut buf = Buffer::empty(area);
+        let mut scrolled = Scrolled {
+            top: 10,
+            drawn: Some(Selected::Comment(0)),
+        };
+        AttachmentsPanel::new(view(Selected::Note), &theme, IconSet::Plain).render(
+            area,
+            &mut buf,
+            &mut scrolled,
+        );
+        assert_eq!(
+            scrolled.top, 0,
+            "from the start of a note taller than the panel"
+        );
+        scrolled.top = 5;
+        AttachmentsPanel::new(view(Selected::Note), &theme, IconSet::Plain).render(
+            area,
+            &mut buf,
+            &mut scrolled,
+        );
+        assert_eq!(scrolled.top, 5, "scrolling through it stays");
+        let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 8), 20);
+        assert_eq!(top, 10, "in view");
+        let panel = AttachmentsPanel::new(view(Selected::Comment(0)), &theme, IconSet::Plain);
+        assert_eq!(panel.selected_lines(area), (12, 14));
     }
 }

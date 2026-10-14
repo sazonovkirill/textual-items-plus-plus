@@ -17,7 +17,7 @@ use super::{
     Theme,
     attachments::{self, PanelKey, Scroll},
     date_prompt,
-    edit_keys::{DESCRIPTION, DESCRIPTION_MOTIONS, EDIT},
+    edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT},
     keymap::{Key, key_label},
     picker, text_keys,
 };
@@ -42,7 +42,7 @@ pub(super) enum Window {
     Picker,
     /// The date prompt.
     DatePrompt,
-    /// The attachments panel, while its note is not edited.
+    /// The attachments panel, while nothing in it is edited.
     Attachments,
     /// Edit mode, editing this part of an item.
     Editing(Part),
@@ -58,7 +58,10 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             named(attachments::KEYS, |key| {
                 match key {
                     PanelKey::Input(AttachmentsInput::Close) => "Close",
-                    PanelKey::Input(AttachmentsInput::EditNote) => "Edit Note",
+                    PanelKey::Input(AttachmentsInput::Delete) => "Delete Comment",
+                    // Edit is the only other input a key gives as it is.
+                    PanelKey::Input(_) => "Edit",
+                    PanelKey::AddComment => "Add Comment",
                     PanelKey::Scroll(Scroll::Lines(lines)) if lines < 0 => "Scroll Up",
                     PanelKey::Scroll(Scroll::Lines(_)) => "Scroll Down",
                     PanelKey::Scroll(Scroll::Pages(pages)) if pages < 0 => "Page Up",
@@ -70,6 +73,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             }),
         ),
         Window::Editing(Part::Title) => ("Editing", named(EDIT, edit_name)),
+        Window::Editing(Part::Comment(_)) => ("Editing Comment", named(COMMENT, edit_name)),
         Window::Editing(part @ (Part::Description | Part::Note)) => {
             let motions = DESCRIPTION_MOTIONS
                 .iter()
@@ -155,6 +159,7 @@ fn edit_name(input: EditInput) -> String {
         EditInput::Text(edit) => text_name(edit),
         EditInput::Next => "Done, Then Next Task".to_owned(),
         EditInput::Done => "Done".to_owned(),
+        EditInput::Cancel => "Cancel".to_owned(),
     }
 }
 
@@ -395,7 +400,7 @@ mod tests {
         assert_eq!(date_name(DateInput::Edit(edit)), "Select All");
     }
 
-    // FR-KEY-03
+    // FR-KEY-03, FR-ATT-04
     #[test]
     fn each_window_lists_its_own_keys_then_the_text_keys_it_leaves() {
         let headings = |window| -> Vec<_> {
@@ -421,7 +426,11 @@ mod tests {
             headings(Window::Editing(Part::Note)),
             [("Editing Note", 14), ("Text", 12)]
         );
-        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 8)]);
+        assert_eq!(
+            headings(Window::Editing(Part::Comment(0))),
+            [("Editing Comment", 2), ("Text", 16)]
+        );
+        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 10)]);
     }
 
     // FR-KEY-03

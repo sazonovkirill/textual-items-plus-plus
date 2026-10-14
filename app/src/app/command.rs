@@ -49,6 +49,8 @@ pub enum Command {
     EditDescription(Whose),
     /// Open the attachments panel on an item's note (FR-ATT-01, FR-ATT-02).
     OpenNote(Whose),
+    /// Open the attachments panel on an item's newest comment (FR-ATT-02, FR-ATT-04).
+    OpenComments(Whose),
     /// Open the date prompt for the selected items' start or due date (FR-DATE-02, FR-OPS-06).
     SetDate(DateKind),
     /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
@@ -133,8 +135,8 @@ pub enum Go {
     View(View),
 }
 
-/// Whose description a [`Command::EditDescription`] edits, or whose note
-/// [`Command::OpenNote`] opens.
+/// Whose description a [`Command::EditDescription`] edits, or whose attachments
+/// [`Command::OpenNote`] and [`Command::OpenComments`] open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Whose {
     /// The focused item's, a description under its row.
@@ -459,6 +461,16 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::OpenComments(Whose::Focused),
+        title: "Open Comments",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::OpenComments(Whose::Shown),
+        title: "Open Container Comments",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::SetDate(DateKind::Start),
         title: "Set Start Date",
         context: Context::Navigate,
@@ -676,6 +688,8 @@ mod tests {
             Command::EditDescription(Whose::Shown),
             Command::OpenNote(Whose::Focused),
             Command::OpenNote(Whose::Shown),
+            Command::OpenComments(Whose::Focused),
+            Command::OpenComments(Whose::Shown),
             Command::Delete,
             Command::Restore,
             Command::EmptyTrash,

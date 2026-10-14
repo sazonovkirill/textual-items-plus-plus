@@ -70,6 +70,7 @@ impl KeyGroup {
             | Command::NewArea(_)
             | Command::EditDescription(_)
             | Command::OpenNote(_)
+            | Command::OpenComments(_)
             | Command::RenameContainer => Self::Creating,
             Command::ToggleCompleted
             | Command::SetDate(_)

@@ -247,7 +247,7 @@ fn the_panel_shows_beside_the_sidebar_and_its_key_works_there() {
     assert!(harness.screen().contains("Inbox"));
 }
 
-// FR-KEY-03, FR-ATT-01, FR-ATT-03
+// FR-KEY-03, FR-ATT-01, FR-ATT-03, FR-ATT-04
 #[test]
 fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
     let mut harness = Harness::new(160, 40);
@@ -258,8 +258,12 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
         [
             "│ Attachments Panel",
             "│  Close                            Esc",
-            "│  Edit Note                   e, Enter",
+            "│  Edit                        e, Enter",
         ]
+    );
+    assert!(
+        lines.contains(&"│  Add Comment                        a".to_owned()),
+        "{lines:#?}"
     );
     assert!(
         lines.contains(&"│  Page Down               Ctrl+D, PgDn".to_owned()),

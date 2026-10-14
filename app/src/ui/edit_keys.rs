@@ -28,6 +28,24 @@ pub(super) fn edit_input(event: &Event) -> Option<EditInput> {
         .or_else(|| text_keys::text_edit(key).map(EditInput::Text))
 }
 
+/// The keys of a comment's input besides the text keys: `Enter` keeps the comment, `Esc` drops
+/// what was typed, as taskpaper-terminal's comment input does (FR-ATT-04).
+pub(super) const COMMENT: &[(Key, EditInput)] = &[
+    ((KeyModifiers::NONE, KeyCode::Enter), EditInput::Done),
+    ((KeyModifiers::NONE, KeyCode::Esc), EditInput::Cancel),
+];
+
+/// What `event` does while a comment is edited: its key, else the change to its text its text
+/// key asks for. Only key presses count.
+pub(super) fn comment_input(event: &Event) -> Option<EditInput> {
+    let key = keymap::key_press(event)?;
+    COMMENT
+        .iter()
+        .find(|(bound, _)| *bound == key)
+        .map(|&(_, input)| input)
+        .or_else(|| text_keys::text_edit(key).map(EditInput::Text))
+}
+
 /// The motion a key gives for text wrapping in the given columns.
 pub(super) type LineMotion = fn(usize) -> Motion;
 
@@ -125,6 +143,25 @@ mod tests {
             KeyEventKind::Release,
         ));
         assert_eq!(edit_input(&release), None);
+    }
+
+    // FR-ATT-04
+    #[test]
+    fn in_a_comment_enter_keeps_it_escape_cancels_and_other_keys_edit_it() {
+        let input = |code, modifiers| comment_input(&press(code, modifiers));
+        assert_eq!(
+            input(KeyCode::Enter, KeyModifiers::NONE),
+            Some(EditInput::Done)
+        );
+        assert_eq!(
+            input(KeyCode::Esc, KeyModifiers::NONE),
+            Some(EditInput::Cancel)
+        );
+        assert_eq!(
+            input(KeyCode::Char('d'), KeyModifiers::NONE),
+            Some(EditInput::Text(TextEdit::Insert('d')))
+        );
+        assert_eq!(input(KeyCode::Char('q'), KeyModifiers::CONTROL), None);
     }
 
     // FR-EDIT-03, FR-EDIT-04

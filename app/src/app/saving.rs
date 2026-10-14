@@ -401,7 +401,7 @@ impl State {
             .date_prompt
             .take()
             .and_then(|prompt| prompt.rematched(exact));
-        self.panel = self.panel.and_then(exact);
+        self.panel = self.rematched_panel(&old, exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
             let rows = view::rows(new, self.shown(), self.today, self.shows_completed());
@@ -483,8 +483,8 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Command, DateInput, EditInput, Go, History, Message, Opened, PickerInput, Side, TextEdit,
-        Whose, update,
+        AttachmentsInput, Command, DateInput, EditInput, Focus, Go, History, Message, Opened,
+        PickerInput, Selected, Side, TextEdit, Whose, update,
         view::{Shown, View},
     };
     use crate::domain::{Item, ItemId, ItemKind, Node, PlacementError, dates::DateKind};
@@ -804,6 +804,53 @@ mod tests {
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
         assert!(state.attachments().is_none(), "a, which it is on, is gone");
+        Ok(())
+    }
+
+    /// [`document`] with `comments` on `a`.
+    fn commented(comments: &[&str]) -> Result<Document, PlacementError> {
+        let mut document = document(&["a"])?;
+        let a = find(&document, "a").ok_or(PlacementError::DoesNotFit)?;
+        let mut item = document
+            .node(a)
+            .and_then(Node::item)
+            .cloned()
+            .ok_or(PlacementError::DoesNotFit)?;
+        item.comments = comments.iter().map(|&comment| comment.to_owned()).collect();
+        document.set(a, item)?;
+        Ok(document)
+    }
+
+    // F-FILE-06, FR-ATT-04
+    #[test]
+    fn a_reload_finds_the_selected_comment_again_as_the_same_line() -> TestResult {
+        let mut state = State::new(
+            commented(&["x", "y"])?,
+            Opened::File("todo.taskpaper".into()),
+            TODAY,
+        );
+        command(&mut state, Command::OpenComments(Whose::Focused));
+        send(
+            &mut state,
+            Message::Attachments(AttachmentsInput::Select(Focus::Last)),
+        );
+        let selected = |state: &State| state.attachments().map(|view| view.selected);
+        assert_eq!(selected(&state), Some(Selected::Comment(1)));
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(commented(&["new", "x", "y"])?)),
+        );
+        assert_eq!(selected(&state), Some(Selected::Comment(2)), "y again");
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(commented(&["new", "x", "z"])?)),
+        );
+        assert_eq!(selected(&state), Some(Selected::Comment(2)), "y is gone");
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(commented(&[])?)),
+        );
+        assert_eq!(selected(&state), Some(Selected::Note));
         Ok(())
     }
 

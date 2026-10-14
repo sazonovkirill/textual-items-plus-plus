@@ -102,10 +102,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // the rows (D-43).
     (Command::EditDescription(Whose::Focused), &["m n"]),
     (Command::EditDescription(Whose::Shown), &["m N"]),
-    // taskpaper-terminal's Open Note opens the attachments panel; with `Alt`, on the container
-    // shown, since `N` is its Open Comments (FR-ATT-02).
+    // taskpaper-terminal's Open Note and Open Comments open the attachments panel; with `Alt`,
+    // on the container shown, since the shifted key is taken (FR-ATT-02).
     (Command::OpenNote(Whose::Focused), &["n"]),
     (Command::OpenNote(Whose::Shown), &["alt+n"]),
+    (Command::OpenComments(Whose::Focused), &["N"]),
+    (Command::OpenComments(Whose::Shown), &["alt+N"]),
     // taskpaper-terminal's date prompt keys, and `t` to start today (D-23).
     (Command::SetDate(DateKind::Start), &["m s"]),
     (Command::SetDate(DateKind::Due), &["m d"]),
@@ -597,6 +599,31 @@ mod tests {
         }
         assert_eq!(keymap.press(&char('g')), None);
         assert_eq!(keymap.press(&char('c')), Some(Command::ShowCompleted));
+    }
+
+    // FR-ATT-02
+    #[test]
+    fn n_opens_the_note_and_shift_n_the_comments_with_alt_for_the_container_shown() {
+        let mut keymap = Keymap::default();
+        let shift = KeyModifiers::SHIFT;
+        let alt = KeyModifiers::ALT;
+        for (event, command) in [
+            (char('n'), Command::OpenNote(Whose::Focused)),
+            (
+                press(KeyCode::Char('n'), alt),
+                Command::OpenNote(Whose::Shown),
+            ),
+            (
+                press(KeyCode::Char('n'), shift),
+                Command::OpenComments(Whose::Focused),
+            ),
+            (
+                press(KeyCode::Char('N'), alt | shift),
+                Command::OpenComments(Whose::Shown),
+            ),
+        ] {
+            assert_eq!(keymap.press(&event), Some(command));
+        }
     }
 
     // FR-EDIT-03, FR-KEY-06

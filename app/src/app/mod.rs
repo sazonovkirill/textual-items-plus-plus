@@ -37,7 +37,7 @@ pub mod view;
 mod visits;
 
 pub use adding::Side;
-pub use attachments::{AttachmentsInput, AttachmentsView};
+pub use attachments::{AttachmentsInput, AttachmentsView, Selected};
 pub use command::{Command, Context, Entry, Go, REGISTRY, Whose};
 pub use container::{Row, rows};
 pub use date_prompt::{DateInput, DatePromptView};

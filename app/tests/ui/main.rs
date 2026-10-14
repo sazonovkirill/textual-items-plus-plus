@@ -2,6 +2,7 @@
 
 mod all;
 mod clipboard;
+mod comments;
 mod completing;
 mod container;
 mod containers;

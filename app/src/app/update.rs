@@ -7,7 +7,7 @@ use jiff::civil::Date;
 
 use super::{
     AttachmentsInput, Command, ConflictSide, DateInput, Direction, EditInput, Notice, OnDisk,
-    PickerInput, Report, Side, State, autosave::Ending,
+    PickerInput, Report, Selected, Side, State, autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -147,7 +147,12 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::GroupIntoSection) => state.group(ItemKind::Section),
         Message::Command(Command::GroupIntoProject) => state.group(ItemKind::Project),
         Message::Command(Command::EditDescription(whose)) => state.edit_description(whose),
-        Message::Command(Command::OpenNote(whose)) => state.open_note(whose),
+        Message::Command(Command::OpenNote(whose)) => {
+            state.open_attachments(whose, Selected::Note);
+        }
+        Message::Command(Command::OpenComments(whose)) => {
+            state.open_attachments(whose, Selected::Comment(0));
+        }
         Message::Command(Command::Tags) => state.open_tags(),
         Message::Command(Command::FilterTags) => state.open_tag_filter(),
         Message::Command(Command::ClearTagFilter) => state.clear_tag_filter(),
