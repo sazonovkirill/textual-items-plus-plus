@@ -22,6 +22,7 @@ mod panes;
 mod quitting;
 mod rearranging;
 mod saving;
+mod search;
 mod selecting;
 mod settings;
 mod shortcuts;

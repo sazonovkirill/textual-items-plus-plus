@@ -5,6 +5,8 @@
 //! to keep the focus in view, and the title being edited, if any, as a text field in its row, or
 //! in the heading for the container's own; a description being edited shows whole where it shows.
 
+use std::{borrow::Cow, ops::Range};
+
 use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
@@ -17,7 +19,7 @@ use ratatui::{
 use super::{Icon, IconSet, Theme, cut, field};
 use crate::{
     app::{
-        self, PaneView, Part, Row, Selection, State, TextField,
+        self, PaneView, Part, Query, Row, Selection, Source, State, TextField,
         view::{self, Group, Heading, Locating, Shown, View},
     },
     domain::{Document, Item, ItemId, ItemKind, Node, Tag, dates},
@@ -45,6 +47,8 @@ pub(super) struct ContainerPane<'a> {
     groups: Vec<Group>,
     selection: &'a Selection,
     editing: Option<(ItemId, Part, &'a TextField)>,
+    /// The words searched for, while the pane shows search results, and whether they are typed.
+    search: Option<(&'a TextField, bool)>,
     /// Whether the pane has the keys, which its focus marker and band show.
     keys: bool,
     /// The local date, which date chips are named relative to.
@@ -76,6 +80,9 @@ impl<'a> ContainerPane<'a> {
             groups: pane.groups(),
             selection: pane.selection(),
             editing: state.editing().filter(|_| keys),
+            search: pane
+                .query()
+                .map(|query| (query, keys && state.search().is_some())),
             keys,
             today,
             theme,
@@ -484,6 +491,16 @@ impl<'a> ContainerPane<'a> {
         }
         if let Some(field) = self.edited(row.id(), Part::Description) {
             pieces.push(self.description_field(field, x, width, Some(index)));
+        } else if let Some(excerpt) = self.excerpt(row.id()) {
+            pieces.push(Piece {
+                x,
+                text: Text::from(excerpt),
+                fit: self.fit(),
+                left: Line::default(),
+                right: Line::default(),
+                row: Some(index),
+                caret: None,
+            });
         } else if !under && let Some(first) = shown.description.lines().next() {
             pieces.push(Piece {
                 x,
@@ -498,11 +515,12 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// The line naming `view` at the top of the pane: its icon, then its name, in the Inbox's
-    /// style.
+    /// style, and for search results the words searched for after it, with their caret and
+    /// selection while they are typed.
     fn view_title(&self, view: View) -> Piece<'a> {
         let style = Style::new().fg(self.theme.primary).bold();
         let icon = super::view_icon(view).glyph(self.icons);
-        Piece {
+        let mut piece = Piece {
             x: u16::try_from(Span::raw(icon).width() + 1).unwrap_or(u16::MAX),
             text: Text::styled(view.title(), style),
             fit: self.fit(),
@@ -510,7 +528,23 @@ impl<'a> ContainerPane<'a> {
             right: Line::default(),
             row: None,
             caret: None,
+        };
+        if let Some((query, typing)) = self.search {
+            let name = format!("{}  ", view.title());
+            let before = Span::raw(name.clone()).width();
+            let mut spans = vec![Span::styled(name, style)];
+            let text = query.text();
+            if typing {
+                spans.extend(field::selected(query, 0..text.len(), self.theme).spans);
+                let caret = text.get(..query.caret()).unwrap_or_default();
+                piece.caret = Some((0, before + Span::raw(caret).width()));
+                piece.fit = Fit::Keep;
+            } else {
+                spans.push(Span::raw(text));
+            }
+            piece.text = Text::from(Line::from(spans));
         }
+        piece
     }
 
     /// The line naming what a view's group is listed under: a project as its title
@@ -550,9 +584,9 @@ impl<'a> ContainerPane<'a> {
     /// The line naming `item` as [`title`](Self::title) draws it, with `after` following its
     /// tags.
     fn title_then(&self, item: &'a Item, row: Option<usize>, after: Option<Span<'a>>) -> Piece<'a> {
-        let mut spans = vec![Span::styled(item.title.as_str(), self.title_style(item))];
+        let mut spans = self.marked(Cow::Borrowed(&item.title), self.title_style(item));
         for tag in &item.tags {
-            spans.push(Span::styled(tag_text(tag), self.tag_style(item)));
+            spans.extend(self.marked(Cow::Owned(tag_text(tag)), self.tag_style(item)));
         }
         spans.extend(after);
         Piece {
@@ -564,6 +598,52 @@ impl<'a> ContainerPane<'a> {
             row,
             caret: None,
         }
+    }
+
+    /// `text` in `style`, with the words searched for in it marked, while the pane shows search
+    /// results (FR-SRCH-01).
+    fn marked(&self, text: Cow<'a, str>, style: Style) -> Vec<Span<'a>> {
+        let ranges = self
+            .search
+            .map(|(query, _)| Query::new(query.text()).ranges(&text))
+            .unwrap_or_default();
+        if ranges.is_empty() {
+            return vec![Span::styled(text, style)];
+        }
+        let mark = style
+            .fg(self.theme.accent)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+        let mut spans = Vec::with_capacity(ranges.len() * 2 + 1);
+        let mut at = 0;
+        let part = |range: Range<usize>| text.get(range).unwrap_or_default().to_owned();
+        for range in ranges {
+            spans.push(Span::styled(part(at..range.start), style));
+            spans.push(Span::styled(part(range.clone()), mark));
+            at = range.end;
+        }
+        spans.push(Span::styled(part(at..text.len()), style));
+        spans
+    }
+
+    /// The line of item `id` outside its title holding a word searched for that its title does
+    /// not, after the icon of where it comes from, the words in it marked, while the pane shows
+    /// search results (FR-SRCH-01).
+    fn excerpt(&self, id: ItemId) -> Option<Line<'a>> {
+        let (query, _) = self.search?;
+        let excerpt = Query::new(query.text()).excerpt(self.document, id)?;
+        let style = self.description_style();
+        let icon = match excerpt.source {
+            Source::Description => None,
+            Source::Note => Some(Icon::Notes),
+            Source::Comment => Some(Icon::Comments),
+            Source::Checklist => Some(Icon::Checklist),
+        };
+        let mut spans: Vec<Span<'a>> = icon
+            .map(|icon| Span::styled(format!("{} ", icon.glyph(self.icons)), style))
+            .into_iter()
+            .collect();
+        spans.extend(self.marked(Cow::Owned(excerpt.text), style));
+        Some(Line::from(spans))
     }
 
     /// The line of `item`, numbered `row` if it is one, while `field` edits its title: its marker,
@@ -831,6 +911,7 @@ mod tests {
             heading: (container != document.inbox()).then_some(container),
             selection: &selection,
             editing: None,
+            search: None,
             keys: true,
             today: TODAY,
             theme: &theme,
@@ -858,6 +939,7 @@ mod tests {
             heading: None,
             selection: &selection,
             editing: Some((id, Part::Title, field)),
+            search: None,
             keys: true,
             today: TODAY,
             theme: &theme,
@@ -886,6 +968,7 @@ mod tests {
             heading: None,
             selection: &selection,
             editing: Some((document.inbox(), Part::Title, &field)),
+            search: None,
             keys: true,
             today: TODAY,
             theme: &theme,
@@ -921,6 +1004,7 @@ mod tests {
             heading: None,
             selection: &selection,
             editing: Some((id, Part::Description, field)),
+            search: None,
             keys: true,
             today: TODAY,
             theme: &theme,
@@ -1151,6 +1235,103 @@ mod tests {
                 "    the new flat",
                 "",
             ]
+        );
+    }
+
+    // FR-SRCH-01
+    #[test]
+    fn search_results_mark_the_words_found_and_show_the_line_holding_one_their_title_lacks() {
+        let mut state = app::State::new(demo(), app::Opened::Demo, TODAY);
+        app::update(
+            &mut state,
+            app::Message::Command(app::Command::Search),
+            TODAY,
+        );
+        for c in "SHARED writing".chars() {
+            let edit = app::SearchInput::Edit(app::TextEdit::Insert(c));
+            app::update(&mut state, app::Message::Search(edit), TODAY);
+        }
+        let theme = BuiltIn::default().colors();
+        let draw = |state: &app::State| {
+            let pane = ContainerPane::new(
+                state,
+                state.pane_view(),
+                true,
+                TODAY,
+                &theme,
+                IconSet::Plain,
+            );
+            let mut buf = Buffer::empty(Rect::new(0, 0, 70, 5));
+            pane.render(buf.area, &mut buf, &mut 0);
+            buf
+        };
+        let buf = draw(&state);
+        assert_eq!(
+            lines(&buf)
+                .iter()
+                .map(|line| line.trim_end())
+                .collect::<Vec<_>>(),
+            [
+                "  ⌕ Search  SHARED writing",
+                "",
+                "▌ - Write the announcement @writing · Work ›      ☑ 1/5 ≡ ❞ 1 ↦ today",
+                "▌   Website › Launch",
+                "▌   ≡ Draft in the shared doc.",
+            ]
+        );
+        let mark = |x: u16, y: u16| buf[(x, y)].modifier.contains(Modifier::UNDERLINED);
+        let marked: String = (0..70)
+            .filter(|&x| mark(x, 2))
+            .map(|x| buf[(x, 2)].symbol().to_owned())
+            .collect();
+        assert_eq!(marked, "writing", "the tag holds a word");
+        let marked: String = (0..70)
+            .filter(|&x| mark(x, 4))
+            .map(|x| buf[(x, 4)].symbol().to_owned())
+            .collect();
+        assert_eq!(
+            marked, "shared",
+            "the note's line holding a word not in the title"
+        );
+        for edit in [app::TextEdit::SelectAll, app::TextEdit::Insert('o')] {
+            let edit = app::SearchInput::Edit(edit);
+            app::update(&mut state, app::Message::Search(edit), TODAY);
+        }
+        for c in "utline".chars() {
+            let edit = app::SearchInput::Edit(app::TextEdit::Insert(c));
+            app::update(&mut state, app::Message::Search(edit), TODAY);
+        }
+        assert_eq!(
+            lines(&draw(&state))[4].trim_end(),
+            "▌   ☑ Outline",
+            "a checklist item holding a word shows under its task"
+        );
+        for (words, line) in [
+            ("screenshots", "▌   ❞ Ask design for screenshots"),
+            ("300", "▌   Keep it under 300 words."),
+        ] {
+            let edit = app::SearchInput::Edit(app::TextEdit::SelectAll);
+            app::update(&mut state, app::Message::Search(edit), TODAY);
+            for c in words.chars() {
+                let edit = app::SearchInput::Edit(app::TextEdit::Insert(c));
+                app::update(&mut state, app::Message::Search(edit), TODAY);
+            }
+            assert_eq!(lines(&draw(&state))[4].trim_end(), line);
+        }
+        app::update(
+            &mut state,
+            app::Message::Search(app::SearchInput::Done),
+            TODAY,
+        );
+        app::update(
+            &mut state,
+            app::Message::Command(app::Command::Search),
+            TODAY,
+        );
+        assert_eq!(
+            draw(&state)[(12, 0)].style().bg,
+            Some(theme.selection),
+            "searching again selects the words, so that typing replaces them"
         );
     }
 

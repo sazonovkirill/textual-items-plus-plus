@@ -15,6 +15,7 @@ mod keymap;
 mod markdown;
 mod panes;
 mod picker;
+mod search;
 mod settings;
 mod shortcuts;
 mod sidebar;
@@ -46,8 +47,8 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput, Effect,
-        Focus, Message, Opened, Part, PickerInput, Place, Selected, Settings, Side, State, Stop,
-        Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
+        Focus, Message, Opened, Part, PickerInput, Place, SearchInput, Selected, Settings, Side,
+        State, Stop, Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
@@ -295,6 +296,10 @@ impl Tui {
             settings::settings_input(event)
                 .map(Message::Settings)
                 .or_else(|| self.global(event))
+        } else if self.state.search().is_some() {
+            search::search_input(event)
+                .map(Message::Search)
+                .or_else(|| self.global(event))
         } else if let Some(to_picker) = self.open_picker() {
             picker_input(event)
                 .map(to_picker)
@@ -361,6 +366,11 @@ impl Tui {
             for c in text.chars() {
                 let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
                 self.update(Message::DatePrompt(DateInput::Edit(TextEdit::Insert(c))));
+            }
+        } else if self.state.search().is_some() {
+            for c in text.chars() {
+                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
+                self.update(Message::Search(SearchInput::Edit(TextEdit::Insert(c))));
             }
         } else if let Some(to_picker) = self.open_picker() {
             for c in text.chars() {
@@ -646,6 +656,8 @@ impl Tui {
             Some(Window::DatePrompt)
         } else if self.state.settings_window().is_some() {
             Some(Window::Settings)
+        } else if self.state.search().is_some() {
+            Some(Window::Search)
         } else if self.open_picker().is_some() {
             Some(Window::Picker)
         } else {
@@ -878,6 +890,7 @@ fn view_icon(view: View) -> Icon {
         View::All => Icon::All,
         View::Logbook => Icon::Logbook,
         View::Trash => Icon::Trash,
+        View::Search => Icon::Search,
     }
 }
 

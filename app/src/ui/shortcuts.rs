@@ -19,11 +19,11 @@ use super::{
     date_prompt,
     edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT},
     keymap::{Key, key_label},
-    picker, settings, text_keys,
+    picker, search, settings, text_keys,
 };
 use crate::app::{
-    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, SettingsInput,
-    TextEdit,
+    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, SearchInput,
+    SettingsInput, TextEdit,
 };
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
@@ -47,6 +47,8 @@ pub(super) enum Window {
     DatePrompt,
     /// The settings window.
     Settings,
+    /// Typing the words to search for.
+    Search,
     /// The attachments panel, while nothing in it is edited.
     Attachments,
     /// Edit mode, editing this part of an item.
@@ -59,6 +61,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
         Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
         Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
         Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
+        Window::Search => ("Search", named(search::KEYS, search_name)),
         Window::Attachments => (
             "Attachments Panel",
             named(attachments::KEYS, |key| {
@@ -157,6 +160,14 @@ fn date_name(input: DateInput) -> String {
         DateInput::Edit(edit) => text_name(edit),
         DateInput::Apply => "Set Date".to_owned(),
         DateInput::Cancel => "Cancel".to_owned(),
+    }
+}
+
+/// What a key does while the words to search for are typed, as the panel names it.
+fn search_name(input: SearchInput) -> String {
+    match input {
+        SearchInput::Edit(edit) => text_name(edit),
+        SearchInput::Done => "Go to Results".to_owned(),
     }
 }
 
@@ -418,6 +429,7 @@ mod tests {
         let edit = TextEdit::SelectAll;
         assert_eq!(picker_name(PickerInput::Edit(edit)), "Select All");
         assert_eq!(date_name(DateInput::Edit(edit)), "Select All");
+        assert_eq!(search_name(SearchInput::Edit(edit)), "Select All");
     }
 
     // FR-KEY-03, FR-ATT-04
@@ -452,6 +464,7 @@ mod tests {
         );
         assert_eq!(headings(Window::Attachments), [("Attachments Panel", 10)]);
         assert_eq!(headings(Window::Settings), [("Settings", 6)]);
+        assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 16)]);
     }
 
     // FR-KEY-03

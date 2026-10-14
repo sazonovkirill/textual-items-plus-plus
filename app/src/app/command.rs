@@ -39,6 +39,8 @@ pub enum Command {
     /// Open Go to Symbol, which shows the project, section or task chosen in it where it is
     /// (FR-NAV-05).
     GoToSymbol,
+    /// Show the pane's search results and type the words to search for (FR-SRCH-01).
+    Search,
     /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
     EditTitle,
     /// Add an item of the focused row's kind on this side of it, a task in a pane without rows,
@@ -643,6 +645,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::GoToSymbol,
         title: "Go to Symbol",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Search,
+        title: "Search",
         context: Context::Navigate,
     },
     Entry {

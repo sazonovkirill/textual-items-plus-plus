@@ -7,7 +7,8 @@ use jiff::civil::Date;
 
 use super::{
     AttachmentsInput, Command, ConflictSide, DateInput, Direction, EditInput, Notice, OnDisk,
-    PickerInput, Report, Selected, Setting, SettingsInput, Side, State, autosave::Ending,
+    PickerInput, Report, SearchInput, Selected, Setting, SettingsInput, Side, State,
+    autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -30,6 +31,8 @@ pub enum Message {
     Edit(EditInput),
     /// The user did something in the open date prompt (FR-DATE-02).
     DatePrompt(DateInput),
+    /// The user did something while typing the words to search for (FR-SRCH-01).
+    Search(SearchInput),
     /// The user did something in the open attachments panel (FR-ATT-01).
     Attachments(AttachmentsInput),
     /// The user did something in the open settings window (FR-SET-02).
@@ -112,6 +115,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     let emptying = matches!(state.notice(), Some(Notice::EmptyTrash(_)));
     if let Message::Command(_) | Message::Paste(..) = message {
         state.finish_editing();
+        state.finish_searching();
         state.clear_notice();
     }
     if let Message::Command(command) = message
@@ -137,6 +141,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Tags(input) => state.tags_input(input),
         Message::Edit(input) => state.edit_input(input),
         Message::DatePrompt(input) => state.date_prompt_input(input),
+        Message::Search(input) => state.search_input(input),
         Message::Attachments(input) => state.attachments_input(input),
         Message::Settings(input) => return state.settings_input(input),
         Message::SettingsFailed(problem) => state.settings_failed(problem),
@@ -166,6 +171,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::Navigator => state.toggle_navigator(),
         Command::Palette => state.open_palette(),
         Command::GoToSymbol => state.open_go_to_symbol(),
+        Command::Search => state.open_search(),
         Command::EditTitle => state.edit_title(),
         Command::NewLike(side) => state.new_like(side),
         Command::AddTask(end) => state.add(ItemKind::Task, end),
@@ -254,6 +260,33 @@ mod tests {
         assert_eq!(effects, [Effect::Quit]);
         assert_eq!(state.document(), before.document());
         assert_eq!(state.rows(), before.rows());
+        Ok(())
+    }
+
+    // FR-SRCH-01
+    #[test]
+    fn searching_takes_the_words_typed_until_a_command_is_given() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::Search);
+        assert_eq!(state.shown(), Shown::View(View::Search));
+        let effects = update(
+            &mut state,
+            Message::Search(SearchInput::Edit(TextEdit::Insert('b'))),
+            TODAY,
+        );
+        assert_eq!(effects, []);
+        assert_eq!(titles(&state), ["b"]);
+        give(&mut state, Command::Navigator);
+        assert_eq!(state.search(), None, "a command ends typing");
+        assert!(state.navigator().is_some());
+        give(&mut state, Command::Navigator);
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Search);
+        assert!(
+            state.search().is_some(),
+            "the sidebar passes it to the pane"
+        );
+        assert!(!state.sidebar_has_keys());
         Ok(())
     }
 

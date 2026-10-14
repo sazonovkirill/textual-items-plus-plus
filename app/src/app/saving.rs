@@ -422,7 +422,8 @@ impl State {
         self.panel = self.rematched_panel(&old, &exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
-            let rows = view::rows(new, self.shown(), self.today, self.shows_completed());
+            let query = self.pane().query.text();
+            let rows = view::rows(new, self.shown(), self.today, self.shows_completed(), query);
             self.tags = tags.reopen(new, items, &rows, self.tag_filter());
         }
         self.history = super::History::default();

@@ -67,6 +67,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Palette, &["ctrl+p", "g c"]),
     // The owner's key, which taskpaper-terminal gives Go to Symbol until search exists (D-69).
     (Command::GoToSymbol, &["/"]),
+    // Find, as `Ctrl+F` finds in most apps, and **g**o **s**earch (D-70).
+    (Command::Search, &["ctrl+f", "g s"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o` and `O` add
     // the focused row's kind, and the lower and upper case of a kind's letter add one at the
     // bottom and the top of the container shown (owner, D-40). In the sidebar `p` adds a

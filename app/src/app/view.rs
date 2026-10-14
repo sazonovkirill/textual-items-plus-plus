@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     all,
     container::{self, Row},
-    logbook, today, trash,
+    logbook, search, today, trash,
     upcoming::{self, Period},
 };
 use crate::domain::{Document, ItemId};
@@ -26,6 +26,9 @@ pub enum View {
     Logbook,
     /// The deleted items (FR-VIEW-04).
     Trash,
+    /// The items holding the words of the pane's search (FR-SRCH-01). Not in the registry: it is
+    /// opened by searching, not as a place.
+    Search,
 }
 
 /// A view with what the Navigator shows of it.
@@ -71,16 +74,17 @@ impl View {
             Self::All => "All",
             Self::Logbook => "Logbook",
             Self::Trash => "Trash",
+            Self::Search => "Search",
         }
     }
 
-    /// How each row says where its item is, if it does: the rows of the Logbook and the Trash,
-    /// from every list, after their titles (FR-VIEW-03, FR-VIEW-04), and Today's, from no one
-    /// container, under them (D-51).
+    /// How each row says where its item is, if it does: the rows of the Logbook, the Trash and
+    /// search results, from every list, after their titles (FR-VIEW-03, FR-VIEW-04, FR-SRCH-01),
+    /// and Today's, from no one container, under them (D-51).
     #[must_use]
     pub const fn locates(self) -> Option<Locating> {
         match self {
-            Self::Logbook | Self::Trash => Some(Locating::After),
+            Self::Logbook | Self::Trash | Self::Search => Some(Locating::After),
             Self::Today => Some(Locating::Under),
             Self::Upcoming | Self::All => None,
         }
@@ -127,13 +131,14 @@ pub enum Heading {
 }
 
 /// The groups `view` shows of `document` on `today`, completed items among them only when
-/// `show_completed` (FR-VIEW-11); no group is empty.
+/// `show_completed` (FR-VIEW-11), search results for `query`; no group is empty.
 #[must_use]
 pub(super) fn groups(
     document: &Document,
     view: View,
     today: Date,
     show_completed: bool,
+    query: &str,
 ) -> Vec<Group> {
     match view {
         View::Today => today::groups(document, today, show_completed),
@@ -141,6 +146,7 @@ pub(super) fn groups(
         View::All => all::groups(document, show_completed),
         View::Logbook => logbook::groups(document),
         View::Trash => trash::groups(document),
+        View::Search => search::groups(document, query),
     }
 }
 
@@ -161,17 +167,18 @@ pub(super) fn opens(document: &Document, shown: Shown) -> bool {
     }
 }
 
-/// The rows `shown` lists of `document` on `today`, in order.
+/// The rows `shown` lists of `document` on `today`, in order, search results for `query`.
 #[must_use]
 pub(super) fn rows(
     document: &Document,
     shown: Shown,
     today: Date,
     show_completed: bool,
+    query: &str,
 ) -> Vec<Row> {
     match shown {
         Shown::Container(id) => container::rows(document, id, show_completed),
-        Shown::View(view) => groups(document, view, today, show_completed)
+        Shown::View(view) => groups(document, view, today, show_completed, query)
             .into_iter()
             .flat_map(|group| group.rows)
             .collect(),

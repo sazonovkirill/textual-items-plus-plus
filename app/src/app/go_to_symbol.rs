@@ -139,7 +139,7 @@ fn visit(document: &Document, today: Date, symbol: Symbol) -> Visit {
                     .iter()
                     .map(|entry| Shown::View(entry.view))
                     .find(|&shown| {
-                        view::rows(document, shown, today, false)
+                        view::rows(document, shown, today, false, "")
                             .iter()
                             .any(|row| row.id() == id)
                     })

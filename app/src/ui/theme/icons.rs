@@ -55,6 +55,8 @@ pub enum Icon {
     Tag,
     /// A command, in the command palette.
     Command,
+    /// Search results and the words searched for.
+    Search,
 }
 
 impl Icon {
@@ -117,6 +119,8 @@ impl Icon {
             Self::Tag => ("\u{f04fc}", "@"),
             // nf-md-console_line
             Self::Command => ("\u{f07b7}", "❯"),
+            // nf-md-magnify
+            Self::Search => ("\u{f0349}", "⌕"),
         }
     }
 }
@@ -127,7 +131,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 24] = [
+    const ICONS: [Icon; 25] = [
         Icon::Project,
         Icon::Section,
         Icon::Task,
@@ -152,6 +156,7 @@ mod tests {
         Icon::Unsaved,
         Icon::Tag,
         Icon::Command,
+        Icon::Search,
     ];
 
     /// The task and fold markers, drawn the same with Nerd Font icons as without.

@@ -5,11 +5,11 @@
 use jiff::civil::Date;
 
 use super::{
-    Selection,
+    Selection, TextField,
     container::{self, Row},
     focus::{self, Focus},
     tags,
-    view::{self, Group, Shown},
+    view::{self, Group, Shown, View},
     visits::{Visit, Visits},
 };
 use crate::domain::{Document, ItemId};
@@ -24,6 +24,8 @@ pub(super) struct Pane {
     pub(super) visits: Visits,
     /// The tags every row the pane shows carries, none for every row (FR-TAG-04).
     pub(super) filter: Vec<String>,
+    /// The words searched for, which the pane keeps while it shows other places (FR-SRCH-01).
+    pub(super) query: TextField,
     /// The width the pane keeps, as the frontend measures it, once narrowed or widened; without
     /// one it shares what the others leave (FR-PANE-02).
     pub(super) width: Option<u16>,
@@ -45,6 +47,7 @@ impl Pane {
             show_completed,
             visits: Visits::default(),
             filter: Vec::new(),
+            query: TextField::new(String::new()),
             width: None,
         };
         pane.arrive(document, today, visit);
@@ -75,7 +78,7 @@ impl Pane {
     pub(super) fn rows(&self, document: &Document, today: Date) -> Vec<Row> {
         listed(
             document,
-            (self.shown, today),
+            (self.shown, today, self.query.text()),
             self.show_completed,
             &self.filter,
         )
@@ -87,13 +90,19 @@ impl Pane {
         let Shown::View(shown) = self.shown else {
             return Vec::new();
         };
-        view::groups(document, shown, today, self.show_completed)
-            .into_iter()
-            .filter_map(|group| {
-                let rows = tags::filtered(document, group.rows, &self.filter);
-                (!rows.is_empty()).then_some(Group { rows, ..group })
-            })
-            .collect()
+        view::groups(
+            document,
+            shown,
+            today,
+            self.show_completed,
+            self.query.text(),
+        )
+        .into_iter()
+        .filter_map(|group| {
+            let rows = tags::filtered(document, group.rows, &self.filter);
+            (!rows.is_empty()).then_some(Group { rows, ..group })
+        })
+        .collect()
     }
 
     /// Moves the focus as `motion` says, keeping what is picked.
@@ -314,6 +323,12 @@ impl<'a> PaneView<'a> {
         &self.pane.filter
     }
 
+    /// The words searched for, while the pane shows search results (FR-SRCH-01).
+    #[must_use]
+    pub fn query(&self) -> Option<&'a TextField> {
+        (self.pane.shown == Shown::View(View::Search)).then_some(&self.pane.query)
+    }
+
     /// The width the pane keeps, once narrowed or widened (FR-PANE-02).
     #[must_use]
     pub fn width(&self) -> Option<u16> {
@@ -321,17 +336,17 @@ impl<'a> PaneView<'a> {
     }
 }
 
-/// The rows `shown` lists in `document` on the date it is shown, completed items among them when
-/// `show_completed`, those carrying every tag of `filter`.
+/// The rows `shown` lists in `document` on the date it is shown, for the words searched for,
+/// completed items among them when `show_completed`, those carrying every tag of `filter`.
 pub(super) fn listed(
     document: &Document,
-    (shown, today): (Shown, Date),
+    (shown, today, query): (Shown, Date, &str),
     show_completed: bool,
     filter: &[String],
 ) -> Vec<Row> {
     tags::filtered(
         document,
-        view::rows(document, shown, today, show_completed),
+        view::rows(document, shown, today, show_completed, query),
         filter,
     )
 }

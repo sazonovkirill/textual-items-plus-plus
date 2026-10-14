@@ -78,6 +78,8 @@ pub struct State {
     pub(super) settings: Settings,
     /// The setting highlighted in the settings window, while it is open (FR-SET-02).
     pub(super) settings_window: Option<Setting>,
+    /// Whether the words the pane searches for are typed (FR-SRCH-01).
+    pub(super) searching: bool,
     pub(super) saving: Saving,
 }
 
@@ -116,6 +118,7 @@ impl State {
             shortcuts: false,
             settings: Settings::default(),
             settings_window: None,
+            searching: false,
             saving,
         }
     }
@@ -513,6 +516,7 @@ impl State {
             self.pane().shown,
             self.today,
             self.pane().show_completed,
+            self.pane().query.text(),
         );
         self.tags = Some(TagPicker::for_filter(
             &self.document,
@@ -577,7 +581,7 @@ impl State {
             moving::shift_all(&self.document, &self.targets(), direction, |document| {
                 listed(
                     document,
-                    (Shown::Container(container), today),
+                    (Shown::Container(container), today, ""),
                     show_completed,
                     &filter,
                 )
@@ -911,11 +915,12 @@ impl State {
         let (shown, today, show_completed) =
             (self.pane().shown, self.today, self.pane().show_completed);
         let filter = self.pane().filter.clone();
+        let query = self.pane().query.text().to_owned();
         let mut after = self.pane().selection.clone();
         let selection = after.clone();
         self.history
             .commit(&mut self.document, transaction, selection, |document| {
-                let rows = listed(document, (shown, today), show_completed, &filter);
+                let rows = listed(document, (shown, today, &query), show_completed, &filter);
                 let heading = pane::heading(document, shown);
                 after.focus(focus::kept(listed_before, &rows, heading, focused));
                 after
@@ -949,9 +954,9 @@ impl State {
     /// deleting, moving, indenting, outdenting, converting and setting its dates, each one step to
     /// undo, opening Move to for it or the attachments panel on it, and opening the entry in the
     /// pane, `Enter` giving the pane the keys, or in a new pane, which gets them; a view's entry is
-    /// only opened. Quitting, undo and redo, the Navigator, Go to Symbol, the sidebar's own
-    /// commands, focusing a pane, going home, back and forward and the conflict prompt's commands
-    /// pass to the app; every other command does nothing.
+    /// only opened. Quitting, undo and redo, the Navigator, Go to Symbol, searching, the sidebar's
+    /// own commands, focusing a pane, going home, back and forward and the conflict prompt's
+    /// commands pass to the app; every other command does nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
         let passes = matches!(
             command,
@@ -960,6 +965,7 @@ impl State {
                 | Command::Redo
                 | Command::Navigator
                 | Command::GoToSymbol
+                | Command::Search
                 | Command::Sidebar
                 | Command::FocusLeft
                 | Command::FocusRight
@@ -1130,6 +1136,9 @@ impl State {
         match to {
             Go::Into => {
                 if let Some(visit) = self.inside_focused() {
+                    if self.focuses_completed(visit) {
+                        self.pane.show_completed = true;
+                    }
                     self.show(visit.shown, visit.focused);
                 }
             }
@@ -1177,6 +1186,16 @@ impl State {
         }
     }
 
+    /// Whether `visit` focuses a completed item, as one opened from a view where it lives does,
+    /// which shows there only with completed items shown (FR-VIEW-11, FR-SRCH-02).
+    fn focuses_completed(&self, visit: Visit) -> bool {
+        visit
+            .focused
+            .and_then(|id| self.document.node(id))
+            .and_then(Node::item)
+            .is_some_and(|item| item.completed.is_some())
+    }
+
     /// Opens what the focused row leads into, else the place the pane shows focused where it is,
     /// in a new pane right of the one with the keys, which gets them (FR-PANE-02).
     pub(super) fn open_in_new_pane(&mut self) {
@@ -1185,13 +1204,14 @@ impl State {
     }
 
     /// Adds a pane showing what `visit` shows right of the one with the keys and gives it the
-    /// keys. It shows completed items when that pane does, and has no history and no tag filter.
+    /// keys. It shows completed items when that pane does or `visit` focuses one, and has no
+    /// history and no tag filter.
     pub(super) fn open_pane(&mut self, visit: Visit) {
         let pane = Pane::new(
             &self.document,
             self.today,
             visit,
-            self.pane().show_completed,
+            self.pane().show_completed || self.focuses_completed(visit),
         );
         self.left.push(mem::replace(&mut self.pane, pane));
         self.sidebar.focus(false);
