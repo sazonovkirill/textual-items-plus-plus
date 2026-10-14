@@ -1,11 +1,12 @@
 //! The container pane: the opened container drawn as FR-VIEW-05 arranges it, in the look of
 //! taskpaper-terminal ([ui.md §2](../../../specs/reference/taskpaper-terminal/specs/ui.md#2-blocks)):
 //! its title and description, then a row for each of its items, with the focus marker and band
-//! on the focused one, wrapping long text and scrolling to keep the focus in view.
+//! on the focused one, wrapping long text and scrolling to keep the focus in view, and the title
+//! being edited, if any, as a text field in its row.
 
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Paragraph, StatefulWidget, Widget, Wrap},
@@ -13,7 +14,7 @@ use ratatui::{
 
 use super::{Icon, IconSet, Theme};
 use crate::{
-    app::{Row, State},
+    app::{Row, State, TextField},
     domain::{Document, Item, ItemId, ItemKind, Node},
 };
 
@@ -30,6 +31,7 @@ pub(super) struct ContainerPane<'a> {
     container: ItemId,
     rows: Vec<Row>,
     focused: Option<ItemId>,
+    editing: Option<(ItemId, &'a TextField)>,
     theme: &'a Theme,
     icons: IconSet,
 }
@@ -42,6 +44,7 @@ impl<'a> ContainerPane<'a> {
             container: state.container(),
             rows: state.rows(),
             focused: state.selection().focused(),
+            editing: state.editing(),
             theme,
             icons,
         }
@@ -50,13 +53,15 @@ impl<'a> ContainerPane<'a> {
 
 /// A run of lines of the pane: a wrapped paragraph starting `x` columns after the gutter, with
 /// what is drawn right after the gutter and at the right of its first line, part of the row
-/// numbered `row`, if any.
+/// numbered `row`, if any. A text field is one line instead, with its caret `caret` columns
+/// into it.
 struct Piece<'a> {
     x: u16,
     text: Paragraph<'a>,
     left: Line<'a>,
     right: Line<'a>,
     row: Option<usize>,
+    caret: Option<usize>,
 }
 
 impl Piece<'_> {
@@ -68,6 +73,7 @@ impl Piece<'_> {
             left: Line::default(),
             right: Line::default(),
             row: None,
+            caret: None,
         }
     }
 
@@ -82,6 +88,14 @@ impl Piece<'_> {
     fn height(&self, width: u16) -> usize {
         self.text.line_count(self.text_width(width)).max(1)
     }
+
+    /// The columns a text field is scrolled sideways in content `width`: none while its caret
+    /// fits, else as many as keep the caret in the last column, and never past the caret.
+    fn shift(&self, width: u16) -> usize {
+        let columns = usize::from(self.text_width(width));
+        self.caret
+            .map_or(0, |caret| (caret + 1).saturating_sub(columns).min(caret))
+    }
 }
 
 impl StatefulWidget for ContainerPane<'_> {
@@ -89,13 +103,7 @@ impl StatefulWidget for ContainerPane<'_> {
 
     fn render(self, area: Rect, buf: &mut Buffer, top: &mut usize) {
         let width = area.width.saturating_sub(GUTTER);
-        let pieces = self.pieces();
-        let mut lines = Vec::with_capacity(pieces.len());
-        let mut y = 0;
-        for piece in &pieces {
-            lines.push(y);
-            y += piece.height(width);
-        }
+        let (pieces, lines, y) = self.laid_out(width);
         let focused = self.focused_row();
         let span = focused.map(|row| row_span(&pieces, &lines, width, row));
         // Focusing the first row shows the container's title and description above it, when
@@ -156,10 +164,11 @@ fn draw(piece: &Piece, start: usize, top: usize, area: Rect, buf: &mut Buffer) {
     let rows = u16::try_from((start + height).min(top + shown) - first).unwrap_or(u16::MAX);
     let x = area.x + GUTTER + piece.x;
     let text = Rect::new(x, row_y(first), piece.text_width(width), rows);
+    let shift = u16::try_from(piece.shift(width)).unwrap_or(u16::MAX);
     piece
         .text
         .clone()
-        .scroll((u16::try_from(skip).unwrap_or(u16::MAX), 0))
+        .scroll((u16::try_from(skip).unwrap_or(u16::MAX), shift))
         .render(text, buf);
     if skip == 0 {
         let left = Rect::new(area.x + GUTTER, row_y(start), piece.x, 1);
@@ -171,6 +180,38 @@ fn draw(piece: &Piece, start: usize, top: usize, area: Rect, buf: &mut Buffer) {
 }
 
 impl<'a> ContainerPane<'a> {
+    /// Where the terminal's cursor goes when the pane is drawn over `area` from content line
+    /// `top`: at the caret of the title being edited, when it is in view and the pane has room
+    /// for it.
+    pub(super) fn caret(&self, area: Rect, top: usize) -> Option<Position> {
+        let width = area.width.saturating_sub(GUTTER);
+        let (pieces, lines, _) = self.laid_out(width);
+        let (piece, &start) = pieces
+            .iter()
+            .zip(&lines)
+            .find(|(piece, _)| piece.caret.is_some())?;
+        let row = start
+            .checked_sub(top)
+            .filter(|&row| row < usize::from(area.height))?;
+        let column = piece.caret? - piece.shift(width);
+        let x = usize::from(area.x + GUTTER + piece.x) + column;
+        let x = u16::try_from(x).ok().filter(|&x| x < area.right())?;
+        Some(Position::new(x, area.y + u16::try_from(row).ok()?))
+    }
+
+    /// The pane's content in content `width`: its pieces, the content line each starts at and
+    /// the lines they take in all.
+    fn laid_out(&self, width: u16) -> (Vec<Piece<'a>>, Vec<usize>, usize) {
+        let pieces = self.pieces();
+        let mut lines = Vec::with_capacity(pieces.len());
+        let mut y = 0;
+        for piece in &pieces {
+            lines.push(y);
+            y += piece.height(width);
+        }
+        (pieces, lines, y)
+    }
+
     /// The index of the focused row among the state's rows.
     fn focused_row(&self) -> Option<usize> {
         let focused = self.focused?;
@@ -194,6 +235,7 @@ impl<'a> ContainerPane<'a> {
                     left: Line::default(),
                     right: Line::default(),
                     row: None,
+                    caret: None,
                 });
             }
         }
@@ -213,7 +255,10 @@ impl<'a> ContainerPane<'a> {
             if opens_group {
                 pieces.push(Piece::blank());
             }
-            pieces.push(self.title(shown, Some(index)));
+            pieces.push(match self.editing {
+                Some((id, field)) if id == row.id() => self.field(shown, field, index),
+                _ => self.title(shown, Some(index)),
+            });
             if let Some(first) = shown.description.lines().next() {
                 pieces.push(Piece {
                     x: self.title_column(shown),
@@ -221,6 +266,7 @@ impl<'a> ContainerPane<'a> {
                     left: Line::default(),
                     right: Line::default(),
                     row: Some(index),
+                    caret: None,
                 });
             }
         }
@@ -244,6 +290,28 @@ impl<'a> ContainerPane<'a> {
             left: Line::styled(self.marker(item), self.marker_style(item)),
             right: self.attachments(item),
             row,
+            caret: None,
+        }
+    }
+
+    /// The line of `item`, numbered `row`, while `field` edits its title: its marker, then the
+    /// text edited, without tags, the selected part in the selection colors, on one line that
+    /// scrolls sideways to keep the caret in view.
+    fn field(&self, item: &'a Item, field: &'a TextField, row: usize) -> Piece<'a> {
+        let text = field.text();
+        let selection = field.selection().unwrap_or(field.caret()..field.caret());
+        let selected = Style::new()
+            .bg(self.theme.selection)
+            .fg(self.theme.band_text);
+        let caret = text.get(..field.caret()).unwrap_or_default();
+        Piece {
+            caret: Some(Span::raw(caret).width()),
+            text: Paragraph::new(Line::from(vec![
+                Span::raw(text.get(..selection.start).unwrap_or_default()),
+                Span::styled(text.get(selection.clone()).unwrap_or_default(), selected),
+                Span::raw(text.get(selection.end..).unwrap_or_default()),
+            ])),
+            ..self.title(item, Some(row))
         }
     }
 
@@ -407,12 +475,86 @@ mod tests {
             container,
             rows: app::rows(document, container, true),
             focused: focused.map(|title| find(document, title)),
+            editing: None,
             theme: &theme,
             icons: IconSet::Plain,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         pane.render(buf.area, &mut buf, top);
         buf
+    }
+
+    /// Draws the Inbox of the demo document, `width` by 8, while `field` edits the title of
+    /// its task titled `title`, and returns the buffer and where the caret is.
+    fn draw_editing(title: &str, field: &TextField, width: u16) -> (Buffer, Option<Position>) {
+        let document = demo();
+        let theme = BuiltIn::default().colors();
+        let id = find(&document, title);
+        let pane = ContainerPane {
+            document: &document,
+            container: document.inbox(),
+            rows: app::rows(&document, document.inbox(), false),
+            focused: Some(id),
+            editing: Some((id, field)),
+            theme: &theme,
+            icons: IconSet::Plain,
+        };
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, 8));
+        let caret = pane.caret(buf.area, 0);
+        pane.render(buf.area, &mut buf, &mut 0);
+        (buf, caret)
+    }
+
+    // FR-EDIT-02, FR-EDIT-04
+    #[test]
+    fn the_title_edited_shows_in_its_row_without_tags_its_selection_marked() {
+        let field = TextField::new("Buy beans".to_owned()).edited(app::TextEdit::Move {
+            motion: app::Motion::WordLeft,
+            select: true,
+        });
+        let (buf, caret) = draw_editing("Buy coffee beans", &field, 30);
+        let rows = lines(&buf);
+        assert_eq!(
+            rows.get(6).map(String::as_str),
+            Some("▌ - Buy beans                 ")
+        );
+        let theme = BuiltIn::default().colors();
+        assert_eq!(buf[(8, 6)].bg, theme.selection, "the selected word");
+        assert_eq!(buf[(7, 6)].bg, theme.current_line, "the space before it");
+        assert_eq!(caret, Some(Position::new(8, 6)));
+    }
+
+    // FR-EDIT-02
+    #[test]
+    fn a_long_title_edited_scrolls_sideways_to_keep_the_caret_in_view() {
+        let field = TextField::new("Call the bank about the card".to_owned());
+        let (buf, caret) = draw_editing("Call the bank about the card", &field, 20);
+        let rows = lines(&buf);
+        assert_eq!(
+            rows.get(5).map(String::as_str),
+            Some("▌ -  about the card ")
+        );
+        assert_eq!(caret, Some(Position::new(19, 5)));
+        let start = field.edited(app::TextEdit::Move {
+            motion: app::Motion::Start,
+            select: false,
+        });
+        let (buf, caret) = draw_editing("Call the bank about the card", &start, 20);
+        assert_eq!(
+            lines(&buf).get(5).map(String::as_str),
+            Some("▌ - Call the bank ab")
+        );
+        assert_eq!(caret, Some(Position::new(4, 5)));
+        assert_eq!(
+            draw_editing("Buy coffee beans", &start, 20).1,
+            Some(Position::new(4, 7)),
+            "the caret goes where the edited row is"
+        );
+        assert_eq!(
+            draw_editing("Read the article Sam sent", &start, 20).1,
+            None,
+            "a row out of view has no caret"
+        );
     }
 
     /// The text of each row of `buf`.

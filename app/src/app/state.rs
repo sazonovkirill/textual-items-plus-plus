@@ -5,13 +5,16 @@ use std::path::PathBuf;
 use jiff::civil::Date;
 
 use super::{
-    Go, History, Picked, Picker, PickerInput, PickerView, Selection, completion,
+    EditInput, Go, History, Picked, Picker, PickerInput, PickerView, Selection, Side, TextField,
+    adding, completion,
     container::{self, Row},
+    editing::Editing,
     focus::{self, Focus},
     navigator::{self, Place},
+    trash,
     visits::{Visit, Visits},
 };
-use crate::domain::{Document, ItemId};
+use crate::domain::{Document, ItemId, Transaction};
 
 /// Where the document came from, which decides whether changes to it can be kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +37,8 @@ pub struct State {
     show_completed: bool,
     visits: Visits,
     navigator: Option<Picker<Place>>,
+    /// The task whose title is edited, in edit mode (FR-EDIT-01).
+    editing: Option<Editing>,
 }
 
 impl State {
@@ -50,6 +55,7 @@ impl State {
             show_completed: false,
             visits: Visits::default(),
             navigator: None,
+            editing: None,
         };
         state.move_focus(Focus::First);
         state
@@ -104,6 +110,14 @@ impl State {
         self.navigator.as_ref().map(Picker::view)
     }
 
+    /// The task whose title is edited and the text edited, in edit mode.
+    #[must_use]
+    pub fn editing(&self) -> Option<(ItemId, &TextField)> {
+        self.editing
+            .as_ref()
+            .map(|editing| (editing.id(), editing.field()))
+    }
+
     /// Moves the focus as `motion` says, selecting only the newly focused row.
     pub(super) fn move_focus(&mut self, motion: Focus) {
         let target = focus::target(&self.rows(), self.selection.focused(), motion);
@@ -114,6 +128,84 @@ impl State {
     /// one step to undo, moving the focus on when its row hides.
     pub(super) fn toggle_completed(&mut self, today: Date) {
         let transaction = completion::toggle(&self.document, self.selection.items(), today);
+        self.change(transaction);
+    }
+
+    /// Moves the selected items to the Trash on `today`, as one step to undo, moving the focus on
+    /// from the rows that leave.
+    pub(super) fn delete(&mut self, today: Date) {
+        let transaction = trash::delete(&self.document, self.selection.items(), today);
+        self.change(transaction);
+    }
+
+    /// Starts editing the focused task's title. Nothing happens unless a task is focused.
+    pub(super) fn edit_title(&mut self) {
+        let editing = self
+            .selection
+            .focused()
+            .and_then(|id| Editing::existing(&self.document, id, self.selection.clone()));
+        self.editing = editing;
+    }
+
+    /// Adds an empty task on `side` of the focused row, focuses it and starts editing its title.
+    /// Nothing is added to a container whose contents are hidden for being completed
+    /// (FR-ORG-09), where it would not show.
+    pub(super) fn new_task(&mut self, side: Side) {
+        if self.document.conceals(self.container) {
+            return;
+        }
+        let place = adding::place(
+            &self.document,
+            self.container,
+            &self.rows(),
+            self.selection.focused(),
+            side,
+        );
+        let editing = Editing::new_task(&mut self.document, place, self.selection.clone());
+        self.selection.focus(Some(editing.id()));
+        self.editing = Some(editing);
+    }
+
+    /// Applies `input` to the edited title. Nothing happens outside edit mode.
+    pub(super) fn edit_input(&mut self, input: EditInput) {
+        let Some(editing) = self.editing.as_mut() else {
+            return;
+        };
+        match input {
+            EditInput::Text(edit) => editing.input(&mut self.document, edit),
+            EditInput::Next => {
+                if self.finish_editing() {
+                    self.new_task(Side::Below);
+                }
+            }
+            EditInput::Done => {
+                self.finish_editing();
+            }
+        }
+    }
+
+    /// Ends edit mode, making the edit one step to undo, and returns whether the task edited is
+    /// still there: a new task left empty is not. Outside edit mode nothing happens.
+    pub(super) fn finish_editing(&mut self) -> bool {
+        let Some(editing) = self.editing.take() else {
+            return false;
+        };
+        let id = editing.id();
+        let (transaction, before) = editing.finish(&mut self.document);
+        let mut after = self.selection.clone();
+        after.focus(Some(id));
+        self.history
+            .commit(&mut self.document, transaction, before.clone(), |_| after)
+            .expect("an edit's transaction is made from the document as it was");
+        let kept = self.document.node(id).is_some();
+        if !kept {
+            self.selection = before;
+        }
+        kept
+    }
+
+    /// Applies `transaction` as one step to undo, moving the focus on when its row leaves.
+    fn change(&mut self, transaction: Transaction) {
         let before = self.rows();
         let (container, show_completed) = (self.container, self.show_completed);
         let focused = self.selection.focused();
@@ -168,8 +260,30 @@ impl State {
         }
     }
 
-    /// Keeps the focus on a row now that the rows `before` have changed.
+    /// Keeps the focus on a row now that the rows `before` have changed, and when the container
+    /// shown no longer opens, having gone to the Trash or into a completed item, shows the
+    /// nearest one above it that does, else the Inbox, focused where it was.
     fn settle(&mut self, before: &[Row]) {
+        if !container::opens(&self.document, self.container) {
+            let path = self.path();
+            let document = &self.document;
+            let visit = path
+                .array_windows()
+                .rev()
+                .find(|&&[parent, _]| container::opens(document, parent))
+                .map_or(
+                    Visit {
+                        container: document.inbox(),
+                        focused: None,
+                    },
+                    |&[parent, child]| Visit {
+                        container: parent,
+                        focused: Some(child),
+                    },
+                );
+            self.arrive(visit);
+            return;
+        }
         let focused = focus::kept(before, &self.rows(), self.selection.focused());
         if focused != self.selection.focused() {
             self.selection.focus(focused);
@@ -461,6 +575,204 @@ mod tests {
         assert_eq!(state.container(), site);
         state.go(Go::Back);
         assert_eq!(state.container(), inbox);
+        Ok(())
+    }
+
+    const TODAY: Date = jiff::civil::date(2026, 10, 14);
+
+    fn title(state: &State, id: ItemId) -> Option<&str> {
+        Some(state.document().node(id)?.item()?.title.as_str())
+    }
+
+    fn type_text(state: &mut State, text: &str) {
+        for c in text.chars() {
+            state.edit_input(EditInput::Text(TextEdit::Insert(c)));
+        }
+    }
+
+    // FR-EDIT-01, FR-EDIT-02, FR-EDIT-06
+    #[test]
+    fn a_title_edited_in_place_is_one_step_to_undo() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            inbox_task,
+            ..
+        } = fixture()?;
+        state.edit_title();
+        assert_eq!(state.editing().map(|(id, _)| id), Some(inbox_task));
+        type_text(&mut state, "dea");
+        assert_eq!(title(&state, inbox_task), Some("idea"));
+        state.edit_input(EditInput::Done);
+        assert!(state.editing().is_none());
+        assert_eq!(title(&state, inbox_task), Some("idea"));
+        state.undo();
+        assert_eq!(title(&state, inbox_task), Some("i"));
+        state.redo();
+        assert_eq!(title(&state, inbox_task), Some("idea"));
+        state.edit_input(EditInput::Done);
+        assert!(
+            state.editing().is_none(),
+            "outside edit mode it does nothing"
+        );
+        assert!(!state.finish_editing());
+        Ok(())
+    }
+
+    // FR-EDIT-01
+    #[test]
+    fn only_a_task_is_edited() -> Result<(), PlacementError> {
+        let Fixture { mut state, .. } = fixture()?;
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::NextSection);
+        state.edit_title();
+        assert!(
+            state.editing().is_none(),
+            "renaming a section is not editing a task"
+        );
+        state.go(Go::Home);
+        let mut document = state.document().clone();
+        document.push(None, Node::Item(Item::new(ItemKind::Project, "Empty")))?;
+        state = State::new(document, Opened::Demo);
+        navigate(&mut state, "Empty");
+        assert_eq!(state.selection().focused(), None);
+        state.edit_title();
+        assert!(
+            state.editing().is_none(),
+            "with nothing focused nothing is edited"
+        );
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-EDIT-06
+    #[test]
+    fn enter_adds_tasks_one_after_another_until_one_is_left_empty() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            inbox_task,
+            ..
+        } = fixture()?;
+        let inbox = state.document().inbox();
+        state.new_task(Side::Below);
+        type_text(&mut state, "second");
+        state.edit_input(EditInput::Next);
+        type_text(&mut state, "third");
+        state.edit_input(EditInput::Next);
+        state.edit_input(EditInput::Next);
+        assert!(state.editing().is_none());
+        let titles: Vec<_> = state
+            .document()
+            .children(inbox)
+            .iter()
+            .filter_map(|&id| title(&state, id))
+            .collect();
+        assert_eq!(titles, ["i", "second", "third"]);
+        let third = state.document().children(inbox).last().copied();
+        assert_eq!(state.selection().focused(), third);
+        state.undo();
+        assert_eq!(state.document().children(inbox).len(), 2);
+        state.undo();
+        assert_eq!(state.document().children(inbox), [inbox_task]);
+        assert_eq!(state.selection().focused(), Some(inbox_task));
+        Ok(())
+    }
+
+    // FR-EDIT-05
+    #[test]
+    fn a_new_task_left_empty_leaves_no_trace() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            inbox_task,
+            ..
+        } = fixture()?;
+        let before = state.clone();
+        state.new_task(Side::Above);
+        let new = state.editing().map(|(id, _)| id);
+        assert_eq!(state.selection().focused(), new);
+        assert_eq!(state.rows().first().map(|row| row.id()), new);
+        state.edit_input(EditInput::Done);
+        assert_eq!(
+            state.document().children(state.document().inbox()),
+            [inbox_task]
+        );
+        assert_eq!(state.selection().focused(), Some(inbox_task));
+        state.undo();
+        assert_eq!(title(&state, inbox_task), title(&before, inbox_task));
+        assert_eq!(state.rows(), before.rows());
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-09
+    #[test]
+    fn nothing_is_added_where_a_completed_container_hides_it() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state, site, ..
+        } = fixture()?;
+        navigate(&mut state, "Site");
+        let mut done = Item::new(ItemKind::Project, "Site");
+        done.completed = Some(crate::domain::Completion::Undated);
+        state.document.set(site, done)?;
+        let before = state.document().clone();
+        state.new_task(Side::Below);
+        assert!(state.editing().is_none());
+        assert_eq!(state.document(), &before);
+        Ok(())
+    }
+
+    // FR-OPS-05, OQ-19
+    #[test]
+    fn deleting_moves_the_focus_on_and_undo_brings_it_back() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            loose,
+            section,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.delete(TODAY);
+        let deleted = state
+            .document()
+            .node(loose)
+            .and_then(Node::item)
+            .and_then(|item| item.deleted);
+        assert_eq!(deleted, Some(TODAY));
+        assert_eq!(state.selection().focused(), Some(section));
+        state.undo();
+        assert_eq!(state.selection().focused(), Some(loose));
+        Ok(())
+    }
+
+    // FR-OPS-05, FR-NAV-02
+    #[test]
+    fn a_shown_container_gone_to_the_trash_gives_way_to_the_nearest_one_that_opens()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            loose,
+            section,
+            in_section,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::NextSection);
+        state.delete(TODAY);
+        state.undo();
+        state.go(Go::Into);
+        assert_eq!(at(&state), (section, Some(in_section)));
+        state.redo();
+        assert_eq!(
+            at(&state),
+            (work, Some(loose)),
+            "the section is gone, so its area opens on its first row"
+        );
+        // With everything above gone too, home is left.
+        state.undo();
+        state.go(Go::Into);
+        let mut gone = Item::new(ItemKind::Area, "Work");
+        gone.deleted = Some(TODAY);
+        state.document.set(work, gone)?;
+        state.redo();
+        assert_eq!(state.container(), state.document().inbox());
         Ok(())
     }
 

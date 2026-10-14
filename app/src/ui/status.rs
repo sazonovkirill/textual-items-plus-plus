@@ -18,24 +18,29 @@ use crate::app::Opened;
 /// What stands between the parts of the line.
 const SEPARATOR: &str = " · ";
 
-/// The status line for a document opened from `opened`, with the keys `pending` waiting.
+/// The status line for a document opened from `opened`, in edit mode or not, with the keys
+/// `pending` waiting.
 pub(super) struct StatusLine<'a> {
     opened: &'a Opened,
+    editing: bool,
     pending: &'a str,
     theme: &'a Theme,
     icons: IconSet,
 }
 
 impl<'a> StatusLine<'a> {
-    /// The line for `opened` with `pending` keys, drawn in `theme` with `icons`.
+    /// The line for `opened`, in edit mode when `editing`, with `pending` keys, drawn in `theme`
+    /// with `icons`.
     pub(super) fn new(
         opened: &'a Opened,
+        editing: bool,
         pending: &'a str,
         theme: &'a Theme,
         icons: IconSet,
     ) -> Self {
         Self {
             opened,
+            editing,
             pending,
             theme,
             icons,
@@ -48,7 +53,11 @@ impl Widget for StatusLine<'_> {
     /// that the demo data is not saved (FR-STORE-01), the path giving up its start first, and then
     /// itself, when the line is too narrow, and the pending keys at the right end.
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let mode = format!(" {} NAVIGATE", Icon::Navigate.glyph(self.icons));
+        let mode = if self.editing {
+            format!(" {} EDIT", Icon::Edit.glyph(self.icons))
+        } else {
+            format!(" {} NAVIGATE", Icon::Navigate.glyph(self.icons))
+        };
         let (name, kept) = match self.opened {
             Opened::Demo => ("Demo data".to_owned(), "not saved"),
             Opened::File(path) => (path.display().to_string(), "read-only"),
@@ -110,9 +119,15 @@ mod tests {
 
     #[track_caller]
     fn check(opened: &Opened, pending: &str, width: u16, expected: &str) {
+        check_mode(opened, false, pending, width, expected);
+    }
+
+    #[track_caller]
+    fn check_mode(opened: &Opened, editing: bool, pending: &str, width: u16, expected: &str) {
         let theme = BuiltIn::default().colors();
         let mut buf = Buffer::empty(Rect::new(0, 0, width, 1));
-        StatusLine::new(opened, pending, &theme, IconSet::Plain).render(buf.area, &mut buf);
+        StatusLine::new(opened, editing, pending, &theme, IconSet::Plain)
+            .render(buf.area, &mut buf);
         let shown: String = buf
             .content()
             .iter()
@@ -129,6 +144,18 @@ mod tests {
             "",
             40,
             " ↕ NAVIGATE · Demo data · not saved     ",
+        );
+    }
+
+    // FR-EDIT-01
+    #[test]
+    fn edit_mode_is_named_first() {
+        check_mode(
+            &Opened::Demo,
+            true,
+            "",
+            36,
+            " ✎ EDIT · Demo data · not saved     ",
         );
     }
 

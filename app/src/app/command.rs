@@ -2,7 +2,7 @@
 //! given in. A frontend binds its own keys to these commands and lists them in its palette and
 //! shortcuts panel.
 
-use super::Focus;
+use super::{Focus, Side};
 
 /// A command: one user intent, whatever key, menu or palette gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -24,6 +24,12 @@ pub enum Command {
     Go(Go),
     /// Open the Navigator, or close it when it is open (FR-VIEW-07).
     Navigator,
+    /// Edit the focused task's title in place (FR-EDIT-01, FR-EDIT-02).
+    EditTitle,
+    /// Add a task beside the focused row and edit its title (FR-EDIT-05).
+    NewTask(Side),
+    /// Move the selected items to the Trash (FR-OPS-05, OQ-19).
+    Delete,
 }
 
 /// Where a [`Command::Go`] takes the pane.
@@ -149,6 +155,26 @@ pub const REGISTRY: &[Entry] = &[
         title: "Go Forward",
         context: Context::Navigate,
     },
+    Entry {
+        command: Command::EditTitle,
+        title: "Edit Title",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::NewTask(Side::Below),
+        title: "New Task Below",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::NewTask(Side::Above),
+        title: "New Task Above",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Delete,
+        title: "Delete",
+        context: Context::Navigate,
+    },
     // Global, so that its key closes the Navigator too.
     Entry {
         command: Command::Navigator,
@@ -209,5 +235,23 @@ mod tests {
             assert_eq!(context(Command::Go(to)), Some(Context::Navigate), "{to:?}");
         }
         assert_eq!(context(Command::Navigator), Some(Context::Global));
+    }
+
+    // FR-EDIT-01, FR-EDIT-05, FR-OPS-05
+    #[test]
+    fn editing_adding_and_deleting_are_navigate_commands() {
+        for command in [
+            Command::EditTitle,
+            Command::NewTask(Side::Below),
+            Command::NewTask(Side::Above),
+            Command::Delete,
+        ] {
+            let entry = REGISTRY.iter().find(|entry| entry.command == command);
+            assert_eq!(
+                entry.map(|entry| entry.context),
+                Some(Context::Navigate),
+                "{command:?}"
+            );
+        }
     }
 }

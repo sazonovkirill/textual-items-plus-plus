@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
-use crate::app::{Command, Focus, Go};
+use crate::app::{Command, Focus, Go, Side};
 
 /// One key press: its modifiers and code, with `Shift` dropped from characters because the
 /// character already says whether it is shifted.
@@ -41,6 +41,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::Back), &["H", "alt+shift+left"]),
     (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
     (Command::Navigator, &["ctrl+g"]),
+    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37).
+    (Command::EditTitle, &["enter"]),
+    (Command::NewTask(Side::Below), &["o"]),
+    (Command::NewTask(Side::Above), &["O"]),
+    (Command::Delete, &["d d", "delete"]),
 ];
 
 /// The keys `text` names, as [`DEFAULT_KEYS`] writes a sequence. `None` unless each one is a

@@ -3,7 +3,7 @@
 
 use jiff::civil::Date;
 
-use super::{Command, PickerInput, State};
+use super::{Command, EditInput, PickerInput, State};
 
 /// A user intent or a result the frontend reports back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +12,8 @@ pub enum Message {
     Command(Command),
     /// The user did something in the open Navigator (FR-VIEW-07).
     Navigator(PickerInput),
+    /// The user did something while editing a title (FR-EDIT-01).
+    Edit(EditInput),
 }
 
 /// Work the frontend carries out for the core, which never does I/O itself.
@@ -22,8 +24,12 @@ pub enum Effect {
 }
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
-/// the effects the frontend should carry out, in order.
+/// the effects the frontend should carry out, in order. A command given in edit mode ends it
+/// first, so that the edit is kept before anything else happens.
 pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
+    if let Message::Command(_) = message {
+        state.finish_editing();
+    }
     match message {
         Message::Command(Command::Quit) => return vec![Effect::Quit],
         Message::Command(Command::Focus(motion)) => state.move_focus(motion),
@@ -33,7 +39,11 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::Redo) => state.redo(),
         Message::Command(Command::Go(to)) => state.go(to),
         Message::Command(Command::Navigator) => state.toggle_navigator(),
+        Message::Command(Command::EditTitle) => state.edit_title(),
+        Message::Command(Command::NewTask(side)) => state.new_task(side),
+        Message::Command(Command::Delete) => state.delete(today),
         Message::Navigator(input) => state.navigator_input(input),
+        Message::Edit(input) => state.edit_input(input),
     }
     Vec::new()
 }
@@ -43,7 +53,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::{Focus, Go, Opened};
+    use crate::app::{Focus, Go, Opened, Side, TextEdit};
     use crate::domain::{Completion, Document, Item, ItemKind, Node, PlacementError};
 
     const TODAY: Date = date(2026, 10, 14);
@@ -160,6 +170,31 @@ mod tests {
         give(&mut state, Command::Undo);
         assert_eq!(titles(&state), ["b"]);
         assert_eq!(focused(&state), Some("b"));
+        Ok(())
+    }
+
+    // FR-EDIT-01, FR-EDIT-05, FR-OPS-05
+    #[test]
+    fn editing_adding_and_deleting_change_the_state_and_a_command_ends_editing_first()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::NewTask(Side::Above));
+        for message in [
+            Message::Edit(EditInput::Text(TextEdit::Insert('n'))),
+            Message::Command(Command::Focus(Focus::Last)),
+        ] {
+            assert_eq!(update(&mut state, message, TODAY), []);
+        }
+        assert!(state.editing().is_none());
+        assert_eq!(titles(&state), ["n", "a", "b"]);
+        assert_eq!(focused(&state), Some("b"));
+        give(&mut state, Command::EditTitle);
+        assert!(state.editing().is_some());
+        let effects = update(&mut state, Message::Command(Command::Quit), TODAY);
+        assert_eq!(effects, [Effect::Quit]);
+        assert!(state.editing().is_none(), "quitting keeps the edit");
+        give(&mut state, Command::Delete);
+        assert_eq!(titles(&state), ["n", "a"]);
         Ok(())
     }
 

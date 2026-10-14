@@ -3,6 +3,7 @@
 
 mod container;
 mod crumbs;
+mod edit_keys;
 mod keymap;
 mod picker;
 mod status;
@@ -82,19 +83,16 @@ impl Tui {
     /// Handles one terminal event on `today`, the local date: the keys of a bound command give
     /// it to the core, and the core's effects are carried out. While the Navigator is open it
     /// takes the keys, leaving only those of global commands, such as its own, which closes it
-    /// (FR-VIEW-07).
+    /// (FR-VIEW-07); in edit mode the title being edited takes them the same way (FR-EDIT-01).
     pub fn handle(&mut self, event: &Event, today: Date) {
-        let message = if self.state.navigator().is_some() {
-            picker_input(event).map(Message::Navigator).or_else(|| {
-                self.keymap
-                    .press(event)
-                    .filter(|&command| {
-                        REGISTRY.iter().any(|entry| {
-                            entry.command == command && entry.context == Context::Global
-                        })
-                    })
-                    .map(Message::Command)
-            })
+        let message = if self.state.editing().is_some() {
+            edit_keys::edit_input(event)
+                .map(Message::Edit)
+                .or_else(|| self.global(event))
+        } else if self.state.navigator().is_some() {
+            picker_input(event)
+                .map(Message::Navigator)
+                .or_else(|| self.global(event))
         } else {
             self.keymap.press(event).map(Message::Command)
         };
@@ -105,13 +103,29 @@ impl Tui {
         }
     }
 
+    /// The message of the global command whose keys `event` completes, if any.
+    fn global(&mut self, event: &Event) -> Option<Message> {
+        self.keymap
+            .press(event)
+            .filter(|&command| {
+                REGISTRY
+                    .iter()
+                    .any(|entry| entry.command == command && entry.context == Context::Global)
+            })
+            .map(Message::Command)
+    }
+
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
-    /// Navigator's query while it is open, else hidden.
+    /// Navigator's query while it is open, at the caret of the title being edited in edit mode,
+    /// else hidden.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
-        let view = self.state.navigator()?;
         let [panes, _] = layout(area);
-        Some(navigator_popup(&view, &self.theme, self.icons).caret(panes))
+        match self.state.navigator() {
+            Some(view) => Some(navigator_popup(&view, &self.theme, self.icons).caret(panes)),
+            None => ContainerPane::new(&self.state, &self.theme, self.icons)
+                .caret(pane_layout(panes)[2], self.top),
+        }
     }
 
     /// Carries out one effect of the core.
@@ -131,6 +145,18 @@ impl Tui {
 /// The parts of the screen: where the panes go over the status line.
 fn layout(area: Rect) -> [Rect; 2] {
     Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area)
+}
+
+/// The parts of a pane: its breadcrumbs, the rule under them and its rows. A terminal too small
+/// for the crumbs, the rule and a row keeps the row.
+fn pane_layout(pane: Rect) -> [Rect; 3] {
+    let header = u16::from(pane.height > 2);
+    Layout::vertical([
+        Constraint::Length(header),
+        Constraint::Length(header),
+        Constraint::Fill(1),
+    ])
+    .areas(pane)
 }
 
 /// The Navigator's window, each place after its kind's icon, in a tree with its open tasks
@@ -158,14 +184,7 @@ impl Widget for &mut Tui {
     /// to keep the focus in view, and the Navigator over the pane while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         let [panes, status] = layout(area);
-        // A terminal too small for the crumbs, the rule and a row keeps the row.
-        let header = u16::from(panes.height > 2);
-        let [crumbs, rule, pane] = Layout::vertical([
-            Constraint::Length(header),
-            Constraint::Length(header),
-            Constraint::Fill(1),
-        ])
-        .areas(panes);
+        let [crumbs, rule, pane] = pane_layout(panes);
         let path = self.state.path();
         Crumbs::new(self.state.document(), &path, &self.theme, self.icons).render(crumbs, buf);
         Line::styled(
@@ -179,6 +198,7 @@ impl Widget for &mut Tui {
         }
         StatusLine::new(
             self.state.opened(),
+            self.state.editing().is_some(),
             self.keymap.pending(),
             &self.theme,
             self.icons,
