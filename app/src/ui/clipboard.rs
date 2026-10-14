@@ -40,19 +40,22 @@ impl Clipboard {
         self.copied = Some(text);
     }
 
-    /// The items the clipboard holds: those of the system clipboard's text, else of the text the
-    /// app copied last, read as checklist items, one for each line, for `checklist`.
+    /// The text the clipboard holds: the system clipboard's, else the text the app copied last.
+    pub(super) fn text(&mut self) -> Option<String> {
+        self.system
+            .as_mut()
+            .and_then(|system| system.get())
+            .or_else(|| self.copied.clone())
+    }
+
+    /// The items the clipboard's [`text`](Self::text) holds, read as checklist items, one for
+    /// each line, for `checklist`.
     pub(super) fn branches(&mut self, checklist: bool) -> Vec<Branch> {
         let read = if checklist {
             taskpaper::read_checklist
         } else {
             taskpaper::read_branches
         };
-        self.system
-            .as_mut()
-            .and_then(|system| system.get())
-            .or_else(|| self.copied.clone())
-            .map(|text| read(&text))
-            .unwrap_or_default()
+        self.text().map(|text| read(&text)).unwrap_or_default()
     }
 }

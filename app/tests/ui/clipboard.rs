@@ -231,3 +231,32 @@ fn text_pasted_into_a_description_keeps_its_lines() {
         "{rows:?}"
     );
 }
+
+// FR-EDIT-04, FR-OPS-05
+#[test]
+fn ctrl_v_pastes_the_clipboard_text_into_the_text_edited() {
+    let mut harness = Harness::new(80, 24);
+    let shared = Shared::default();
+    harness.tui.use_clipboard(Box::new(shared.clone()));
+    shared.put(" today\n");
+    harness.key(KeyCode::Enter);
+    harness.ctrl('v');
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        tasks(&harness)[0],
+        "▌ ☐ Call the bank about the card today                                    󱙬 Wed",
+        "a single line goes into the title"
+    );
+    shared.put("First line\nsecond line\n");
+    harness.type_text("mn");
+    harness.ctrl('v');
+    assert_eq!(
+        tasks(&harness).get(1..3),
+        Some(
+            ["▌   First line", "▌   second line"]
+                .map(str::to_owned)
+                .as_slice()
+        ),
+        "a description takes the text with its lines"
+    );
+}

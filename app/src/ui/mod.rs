@@ -292,7 +292,8 @@ impl Tui {
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
     /// command palette (FR-NAV-06), the Move to picker (FR-OPS-04) and, in edit mode, the title,
-    /// description or note being edited take them the same way (FR-EDIT-01), and so do the date
+    /// description or note being edited take them the same way (FR-EDIT-01), `Ctrl+V` pasting the
+    /// clipboard's text there as a terminal paste goes in (FR-EDIT-04), and so do the date
     /// prompt (FR-DATE-02) and the settings window (FR-SET-02). The open attachments panel takes
     /// them, scrolling itself (FR-ATT-01), leaving quitting and the commands it acts on
     /// (FR-CHK-03). The mouse wheel scrolls the shortcuts panel while it shows, and the mouse
@@ -328,6 +329,12 @@ impl Tui {
                 .filter(|&command| self.allows(command))
                 .map(Message::Command)
         } else if let Some((_, part, _)) = self.state.editing() {
+            if keymap::key_press(event) == Some(edit_keys::PASTE) {
+                if let Some(text) = self.clipboard.text() {
+                    self.paste(&text);
+                }
+                return;
+            }
             match part {
                 Part::Title => edit_keys::edit_input(event),
                 Part::Description => {

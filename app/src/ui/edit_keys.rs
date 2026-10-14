@@ -18,6 +18,10 @@ pub(super) const EDIT: &[(Key, EditInput)] = &[
     ((KeyModifiers::NONE, KeyCode::Esc), EditInput::Done),
 ];
 
+/// The key that pastes the clipboard's text into the text being edited, as a terminal paste
+/// goes in (FR-EDIT-04, D-44).
+pub(super) const PASTE: Key = (KeyModifiers::CONTROL, KeyCode::Char('v'));
+
 /// What `event` does in edit mode: its edit-mode key, else the change to the title its text key
 /// asks for. Only key presses count.
 pub(super) fn edit_input(event: &Event) -> Option<EditInput> {

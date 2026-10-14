@@ -17,7 +17,7 @@ use super::{
     Theme,
     attachments::{self, PanelKey, Scroll},
     date_prompt,
-    edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT},
+    edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
     keymap::{Key, key_label},
     picker, search, settings, text_keys,
 };
@@ -57,7 +57,7 @@ pub(super) enum Window {
 
 /// The groups of keys `window` binds: its own, then the text keys it leaves as they are.
 pub(super) fn window_keys(window: Window) -> Vec<Listing> {
-    let (heading, own): (_, Vec<(Key, String)>) = match window {
+    let (heading, mut own): (_, Vec<(Key, String)>) = match window {
         Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
         Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
         Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
@@ -114,6 +114,9 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             )
         }
     };
+    if let Window::Editing(_) = window {
+        own.push((PASTE, "Paste".to_owned()));
+    }
     if matches!(window, Window::Attachments | Window::Settings) {
         return vec![(heading, merged(own))];
     }
@@ -455,20 +458,22 @@ mod tests {
         );
         assert_eq!(
             headings(Window::Editing(Part::Title)),
-            [("Editing", 2), ("Text", 16)]
+            [("Editing", 3), ("Text", 16)]
         );
         assert_eq!(
             headings(Window::Editing(Part::Description)),
-            [("Editing Description", 14), ("Text", 12)]
+            [("Editing Description", 15), ("Text", 12)]
         );
         assert_eq!(
             headings(Window::Editing(Part::Note)),
-            [("Editing Note", 14), ("Text", 12)]
+            [("Editing Note", 15), ("Text", 12)]
         );
         assert_eq!(
             headings(Window::Editing(Part::Comment(0))),
-            [("Editing Comment", 2), ("Text", 16)]
+            [("Editing Comment", 3), ("Text", 16)]
         );
+        let (_, editing) = &window_keys(Window::Editing(Part::Title))[0];
+        assert!(editing.contains(&("Paste".to_owned(), "Ctrl+V".to_owned())));
         assert_eq!(headings(Window::Attachments), [("Attachments Panel", 12)]);
         assert_eq!(headings(Window::Settings), [("Settings", 6)]);
         assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 16)]);
