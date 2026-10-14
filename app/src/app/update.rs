@@ -222,6 +222,9 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::FocusLeft => state.focus_left(),
         Command::FocusRight => state.focus_right(),
         Command::FocusPane(number) => state.focus_pane(number),
+        Command::NextPane => state.cycle_pane(Direction::Down),
+        Command::PreviousPane => state.cycle_pane(Direction::Up),
+        Command::Browse(direction) => state.browse(direction),
         Command::OpenInNewPane => state.open_in_new_pane(),
         Command::ClosePane => state.close_pane(),
         Command::Narrow => return vec![Effect::NarrowPane],
@@ -555,7 +558,10 @@ mod tests {
             document.push(Some(work), Node::Item(Item::new(ItemKind::Project, title)))?;
         }
         let mut state = State::new(document, Opened::Demo, TODAY);
-        assert_eq!(state.sidebar(), None);
+        assert!(
+            state.sidebar().is_some() && !state.sidebar_has_keys(),
+            "the sidebar shows at start, the pane having the keys"
+        );
         give(&mut state, Command::Sidebar);
         assert!(state.sidebar_has_keys());
         past_the_views(&mut state);
@@ -689,9 +695,9 @@ mod tests {
         let mut document = state.document().clone();
         let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
         state = State::new(document, Opened::Demo, TODAY);
-        let pane = state.selection().clone();
         give(&mut state, Command::Sidebar);
         past_the_views(&mut state);
+        let pane = state.selection().clone();
         give(&mut state, Command::RenameContainer);
         type_into(&mut state, "s");
         edit(&mut state, EditInput::Next);

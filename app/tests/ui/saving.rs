@@ -401,7 +401,7 @@ fn a_failed_backup_is_shown_and_saving_goes_on() {
     let folders = tempfile::tempdir().expect("a temporary folder");
     block(&folders.path().join("backups"));
     let mut harness =
-        Harness::in_folders(folders, Some(path.clone()), None, 70, 20).expect("the file opens");
+        Harness::launched_in(folders, Some(path.clone()), 70, 20).expect("the file opens");
     assert!(
         status(&harness).contains("backup failed: "),
         "{}",

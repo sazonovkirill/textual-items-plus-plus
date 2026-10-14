@@ -87,11 +87,13 @@ pub struct State {
 
 impl State {
     /// The app showing `document`, opened from `opened` on `today`, at home: the Inbox, its first
-    /// row focused (FR-NAV-02). The file holds the document, and every change to it is saved; the
-    /// demo document is never saved (FR-STORE-01, FR-STORE-09).
+    /// row focused (FR-NAV-02), beside the sidebar focused on it without the keys (FR-VIEW-10).
+    /// The file holds the document, and every change to it is saved; the demo document is never
+    /// saved (FR-STORE-01, FR-STORE-09).
     #[must_use]
     pub fn new(document: Document, opened: Opened, today: Date) -> Self {
         let saving = Saving::new(document.revision(), true, matches!(opened, Opened::File(_)));
+        let sidebar = Sidebar::open(Shown::Container(document.inbox()));
         Self {
             left: Vec::new(),
             pane: Pane::new(
@@ -116,7 +118,7 @@ impl State {
             tags: None,
             editing: None,
             panel: None,
-            sidebar: Sidebar::default(),
+            sidebar,
             shortcuts: false,
             settings: Settings::default(),
             default_settings: Settings::default(),
@@ -993,6 +995,9 @@ impl State {
                 | Command::FocusLeft
                 | Command::FocusRight
                 | Command::FocusPane(_)
+                | Command::NextPane
+                | Command::PreviousPane
+                | Command::Browse(_)
                 | Command::Shortcuts
                 | Command::ScrollShortcuts(_)
                 | Command::Go(Go::Home | Go::Back | Go::Forward | Go::View(_))
@@ -1010,7 +1015,7 @@ impl State {
             Err(refusal) => state.notify(Notice::Refused(refusal)),
         };
         match (command, focused) {
-            (Command::Focus(motion), _) => self.sidebar.move_focus(&entries, motion),
+            (Command::Focus(motion), _) => self.move_sidebar_focus(motion),
             (Command::Collapse, _) => self.sidebar.toggle_collapsed(&self.document),
             (Command::NewLike(side), _) => self.sidebar_new(&entries, side),
             // The task keys add an area, `p` a project at the top level and `i` one in the area
@@ -1030,13 +1035,14 @@ impl State {
                 self.show(shown, None);
                 self.sidebar.focus(false);
             }
-            // The sidebar shows no descriptions, so the pane opens the project to edit its own
-            // (owner, D-68).
+            // The sidebar shows no descriptions, so the first pane, which the sidebar leads,
+            // opens the project to edit its own under its title (owner, D-68, D-79).
             (Command::EditDescription(_), Some(shown @ Shown::Container(id)))
                 if id != self.document.inbox() =>
             {
+                self.focus_pane(1);
                 self.show(shown, Some(id));
-                self.sidebar.focus(false);
+                self.pane_mut().selection.focus(Some(id));
                 self.edit_description(Whose::Shown);
             }
             (Command::Go(Go::Into), Some(shown)) => self.show(shown, None),
@@ -1269,9 +1275,14 @@ impl State {
     }
 
     /// Gives the keys to the pane numbered `number`, counted from 1 on the left, when there is
-    /// one (FR-PANE-02).
+    /// one, or for 0 to the sidebar, showing it when hidden (FR-PANE-02, FR-VIEW-10).
     pub(super) fn focus_pane(&mut self, number: usize) {
         let Some(index) = number.checked_sub(1) else {
+            if self.sidebar.shows() {
+                self.sidebar.focus(true);
+            } else {
+                self.toggle_sidebar();
+            }
             return;
         };
         if index > self.left.len() + self.right.len() {
@@ -1306,6 +1317,45 @@ impl State {
             self.sidebar.focus(false);
         } else {
             self.step_right();
+        }
+    }
+
+    /// Gives the keys to the next pane in `direction`, the sidebar while it shows counting as the
+    /// pane before the first, wrapping around at either end (FR-PANE-02, FR-VIEW-10).
+    pub(super) fn cycle_pane(&mut self, direction: Direction) {
+        let last = self.left.len() + 1 + self.right.len();
+        let first = usize::from(!self.sidebar.shows());
+        let at = if self.sidebar.has_keys() {
+            0
+        } else {
+            self.left.len() + 1
+        };
+        let next = match direction {
+            Direction::Down if at == last => first,
+            Direction::Down => at + 1,
+            Direction::Up if at == first => last,
+            Direction::Up => at - 1,
+        };
+        self.focus_pane(next);
+    }
+
+    /// Focuses the sidebar's entry in `direction`, shown or hidden, and shows it in the first
+    /// pane, the keys staying where they are (FR-VIEW-10).
+    pub(super) fn browse(&mut self, direction: Direction) {
+        self.move_sidebar_focus(match direction {
+            Direction::Down => Focus::Next,
+            Direction::Up => Focus::Previous,
+        });
+    }
+
+    /// Moves the sidebar's focus as `motion` says, shown or hidden, and shows the entry it lands
+    /// on in the first pane, which the sidebar leads (FR-VIEW-10).
+    fn move_sidebar_focus(&mut self, motion: Focus) {
+        self.sidebar
+            .move_focus(&self.sidebar.visible(&self.document), motion);
+        if let Some(shown) = self.sidebar.focused() {
+            let first = self.left.first_mut().unwrap_or(&mut self.pane);
+            first.show(&self.document, self.today, shown, None);
         }
     }
 
@@ -2773,6 +2823,74 @@ mod tests {
         assert_eq!(state.notice(), Some(&Notice::EmptyTrash(1)));
         state.empty_trash(true);
         assert_eq!(state.document().node(inbox_task), None, "emptied");
+        Ok(())
+    }
+
+    /// Where the keys are: `None` in the sidebar, else the index of the pane with them.
+    fn keys(state: &State) -> Option<usize> {
+        (!state.sidebar_has_keys()).then(|| state.current_pane())
+    }
+
+    // FR-PANE-02, FR-VIEW-10
+    #[test]
+    fn the_keys_go_round_the_panes_the_sidebar_first() -> Result<(), PlacementError> {
+        let Fixture { mut state, .. } = fixture()?;
+        state.open_in_new_pane();
+        state.open_in_new_pane();
+        assert_eq!(keys(&state), Some(2));
+        for (direction, expected) in [
+            (Direction::Down, None),
+            (Direction::Down, Some(0)),
+            (Direction::Up, None),
+            (Direction::Up, Some(2)),
+            (Direction::Up, Some(1)),
+        ] {
+            state.cycle_pane(direction);
+            assert_eq!(keys(&state), expected, "{direction:?}");
+        }
+        state.toggle_sidebar();
+        state.toggle_sidebar();
+        assert!(state.sidebar().is_none());
+        state.focus_pane(1);
+        state.cycle_pane(Direction::Up);
+        assert_eq!(
+            keys(&state),
+            Some(2),
+            "without the sidebar from the first to the last"
+        );
+        state.cycle_pane(Direction::Down);
+        assert_eq!(keys(&state), Some(0), "and back");
+        state.focus_pane(0);
+        assert!(
+            state.sidebar().is_some() && state.sidebar_has_keys(),
+            "shown"
+        );
+        state.focus_pane(0);
+        assert_eq!(keys(&state), None);
+        Ok(())
+    }
+
+    // FR-VIEW-10
+    #[test]
+    fn browsing_the_sidebar_shows_its_entries_in_the_first_pane() -> Result<(), PlacementError> {
+        let Fixture { mut state, .. } = fixture()?;
+        let inbox = Shown::Container(state.document().inbox());
+        state.open_in_new_pane();
+        state.browse(Direction::Down);
+        let shown = |state: &State| -> Vec<Shown> {
+            panes(state).into_iter().map(|(shown, _)| shown).collect()
+        };
+        let today = Shown::View(View::Today);
+        assert_eq!(shown(&state), [today, inbox]);
+        assert_eq!(keys(&state), Some(1), "the keys stay");
+        state.browse(Direction::Up);
+        state.browse(Direction::Up);
+        assert_eq!(shown(&state), [inbox, inbox], "no further than the first");
+        state.go(Go::Back);
+        assert_eq!(shown(&state), [inbox, inbox], "the second pane's history");
+        state.focus_pane(1);
+        state.go(Go::Back);
+        assert_eq!(shown(&state), [today, inbox], "the first pane's");
         Ok(())
     }
 

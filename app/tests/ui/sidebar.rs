@@ -95,8 +95,8 @@ fn reorder_areas_in_the_sidebar() {
     );
     harness.ctrl('b');
     assert!(
-        harness.rows()[0].starts_with("  󰚇 Inbox"),
-        "hidden, the pane takes the screen: {:?}",
+        harness.rows()[0].starts_with("  󰆧 Home"),
+        "hidden, the pane takes the screen, showing the area last focused: {:?}",
         harness.rows()[0]
     );
 }
@@ -287,4 +287,119 @@ fn collapse_an_area_and_expand_it_again() {
     let before = harness.rows();
     harness.type_text("'");
     assert_eq!(harness.rows(), before, "the pane has nothing to collapse");
+}
+
+/// The columns where the focus marker shows, on any row.
+fn marker_columns(harness: &Harness) -> Vec<usize> {
+    let mut columns: Vec<usize> = harness
+        .rows()
+        .iter()
+        .flat_map(|row| {
+            row.chars()
+                .enumerate()
+                .filter_map(|(column, c)| (c == '▌').then_some(column))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    columns.dedup();
+    columns
+}
+
+/// The title line of the pane starting at `column`, up to the next rule.
+fn header(harness: &Harness, column: usize) -> String {
+    let rows = harness.rows();
+    let row: String = rows
+        .first()
+        .map(|row| row.chars().skip(column).collect())
+        .unwrap_or_default();
+    row.split('│').next().unwrap_or_default().trim().to_owned()
+}
+
+// FR-VIEW-10, FR-PANE-02, D-79
+#[test]
+fn the_app_starts_with_the_sidebar_shown_and_the_keys_in_the_first_pane() {
+    let mut harness = Harness::launched(120, 24);
+    assert!(
+        entries(&harness)[0].starts_with(" 󰚇 Inbox"),
+        "the sidebar shows, without the keys"
+    );
+    assert_eq!(marker_columns(&harness), [28], "the pane has them");
+    harness.type_text("j");
+    assert!(
+        harness
+            .rows()
+            .iter()
+            .any(|row| row.contains("│▌ ☐ Buy coffee")),
+        "the pane moves: {}",
+        harness.screen()
+    );
+}
+
+// FR-PANE-02, FR-VIEW-10, D-79
+#[test]
+fn tab_gn_gp_and_g_digits_go_round_the_panes_the_sidebar_first() {
+    let mut harness = Harness::launched(120, 24);
+    harness.ctrl('\\');
+    let (sidebar, first, second) = (0, 28, 74);
+    assert_eq!(marker_columns(&harness), [second]);
+    for (keys, column) in [
+        ("\t", sidebar),
+        ("\t", first),
+        ("\t", second),
+        ("gn", sidebar),
+        ("gp", second),
+        ("gp", first),
+        ("gp", sidebar),
+        ("g2", second),
+        ("g0", sidebar),
+        ("g1", first),
+    ] {
+        if keys == "\t" {
+            harness.key(KeyCode::Tab);
+        } else {
+            harness.type_text(keys);
+        }
+        assert_eq!(marker_columns(&harness), [column], "{keys:?}");
+    }
+    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
+    assert_eq!(marker_columns(&harness), [sidebar], "Shift+Tab");
+    harness.ctrl('b');
+    harness.key(KeyCode::Tab);
+    harness.key(KeyCode::Tab);
+    assert_eq!(
+        marker_columns(&harness),
+        [0],
+        "without the sidebar Tab goes from the last pane to the first"
+    );
+    harness.type_text("g0");
+    assert!(
+        entries(&harness)[0].starts_with("*󰚇 Inbox"),
+        "g0 shows the sidebar with the keys"
+    );
+}
+
+// FR-VIEW-10, FR-PANE-02, D-79
+#[test]
+fn gj_gk_and_ctrl_arrows_browse_the_sidebar_in_the_first_pane_from_anywhere() {
+    let mut harness = Harness::launched(120, 24);
+    harness.ctrl('\\');
+    harness.type_text("gj");
+    assert!(header(&harness, 28).contains("Today"));
+    assert!(
+        header(&harness, 74).contains("Inbox"),
+        "the other pane stays"
+    );
+    assert_eq!(marker_columns(&harness), [74], "and keeps the keys");
+    harness.press(KeyCode::Down, KeyModifiers::CONTROL);
+    assert!(header(&harness, 28).contains("Upcoming"));
+    harness.type_text("gk");
+    harness.press(KeyCode::Up, KeyModifiers::CONTROL);
+    assert!(header(&harness, 28).contains("Inbox"));
+    harness.type_text("g0G");
+    assert!(
+        header(&harness, 28).contains("Move to the new flat"),
+        "moving in the sidebar shows its entry too: {}",
+        header(&harness, 28)
+    );
+    assert_eq!(marker_columns(&harness), [0], "the sidebar keeps the keys");
 }

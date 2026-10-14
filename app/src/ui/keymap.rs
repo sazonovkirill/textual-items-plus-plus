@@ -24,15 +24,16 @@ pub(super) type Key = (KeyModifiers, KeyCode);
 /// key only while no binding is complete. A feature binds its commands here.
 const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Quit, &["ctrl+q"]),
-    // The motions of taskpaper-terminal (FR-KEY-02); a section heading is the nearest thing this
-    // app has to its next and previous sibling (D-34).
+    // The motions of taskpaper-terminal (FR-KEY-02), and vim's paragraph motions for the next and
+    // previous section heading, since its next and previous sibling browse the sidebar (D-34,
+    // D-79).
     (Command::Focus(Focus::Next), &["j", "down"]),
     (Command::Focus(Focus::Previous), &["k", "up"]),
     (Command::Focus(Focus::First), &["g g", "home"]),
     (Command::Focus(Focus::Last), &["G", "end"]),
     (Command::Focus(Focus::Parent), &["#"]),
-    (Command::Focus(Focus::NextSection), &["g j", "ctrl+down"]),
-    (Command::Focus(Focus::PreviousSection), &["g k", "ctrl+up"]),
+    (Command::Focus(Focus::NextSection), &["}"]),
+    (Command::Focus(Focus::PreviousSection), &["{"]),
     // taskpaper-terminal's selection keys: `Shift` with a motion extends (D-24).
     (Command::Extend(Direction::Down), &["J", "shift+down"]),
     (Command::Extend(Direction::Up), &["K", "shift+up"]),
@@ -59,9 +60,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::View(View::Logbook)), &["g L"]),
     // `d` as `dd` deletes into it (D-55).
     (Command::Go(Go::View(View::Trash)), &["g d"]),
-    // taskpaper-terminal's Navigator key, with the owner's `Ctrl+K` and **g**o **n**avigate
-    // (D-36).
-    (Command::Navigator, &["ctrl+g", "ctrl+k", "g n"]),
+    // taskpaper-terminal's Navigator key, with the owner's `Ctrl+K` (D-36).
+    (Command::Navigator, &["ctrl+g", "ctrl+k"]),
     // taskpaper-terminal's palette key, and **g**o to a **c**ommand, which the owner moved from Show
     // Completed (D-63).
     (Command::Palette, &["ctrl+p", "g c"]),
@@ -102,7 +102,7 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::RenameContainer, &["R"]),
     (Command::DeleteContainer, &["d c"]),
     // `Alt` with a motion moves, and `]`/`[` nest and unnest checklist items, leaving
-    // taskpaper-terminal's `Tab`/`Shift+Tab` free (D-24, D-42, D-75).
+    // taskpaper-terminal's `Tab`/`Shift+Tab` to move between panes (D-24, D-42, D-75, D-79).
     (Command::Move(Direction::Up), &["alt+k", "alt+up"]),
     (Command::Move(Direction::Down), &["alt+j", "alt+down"]),
     (Command::Indent, &["]"]),
@@ -137,9 +137,14 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // The owner's key to fold a project in the sidebar (D-67).
     (Command::Collapse, &["'"]),
     // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends
-    // `Ctrl+\` as `Ctrl+4`, and `g` with a digit reaches a pane where `Alt` with it is taken
-    // (D-60).
+    // `Ctrl+\` as `Ctrl+4` (D-60). The owner's keys cycle through the panes, the sidebar first,
+    // `g` with a digit reaches one, `g0` the sidebar, and `gj`/`gk`, taskpaper-terminal's next and
+    // previous sibling, browse the sidebar's entries in the first pane (D-79).
     (Command::Sidebar, &["ctrl+b"]),
+    (Command::NextPane, &["tab", "g n"]),
+    (Command::PreviousPane, &["shift+tab", "g p"]),
+    (Command::Browse(Direction::Down), &["g j", "ctrl+down"]),
+    (Command::Browse(Direction::Up), &["g k", "ctrl+up"]),
     (
         Command::FocusLeft,
         &["ctrl+w h", "ctrl+w left", "ctrl+shift+left", "g l"],
@@ -148,15 +153,16 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
         Command::FocusRight,
         &["ctrl+w l", "ctrl+w right", "ctrl+shift+right", "g r"],
     ),
-    (Command::FocusPane(1), &["alt+1", "g 1"]),
-    (Command::FocusPane(2), &["alt+2", "g 2"]),
-    (Command::FocusPane(3), &["alt+3", "g 3"]),
-    (Command::FocusPane(4), &["alt+4", "g 4"]),
-    (Command::FocusPane(5), &["alt+5", "g 5"]),
-    (Command::FocusPane(6), &["alt+6", "g 6"]),
-    (Command::FocusPane(7), &["alt+7", "g 7"]),
-    (Command::FocusPane(8), &["alt+8", "g 8"]),
-    (Command::FocusPane(9), &["alt+9", "g 9"]),
+    (Command::FocusPane(0), &["g 0"]),
+    (Command::FocusPane(1), &["g 1"]),
+    (Command::FocusPane(2), &["g 2"]),
+    (Command::FocusPane(3), &["g 3"]),
+    (Command::FocusPane(4), &["g 4"]),
+    (Command::FocusPane(5), &["g 5"]),
+    (Command::FocusPane(6), &["g 6"]),
+    (Command::FocusPane(7), &["g 7"]),
+    (Command::FocusPane(8), &["g 8"]),
+    (Command::FocusPane(9), &["g 9"]),
     (Command::OpenInNewPane, &["ctrl+\\", "ctrl+4", "ctrl+w v"]),
     (Command::ClosePane, &["ctrl+w c"]),
     (Command::Narrow, &["ctrl+w <", "alt+shift+h"]),
@@ -515,7 +521,7 @@ mod tests {
 
     // FR-OPS-02, FR-OPS-03, FR-KEY-02
     #[test]
-    fn alt_with_a_motion_moves_and_brackets_indent_but_tab_does_not() {
+    fn alt_with_a_motion_moves_and_brackets_indent() {
         let mut keymap = Keymap::default();
         let alt = KeyModifiers::ALT;
         let moved = |direction| Some(Command::Move(direction));
@@ -525,9 +531,7 @@ mod tests {
             (press(KeyCode::Char('j'), alt), moved(Direction::Down)),
             (press(KeyCode::Down, alt), moved(Direction::Down)),
             (char(']'), Some(Command::Indent)),
-            (press(KeyCode::Tab, KeyModifiers::NONE), None),
             (char('['), Some(Command::Outdent)),
-            (press(KeyCode::BackTab, KeyModifiers::SHIFT), None),
         ] {
             assert_eq!(keymap.press(&event), command, "{event:?}");
         }
@@ -579,16 +583,56 @@ mod tests {
             ),
             (press(KeyCode::End, none), focus(Focus::Last)),
             (char('#'), focus(Focus::Parent)),
-            (
-                press(KeyCode::Down, KeyModifiers::CONTROL),
-                focus(Focus::NextSection),
-            ),
-            (
-                press(KeyCode::Up, KeyModifiers::CONTROL),
-                focus(Focus::PreviousSection),
-            ),
+            (char('}'), focus(Focus::NextSection)),
+            (char('{'), focus(Focus::PreviousSection)),
         ] {
             assert_eq!(keymap.press(&event), command, "{event:?}");
+        }
+    }
+
+    // FR-PANE-02, FR-VIEW-10, FR-KEY-02
+    #[test]
+    fn tab_and_g_cycle_through_the_panes_and_browse_the_sidebar() {
+        let mut keymap = Keymap::default();
+        let ctrl = KeyModifiers::CONTROL;
+        let ctrl_shift = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+        for (events, command) in [
+            (
+                vec![press(KeyCode::Tab, KeyModifiers::NONE)],
+                Some(Command::NextPane),
+            ),
+            (vec![char('g'), char('n')], Some(Command::NextPane)),
+            (
+                vec![press(KeyCode::BackTab, KeyModifiers::SHIFT)],
+                Some(Command::PreviousPane),
+            ),
+            (vec![char('g'), char('p')], Some(Command::PreviousPane)),
+            (vec![char('g'), char('0')], Some(Command::FocusPane(0))),
+            (vec![char('g'), char('9')], Some(Command::FocusPane(9))),
+            (vec![press(KeyCode::Char('1'), KeyModifiers::ALT)], None),
+            (
+                vec![press(KeyCode::Down, ctrl)],
+                Some(Command::Browse(Direction::Down)),
+            ),
+            (
+                vec![press(KeyCode::Up, ctrl)],
+                Some(Command::Browse(Direction::Up)),
+            ),
+            (
+                vec![press(KeyCode::Left, ctrl_shift)],
+                Some(Command::FocusLeft),
+            ),
+            (vec![char('g'), char('r')], Some(Command::FocusRight)),
+            (
+                vec![press(KeyCode::Char('k'), ctrl)],
+                Some(Command::Navigator),
+            ),
+        ] {
+            let mut given = None;
+            for event in &events {
+                given = keymap.press(event);
+            }
+            assert_eq!(given, command, "{events:?}");
         }
     }
 
@@ -684,18 +728,14 @@ mod tests {
     fn a_sequence_waits_for_its_next_key_showing_what_is_pending() {
         let mut keymap = Keymap::default();
         assert_eq!(keymap.pending(), "");
-        for (second, motion) in [
-            ('g', Focus::First),
-            ('j', Focus::NextSection),
-            ('k', Focus::PreviousSection),
+        for (second, command) in [
+            ('g', Command::Focus(Focus::First)),
+            ('j', Command::Browse(Direction::Down)),
+            ('k', Command::Browse(Direction::Up)),
         ] {
             assert_eq!(keymap.press(&char('g')), None);
             assert_eq!(keymap.pending(), "g");
-            assert_eq!(
-                keymap.press(&char(second)),
-                Some(Command::Focus(motion)),
-                "g {second}"
-            );
+            assert_eq!(keymap.press(&char(second)), Some(command), "g {second}");
             assert_eq!(keymap.pending(), "");
         }
     }
@@ -863,6 +903,7 @@ mod tests {
         let keymap = Keymap::default();
         assert_eq!(keymap.labels(Command::Go(Go::Home)), "Ctrl+', gh, gi");
         assert_eq!(keymap.labels(Command::Redo), "Z, Ctrl+Shift+Z, Ctrl+Y");
+        assert_eq!(keymap.labels(Command::PreviousPane), "Shift+Tab, gp");
     }
 
     #[test]

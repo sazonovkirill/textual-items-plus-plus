@@ -35,15 +35,17 @@ fn question_mark_shows_the_keys_of_every_command_grouped_at_the_right() {
             "│  First Item                  gg, Home",
             "│  Last Item                     G, End",
             "│  Section Heading                    #",
-            "│  Next Section              gj, Ctrl+↓",
-            "│  Previous Section          gk, Ctrl+↑",
+            "│  Next Section                       }",
+            "│  Previous Section                   {",
             "│ Selection",
         ]
     );
-    assert!(
-        lines.contains(&"│  Go Home               Ctrl+', gh, gi".to_owned()),
-        "{lines:#?}"
-    );
+    for line in [
+        "│  Go Home               Ctrl+', gh, gi",
+        "│  Next Sidebar Entry        gj, Ctrl+↓",
+    ] {
+        assert!(lines.contains(&line.to_owned()), "{line}: {lines:#?}");
+    }
     assert_eq!(
         lines.get(lines.len() - 5..).unwrap_or_default(),
         [
@@ -73,7 +75,7 @@ fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
         lines.get(1..3).unwrap_or_default(),
         [
             "│ ↑ more                              (",
-            "│  Go to All                         ga"
+            "│  Go to Today                       gt"
         ]
     );
     harness.type_text("))))))))");
@@ -187,7 +189,7 @@ fn the_date_prompt_lists_its_own_keys_and_the_text_keys_without_scroll_keys() {
     );
     assert!(lines.contains(&"│ Going".to_owned()), "{lines:#?}");
     assert!(
-        lines.contains(&"│  Open Navigator    Ctrl+G, Ctrl+K, gn".to_owned()),
+        lines.contains(&"│  Open Navigator        Ctrl+G, Ctrl+K".to_owned()),
         "{lines:#?}"
     );
     assert!(!lines.contains(&"│ Moving".to_owned()), "{lines:#?}");

@@ -3,7 +3,7 @@
 
 use std::{fmt::Write, fs};
 
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode};
 
 use crate::support::Harness;
 
@@ -130,11 +130,7 @@ fn section_motions_move_between_headings_and_to_the_section_of_a_task() {
     let mut harness = Harness::new(80, 24);
     harness.type_text("j");
     let coffee = focused(&harness);
-    harness.type_text("#");
-    harness.type_text("gj");
-    harness.type_text("gk");
-    harness.press(KeyCode::Down, KeyModifiers::CONTROL);
-    harness.press(KeyCode::Up, KeyModifiers::CONTROL);
+    harness.type_text("#}{");
     assert_eq!(focused(&harness), coffee);
 }
 

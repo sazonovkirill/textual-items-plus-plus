@@ -36,9 +36,29 @@ pub struct Harness {
 
 impl Harness {
     /// Starts the app without a file, on the demo document, on a `width` by `height` terminal
-    /// and draws its first screen.
+    /// and draws its first screen, the sidebar hidden as every way of starting it but
+    /// [`launched`](Self::launched) hides it.
     pub fn new(width: u16, height: u16) -> Self {
         Self::on(None, None, width, height).expect("the demo opens")
+    }
+
+    /// Starts the app without a file, on the demo document, on a `width` by `height` terminal
+    /// and draws its first screen as a user sees it, the sidebar showing. The other ways of
+    /// starting it hide the sidebar, so that what tests not about it see is the panes alone.
+    pub fn launched(width: u16, height: u16) -> Self {
+        let folders = tempfile::tempdir().expect("a temporary folder");
+        Self::launched_in(folders, None, width, height).expect("the demo opens")
+    }
+
+    /// Starts the app on `path`, else the demo, keeping its own files in `folders`, and draws its
+    /// first screen as a user sees it, the sidebar showing, before any key.
+    pub fn launched_in(
+        folders: TempDir,
+        path: Option<PathBuf>,
+        width: u16,
+        height: u16,
+    ) -> Result<Self, textual_items_plus_plus::store::OpenError> {
+        Self::starting(folders, path, None, (width, height), Animations::Off, true)
     }
 
     /// Starts the app as `tipp <path>` would, on a `width` by `height` terminal, and draws its
@@ -67,27 +87,37 @@ impl Harness {
         width: u16,
         height: u16,
     ) -> Result<Self, textual_items_plus_plus::store::OpenError> {
-        Self::starting(folders, path, recovered, (width, height), Animations::Off)
+        Self::starting(
+            folders,
+            path,
+            recovered,
+            (width, height),
+            Animations::Off,
+            false,
+        )
     }
 
     /// Starts the app without a file, on the demo document, on a `width` by `height` terminal,
     /// with every animation unless the settings file in `folders` says otherwise, as a session
-    /// not over SSH does; the other ways of starting it animate nothing, so that what tests not
-    /// about animation see is each frame as it ends.
+    /// not over SSH does, and the sidebar showing, since hiding it would animate; the other ways
+    /// of starting it animate nothing, so that what tests not about animation see is each frame
+    /// as it ends.
     pub fn animated(folders: TempDir, width: u16, height: u16) -> Self {
-        Self::starting(folders, None, None, (width, height), Animations::Full)
+        Self::starting(folders, None, None, (width, height), Animations::Full, true)
             .expect("the demo opens")
     }
 
     /// Starts the app on `path`, with the document of the recovery file `recovered` when one is
     /// given, keeping its own files in `folders`, on a terminal of `size`, animating as
-    /// `animations` says unless the settings file does.
+    /// `animations` says unless the settings file does, and with the sidebar it starts with
+    /// hidden unless `sidebar`.
     fn starting(
         folders: TempDir,
         path: Option<PathBuf>,
         recovered: Option<&Path>,
         (width, height): (u16, u16),
         animations: Animations,
+        sidebar: bool,
     ) -> Result<Self, textual_items_plus_plus::store::OpenError> {
         let terminal =
             Terminal::new(TestBackend::new(width, height)).expect("a test backend always sets up");
@@ -109,6 +139,13 @@ impl Harness {
             folders,
             now: Duration::ZERO,
         };
+        if !sidebar {
+            // The first `Ctrl+B` gives the sidebar the keys, the second hides it, before the
+            // first screen is drawn.
+            let ctrl_b = Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
+            harness.tui.handle(&ctrl_b, TODAY);
+            harness.tui.handle(&ctrl_b, TODAY);
+        }
         harness.settle();
         Ok(harness)
     }

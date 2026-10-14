@@ -67,7 +67,7 @@ fn open_today_beside_a_project() {
     assert_eq!(marked(&harness), (true, false));
     harness.type_text("gr");
     assert_eq!(marked(&harness), (false, true));
-    harness.press(KeyCode::Char('1'), KeyModifiers::ALT);
+    harness.type_text("g1");
     assert_eq!(marked(&harness), (true, false));
     harness.ctrl('w');
     harness.type_text("c");

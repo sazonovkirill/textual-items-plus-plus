@@ -391,13 +391,18 @@ mod tests {
         };
         let (today, work, website) = (line("Today"), line("WORK"), line("Website"));
         let theme = BuiltIn::default().colors();
-        assert_eq!(buf[(5, website)].bg, theme.current_line);
+        assert_eq!(
+            buf[(5, website)].bg,
+            theme.selection,
+            "focused, and so shown in the pane"
+        );
         assert_eq!(buf[(0, website)].fg, theme.focus);
         assert_eq!(
-            (buf[(1, 0)].fg, buf[(3, 0)].fg, buf[(5, 0)].bg),
-            (theme.inbox_icon, theme.band_text, theme.selection),
-            "the Inbox, shown in the pane, its title in the band's text color"
+            (buf[(1, 0)].fg, buf[(3, 0)].fg),
+            (theme.inbox_icon, theme.text),
+            "the Inbox"
         );
+        assert_ne!(buf[(5, 0)].bg, theme.selection, "the pane shows Website");
         let icons = [
             ("Today", theme.today_icon),
             ("Upcoming", theme.upcoming_icon),

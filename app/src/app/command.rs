@@ -123,8 +123,18 @@ pub enum Command {
     /// Give the keys to the pane on the right, or from the sidebar back to the pane (FR-PANE-02,
     /// FR-VIEW-10).
     FocusRight,
-    /// Give the keys to the pane with this number, counted from 1 on the left (FR-PANE-02).
+    /// Give the keys to the pane with this number, counted from 1 on the left, or with 0 to the
+    /// sidebar, shown if hidden (FR-PANE-02, FR-VIEW-10).
     FocusPane(usize),
+    /// Give the keys to the next pane, from the last back to the sidebar while it shows, else to
+    /// the first pane (FR-PANE-02, FR-VIEW-10).
+    NextPane,
+    /// Give the keys to the previous pane, from the sidebar, or the first pane while it is hidden,
+    /// to the last (FR-PANE-02, FR-VIEW-10).
+    PreviousPane,
+    /// Focus the sidebar's entry this way and show it in the first pane, the keys staying where
+    /// they are (FR-VIEW-10).
+    Browse(Direction),
     /// Show what the focused row opens, else the place shown, in a new pane right of the one with
     /// the keys, which gets them (FR-PANE-02).
     OpenInNewPane,
@@ -313,6 +323,16 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Go(Go::Forward),
         title: "Go Forward",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Browse(Direction::Down),
+        title: "Next Sidebar Entry",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Browse(Direction::Up),
+        title: "Previous Sidebar Entry",
         context: Context::Navigate,
     },
     Entry {
@@ -571,6 +591,21 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::NextPane,
+        title: "Focus Next Pane",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::PreviousPane,
+        title: "Focus Previous Pane",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(0),
+        title: "Focus Sidebar",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::FocusPane(1),
         title: "Focus Pane 1",
         context: Context::Navigate,
@@ -791,6 +826,11 @@ mod tests {
             Command::Collapse,
             Command::FocusLeft,
             Command::FocusRight,
+            Command::NextPane,
+            Command::PreviousPane,
+            Command::Browse(Direction::Down),
+            Command::Browse(Direction::Up),
+            Command::FocusPane(0),
             Command::FocusPane(1),
             Command::FocusPane(9),
             Command::OpenInNewPane,

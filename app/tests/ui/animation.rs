@@ -29,7 +29,7 @@ fn folders(config: &str) -> tempfile::TempDir {
 /// animations, to compare it with.
 fn pair(config: &str) -> (Harness, Harness) {
     let animated = Harness::animated(folders(config), 60, 16);
-    let still = Harness::in_folders(folders(RGB), None, None, 60, 16).expect("the demo opens");
+    let still = Harness::launched_in(folders(RGB), None, 60, 16).expect("the demo opens");
     (animated, still)
 }
 
@@ -154,7 +154,7 @@ type Step = fn(&mut Harness);
 fn windows_and_panes_fade_in_and_out() {
     let mut both = pair(RGB);
     let steps: [(&str, Step); 4] = [
-        ("the Navigator opening", |harness| harness.type_text("gn")),
+        ("the Navigator opening", |harness| harness.ctrl('k')),
         ("and closing", |harness| harness.key(KeyCode::Esc)),
         ("a pane opening", |harness| harness.ctrl('\\')),
         ("and closing", |harness| {

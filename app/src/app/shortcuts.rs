@@ -62,9 +62,11 @@ impl KeyGroup {
             | Command::TogglePicked
             | Command::SelectAll
             | Command::ClearSelection => Self::Selection,
-            Command::Go(_) | Command::Navigator | Command::GoToSymbol | Command::Search => {
-                Self::Going
-            }
+            Command::Go(_)
+            | Command::Browse(_)
+            | Command::Navigator
+            | Command::GoToSymbol
+            | Command::Search => Self::Going,
             Command::EditTitle
             | Command::NewLike(_)
             | Command::AddTask(_)
@@ -106,6 +108,8 @@ impl KeyGroup {
             | Command::FocusLeft
             | Command::FocusRight
             | Command::FocusPane(_)
+            | Command::NextPane
+            | Command::PreviousPane
             | Command::OpenInNewPane
             | Command::ClosePane
             | Command::Narrow

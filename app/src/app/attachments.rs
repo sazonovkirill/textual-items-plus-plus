@@ -994,7 +994,7 @@ mod tests {
             &before,
             "the note selected, the checklist's keys do nothing"
         );
-        assert!(state.sidebar().is_none(), "nor do the rest");
+        assert!(!state.sidebar_has_keys(), "nor do the rest");
         update(
             &mut state,
             Message::Paste(Side::Below, vec![branch("r")]),

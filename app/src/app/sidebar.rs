@@ -40,6 +40,15 @@ pub struct SidebarView {
 }
 
 impl Sidebar {
+    /// A sidebar that shows without the keys, focused on `focused`, as at start (FR-VIEW-10).
+    pub(super) fn open(focused: Shown) -> Self {
+        Self {
+            shown: true,
+            focused: Some(focused),
+            ..Self::default()
+        }
+    }
+
     /// Shows the sidebar with the keys, focused on `near` when given, or hides it when it has
     /// the keys, giving them back to the pane, or gives it the keys when it shows without them.
     pub(super) fn toggle(&mut self, near: Option<Shown>) {
