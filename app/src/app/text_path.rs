@@ -4,43 +4,87 @@
 //! ([file-io.md §3](../../../specs/reference/taskpaper-terminal/specs/file-io.md#3-external-changes)).
 //! Hides how the path is made and followed.
 
+use serde::{Deserialize, Serialize};
+
 use super::container;
 use crate::domain::{Document, ItemId, ItemKind, Node};
 
-/// Where `id` of `old` is in `new`: the item there with the same text path, and `true`; else the
-/// deepest item found of those above it, and `false`; `None` when not even the first is found.
-/// The Inbox is always found, as itself.
-pub(super) fn find(old: &Document, new: &Document, id: ItemId) -> Option<(ItemId, bool)> {
-    let path = container::path(old, id);
-    let mut found = None;
-    let mut siblings = new.top_level();
-    for &step in &path {
-        let next = if step == old.inbox() {
-            Some(new.inbox())
-        } else {
-            place(old, step).and_then(|(kind, title, nth)| {
+/// Where an item is, as its text path, which outlives the ids of one document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(super) struct TextPath(Vec<Step>);
+
+/// One item of a [`TextPath`]: its kind and title, and how many of its siblings before it have
+/// both too.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Step {
+    kind: ItemKind,
+    title: String,
+    nth: usize,
+}
+
+impl TextPath {
+    /// The text path of `id` in `document`, which finds nothing when `document` has no such
+    /// item.
+    pub(super) fn of(document: &Document, id: ItemId) -> Self {
+        let steps: Option<Vec<_>> = container::path(document, id)
+            .into_iter()
+            .map(|step| {
+                place(document, step).map(|(kind, title, nth)| Step {
+                    kind,
+                    title: title.to_owned(),
+                    nth,
+                })
+            })
+            .collect();
+        Self(steps.unwrap_or_default())
+    }
+
+    /// The item at this path in `document`, and `true`; else the deepest item found of those
+    /// above it, and `false`; `None` when not even the first is found. The Inbox is always found,
+    /// as itself.
+    pub(super) fn find(&self, document: &Document) -> Option<(ItemId, bool)> {
+        let mut found = None;
+        let mut siblings = document.top_level();
+        for step in &self.0 {
+            let next = if step.kind == ItemKind::Inbox {
+                Some(document.inbox())
+            } else {
                 siblings
                     .iter()
                     .copied()
-                    .filter(|&sibling| is(new, sibling, kind, title))
-                    .nth(nth)
-            })
-        };
-        let Some(next) = next else {
-            return found.map(|found| (found, false));
-        };
-        found = Some(next);
-        siblings = new.children(next);
+                    .filter(|&sibling| is(document, sibling, step.kind, &step.title))
+                    .nth(step.nth)
+            };
+            let Some(next) = next else {
+                return found.map(|found| (found, false));
+            };
+            found = Some(next);
+            siblings = document.children(next);
+        }
+        found.map(|found| (found, true))
     }
-    found.map(|found| (found, true))
+
+    /// The item at the whole of this path in `document`, if there is one.
+    pub(super) fn exact(&self, document: &Document) -> Option<ItemId> {
+        self.find(document)
+            .and_then(|(id, whole)| whole.then_some(id))
+    }
+}
+
+/// Where `id` of `old` is in `new`, as [`TextPath::find`] finds it.
+pub(super) fn find(old: &Document, new: &Document, id: ItemId) -> Option<(ItemId, bool)> {
+    TextPath::of(old, id).find(new)
 }
 
 /// The kind and title of the item `id`, and how many of its siblings before it have both too.
 fn place(document: &Document, id: ItemId) -> Option<(ItemKind, &str, usize)> {
     let item = document.node(id).and_then(Node::item)?;
-    let siblings = match document.position(id)? {
-        (Some(parent), _) => document.children(parent),
-        (None, _) => document.top_level(),
+    let siblings = match document.position(id) {
+        Some((Some(parent), _)) => document.children(parent),
+        Some((None, _)) => document.top_level(),
+        // The Inbox, which has none.
+        None => &[],
     };
     let nth = siblings
         .iter()

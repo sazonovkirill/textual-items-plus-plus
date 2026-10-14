@@ -21,6 +21,17 @@ pub(super) struct Visits {
 }
 
 impl Visits {
+    /// The visits to go back to, latest last, and those to go forward to, next last, as
+    /// [`from_parts`](Self::from_parts) takes them.
+    pub(super) fn parts(&self) -> (&[Visit], &[Visit]) {
+        (&self.back, &self.forward)
+    }
+
+    /// The visits `back` to go back to, latest last, and `forward` to go forward to, next last.
+    pub(super) fn from_parts(back: Vec<Visit>, forward: Vec<Visit>) -> Self {
+        Self { back, forward }
+    }
+
     /// Records leaving `from` for another place: Back returns to it, and nothing is ahead any
     /// more.
     pub(super) fn leave(&mut self, from: Visit) {

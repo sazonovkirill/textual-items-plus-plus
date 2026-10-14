@@ -2,6 +2,7 @@
 //! module of its own and registered here, and what a pane shows, a container or a view.
 
 use jiff::civil::Date;
+use serde::{Deserialize, Serialize};
 
 use super::{
     all,
@@ -12,7 +13,8 @@ use super::{
 use crate::domain::{Document, ItemId};
 
 /// A view besides a container. Each view step adds its variant and its [`Entry`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum View {
     /// The open items whose start or due date has come (FR-VIEW-06).
     Today,

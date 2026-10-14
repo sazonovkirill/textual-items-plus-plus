@@ -1,5 +1,5 @@
 //! Where the app keeps the files it writes beside the user's own: backups under the XDG data
-//! folder and recovery files under the XDG state folder, in a folder named like the settings
+//! folder, and recovery files and the pane layouts under the XDG state folder, in a folder named like the settings
 //! folder (FR-SET-01), also on macOS (D-32).
 
 use std::{ffi::OsString, path::PathBuf};
@@ -20,6 +20,14 @@ pub fn backups(xdg_data_home: Option<OsString>, home: Option<PathBuf>) -> Option
 #[must_use]
 pub fn recovery(xdg_state_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathBuf> {
     folder(xdg_state_home, home, ".local/state", "recovery")
+}
+
+/// The layouts file: `$XDG_STATE_HOME/textual-items-plus-plus/layouts.json`, or under
+/// `~/.local/state` when that is unset or not absolute (FR-PANE-03). `None` when neither folder
+/// is known.
+#[must_use]
+pub fn layouts(xdg_state_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathBuf> {
+    folder(xdg_state_home, home, ".local/state", "layouts.json")
 }
 
 /// `<base>/textual-items-plus-plus/<name>`, where `base` is an XDG base folder's variable, or
@@ -74,5 +82,22 @@ mod tests {
         assert_eq!(recovery(None, home.clone()), default);
         assert_eq!(recovery(Some("state".into()), home), default);
         assert_eq!(recovery(None, None), None);
+    }
+
+    // FR-PANE-03
+    #[test]
+    fn layouts_go_under_xdg_state_home_else_the_home_folder() {
+        let home = Some(PathBuf::from("/home/me"));
+        assert_eq!(
+            layouts(Some("/state".into()), home.clone()),
+            Some(PathBuf::from("/state/textual-items-plus-plus/layouts.json"))
+        );
+        assert_eq!(
+            layouts(None, home),
+            Some(PathBuf::from(
+                "/home/me/.local/state/textual-items-plus-plus/layouts.json"
+            ))
+        );
+        assert_eq!(layouts(None, None), None);
     }
 }

@@ -37,7 +37,8 @@ fn main() -> anyhow::Result<()> {
     let edge = Edge {
         inputs: inputs.clone(),
         backups: store::backups_folder(env::var_os("XDG_DATA_HOME"), home.clone()),
-        recovery: store::recovery_folder(env::var_os("XDG_STATE_HOME"), home),
+        recovery: store::recovery_folder(env::var_os("XDG_STATE_HOME"), home.clone()),
+        layouts: store::layouts_file(env::var_os("XDG_STATE_HOME"), home),
         clock: || jiff::Zoned::now().datetime(),
     };
     let recovered = match &path {

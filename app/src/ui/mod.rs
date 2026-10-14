@@ -115,11 +115,11 @@ impl Tui {
     #[must_use]
     pub fn new(state: State, today: Date, clock: fn() -> DateTime) -> Self {
         Self {
+            tops: vec![0; state.panes().count()],
             state,
             keymap: Keymap::default(),
             theme: BuiltIn::default().colors(),
             icons: IconSet::default(),
-            tops: vec![0],
             first: 0,
             panel: Scrolled::default(),
             area: Rect::default(),
@@ -485,7 +485,12 @@ impl Tui {
     /// Carries out one effect of the core.
     fn run(&mut self, effect: Effect) {
         match effect {
-            Effect::Quit => self.quit = true,
+            Effect::Quit => {
+                if let Some(file) = &self.file {
+                    file.keep_layout(&self.state.layout());
+                }
+                self.quit = true;
+            }
             Effect::Save => {
                 if let Some(file) = &self.file {
                     file.save(self.state.document(), self.today);

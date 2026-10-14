@@ -12,11 +12,11 @@ use jiff::civil::{Date, DateTime};
 
 use super::Input;
 use crate::{
-    app::{ConflictSide, Message, OnDisk, Opened, Report, State},
+    app::{ConflictSide, Layout, Message, OnDisk, Opened, Report, State},
     domain::Document,
     store::{
-        self, Backups, Disk, Job, OpenError, OpenFile, Outcome, Recovery, RecoveryError, Version,
-        Watcher,
+        self, Backups, Disk, Job, Layouts, OpenError, OpenFile, Outcome, Recovery, RecoveryError,
+        Version, Watcher,
         taskpaper::{Source, serialize, write_document},
     },
 };
@@ -31,6 +31,8 @@ pub struct Edge {
     pub backups: Option<PathBuf>,
     /// The recovery folder, `None` when there is none (D-32).
     pub recovery: Option<PathBuf>,
+    /// The layouts file, `None` when there is none (FR-PANE-03).
+    pub layouts: Option<PathBuf>,
     /// The local time now.
     pub clock: fn() -> DateTime,
 }
@@ -50,6 +52,7 @@ pub(super) struct File {
     /// Conflict copies the session ends with are written at once, not on the worker.
     backups: Backups,
     recovery: Recovery,
+    layouts: Layouts,
     clock: fn() -> DateTime,
     _watcher: Option<Watcher>,
 }
@@ -59,7 +62,8 @@ impl File {
     /// given, as changes the file lacks, after keeping the file as it is on disk in a conflict
     /// copy, since it may have changed after the recovered document was read from it
     /// ([file-io.md §4](../../../specs/reference/taskpaper-terminal/specs/file-io.md#4-crash-safety)).
-    /// Starts the disk worker, the watcher and, when the file exists, today's backup.
+    /// The panes come back as the file's kept layout has them (FR-PANE-03). Starts the disk
+    /// worker, the watcher and, when the file exists, today's backup.
     ///
     /// # Errors
     ///
@@ -90,6 +94,11 @@ impl File {
                 (State::recovered(document, opened, today), source, version)
             }
         };
+        let layouts = Layouts::new(edge.layouts.clone());
+        let state = match layouts.load(&path) {
+            Some(layout) => state.with_layout(&layout),
+            None => state,
+        };
         let inputs = edge.inputs.clone();
         let disk = Disk::start(
             // The event loop has ended once nothing receives, so the report has nowhere to go.
@@ -112,6 +121,7 @@ impl File {
             disk,
             backups,
             recovery: Recovery::new(edge.recovery.clone()),
+            layouts,
             clock: edge.clock,
             _watcher: watcher,
         };
@@ -129,6 +139,12 @@ impl File {
             text: self.text(document),
             expected: self.known,
         });
+    }
+
+    /// Keeps `layout` for the next launch of the file. A layout that cannot be kept only means
+    /// the next launch starts at home, so the failure is not reported.
+    pub(super) fn keep_layout(&self, layout: &Layout) {
+        let _ = self.layouts.keep(&self.path, layout);
     }
 
     /// Waits until the disk work asked for so far is done and reported.

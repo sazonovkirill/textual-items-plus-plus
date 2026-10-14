@@ -164,3 +164,38 @@ fn narrow_and_widen_a_pane_and_scroll_sideways_when_panes_do_not_fit() {
     let (left, _) = sides(&harness, 0);
     assert!(left.ends_with(" 1"), "scrolled back to the first: {left}");
 }
+
+// FR-PANE-03
+#[test]
+fn the_panes_and_what_they_show_come_back_on_the_next_launch() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    std::fs::write(
+        &path,
+        "Inbox:\n\t- Call the bank\nWork: @area\n\tWebsite:\n\t\t- Collect logos\n\t\t- Ship it\n",
+    )
+    .expect("the fixture is written");
+    let mut harness = Harness::open(path.clone(), 100, 16);
+    harness.ctrl('g');
+    harness.type_text("website");
+    harness.key(KeyCode::Enter);
+    harness.type_text("j");
+    harness.ctrl('g');
+    harness.type_text("today");
+    harness.press(KeyCode::Enter, KeyModifiers::ALT);
+    harness.type_text("gl");
+    let before = harness.screen();
+    let mut harness = harness.relaunch(path);
+    assert_eq!(harness.screen(), before);
+    let (left, right) = sides(&harness, 0);
+    assert!(left.contains("Work › Website"), "{left}");
+    assert!(right.contains("Today"), "{right}");
+    assert_eq!(
+        marked(&harness),
+        (true, false),
+        "the first pane has the keys"
+    );
+    harness.type_text("H");
+    let (left, _) = sides(&harness, 0);
+    assert!(left.contains("Inbox"), "its history came back too: {left}");
+}

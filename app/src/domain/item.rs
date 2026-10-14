@@ -3,6 +3,7 @@
 //! FR-ORG, FR-TASK, FR-CHK).
 
 use jiff::civil::Date;
+use serde::{Deserialize, Serialize};
 
 use super::dates::DateKind;
 
@@ -41,7 +42,8 @@ impl Node {
 }
 
 /// What an item is; each kind sits only where [`ItemKind::fits_in`] allows (FR-ORG-01–04).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ItemKind {
     /// The built-in container for tasks not yet organized (FR-ORG-07).
     Inbox,

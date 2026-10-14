@@ -71,6 +71,7 @@ impl Harness {
             inputs,
             backups: Some(folders.path().join("backups")),
             recovery: Some(folders.path().join("recovery")),
+            layouts: Some(folders.path().join("layouts.json")),
             clock: || NOW,
         };
         let tui = Tui::open(path, recovered, TODAY, &edge)?;
@@ -83,6 +84,16 @@ impl Harness {
         };
         harness.settle();
         Ok(harness)
+    }
+
+    /// Quits with `Ctrl+Q` and starts the app again on `path`, keeping its own folders, as the
+    /// next launch does, on a terminal of the same size.
+    pub fn relaunch(mut self, path: PathBuf) -> Self {
+        self.ctrl('q');
+        assert!(self.tui.should_quit(), "the app quits");
+        let area = self.terminal.backend().buffer().area;
+        Self::in_folders(self.folders, Some(path), None, area.width, area.height)
+            .expect("the file opens again")
     }
 
     /// Where the app keeps its backups.
