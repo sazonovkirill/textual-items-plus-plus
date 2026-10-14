@@ -760,10 +760,10 @@ impl State {
     }
 
     /// Adds an empty task on `side` of the focused row, focuses it and starts editing its title.
-    /// Nothing is added to a container whose contents are hidden for being completed
+    /// Nothing is added inside an item whose contents are hidden for being completed
     /// (FR-ORG-09), where it would not show, nor in a view, which has no place for it.
     pub(super) fn new_task(&mut self, side: Side) {
-        let Some(container) = self.container().filter(|&id| !self.document.conceals(id)) else {
+        let Some(container) = self.container() else {
             return;
         };
         let place = adding::place(
@@ -773,7 +773,9 @@ impl State {
             self.pane().selection.focused(),
             side,
         );
-        self.new_task_at(place);
+        if !self.document.conceals(place.0) {
+            self.new_task_at(place);
+        }
     }
 
     /// Adds an empty task at `place`, as its parent and its index there, focuses it and starts
@@ -1996,6 +1998,26 @@ mod tests {
         state.document.set(site, done)?;
         let before = state.document().clone();
         state.new_task(Side::Below);
+        assert!(state.editing().is_none());
+        assert_eq!(state.document(), &before);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-09, D-37
+    #[test]
+    fn enter_on_a_completed_sections_title_adds_no_task_inside_it() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state, section, ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        let mut done = Item::new(ItemKind::Section, "S");
+        done.completed = Some(crate::domain::Completion::Undated);
+        state.document.set(section, done)?;
+        state.toggle_show_completed();
+        state.pane_mut().selection.focus(Some(section));
+        let before = state.document().clone();
+        state.edit_title();
+        state.edit_input(EditInput::Next);
         assert!(state.editing().is_none());
         assert_eq!(state.document(), &before);
         Ok(())
