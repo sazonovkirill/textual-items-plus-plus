@@ -1,6 +1,6 @@
 # Agent Operating Rules
 
-Development runs in Claude sessions in the cloud; Codex runs only on the owner's Mac, to review the whole app after each milestone. Several agents work in parallel, each in its own worktree. This file defines the engineering rules and the [reviewer role](#reviewer-role) for both tools. [The agent workflow](docs/agent-workflow.md) defines task selection, claims, the task record, review gates, validation, escalation and delivery; [version-control practices](docs/version-control.md) define worktrees, branches, commits, rebasing and publication; the [testing strategy](docs/testing-strategy.md) defines what and how to test; [code quality and style](docs/code-quality.md) defines architecture layers, error handling, lints and dependency rules.
+Development runs in Claude sessions in the cloud; Codex runs only on the owner's Mac, to review the whole app after each milestone. Several agents work in parallel, each in its own worktree. This file defines the engineering rules and the [reviewer role](#reviewer-role) for both tools. [The agent workflow](docs/agent-workflow.md) defines task selection, claims, the task record, review gates, validation, escalation and delivery; [version-control practices](docs/version-control.md) define worktrees, branches, commits, rebasing and publication; the [testing strategy](docs/testing-strategy.md) defines what and how to test; the [bug hunt](docs/bug-hunt.md) defines the rounds of Bug Finders, a Bug Reviewer and Bug Fixers; [code quality and style](docs/code-quality.md) defines architecture layers, error handling, lints and dependency rules.
 
 ## Reasoning effort
 
@@ -111,5 +111,5 @@ Either tool may instead be launched as an independent reviewer: Claude of a prop
 - `specs/`: what the app does: requirements, specs, references, open questions and the implementation plan ([index](specs/README.md)); no task tracking.
 - `docs/`: how agents work: workflow, version control, testing and code quality ([index](docs/README.md)); no task tracking.
 - `.worktrees/` and `.claude/worktrees/`: agent worktrees, ignored by Git.
-- `.agents/skills/`: procedures both tools load on demand (`claim-task`, `review-commit`, `deliver-task`, `explore-app`); `.claude/skills` links to it. The documents under `docs/` stay authoritative; a skill only sequences their steps.
+- `.agents/skills/`: procedures both tools load on demand (`claim-task`, `review-commit`, `deliver-task`, `explore-app`, `bug-hunt`); `.claude/skills` links to it. The documents under `docs/` stay authoritative; a skill only sequences their steps.
 - `.claude/`: Claude Code settings and hooks.
