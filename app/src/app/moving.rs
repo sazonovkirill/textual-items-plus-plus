@@ -32,12 +32,7 @@ pub enum Refusal {
 /// (FR-VIEW-11). Only a task crosses the edge of its group: past the heading below it, it is the
 /// first task of that section, and up from the top of a section it is the last task of the
 /// section above, or of those outside sections (FR-OPS-10).
-pub(super) fn shift(
-    document: &Document,
-    rows: &[Row],
-    id: ItemId,
-    direction: Direction,
-) -> Transaction {
+fn shift(document: &Document, rows: &[Row], id: ItemId, direction: Direction) -> Transaction {
     let Some((at, &row)) = rows.iter().enumerate().find(|(_, row)| row.id() == id) else {
         return Transaction::default();
     };
@@ -118,7 +113,7 @@ fn outside_sections(document: &Document, section: ItemId) -> Destination {
 /// # Errors
 ///
 /// The [`Refusal`] when the hierarchy does not allow it.
-pub(super) fn indent(document: &Document, id: ItemId) -> Result<(Transaction, ItemId), Refusal> {
+fn indent(document: &Document, id: ItemId) -> Result<(Transaction, ItemId), Refusal> {
     let kind = nesting(document, id)?;
     let (parent, index) = document
         .position(id)
@@ -149,7 +144,7 @@ pub(super) fn indent(document: &Document, id: ItemId) -> Result<(Transaction, It
 /// # Errors
 ///
 /// The [`Refusal`] when the hierarchy does not allow it.
-pub(super) fn outdent(document: &Document, id: ItemId) -> Result<Transaction, Refusal> {
+fn outdent(document: &Document, id: ItemId) -> Result<Transaction, Refusal> {
     let kind = nesting(document, id)?;
     let parent = document
         .position(id)
@@ -159,6 +154,115 @@ pub(super) fn outdent(document: &Document, id: ItemId) -> Result<Transaction, Re
     Ok(document
         .move_to(id, Destination::After(parent))
         .expect("an item fits beside the item of its kind that holds it"))
+}
+
+/// The transaction that moves each of `items`, given in the order of the rows, one step
+/// `direction` as [`shift`] moves one among the rows `rows` lists of the document as the ones
+/// moved before left it: the last first when moving down, so that they keep their order. An item
+/// stays when its move would take it past another of them (FR-OPS-02, D-18).
+pub(super) fn shift_all(
+    document: &Document,
+    items: &[ItemId],
+    direction: Direction,
+    rows: impl Fn(&Document) -> Vec<Row>,
+) -> Transaction {
+    let ordered: Vec<ItemId> = match direction {
+        Direction::Up => items.to_vec(),
+        Direction::Down => items.iter().rev().copied().collect(),
+    };
+    let (transaction, _) = each(document, ordered, |document, id| {
+        let before = rows(document);
+        let transaction = shift(document, &before, id, direction);
+        let mut moved = document.clone();
+        moved
+            .apply(&transaction)
+            .expect("a transaction made from the document as it is fits it");
+        let after = rows(&moved);
+        let passes = items.iter().any(|&other| {
+            let above = |rows: &[Row]| Some(position(rows, other)? < position(rows, id)?);
+            other != id
+                && above(&before)
+                    .zip(above(&after))
+                    .is_some_and(|(was, is)| was != is)
+        });
+        Ok(if passes {
+            Transaction::default()
+        } else {
+            transaction
+        })
+    });
+    transaction
+}
+
+/// The transaction that indents each of `items`, given in the order of the rows, as [`indent`]
+/// indents one, on the document as the ones indented before left it, with each item indented and
+/// the item it went into. An item stays when the item it would go into is another of them that
+/// stayed (FR-OPS-03, D-18).
+///
+/// # Errors
+///
+/// The [`Refusal`] of the first item refused when none moves.
+pub(super) fn indent_all(
+    document: &Document,
+    items: &[ItemId],
+) -> Result<(Transaction, Vec<(ItemId, ItemId)>), Refusal> {
+    let mut moved = Vec::new();
+    let (transaction, refused) = each(document, items.iter().copied(), |document, id| {
+        let (transaction, into) = indent(document, id)?;
+        if items.contains(&into) {
+            return Err(Refusal::NothingAbove);
+        }
+        moved.push((id, into));
+        Ok(transaction)
+    });
+    match refused {
+        Some(refusal) if moved.is_empty() => Err(refusal),
+        _ => Ok((transaction, moved)),
+    }
+}
+
+/// The transaction that outdents each of `items`, given in the order of the rows, as
+/// [`outdent`] outdents one, the last first so that they keep their order (FR-OPS-03, D-18).
+///
+/// # Errors
+///
+/// The [`Refusal`] of the last item refused when none moves.
+pub(super) fn outdent_all(document: &Document, items: &[ItemId]) -> Result<Transaction, Refusal> {
+    match each(document, items.iter().rev().copied(), outdent) {
+        (transaction, Some(refusal)) if transaction.ops().is_empty() => Err(refusal),
+        (transaction, _) => Ok(transaction),
+    }
+}
+
+/// The transaction of `step` taken for each of `ordered` in turn, on the document as the steps
+/// before left it, and the first refusal, if any step refused.
+fn each(
+    document: &Document,
+    ordered: impl IntoIterator<Item = ItemId>,
+    mut step: impl FnMut(&Document, ItemId) -> Result<Transaction, Refusal>,
+) -> (Transaction, Option<Refusal>) {
+    let mut scratch = document.clone();
+    let mut ops = Vec::new();
+    let mut refused = None;
+    for id in ordered {
+        match step(&scratch, id) {
+            Ok(transaction) => {
+                scratch
+                    .apply(&transaction)
+                    .expect("a transaction made from the document as it is fits it");
+                ops.extend_from_slice(transaction.ops());
+            }
+            Err(refusal) => {
+                refused.get_or_insert(refusal);
+            }
+        }
+    }
+    (Transaction::new(ops), refused)
+}
+
+/// Where `id` is among `rows`.
+fn position(rows: &[Row], id: ItemId) -> Option<usize> {
+    rows.iter().position(|row| row.id() == id)
 }
 
 /// The kind of `id` when it is an item that nests in its own kind.
@@ -525,5 +629,131 @@ mod tests {
             assert_eq!(indent(&document, id).err(), Some(Refusal::DoesNotNest));
             assert_eq!(outdent(&document, id).err(), Some(Refusal::DoesNotNest));
         }
+    }
+
+    /// Moves the items titled `titles` in `container` together and returns the rows shown after,
+    /// checking undo.
+    fn shifted_all(
+        document: &mut Document,
+        container: ItemId,
+        titles: &[&str],
+        direction: Direction,
+    ) -> Result<Vec<String>, PlacementError> {
+        let items: Vec<ItemId> = titles.iter().map(|title| find(document, title)).collect();
+        let before = document.clone();
+        let transaction = shift_all(document, &items, direction, |document| {
+            rows(document, container, false)
+        });
+        document.apply(&transaction)?;
+        let mut undone = document.clone();
+        undone.apply(&transaction.inverse())?;
+        assert_eq!(undone, before, "undo restores the document");
+        Ok(shown(document, container, false))
+    }
+
+    // FR-OPS-01, FR-OPS-02, FR-OPS-10
+    #[test]
+    fn selected_tasks_move_together_keeping_their_order() -> Result<(), PlacementError> {
+        let (mut document, area) = area();
+        assert_eq!(
+            shifted_all(&mut document, area, &["a", "b"], Direction::Down)?,
+            ["#S", "a", "b", "c", "d", "#T", "#U", "e", "P", "Q"]
+        );
+        assert_eq!(
+            shifted_all(&mut document, area, &["b", "d"], Direction::Up)?,
+            ["#S", "b", "a", "d", "c", "#T", "#U", "e", "P", "Q"],
+            "apart, each moves on its own"
+        );
+        assert_eq!(
+            shifted_all(&mut document, area, &["d", "e"], Direction::Up)?,
+            ["#S", "b", "d", "a", "c", "#T", "e", "#U", "P", "Q"],
+            "each crosses its own heading"
+        );
+        Ok(())
+    }
+
+    // FR-OPS-02, FR-OPS-10
+    #[test]
+    fn a_selected_item_that_would_pass_another_that_stays_stays_too() -> Result<(), PlacementError>
+    {
+        let (mut document, area) = area();
+        let before = shown(&document, area, false);
+        assert_eq!(
+            shifted_all(&mut document, area, &["a", "b"], Direction::Up)?,
+            before,
+            "the first stays, and the second with it"
+        );
+        assert_eq!(
+            shifted_all(&mut document, area, &["P", "Q"], Direction::Down)?,
+            before
+        );
+        assert_eq!(
+            shifted_all(&mut document, area, &["S", "c"], Direction::Up)?,
+            before,
+            "the first section stays, and its task does not pass its heading"
+        );
+        Ok(())
+    }
+
+    /// An area holding projects `P`, `Q` and `R`, `R` holding `S` and `T`, and a task `t`.
+    fn projects() -> Document {
+        let mut document = Document::new();
+        let area = add(&mut document, None, Item::new(Area, "area"));
+        for title in ["P", "Q", "R"] {
+            add(&mut document, Some(area), Item::new(Project, title));
+        }
+        let r = find(&document, "R");
+        for title in ["S", "T"] {
+            add(&mut document, Some(r), Item::new(Project, title));
+        }
+        add(&mut document, Some(area), Item::new(Task, "t"));
+        document
+    }
+
+    // FR-OPS-01, FR-OPS-03
+    #[test]
+    fn selected_projects_indent_together_into_the_one_above() -> Result<(), PlacementError> {
+        let mut document = projects();
+        let [p, q, r, t] = ["P", "Q", "R", "t"].map(|title| find(&document, title));
+        let (transaction, moved) =
+            indent_all(&document, &[t, q, r]).map_err(|_| PlacementError::DoesNotFit)?;
+        assert_eq!(moved, [(q, p), (r, p)]);
+        document.apply(&transaction)?;
+        assert_eq!(
+            document.children(p),
+            [q, r],
+            "in their order, the task left alone"
+        );
+        let document = projects();
+        assert_eq!(
+            indent_all(&document, &[p, q]).err(),
+            Some(Refusal::NothingAbove),
+            "the first has nothing above, so the second would go into it"
+        );
+        assert_eq!(
+            indent_all(&document, &[t]).err(),
+            Some(Refusal::DoesNotNest)
+        );
+        assert_eq!(
+            indent_all(&document, &[]).ok(),
+            Some((Transaction::default(), Vec::new()))
+        );
+        Ok(())
+    }
+
+    // FR-OPS-01, FR-OPS-03
+    #[test]
+    fn selected_projects_outdent_together_keeping_their_order() -> Result<(), PlacementError> {
+        let mut document = projects();
+        let [area, q, r, s, t] = ["area", "Q", "R", "S", "T"].map(|title| find(&document, title));
+        let transaction =
+            outdent_all(&document, &[s, t]).map_err(|_| PlacementError::DoesNotFit)?;
+        document.apply(&transaction)?;
+        assert_eq!(&document.children(area)[1..5], [q, r, s, t]);
+        assert_eq!(
+            outdent_all(&document, &[q, r]).err(),
+            Some(Refusal::NotNested)
+        );
+        Ok(())
     }
 }

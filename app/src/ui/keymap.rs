@@ -30,6 +30,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Focus(Focus::Parent), &["#"]),
     (Command::Focus(Focus::NextSection), &["g j", "ctrl+down"]),
     (Command::Focus(Focus::PreviousSection), &["g k", "ctrl+up"]),
+    // taskpaper-terminal's selection keys: `Shift` with a motion extends (D-24).
+    (Command::Extend(Direction::Down), &["J", "shift+down"]),
+    (Command::Extend(Direction::Up), &["K", "shift+up"]),
+    (Command::TogglePicked, &["v"]),
+    (Command::SelectAll, &["ctrl+a"]),
+    (Command::ClearSelection, &["esc"]),
     // taskpaper-terminal's keys; a legacy terminal sends `Ctrl+Shift+Z` as `Ctrl+Z`, which
     // undoes (D-35).
     (Command::ToggleCompleted, &["x", "ctrl+enter"]),

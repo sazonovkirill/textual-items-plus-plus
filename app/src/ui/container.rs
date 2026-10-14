@@ -1,9 +1,9 @@
 //! The container pane: the opened container drawn as FR-VIEW-05 arranges it, in the look of
 //! taskpaper-terminal ([ui.md §2](../../../specs/reference/taskpaper-terminal/specs/ui.md#2-blocks)):
 //! its title and description, then a row for each of its items, with the focus marker and band
-//! on the focused one, wrapping long text and scrolling to keep the focus in view, and the title
-//! being edited, if any, as a text field in its row, or in the heading for the container's own;
-//! a description being edited shows whole where it shows.
+//! on the focused one and the marker dimmed on the picked ones, wrapping long text and scrolling
+//! to keep the focus in view, and the title being edited, if any, as a text field in its row, or
+//! in the heading for the container's own; a description being edited shows whole where it shows.
 
 use std::ops::Range;
 
@@ -17,7 +17,7 @@ use ratatui::{
 
 use super::{Icon, IconSet, Theme};
 use crate::{
-    app::{Part, Row, State, TextField},
+    app::{Part, Row, Selection, State, TextField},
     domain::{Document, Item, ItemId, ItemKind, Node},
 };
 
@@ -33,7 +33,7 @@ pub(super) struct ContainerPane<'a> {
     document: &'a Document,
     container: ItemId,
     rows: Vec<Row>,
-    focused: Option<ItemId>,
+    selection: &'a Selection,
     editing: Option<(ItemId, Part, &'a TextField)>,
     /// Whether the pane has the keys, which its focus marker and band show.
     keys: bool,
@@ -49,7 +49,7 @@ impl<'a> ContainerPane<'a> {
             document: state.document(),
             container: state.container(),
             rows: state.rows(),
-            focused: state.selection().focused(),
+            selection: state.selection(),
             editing: state.editing().filter(|_| !state.sidebar_has_keys()),
             keys: !state.sidebar_has_keys(),
             theme,
@@ -134,6 +134,12 @@ impl StatefulWidget for ContainerPane<'_> {
         let band = span.filter(|_| self.keys);
         if let Some((start, end)) = band {
             self.band(area, buf, start, end, *top);
+        }
+        for (index, row) in self.rows.iter().enumerate() {
+            if self.keys && Some(index) != focused && self.selection.is_picked(row.id()) {
+                let (start, end) = row_span(&pieces, &lines, width, index);
+                self.picked(area, buf, start, end, *top);
+            }
         }
         for (piece, &start) in pieces.iter().zip(&lines) {
             draw(piece, start, *top, area, buf);
@@ -233,7 +239,7 @@ impl<'a> ContainerPane<'a> {
 
     /// The index of the focused row among the state's rows.
     fn focused_row(&self) -> Option<usize> {
-        let focused = self.focused?;
+        let focused = self.selection.focused()?;
         self.rows.iter().position(|row| row.id() == focused)
     }
 
@@ -498,6 +504,17 @@ impl<'a> ContainerPane<'a> {
         }
     }
 
+    /// Puts the focus marker, dimmed, in the gutter beside a picked row's lines `start..end`
+    /// (FR-OPS-01).
+    fn picked(&self, area: Rect, buf: &mut Buffer, start: usize, end: usize, top: usize) {
+        let style = Style::new()
+            .fg(self.theme.focus)
+            .add_modifier(Modifier::DIM);
+        for y in band_rows(area, start, end, top) {
+            buf.set_string(area.x, y, FOCUS_MARKER, style);
+        }
+    }
+
     /// Gives the text on the band that has no color of its own the band's text color.
     fn band_text(&self, area: Rect, buf: &mut Buffer, start: usize, end: usize, top: usize) {
         for y in band_rows(area, start, end, top) {
@@ -571,11 +588,13 @@ mod tests {
         top: &mut usize,
     ) -> Buffer {
         let theme = BuiltIn::default().colors();
+        let mut selection = Selection::default();
+        selection.focus(focused.map(|title| find(document, title)));
         let pane = ContainerPane {
             document,
             container,
             rows: app::rows(document, container, true),
-            focused: focused.map(|title| find(document, title)),
+            selection: &selection,
             editing: None,
             keys: true,
             theme: &theme,
@@ -592,11 +611,13 @@ mod tests {
         let document = demo();
         let theme = BuiltIn::default().colors();
         let id = find(&document, title);
+        let mut selection = Selection::default();
+        selection.focus(Some(id));
         let pane = ContainerPane {
             document: &document,
             container: document.inbox(),
             rows: app::rows(&document, document.inbox(), false),
-            focused: Some(id),
+            selection: &selection,
             editing: Some((id, Part::Title, field)),
             keys: true,
             theme: &theme,
@@ -614,11 +635,13 @@ mod tests {
         let document = demo();
         let theme = BuiltIn::default().colors();
         let field = TextField::new("Tray".to_owned());
+        let mut selection = Selection::default();
+        selection.focus(document.children(document.inbox()).first().copied());
         let pane = ContainerPane {
             document: &document,
             container: document.inbox(),
             rows: app::rows(&document, document.inbox(), false),
-            focused: document.children(document.inbox()).first().copied(),
+            selection: &selection,
             editing: Some((document.inbox(), Part::Title, &field)),
             keys: true,
             theme: &theme,
@@ -643,11 +666,13 @@ mod tests {
         let document = demo();
         let theme = BuiltIn::default().colors();
         let id = find(&document, title);
+        let mut selection = Selection::default();
+        selection.focus(document.children(document.inbox()).first().copied());
         let pane = || ContainerPane {
             document: &document,
             container: document.inbox(),
             rows: app::rows(&document, document.inbox(), false),
-            focused: document.children(document.inbox()).first().copied(),
+            selection: &selection,
             editing: Some((id, Part::Description, field)),
             keys: true,
             theme: &theme,
@@ -726,6 +751,40 @@ mod tests {
             "a caret below the pane's height scrolls the title away"
         );
         assert_eq!(caret, Some(Position::new(3, 2)));
+    }
+
+    // FR-OPS-01
+    #[test]
+    fn picked_rows_get_the_focus_marker_dimmed() {
+        let mut state = app::State::new(demo(), app::Opened::Demo);
+        let extend = app::Message::Command(app::Command::Extend(app::Direction::Down));
+        app::update(&mut state, extend, date(2026, 10, 5));
+        let theme = BuiltIn::default().colors();
+        let pane = ContainerPane::new(&state, &theme, IconSet::Plain);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 30, 8));
+        pane.render(buf.area, &mut buf, &mut 0);
+        let rows = lines(&buf);
+        let marked: Vec<_> = (0..8u16)
+            .filter(|&y| buf[(0, y)].symbol() == FOCUS_MARKER)
+            .map(|y| {
+                let cell = &buf[(0, y)];
+                (
+                    rows[usize::from(y)].trim_end().to_owned(),
+                    cell.fg,
+                    cell.modifier,
+                )
+            })
+            .collect();
+        let line = |text: &str, modifier| (text.to_owned(), theme.focus, modifier);
+        assert_eq!(
+            marked,
+            [
+                line("▌ - Call the bank about the", Modifier::DIM),
+                line("▌   card", Modifier::DIM),
+                line("▌ - Buy coffee beans @errands", Modifier::empty()),
+            ],
+            "every line of a picked row; the focused one as ever"
+        );
     }
 
     // FR-EDIT-02, FR-EDIT-04

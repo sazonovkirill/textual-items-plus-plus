@@ -152,30 +152,64 @@ impl State {
             .map(|editing| (editing.id(), editing.part(), editing.field()))
     }
 
-    /// Moves the focus as `motion` says, selecting only the newly focused row.
+    /// Moves the focus as `motion` says, keeping what is picked.
     pub(super) fn move_focus(&mut self, motion: Focus) {
         let target = focus::target(&self.rows(), self.selection.focused(), motion);
         self.selection.focus(target);
     }
 
+    /// Moves the focus a row `direction`, picking the rows from where the run of extensions
+    /// began to it (FR-OPS-01).
+    pub(super) fn extend_selection(&mut self, direction: Direction) {
+        let rows = self.rows();
+        let motion = match direction {
+            Direction::Up => Focus::Previous,
+            Direction::Down => Focus::Next,
+        };
+        let target = focus::target(&rows, self.selection.focused(), motion);
+        self.selection.extend(&rows, target);
+    }
+
+    /// Picks the focused row, or unpicks it when it is picked (FR-OPS-01).
+    pub(super) fn toggle_picked(&mut self) {
+        self.selection.toggle();
+    }
+
+    /// Picks every row (FR-OPS-01).
+    pub(super) fn select_all(&mut self) {
+        self.selection.select_all(&self.rows());
+    }
+
+    /// Picks nothing, so that commands take the focused row again (FR-OPS-01).
+    pub(super) fn clear_selection(&mut self) {
+        self.selection.clear();
+    }
+
+    /// The selected items without those inside another of them, which go along with it, in the
+    /// order of the rows: what a command that moves or takes items acts on.
+    fn targets(&self) -> Vec<ItemId> {
+        container::outermost_rows(&self.document, self.selection.items(&self.rows()))
+    }
+
     /// Completes the selected items on `today`, or uncompletes them when all are completed, as
     /// one step to undo, moving the focus on when its row hides.
     pub(super) fn toggle_completed(&mut self, today: Date) {
-        let transaction = completion::toggle(&self.document, self.selection.items(), today);
+        let items = self.selection.items(&self.rows());
+        let transaction = completion::toggle(&self.document, items, today);
         self.change(transaction);
     }
 
     /// Moves the selected items to the Trash on `today`, as one step to undo, moving the focus on
     /// from the rows that leave.
     pub(super) fn delete(&mut self, today: Date) {
-        let transaction = trash::delete(&self.document, self.selection.items(), today);
+        let transaction = trash::delete(&self.document, self.targets(), today);
         self.change(transaction);
     }
 
     /// Puts a copy of each selected item, with its contents, right after it, as one step to undo,
     /// focusing the copy of the last one the pane shows.
     pub(super) fn duplicate(&mut self) {
-        let taken = container::outermost_rows(&self.document, self.selection.items());
+        let taken = self.targets();
         let (transaction, last) = clipboard::duplicate(&mut self.document, &taken);
         self.change_focusing(transaction, last.or(self.selection.focused()));
     }
@@ -183,7 +217,7 @@ impl State {
     /// Asks for the selected items, with their contents, to go on the clipboard; nothing when no
     /// project, section or task is selected.
     pub(super) fn copy(&self) -> Vec<Effect> {
-        let taken = container::outermost_rows(&self.document, self.selection.items());
+        let taken = self.targets();
         if taken.is_empty() {
             return Vec::new();
         }
@@ -197,7 +231,7 @@ impl State {
     /// step to undo, moving the focus on from the rows that leave.
     pub(super) fn cut(&mut self) -> Vec<Effect> {
         let effects = self.copy();
-        let taken = container::outermost_rows(&self.document, self.selection.items());
+        let taken = self.targets();
         let transaction = clipboard::cut(&self.document, &taken);
         self.change(transaction);
         effects
@@ -225,7 +259,7 @@ impl State {
     /// no project, section or task is selected.
     pub(super) fn open_move_to(&mut self) {
         self.navigator = None;
-        self.move_to = MoveTo::open(&self.document, self.selection.items());
+        self.move_to = MoveTo::open(&self.document, self.selection.items(&self.rows()));
     }
 
     /// Applies `input` to the open Move to picker: choosing a destination closes it and moves the
@@ -246,60 +280,70 @@ impl State {
         }
     }
 
-    /// Moves the focused item one step `direction` among its rows, as one step to undo, keeping
-    /// the focus on it (FR-OPS-02, FR-OPS-10).
+    /// Moves the selected items one step `direction` among their rows, as one step to undo,
+    /// keeping the focus where it is (FR-OPS-02, FR-OPS-10).
     pub(super) fn move_item(&mut self, direction: Direction) {
-        let Some(id) = self.selection.focused() else {
-            return;
-        };
-        let transaction = moving::shift(&self.document, &self.rows(), id, direction);
+        let (container, show_completed) = (self.container, self.show_completed);
+        let transaction =
+            moving::shift_all(&self.document, &self.targets(), direction, |document| {
+                container::rows(document, container, show_completed)
+            });
         self.change(transaction);
     }
 
-    /// Indents the focused item into the item of its kind above it, as one step to undo, and
-    /// focuses that item, since what it holds is not shown; the status line says why when the
-    /// hierarchy refuses (FR-OPS-03).
+    /// Indents the selected items into the item of their kind above them, as one step to undo,
+    /// focusing the item the focused one went into, since what it holds is not shown; the status
+    /// line says why when the hierarchy refuses every one (FR-OPS-03).
     pub(super) fn indent(&mut self) {
-        let Some(id) = self.selection.focused() else {
-            return;
-        };
-        match moving::indent(&self.document, id) {
-            Ok((transaction, into)) => self.change_focusing(transaction, Some(into)),
+        match moving::indent_all(&self.document, &self.targets()) {
+            Ok((transaction, moved)) => {
+                let focused = self.selection.focused();
+                let into = moved.iter().find(|&&(id, _)| Some(id) == focused);
+                self.change_focusing(transaction, into.map_or(focused, |&(_, into)| Some(into)));
+            }
             Err(refusal) => self.notify(Notice::Refused(refusal)),
         }
     }
 
-    /// Outdents the focused item out of the item of its kind it is in, as one step to undo,
-    /// moving the focus on when it leaves the rows; the status line says why when the hierarchy
-    /// refuses (FR-OPS-03).
+    /// Outdents the selected items out of the item of their kind they are in, as one step to
+    /// undo, moving the focus on when it leaves the rows; the status line says why when the
+    /// hierarchy refuses every one (FR-OPS-03).
     pub(super) fn outdent(&mut self) {
-        let Some(id) = self.selection.focused() else {
-            return;
-        };
-        match moving::outdent(&self.document, id) {
+        match moving::outdent_all(&self.document, &self.targets()) {
             Ok(transaction) => self.change(transaction),
             Err(refusal) => self.notify(Notice::Refused(refusal)),
         }
     }
 
-    /// Starts editing the focused row's title. Nothing happens unless a row is focused.
+    /// Starts editing the focused row's title, picking nothing. Nothing happens unless a row is
+    /// focused.
     pub(super) fn edit_title(&mut self) {
         let editing = self
             .selection
             .focused()
             .and_then(|id| Editing::existing(&self.document, id, self.selection.clone()));
+        self.start_editing(editing);
+    }
+
+    /// Enters edit mode with `editing`, if there is one, picking nothing, since what is picked
+    /// is not what is edited.
+    fn start_editing(&mut self, editing: Option<Editing>) {
+        if editing.is_some() {
+            self.selection.clear();
+        }
         self.editing = editing;
     }
 
     /// Starts editing the description of the focused item or of the container shown, as `whose`
-    /// says. Nothing happens with nothing focused.
+    /// says, picking nothing. Nothing happens with nothing focused.
     pub(super) fn edit_description(&mut self, whose: Whose) {
         let id = match whose {
             Whose::Focused => self.selection.focused(),
             Whose::Shown => Some(self.container),
         };
-        self.editing =
+        let editing =
             id.and_then(|id| Editing::description(&self.document, id, self.selection.clone()));
+        self.start_editing(editing);
     }
 
     /// Adds an empty task on `side` of the focused row, focuses it and starts editing its title.
@@ -324,7 +368,7 @@ impl State {
             self.selection.clone(),
         );
         self.selection.focus(Some(editing.id()));
-        self.editing = Some(editing);
+        self.start_editing(Some(editing));
     }
 
     /// Adds an empty section, project or area, as `kind` says, on `side` of the focus as near as
@@ -357,13 +401,14 @@ impl State {
         } else {
             self.open(id, None);
         }
-        self.editing = Some(editing);
+        self.start_editing(Some(editing));
     }
 
     /// Starts editing the title of the container shown, in the pane's heading. The Inbox keeps
     /// its name (FR-STORE-08).
     pub(super) fn rename_container(&mut self) {
-        self.editing = Editing::existing(&self.document, self.container, self.selection.clone());
+        let editing = Editing::existing(&self.document, self.container, self.selection.clone());
+        self.start_editing(editing);
     }
 
     /// Moves the container shown to the Trash on `today`, as one step to undo; the pane then
@@ -603,10 +648,12 @@ impl State {
             self.arrive(visit);
             return;
         }
-        let focused = focus::kept(before, &self.rows(), self.selection.focused());
+        let rows = self.rows();
+        let focused = focus::kept(before, &rows, self.selection.focused());
         if focused != self.selection.focused() {
             self.selection.focus(focused);
         }
+        self.selection.keep(&rows, Some);
     }
 
     /// Shows the place `to` says.
@@ -692,8 +739,9 @@ impl State {
     }
 
     /// Shows the container of `visit`, focused on its item when that is a row there and on the
-    /// first row otherwise.
+    /// first row otherwise, with nothing picked.
     fn arrive(&mut self, visit: Visit) {
+        self.selection.clear();
         self.container = visit.container;
         let rows = self.rows();
         let focused = visit
@@ -750,7 +798,7 @@ mod tests {
         let last = document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "b")))?;
         let mut state = State::new(document, Opened::Demo);
         state.move_focus(Focus::Last);
-        assert_eq!(state.selection().items().collect::<Vec<_>>(), [last]);
+        assert_eq!(state.selection().items(&state.rows()), [last]);
         Ok(())
     }
 
@@ -1397,6 +1445,183 @@ mod tests {
         assert!(!state.rows().contains(&Row::Project(site)));
         state.undo();
         assert!(state.rows().contains(&Row::Project(site)));
+        Ok(())
+    }
+
+    /// A state on the Inbox holding tasks `a`, `b`, `c` and `d`.
+    fn four_tasks() -> Result<(State, [ItemId; 4]), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let mut add =
+            |title| document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, title)));
+        let tasks = [add("a")?, add("b")?, add("c")?, add("d")?];
+        Ok((State::new(document, Opened::Demo), tasks))
+    }
+
+    fn picked(state: &State) -> Vec<ItemId> {
+        state.selection().items(&state.rows())
+    }
+
+    // FR-OPS-01, FR-OPS-06, FR-TASK-02, FR-EDIT-06
+    #[test]
+    fn three_tasks_picked_are_completed_at_once_and_undo_picks_them_again()
+    -> Result<(), PlacementError> {
+        let (mut state, [a, b, c, d]) = four_tasks()?;
+        state.extend_selection(Direction::Down);
+        state.extend_selection(Direction::Down);
+        assert_eq!(picked(&state), [a, b, c]);
+        state.toggle_completed(TODAY);
+        assert!([a, b, c].iter().all(|&id| {
+            state
+                .document()
+                .node(id)
+                .and_then(Node::item)
+                .is_some_and(|it| it.completed.is_some())
+        }));
+        assert_eq!(state.selection().focused(), Some(d));
+        assert_eq!(picked(&state), [d], "the hidden rows are no longer picked");
+        state.undo();
+        assert_eq!(picked(&state), [a, b, c]);
+        assert_eq!(state.selection().focused(), Some(c));
+        state.extend_selection(Direction::Up);
+        assert_eq!(picked(&state), [a, b]);
+        Ok(())
+    }
+
+    // FR-OPS-01
+    #[test]
+    fn rows_are_picked_one_by_one_all_at_once_and_let_go() -> Result<(), PlacementError> {
+        let (mut state, [a, b, c, d]) = four_tasks()?;
+        state.toggle_picked();
+        state.move_focus(Focus::Last);
+        state.toggle_picked();
+        assert_eq!(picked(&state), [a, d]);
+        state.select_all();
+        assert_eq!(picked(&state), [a, b, c, d]);
+        state.clear_selection();
+        assert_eq!(picked(&state), [d]);
+        Ok(())
+    }
+
+    // FR-OPS-01, FR-EDIT-01
+    #[test]
+    fn picks_go_when_a_title_is_edited_or_the_pane_shows_another_place()
+    -> Result<(), PlacementError> {
+        let (mut state, [_, b, ..]) = four_tasks()?;
+        state.extend_selection(Direction::Down);
+        state.edit_title();
+        assert_eq!(state.editing().map(|(id, _, _)| id), Some(b));
+        state.finish_editing();
+        assert_eq!(picked(&state), [b], "only the edited row");
+        state.select_all();
+        state.new_task(Side::Below);
+        state.edit_input(EditInput::Done);
+        assert_eq!(
+            picked(&state).len(),
+            4,
+            "a new task left empty gives back the picks"
+        );
+        let Fixture {
+            mut state, loose, ..
+        } = fixture()?;
+        state.select_all();
+        navigate(&mut state, "Work");
+        assert_eq!(picked(&state), [loose], "only the focused row");
+        Ok(())
+    }
+
+    // FR-OPS-01, FR-OPS-05, FR-OPS-06
+    #[test]
+    fn a_section_deleted_with_its_task_picked_takes_the_task_along() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            section,
+            in_section,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::NextSection);
+        state.extend_selection(Direction::Down);
+        assert_eq!(picked(&state), [section, in_section]);
+        state.delete(TODAY);
+        let deleted = |id| {
+            state
+                .document()
+                .node(id)
+                .and_then(Node::item)
+                .and_then(|item| item.deleted)
+        };
+        assert_eq!(deleted(section), Some(TODAY));
+        assert_eq!(deleted(in_section), None, "it goes inside the section");
+        Ok(())
+    }
+
+    // FR-OPS-01, FR-OPS-02, FR-OPS-03
+    #[test]
+    fn picked_items_move_and_indent_together() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            loose,
+            section,
+            in_section,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        let mut document = state.document().clone();
+        let add = |document: &mut Document, title| {
+            document.push(Some(work), Node::Item(Item::new(ItemKind::Project, title)))
+        };
+        let two = add(&mut document, "Two")?;
+        let three = add(&mut document, "Three")?;
+        state = State::new(document, Opened::Demo);
+        navigate(&mut state, "Work");
+        state.toggle_picked();
+        state.move_focus(Focus::Next);
+        state.move_focus(Focus::Next);
+        state.toggle_picked();
+        state.move_item(Direction::Up);
+        assert_eq!(
+            state.document().children(work).get(..2),
+            Some(&[loose, in_section][..]),
+            "the first task stays and the second comes up behind it"
+        );
+        state.move_item(Direction::Down);
+        assert_eq!(state.document().children(section), [loose, in_section]);
+        assert_eq!(state.selection().focused(), Some(in_section));
+        state.clear_selection();
+        state.move_focus(Focus::Last);
+        state.extend_selection(Direction::Up);
+        state.extend_selection(Direction::Up);
+        assert_eq!(picked(&state), [site, two, three]);
+        state.indent();
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::Refused(moving::Refusal::NothingAbove))
+        );
+        state.toggle_picked();
+        state.indent();
+        assert_eq!(state.document().children(site), [in_site, two, three]);
+        assert_eq!(
+            state.selection().focused(),
+            Some(site),
+            "the item the focused one went into"
+        );
+        state.extend_selection(Direction::Up);
+        state.outdent();
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::Refused(moving::Refusal::NotNested))
+        );
+        state.undo();
+        assert_eq!(picked(&state), [two, three]);
+        state.indent();
+        assert_eq!(
+            state.selection().focused(),
+            Some(site),
+            "the focus, not on an item indented, stays"
+        );
         Ok(())
     }
 }

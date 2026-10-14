@@ -11,6 +11,15 @@ pub enum Command {
     Quit,
     /// Move the focus (FR-NAV-01).
     Focus(Focus),
+    /// Move the focus a row, picking the rows from where the run of extensions began to it
+    /// (FR-OPS-01).
+    Extend(Direction),
+    /// Pick the focused row, or unpick it when it is picked (FR-OPS-01).
+    TogglePicked,
+    /// Pick every row (FR-OPS-01).
+    SelectAll,
+    /// Pick nothing, so that commands take the focused row again (FR-OPS-01).
+    ClearSelection,
     /// Complete the selected items, or uncomplete them when all are completed (FR-TASK-02,
     /// FR-ORG-09).
     ToggleCompleted,
@@ -54,11 +63,12 @@ pub enum Command {
     RenameContainer,
     /// Move the container shown to the Trash (FR-ORG-06, OQ-19).
     DeleteContainer,
-    /// Move the focused item up or down among the items it is shown with (FR-OPS-02, FR-OPS-10).
+    /// Move the selected items up or down among the items they are shown with (FR-OPS-02,
+    /// FR-OPS-10).
     Move(Direction),
-    /// Indent the focused item into the item of its kind above it (FR-OPS-03).
+    /// Indent the selected items into the item of their kind above them (FR-OPS-03).
     Indent,
-    /// Outdent the focused item out of the item of its kind it is in (FR-OPS-03).
+    /// Outdent the selected items out of the item of their kind they are in (FR-OPS-03).
     Outdent,
     /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
     Sidebar,
@@ -163,6 +173,31 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Focus(Focus::PreviousSection),
         title: "Previous Section",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Extend(Direction::Down),
+        title: "Extend Selection Down",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Extend(Direction::Up),
+        title: "Extend Selection Up",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::TogglePicked,
+        title: "Toggle Selected",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::SelectAll,
+        title: "Select All",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ClearSelection,
+        title: "Clear Selection",
         context: Context::Navigate,
     },
     Entry {
@@ -403,6 +438,26 @@ mod tests {
                 entry.map(|entry| entry.context),
                 Some(Context::Navigate),
                 "{motion:?}"
+            );
+        }
+    }
+
+    // FR-OPS-01
+    #[test]
+    fn selecting_is_navigate() {
+        let selecting = [
+            Command::Extend(Direction::Down),
+            Command::Extend(Direction::Up),
+            Command::TogglePicked,
+            Command::SelectAll,
+            Command::ClearSelection,
+        ];
+        for command in selecting {
+            let entry = REGISTRY.iter().find(|entry| entry.command == command);
+            assert_eq!(
+                entry.map(|entry| entry.context),
+                Some(Context::Navigate),
+                "{command:?}"
             );
         }
     }

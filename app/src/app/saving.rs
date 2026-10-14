@@ -367,10 +367,11 @@ impl State {
     }
 
     /// Replaces the document with `document`, read again from the file, keeping the pane on the
-    /// container it showed, its focus and its history on the items they were on, as far as their
-    /// text paths find them, the Navigator open on the places now listed with its query, and Move
-    /// to open on the destinations now listed with its query while an item it moves is found
-    /// again. The undo history is cleared, since its steps fit only the document as it was.
+    /// container it showed, its focus, what is picked and its history on the items they were on,
+    /// as far as their text paths find them, the Navigator open on the places now listed with its
+    /// query, and Move to open on the destinations now listed with its query while an item it
+    /// moves is found again. The undo history is cleared, since its steps fit only the document
+    /// as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -390,6 +391,7 @@ impl State {
             .or_else(|| focused.and_then(nearest).and_then(row))
             .or_else(|| rows.first().map(|row| row.id()));
         self.selection.focus(focus);
+        self.selection.keep(&rows, exact);
         self.visits.rematch(|id| nearest(id).and_then(opens), exact);
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
@@ -635,6 +637,24 @@ mod tests {
         assert_eq!(state.notice(), Some(&Notice::Reloaded));
         assert_eq!(state.save_state(), SaveState::Saved);
         assert_eq!(state.deadline(), None, "nothing to save");
+        Ok(())
+    }
+
+    // F-FILE-06, FR-OPS-01
+    #[test]
+    fn a_reload_keeps_the_picked_items_found_again() -> TestResult {
+        let mut state = opened(&["a", "b", "c"])?;
+        command(&mut state, Command::SelectAll);
+        let theirs = document(&["x", "b", "c"])?;
+        send(&mut state, Message::OnDisk(OnDisk::Changed(theirs)));
+        let rows = state.rows();
+        assert_eq!(
+            state.selection().items(&rows),
+            [titled(&state, "b"), titled(&state, "c")]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+        );
         Ok(())
     }
 
