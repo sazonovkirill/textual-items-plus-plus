@@ -178,12 +178,14 @@ pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
 }
 
 /// The panel's content laid out: its lines, the first line of each of the note, the checklist
-/// items and the comments in the order they show, how many lines it takes, and the line and
+/// items and the comments in the order they show, how many lines it takes, where the band of
+/// what is selected ends at the latest, the Comments section being its own, and the line and
 /// column of the caret while something is edited.
 struct Content<'a> {
     lines: Vec<Line<'a>>,
     starts: Vec<(Selected, usize)>,
     total: usize,
+    banded: usize,
     caret: Option<(usize, usize)>,
 }
 
@@ -346,6 +348,7 @@ impl<'a> AttachmentsPanel<'a> {
             lines.push(Line::default());
         }
         let mut start = height(&lines);
+        let comments_start = start;
         lines.push(self.heading(Icon::Comments, "Comments"));
         if item.comments.is_empty() {
             lines.push(Line::styled("No comments", dim));
@@ -368,8 +371,14 @@ impl<'a> AttachmentsPanel<'a> {
                 lines.push(line);
             }
         }
+        let total = height(&lines);
         Content {
-            total: height(&lines),
+            total,
+            banded: if item.comments.is_empty() {
+                comments_start
+            } else {
+                total
+            },
             lines,
             starts,
             caret,
@@ -576,7 +585,9 @@ impl StatefulWidget for AttachmentsPanel<'_> {
             *top = (*top).clamp(end.saturating_sub(page), start);
         }
         let band = Style::new().bg(theme.current_line);
-        for line in start.max(*top)..end.min(*top + page) {
+        // With no comments the last of what is selected runs to the end, but its band stops at its
+        // own section's end.
+        for line in start.max(*top)..end.min(laid_out.banded).min(*top + page) {
             let y = content.y + u16::try_from(line - *top).unwrap_or(u16::MAX);
             buf.set_style(Rect::new(inner.x, y, inner.width, 1), band);
         }
@@ -1226,5 +1237,25 @@ mod tests {
             (3, 8),
             "its heading and line, running to the end with no comments after it"
         );
+        assert_eq!(banded(&buf), [4, 5, 6], "the Comments section off the band");
+    }
+
+    /// The rows of `buf` on the current-line band.
+    fn banded(buf: &Buffer) -> Vec<u16> {
+        let band = BuiltIn::default().colors().current_line;
+        (0..buf.area.height)
+            .filter(|&y| buf[(1, y)].bg == band)
+            .collect()
+    }
+
+    // FR-ATT-04, FR-CHK-02
+    #[test]
+    fn with_no_comments_the_band_stops_at_its_own_section() {
+        let (buf, ..) = draw_checklist(Selected::Checklist(Some(ItemId::new(4))), None, 16, 0);
+        assert_eq!(rows(&buf)[9], "│                           ❞ Comments │");
+        assert_eq!(banded(&buf), [7, 8], "the last checklist item");
+        let (buf, ..) = draw("n", None, (40, 10), 0);
+        assert_eq!(rows(&buf)[4], "│                           ❞ Comments │");
+        assert_eq!(banded(&buf), [1, 2, 3], "the note");
     }
 }
