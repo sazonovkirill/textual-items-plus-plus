@@ -16,7 +16,7 @@ use ratatui::{
     widgets::{Paragraph, StatefulWidget, Widget, Wrap},
 };
 
-use super::{Icon, IconSet, Theme, cut, field};
+use super::{FOCUS_MARKER, Icon, IconSet, Theme, cut, field};
 use crate::{
     app::{
         self, PaneView, Part, Query, Row, Selection, Source, State, TextField,
@@ -27,9 +27,6 @@ use crate::{
 
 /// The columns left of the rows that hold the focus marker.
 const GUTTER: u16 = 2;
-
-/// The glyph marking the focused row (D-30 of taskpaper-terminal).
-const FOCUS_MARKER: &str = "▌";
 
 /// The number standing for the heading among the rows, which the focus takes as a row above the
 /// first (D-68).
@@ -66,7 +63,7 @@ pub(super) struct ContainerPane<'a> {
 impl<'a> ContainerPane<'a> {
     /// `pane` of `state`, showing its container or view on `today`, drawn in `theme` with
     /// `icons`; when it is the `current` pane, the one with the keys, with the title edited and
-    /// the focus marked unless the sidebar has the keys.
+    /// the focus marked unless the sidebar or the attachments panel has the keys.
     pub(super) fn new(
         state: &'a State,
         pane: PaneView<'a>,
@@ -75,7 +72,7 @@ impl<'a> ContainerPane<'a> {
         theme: &'a Theme,
         icons: IconSet,
     ) -> Self {
-        let keys = current && !state.sidebar_has_keys();
+        let keys = current && !state.sidebar_has_keys() && state.attachments().is_none();
         Self {
             document: state.document(),
             shown: pane.shown(),

@@ -51,6 +51,8 @@ impl Widget for StatusLine<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mode = if self.state.editing().is_some() {
             format!(" {} EDIT", Icon::Edit.glyph(self.icons))
+        } else if self.state.attachments().is_some() {
+            format!(" {} ATTACHMENTS", Icon::Navigate.glyph(self.icons))
         } else if self.state.selection().visual() {
             format!(" {} VISUAL LINE", Icon::Navigate.glyph(self.icons))
         } else {
@@ -225,6 +227,25 @@ mod tests {
             "",
             43,
             " ↕ VISUAL LINE · Demo data · not saved     ",
+        );
+        Ok(())
+    }
+
+    // FR-ATT-01
+    #[test]
+    fn the_open_attachments_panel_is_named_as_the_mode() -> Result<(), crate::domain::PlacementError>
+    {
+        let mut document = Document::new();
+        let task = crate::domain::Item::new(crate::domain::ItemKind::Task, "a");
+        document.push(Some(document.inbox()), crate::domain::Node::Item(task))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        let open = app::Command::OpenNote(app::Whose::Focused);
+        app::update(&mut state, app::Message::Command(open), TODAY);
+        check_state(
+            &state,
+            "",
+            43,
+            " ↕ ATTACHMENTS · Demo data · not saved     ",
         );
         Ok(())
     }

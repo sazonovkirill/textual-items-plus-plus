@@ -45,13 +45,13 @@ fn comment_on_a_task() {
     assert_eq!(
         panel(&harness)[1..9],
         [
-            "│                               󱇗 Note │",
-            "│ No note                              │",
+            "│ 󱇗 Note                               │",
+            "│▌No note                              │",
             "│                                      │",
-            "│                          \u{f0756} Checklist │",
+            "│ \u{f0756} Checklist                          │",
             "│ No checklist                         │",
             "│                                      │",
-            "│                           󰆉 Comments │",
+            "│ 󰆉 Comments                           │",
             "│ No comments                          │",
         ],
         "a task's checklist comes between"
@@ -60,8 +60,8 @@ fn comment_on_a_task() {
     assert_eq!(
         panel(&harness)[8..10],
         [
-            "│ [2026-10-05 09:30]                   │",
-            "│ Photos: done                         │",
+            "│▌[2026-10-05 09:30]                   │",
+            "│▌Photos: done                         │",
         ],
         "stamped with the time it was added"
     );
@@ -81,7 +81,7 @@ fn comment_on_a_task() {
     assert_eq!(
         panel(&harness)[8..10],
         [
-            "│ [2026-10-05 09:30] Booked            │",
+            "│▌[2026-10-05 09:30] Booked            │",
             "│ [2026-10-05 09:30] Photos: done      │",
         ],
         "newest first"
@@ -97,8 +97,8 @@ fn comment_on_a_task() {
     assert_eq!(
         panel(&harness)[8..10],
         [
-            "│ [2026-10-05 09:30] Photos: done for  │",
-            "│ the form                             │",
+            "│▌[2026-10-05 09:30] Photos: done for  │",
+            "│▌the form                             │",
         ]
     );
     harness.key(KeyCode::Esc);
@@ -106,7 +106,7 @@ fn comment_on_a_task() {
     harness.type_text("N");
     assert_eq!(
         panel(&harness)[8],
-        "│ [2026-10-05 09:30] Booked            │",
+        "│▌[2026-10-05 09:30] Booked            │",
         "deleting is a step to undo, once the panel is closed"
     );
     harness.key(KeyCode::Esc);
@@ -114,7 +114,7 @@ fn comment_on_a_task() {
     reopened.type_text("N");
     assert_eq!(
         panel(&reopened)[8],
-        "│ [2026-10-05 09:30] Booked            │"
+        "│▌[2026-10-05 09:30] Booked            │"
     );
 }
 
@@ -132,7 +132,7 @@ fn escape_cancels_a_comment_and_a_paste_goes_in_on_one_line() {
     harness.key(KeyCode::Enter);
     assert_eq!(
         panel(&harness)[8],
-        "│ [2026-10-05 09:30] one two three     │"
+        "│▌[2026-10-05 09:30] one two three     │"
     );
 }
 

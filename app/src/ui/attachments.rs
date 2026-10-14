@@ -4,8 +4,10 @@
 //! ([attachments.md §3–5](../../../specs/reference/taskpaper-terminal/specs/attachments.md#3-attachments-panel-fr-att-03)):
 //! a border titled with the item, the Note section under its heading, the note rendered as
 //! Markdown or, while it is edited, as typed, a task's Checklist section under its heading, the
-//! Comments section under its heading, newest first, what is selected on the current-line band,
-//! and a hint naming the keys.
+//! Comments section under its heading, newest first, what is selected on the current-line band
+//! with the focus marker, and a hint naming the keys.
+
+use std::ops::Range;
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
@@ -17,7 +19,7 @@ use ratatui::{
 };
 
 use super::{
-    Icon, IconSet, Theme,
+    FOCUS_MARKER, Icon, IconSet, Theme,
     container::tag_text,
     field,
     keymap::{self, Key},
@@ -190,17 +192,19 @@ pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
         .map(|&(_, input)| input)
 }
 
-/// The panel's content laid out: its lines, the first line of each of the note, the checklist
-/// items and the comments in the order they show, how many lines it takes, where the band of
-/// what is selected ends at the latest, the Comments section being its own, and the line and
-/// column of the caret while something is edited.
+/// The panel's content laid out: its lines, where each of the note, the checklist items and the
+/// comments shows, in the order they show, how many lines it takes, and the line and column of
+/// the caret while something is edited.
 struct Content<'a> {
     lines: Vec<Line<'a>>,
-    starts: Vec<(Selected, usize)>,
+    entries: Vec<Entry>,
     total: usize,
-    banded: usize,
     caret: Option<(usize, usize)>,
 }
+
+/// Where an entry of the panel shows: the entry, its first line, its section's heading when it is
+/// the section's first, and its own lines, which the band covers.
+struct Entry(Selected, usize, Range<usize>);
 
 /// How the open panel is scrolled: the first line of the content shown, and what was selected
 /// when it was last drawn.
@@ -278,22 +282,23 @@ impl<'a> AttachmentsPanel<'a> {
     /// The content lines from the first to past the last of what is selected when the panel is
     /// drawn over `area`. The last of what it has runs to the end of the content.
     pub(super) fn selected_lines(&self, area: Rect) -> (usize, usize) {
-        self.selected_in(&self.laid_out(area))
+        self.selected_in(&self.laid_out(area)).0
     }
 
-    /// The lines of `content` from the first to past the last of what is selected.
-    fn selected_in(&self, content: &Content<'a>) -> (usize, usize) {
+    /// The lines of `content` from the first to past the last of what is selected, up to the
+    /// next entry, and its own lines.
+    fn selected_in(&self, content: &Content<'a>) -> ((usize, usize), Range<usize>) {
         let at = content
-            .starts
+            .entries
             .iter()
-            .position(|&(entry, _)| entry == self.view.selected)
+            .position(|&Entry(entry, ..)| entry == self.view.selected)
             .unwrap_or_default();
-        let start = content.starts.get(at).map_or(0, |&(_, start)| start);
-        let end = content
-            .starts
-            .get(at + 1)
-            .map_or(content.total, |&(_, end)| end);
-        (start, end)
+        let mut from = content.entries.iter().skip(at);
+        let (start, own) = from
+            .next()
+            .map_or((0, 0..0), |Entry(_, start, own)| (*start, own.clone()));
+        let end = from.next().map_or(content.total, |&Entry(_, next, _)| next);
+        ((start, end), own)
     }
 
     /// The content laid out in the panel drawn over `area`: the Note section, its heading, then
@@ -323,6 +328,7 @@ impl<'a> AttachmentsPanel<'a> {
             .map(|field| field::wrapped(field, columns, self.theme));
         let editing = |at| edited.as_ref().filter(|_| self.view.selected == at);
         let mut lines = vec![self.heading(Icon::Notes, "Note")];
+        let own = height(&lines);
         let mut caret = None;
         if let Some((field, (line, column))) = editing(Selected::Note) {
             caret = Some((line + 1, *column));
@@ -337,40 +343,45 @@ impl<'a> AttachmentsPanel<'a> {
                     .map(|line| self.line(line)),
             );
         }
+        let mut entries = vec![Entry(Selected::Note, 0, own..height(&lines))];
         lines.push(Line::default());
-        let mut starts = vec![(Selected::Note, 0)];
         if let Some(checklist) = &self.view.checklist {
             // The first item takes the section's heading with it.
             let mut start = height(&lines);
             lines.push(self.heading(Icon::Checklist, "Checklist"));
             if checklist.is_empty() {
-                starts.push((Selected::Checklist(None), start));
+                let own = height(&lines);
                 lines.push(Line::styled("No checklist", dim));
+                entries.push(Entry(Selected::Checklist(None), start, own..height(&lines)));
             }
             for (index, line) in checklist.iter().enumerate() {
+                let own = height(&lines);
                 if index > 0 {
-                    start = height(&lines);
+                    start = own;
                 }
-                starts.push((Selected::Checklist(Some(line.id)), start));
                 let (shown, at) = self.checklist_line(line, usize::from(width));
                 if let Some((line, column)) = at {
-                    caret = Some((height(&lines) + line, column));
+                    caret = Some((own + line, column));
                 }
                 lines.extend(shown);
+                entries.push(Entry(
+                    Selected::Checklist(Some(line.id)),
+                    start,
+                    own..height(&lines),
+                ));
             }
             lines.push(Line::default());
         }
         let mut start = height(&lines);
-        let comments_start = start;
         lines.push(self.heading(Icon::Comments, "Comments"));
         if item.comments.is_empty() {
             lines.push(Line::styled("No comments", dim));
         }
         for (index, comment) in item.comments.iter().enumerate() {
+            let own = height(&lines);
             if index > 0 {
-                start = height(&lines);
+                start = own;
             }
-            starts.push((Selected::Comment(index), start));
             let (stamp, text) = comments::split(comment);
             if let Some((field, (line, column))) = editing(Selected::Comment(index)) {
                 if !stamp.is_empty() {
@@ -383,28 +394,22 @@ impl<'a> AttachmentsPanel<'a> {
                 line.spans.extend(self.formatted(text, Style::new()));
                 lines.push(line);
             }
+            entries.push(Entry(Selected::Comment(index), start, own..height(&lines)));
         }
-        let total = height(&lines);
         Content {
-            total,
-            banded: if item.comments.is_empty() {
-                comments_start
-            } else {
-                total
-            },
+            total: height(&lines),
             lines,
-            starts,
+            entries,
             caret,
         }
     }
 
-    /// A section's heading, with its icon, aligned to the right in the headers color.
+    /// A section's heading, with its icon, in the headers color.
     fn heading(&self, icon: Icon, name: &str) -> Line<'a> {
         Line::styled(
             format!("{} {name}", icon.glyph(self.icons)),
             Style::new().fg(self.theme.headers).bold(),
         )
-        .right_aligned()
     }
 
     /// The lines of a checklist item in content `width`: indented by its depth, its marker,
@@ -586,7 +591,7 @@ impl StatefulWidget for AttachmentsPanel<'_> {
         let content = Self::content(area);
         let laid_out = self.laid_out(area);
         let page = Self::page(area);
-        let (start, end) = self.selected_in(&laid_out);
+        let ((start, end), own) = self.selected_in(&laid_out);
         *top = (*top).min(laid_out.total.saturating_sub(page));
         if let Some((line, _)) = laid_out.caret {
             *top = (*top).clamp((line + 1).saturating_sub(page), line);
@@ -597,17 +602,23 @@ impl StatefulWidget for AttachmentsPanel<'_> {
         } else {
             *top = (*top).clamp(end.saturating_sub(page), start);
         }
-        let band = Style::new().bg(theme.current_line);
-        // With no comments the last of what is selected runs to the end, but its band stops at its
-        // own section's end.
-        for line in start.max(*top)..end.min(laid_out.banded).min(*top + page) {
-            let y = content.y + u16::try_from(line - *top).unwrap_or(u16::MAX);
-            buf.set_style(Rect::new(inner.x, y, inner.width, 1), band);
+        let banded: Vec<Rect> = (own.start.max(*top)..own.end.min(*top + page))
+            .map(|line| {
+                let y = content.y + u16::try_from(line - *top).unwrap_or(u16::MAX);
+                Rect::new(inner.x, y, inner.width, 1)
+            })
+            .collect();
+        for &row in &banded {
+            buf.set_style(row, Style::new().bg(theme.current_line));
         }
         Paragraph::new(laid_out.lines)
             .wrap(Wrap { trim: false })
             .scroll((u16::try_from(*top).unwrap_or(u16::MAX), 0))
             .render(content, buf);
+        for &row in &banded {
+            buf.set_string(row.x, row.y, FOCUS_MARKER, Style::new().fg(theme.focus));
+            super::band_text(buf, row, theme.band_text);
+        }
         if inner.height >= 2 {
             let hint = Rect::new(content.x, inner.bottom() - 1, content.width, 1);
             self.hint().render(hint, buf);
@@ -821,17 +832,17 @@ mod tests {
             panel,
             [
                 "┌ Milk ────────────────────────────────┐",
-                "│                               ≡ Note │",
-                "│ Plan                                 │",
-                "│ Steps                                │",
-                "│ • buy milk                           │",
-                "│   • see shop                         │",
-                "│ 1. one                               │",
-                "│ │ said                               │",
-                "│   code                               │",
-                "│  indented                            │",
+                "│ ≡ Note                               │",
+                "│▌Plan                                 │",
+                "│▌Steps                                │",
+                "│▌• buy milk                           │",
+                "│▌  • see shop                         │",
+                "│▌1. one                               │",
+                "│▌│ said                               │",
+                "│▌  code                               │",
+                "│▌ indented                            │",
                 "│                                      │",
-                "│                           ❞ Comments │",
+                "│ ❞ Comments                           │",
                 "│ No comments                          │",
                 "│                                      │",
                 "│ a add · e edit · Esc close           │",
@@ -847,7 +858,8 @@ mod tests {
         assert_eq!(cell(52, 5).fg, theme.link, "link");
         assert!(cell(42, 7).modifier.contains(Modifier::DIM), "quote");
         assert!(cell(44, 8).modifier.contains(Modifier::DIM), "code");
-        assert_eq!(cell(72, 1).fg, theme.headers, "heading");
+        assert_eq!(cell(42, 1).fg, theme.headers, "heading");
+        assert_eq!(cell(41, 2).fg, theme.focus, "the focus marker");
     }
 
     // FR-ATT-03
@@ -858,14 +870,14 @@ mod tests {
         assert!(cell(2).modifier.contains(Modifier::ITALIC));
         assert!(cell(5).modifier.contains(Modifier::DIM));
         assert!(cell(7).modifier.contains(Modifier::BOLD));
-        assert_eq!(rows(&buf)[2], "│ it c b                               │");
+        assert_eq!(rows(&buf)[2], "│▌it c b                               │");
     }
 
     // FR-ATT-01
     #[test]
     fn no_note_shows_dimmed() {
         let (buf, ..) = draw("", None, (40, 6), 0);
-        assert_eq!(rows(&buf)[2], "│ No note                              │");
+        assert_eq!(rows(&buf)[2], "│▌No note                              │");
         let theme = BuiltIn::default().colors();
         assert_eq!(buf[(2, 2)].fg, theme.dim_text);
     }
@@ -882,16 +894,16 @@ mod tests {
         assert_eq!(
             rows(&buf)[1..5].to_vec(),
             [
-                "│ line 10                              │",
+                "│▌line 10                              │",
                 "│                                      │",
-                "│                           ❞ Comments │",
+                "│ ❞ Comments                           │",
                 "│ No comments                          │",
             ]
         );
         let long = "word ".repeat(12);
         let (buf, ..) = draw(&long, None, (40, 8), 0);
-        assert_eq!(rows(&buf)[2], "│ word word word word word word word   │");
-        assert_eq!(rows(&buf)[3], "│ word word word word word             │");
+        assert_eq!(rows(&buf)[2], "│▌word word word word word word word   │");
+        assert_eq!(rows(&buf)[3], "│▌word word word word word             │");
     }
 
     // FR-ATT-03
@@ -903,9 +915,9 @@ mod tests {
         assert_eq!(
             rows(&buf)[1..4].to_vec(),
             [
-                "│                               ≡ Note │",
-                "│ # Plan                               │",
-                "│ **b**                                │",
+                "│ ≡ Note                               │",
+                "│▌# Plan                               │",
+                "│▌**b**                                │",
             ]
         );
         assert_eq!(rows(&buf)[6], "│ Enter new line · Esc done            │");
@@ -969,12 +981,12 @@ mod tests {
             rows(&buf),
             [
                 "┌ Milk ────────────────────────────────┐",
-                "│                               ≡ Note │",
+                "│ ≡ Note                               │",
                 "│ n                                    │",
                 "│                                      │",
-                "│                           ❞ Comments │",
+                "│ ❞ Comments                           │",
                 "│ [2026-10-05 09:30] Done              │",
-                "│ plain by hand                        │",
+                "│▌plain by hand                        │",
                 "│ [2026-10-04 18:02] Called            │",
                 "│                                      │",
                 "│                                      │",
@@ -988,17 +1000,12 @@ mod tests {
             buf[(21, 5)].modifier.contains(Modifier::BOLD),
             "inline Markdown"
         );
-        let banded = |y: u16| (1..39).all(|x| buf[(x, y)].bg == theme.current_line);
-        assert!(banded(6));
-        assert!(!banded(5) && !banded(7) && !banded(2));
+        assert!((1..39).all(|x| buf[(x, 6)].bg == theme.current_line));
+        assert_eq!(banded(&buf), [6]);
         let (buf, ..) = draw_item(&item, Selected::Comment(0), None, (40, 12), 0);
-        assert!(
-            (4..6).all(|y| buf[(1, y)].bg == theme.current_line),
-            "the first comment takes the heading with it"
-        );
+        assert_eq!(banded(&buf), [5], "the heading is not the comment's");
         let (buf, ..) = draw_item(&item, Selected::Note, None, (40, 12), 0);
-        assert!((1..4).all(|y| buf[(1, y)].bg == theme.current_line));
-        assert_ne!(buf[(1, 4)].bg, theme.current_line);
+        assert_eq!(banded(&buf), [2], "nor the blank line after the note");
     }
 
     // FR-ATT-04
@@ -1010,9 +1017,9 @@ mod tests {
         assert_eq!(
             rows(&buf)[4..8].to_vec(),
             [
-                "│                           ❞ Comments │",
-                "│ [2026-10-05 09:30]                   │",
-                "│ Called them                          │",
+                "│ ❞ Comments                           │",
+                "│▌[2026-10-05 09:30]                   │",
+                "│▌Called them                          │",
                 "│ by hand                              │",
             ]
         );
@@ -1021,7 +1028,7 @@ mod tests {
         let (buf, _, caret) = draw_item(&item, Selected::Comment(1), Some(&field), (40, 11), 0);
         assert_eq!(
             rows(&buf)[6],
-            "│ Called them                          │",
+            "│▌Called them                          │",
             "no timestamp"
         );
         assert_eq!(caret, Some(Position::new(13, 6)));
@@ -1143,15 +1150,15 @@ mod tests {
             rows(&buf),
             [
                 "┌ Pack ────────────────────────────────┐",
-                "│                               ≡ Note │",
+                "│ ≡ Note                               │",
                 "│ No note                              │",
                 "│                                      │",
-                "│                          ☑ Checklist │",
+                "│ ☑ Checklist                          │",
                 "│ ✔ Books                              │",
-                "│   ☐ Novels                           │",
+                "│▌  ☐ Novels                           │",
                 "│ ☐ Plates @home(kitchen)              │",
                 "│                                      │",
-                "│                           ❞ Comments │",
+                "│ ❞ Comments                           │",
                 "│ No comments                          │",
                 "│                                      │",
                 "│                                      │",
@@ -1190,16 +1197,12 @@ mod tests {
 
     // FR-CHK-02
     #[test]
-    fn the_first_item_takes_the_heading_with_it() {
+    fn the_first_item_scrolls_into_view_with_the_heading_above_it() {
         let selected = Selected::Checklist(Some(ItemId::new(2)));
         let (buf, top, _) = draw_checklist(selected, None, 7, 0);
         assert_eq!(top, 2, "the heading above it in view");
-        assert_eq!(rows(&buf)[2], "│                          ☑ Checklist │");
-        assert_eq!(
-            buf[(1, 2)].bg,
-            BuiltIn::default().colors().current_line,
-            "on the band with it"
-        );
+        assert_eq!(rows(&buf)[2], "│ ☑ Checklist                          │");
+        assert_eq!(banded(&buf), [3], "the heading off the band");
     }
 
     // FR-CHK-03
@@ -1212,7 +1215,7 @@ mod tests {
         assert_eq!(
             (rows(&buf)[7].as_str(), rows(&buf)[14].as_str()),
             (
-                "│ ☐ Plates and bowls and cups          │",
+                "│▌☐ Plates and bowls and cups          │",
                 "│ Enter next · Esc done                │",
             )
         );
@@ -1222,8 +1225,8 @@ mod tests {
         assert_eq!(
             rows(&buf)[7..9],
             [
-                "│ ☐ Plates and bowls and cups and      │",
-                "│   glasses                            │",
+                "│▌☐ Plates and bowls and cups and      │",
+                "│▌  glasses                            │",
             ],
             "wrapping after the marker"
         );
@@ -1249,14 +1252,18 @@ mod tests {
             &mut buf,
             &mut Scrolled::default(),
         );
-        assert_eq!(rows(&buf)[5], "│ No checklist                         │");
+        assert_eq!(rows(&buf)[5], "│▌No checklist                         │");
         assert_eq!(buf[(2, 5)].bg, theme.current_line);
         assert_eq!(
             AttachmentsPanel::new(view, &theme, IconSet::Plain).selected_lines(area),
             (3, 8),
             "its heading and line, running to the end with no comments after it"
         );
-        assert_eq!(banded(&buf), [4, 5, 6], "the Comments section off the band");
+        assert_eq!(
+            banded(&buf),
+            [5],
+            "its heading and the blank line after it off the band"
+        );
     }
 
     /// The rows of `buf` on the current-line band.
@@ -1269,12 +1276,12 @@ mod tests {
 
     // FR-ATT-04, FR-CHK-02
     #[test]
-    fn with_no_comments_the_band_stops_at_its_own_section() {
+    fn the_band_covers_only_what_is_selected_without_the_blank_line_after_it() {
         let (buf, ..) = draw_checklist(Selected::Checklist(Some(ItemId::new(4))), None, 16, 0);
-        assert_eq!(rows(&buf)[9], "│                           ❞ Comments │");
-        assert_eq!(banded(&buf), [7, 8], "the last checklist item");
+        assert_eq!(rows(&buf)[9], "│ ❞ Comments                           │");
+        assert_eq!(banded(&buf), [7], "the last checklist item");
         let (buf, ..) = draw("n", None, (40, 10), 0);
-        assert_eq!(rows(&buf)[4], "│                           ❞ Comments │");
-        assert_eq!(banded(&buf), [1, 2, 3], "the note");
+        assert_eq!(rows(&buf)[4], "│ ❞ Comments                           │");
+        assert_eq!(banded(&buf), [2], "the note");
     }
 }

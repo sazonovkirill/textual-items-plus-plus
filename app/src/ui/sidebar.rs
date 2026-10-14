@@ -12,14 +12,11 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use super::{Icon, IconSet, Theme};
+use super::{FOCUS_MARKER, Icon, IconSet, Theme};
 use crate::{
     app::{Part, SidebarView, State, Stop, TextField, view::Shown},
     domain::{Document, ItemId, ItemKind, Node},
 };
-
-/// The glyph marking the focused entry, as the pane marks its focused row.
-const FOCUS_MARKER: &str = "▌";
 
 /// The widest the sidebar gets, in columns.
 const WIDTH: u16 = 28;
@@ -50,16 +47,18 @@ struct Title {
 }
 
 impl<'a> SidebarPane<'a> {
-    /// The sidebar `view` of `state`, drawn in `theme` with `icons`.
+    /// The sidebar `view` of `state`, drawn in `theme` with `icons`, its focus unmarked while the
+    /// attachments panel has the keys.
     pub(super) fn new(
         state: &'a State,
-        view: SidebarView,
+        mut view: SidebarView,
         theme: &'a Theme,
         icons: IconSet,
     ) -> Self {
         let current = std::iter::once(state.shown())
             .chain(state.path().into_iter().rev().map(Shown::Container))
             .find(|&shown| view.entries.iter().any(|stop| stop.shown() == shown));
+        view.keys &= state.attachments().is_none();
         Self {
             document: state.document(),
             editing: state

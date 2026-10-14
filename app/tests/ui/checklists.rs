@@ -42,11 +42,11 @@ fn build_a_nested_checklist() {
     assert_eq!(
         panel(&harness)[..5],
         [
-            "│                               \u{f11d7} Note │",
+            "│ \u{f11d7} Note                               │",
             "│ No note                              │",
             "│                                      │",
-            "│                          \u{f0756} Checklist │",
-            "│ No checklist                         │",
+            "│ \u{f0756} Checklist                          │",
+            "│▌No checklist                         │",
         ]
     );
     harness.type_text("o");
@@ -64,7 +64,7 @@ fn build_a_nested_checklist() {
         panel(&harness)[4..8],
         [
             "│ ☐ Documents                          │",
-            "│   ✔ ID card                          │",
+            "│▌  ✔ ID card                          │",
             "│   ☐ Proof of address                 │",
             "│                                      │",
         ],
@@ -82,14 +82,14 @@ fn build_a_nested_checklist() {
             "│   ☐ Call                             │",
             "│     ☐ Ask about fees                 │",
             "│   ☐ Proof of address                 │",
-            "│   ☐ Thank them                       │",
+            "│▌  ☐ Thank them                       │",
         ],
         "a paste adds an item for each line, nested by its indentation, and Alt+j moves one down"
     );
     harness.type_text("d");
     assert_eq!(
         panel(&harness)[8],
-        "│   ☐ Proof of address                 │"
+        "│▌  ☐ Proof of address                 │"
     );
     harness.key(KeyCode::Esc);
     assert!(
@@ -149,9 +149,55 @@ fn items_copied_paste_into_a_checklist_one_for_each_line() {
     assert_eq!(
         panel(&harness)[4..6],
         [
-            "│ ☐ Buy tape                           │",
+            "│▌☐ Buy tape                           │",
             "│   ☐ for the boxes                    │",
         ],
         "the copied task and its note line arrive as checklist items"
     );
+}
+
+// FR-UI-02, FR-ATT-01
+#[test]
+fn only_the_panel_marks_what_is_selected_while_it_has_the_keys() {
+    let mut harness = Harness::new(80, 16);
+    let row = |harness: &Harness| harness.rows()[3].chars().take(32).collect::<String>();
+    assert_eq!(row(&harness), "▌ ☐ Call the bank about the card");
+    let focused_bg = harness.terminal.backend().buffer()[(4, 3)].bg;
+    harness.type_text("co");
+    harness.type_text("Fiction");
+    harness.key(KeyCode::Enter);
+    harness.type_text("Cookbooks");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        panel(&harness)[3..7],
+        [
+            "│ \u{f0756} Checklist                          │",
+            "│ ☐ Fiction                            │",
+            "│▌☐ Cookbooks                          │",
+            "│                                      │",
+        ]
+    );
+    let buffer = harness.terminal.backend().buffer();
+    assert_eq!(
+        buffer[(45, 6)].bg,
+        focused_bg,
+        "the selected entry on the band"
+    );
+    assert_ne!(
+        buffer[(45, 7)].bg,
+        focused_bg,
+        "not the blank line after it"
+    );
+    assert_eq!(
+        row(&harness),
+        "  ☐ Call the bank about the card",
+        "the pane's focus unmarked"
+    );
+    assert_ne!(buffer[(4, 3)].bg, focused_bg, "and off the band");
+    assert_eq!(
+        status(&harness).split(" · ").next(),
+        Some(" \u{f01bf} ATTACHMENTS")
+    );
+    harness.key(KeyCode::Esc);
+    assert_eq!(row(&harness), "▌ ☐ Call the bank about the card");
 }

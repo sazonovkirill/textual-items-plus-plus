@@ -72,6 +72,10 @@ use weather::{Idle, Season, Weather};
 /// editors commonly scroll (D-74).
 const WHEEL: usize = 3;
 
+/// The glyph marking what has the focus: the focused row, sidebar entry or attachment (D-30 of
+/// taskpaper-terminal).
+const FOCUS_MARKER: &str = "▌";
+
 /// What reaches the event loop: what the terminal, the disk worker, the watcher and the process
 /// report.
 #[derive(Debug)]
@@ -798,7 +802,9 @@ impl Tui {
             }
             self.animator.drawn(DrawnPane {
                 index,
-                focused: index == current && !self.state.sidebar_has_keys(),
+                focused: index == current
+                    && !self.state.sidebar_has_keys()
+                    && self.state.attachments().is_none(),
                 focus: pane.selection().focused(),
                 body: area,
                 title: (top == Top::default()).then(|| Rect {

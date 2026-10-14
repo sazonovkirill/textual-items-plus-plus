@@ -48,8 +48,8 @@ fn write_a_note_on_a_project() {
         panel(&harness)[..3],
         [
             "┌ Blog ────────────────────────────────┐",
-            "│                               󱇗 Note │",
-            "│ No note                              │",
+            "│ 󱇗 Note                               │",
+            "│▌No note                              │",
         ]
     );
     harness.type_text("e");
@@ -60,21 +60,21 @@ fn write_a_note_on_a_project() {
     assert_eq!(
         panel(&harness)[1..4],
         [
-            "│                               󱇗 Note │",
-            "│ # Outline                            │",
-            "│ - **intro** see [it](https://a.b)    │",
+            "│ 󱇗 Note                               │",
+            "│▌# Outline                            │",
+            "│▌- **intro** see [it](https://a.b)    │",
         ],
         "the note is edited as typed"
     );
     assert_eq!(harness.tui.cursor(SCREEN), Some(Position::new(75, 3)));
     harness.key(KeyCode::Esc);
-    assert_eq!(mode(&harness), "NAVIGATE");
+    assert_eq!(mode(&harness), "ATTACHMENTS", "the panel has the keys");
     assert_eq!(
         panel(&harness)[1..4],
         [
-            "│                               󱇗 Note │",
-            "│ Outline                              │",
-            "│ • intro see it                       │",
+            "│ 󱇗 Note                               │",
+            "│▌Outline                              │",
+            "│▌• intro see it                       │",
         ],
         "and shown as Markdown"
     );
@@ -85,7 +85,7 @@ fn write_a_note_on_a_project() {
     harness.press(KeyCode::Char('n'), KeyModifiers::ALT);
     assert_eq!(
         panel(&harness)[2],
-        "│ No note                              │",
+        "│▌No note                              │",
         "the whole edit is one step to undo"
     );
 }
@@ -118,24 +118,24 @@ fn a_long_note_scrolls() {
     harness.type_text("end");
     assert_eq!(
         panel(&harness)[7],
-        "│ end                                  │",
+        "│▌end                                  │",
         "the caret stays in view"
     );
     harness.key(KeyCode::Esc);
     harness.type_text("g");
     assert_eq!(
         panel(&harness)[2],
-        "│ line 1                               │"
+        "│▌line 1                               │"
     );
     harness.type_text("jj");
     assert_eq!(
         panel(&harness)[1],
-        "│ line 2                               │"
+        "│▌line 2                               │"
     );
     harness.ctrl('d');
     assert_eq!(
         panel(&harness)[1],
-        "│ line 8                               │",
+        "│▌line 8                               │",
         "a page down stops at the note's end"
     );
     harness.ctrl('d');
@@ -144,10 +144,10 @@ fn a_long_note_scrolls() {
         [
             "│ end                                  │",
             "│                                      │",
-            "│                          \u{f0756} Checklist │",
-            "│ No checklist                         │",
+            "│ \u{f0756} Checklist                          │",
+            "│▌No checklist                         │",
             "│                                      │",
-            "│                           󰆉 Comments │",
+            "│ 󰆉 Comments                           │",
             "│ No comments                          │",
         ],
         "and the next goes on to the task's empty checklist"
@@ -156,9 +156,9 @@ fn a_long_note_scrolls() {
     assert_eq!(
         panel(&harness)[4..8],
         [
-            "│ No checklist                         │",
+            "│▌No checklist                         │",
             "│                                      │",
-            "│                           󰆉 Comments │",
+            "│ 󰆉 Comments                           │",
             "│ No comments                          │",
         ]
     );
@@ -167,8 +167,8 @@ fn a_long_note_scrolls() {
     assert_eq!(
         panel(&harness)[1..3],
         [
-            "│                               󱇗 Note │",
-            "│ line 1                               │",
+            "│ 󱇗 Note                               │",
+            "│▌line 1                               │",
         ],
         "it opens again at the top"
     );
@@ -182,14 +182,17 @@ fn a_top_level_project_gets_its_note_from_the_sidebar() {
     harness.type_text("Home");
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
+    let marked = |harness: &Harness| harness.rows().iter().any(|row| row.starts_with('▌'));
+    assert!(marked(&harness), "the sidebar marks its focus");
     harness.type_text("n");
     let title = panel(&harness)[0].clone();
     assert!(title.starts_with("┌ Home ─"), "{title}");
+    assert!(!marked(&harness), "but not while the panel has the keys");
     harness.type_text("eHome matters");
     harness.key(KeyCode::Esc);
     assert_eq!(
         panel(&harness)[2],
-        "│ Home matters                         │"
+        "│▌Home matters                         │"
     );
 }
 
@@ -211,8 +214,8 @@ fn text_pasted_goes_into_the_note_edited_with_its_lines() {
     assert_eq!(
         panel(&harness)[2..4],
         [
-            "│ one                                  │",
-            "│ two                                  │",
+            "│▌one                                  │",
+            "│▌two                                  │",
         ]
     );
 }
@@ -247,8 +250,8 @@ fn a_note_is_saved_as_guarded_lines_and_reads_back() {
     assert_eq!(
         panel(&reopened)[2..4],
         [
-            "│ • bring photos                       │",
-            "│ Steps:                               │",
+            "│▌• bring photos                       │",
+            "│▌Steps:                               │",
         ]
     );
 }
