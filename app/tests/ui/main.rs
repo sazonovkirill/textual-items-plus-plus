@@ -11,4 +11,5 @@ mod navigation;
 mod quitting;
 mod rearranging;
 mod saving;
+mod sidebar;
 mod support;

@@ -45,7 +45,7 @@ pub(super) fn reopen(document: &Document, shown: ItemId, query: &str) -> Picker<
 /// in file order, each followed by the projects inside it. Each matches by its title and is told
 /// apart by the titles above it. Items in the Trash and completed ones are left out with what
 /// they hold, as Things 3 takes completed projects out of its sidebar (FR-ORG-09).
-fn places(document: &Document) -> Vec<Candidate<Place>> {
+pub(super) fn places(document: &Document) -> Vec<Candidate<Place>> {
     let mut places = Vec::new();
     let tops = std::iter::once(document.inbox()).chain(document.top_level().iter().copied());
     for id in tops {

@@ -60,6 +60,12 @@ pub enum Command {
     Indent,
     /// Outdent the focused item out of the item of its kind it is in (FR-OPS-03).
     Outdent,
+    /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
+    Sidebar,
+    /// Give the keys to the sidebar while it shows (FR-VIEW-10).
+    FocusSidebar,
+    /// Give the keys back to the pane (FR-VIEW-10).
+    FocusPane,
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
     KeepMine,
     /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
@@ -324,6 +330,21 @@ pub const REGISTRY: &[Entry] = &[
         title: "Edit Container Description",
         context: Context::Navigate,
     },
+    Entry {
+        command: Command::Sidebar,
+        title: "Toggle Sidebar",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusSidebar,
+        title: "Focus Sidebar",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane,
+        title: "Focus Pane",
+        context: Context::Navigate,
+    },
     // Global, so that its key closes the Navigator too.
     Entry {
         command: Command::Navigator,
@@ -399,6 +420,19 @@ mod tests {
             assert_eq!(context(Command::Go(to)), Some(Context::Navigate), "{to:?}");
         }
         assert_eq!(context(Command::Navigator), Some(Context::Global));
+    }
+
+    // FR-VIEW-10
+    #[test]
+    fn the_sidebar_commands_are_navigate_commands() {
+        for command in [Command::Sidebar, Command::FocusSidebar, Command::FocusPane] {
+            let entry = REGISTRY.iter().find(|entry| entry.command == command);
+            assert_eq!(
+                entry.map(|entry| entry.context),
+                Some(Context::Navigate),
+                "{command:?}"
+            );
+        }
     }
 
     // FR-EDIT-01, FR-EDIT-03, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-ORG-06

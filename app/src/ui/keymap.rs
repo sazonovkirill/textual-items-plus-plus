@@ -78,6 +78,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // the rows (D-43).
     (Command::EditDescription(Whose::Focused), &["m n"]),
     (Command::EditDescription(Whose::Shown), &["m N"]),
+    // Todoist's sidebar key, and taskpaper-terminal's keys to focus the pane left and right
+    // (D-45).
+    (Command::Sidebar, &["M"]),
+    (Command::FocusSidebar, &["ctrl+w h", "ctrl+w left"]),
+    (Command::FocusPane, &["ctrl+w l", "ctrl+w right"]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
     // while the user types (its D-115, D-38).
     (Command::KeepMine, &["ctrl+k"]),

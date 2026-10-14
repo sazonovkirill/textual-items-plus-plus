@@ -65,10 +65,12 @@ pub enum Effect {
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
 /// the effects the frontend should carry out, in order. A command or a paste given in edit mode
-/// ends it first, so that the edit is kept before anything else happens. Every message is followed by
-/// what saving asks for after it.
+/// ends it first, so that the edit is kept before anything else happens; while the sidebar has the
+/// keys, it takes the commands it acts on. Every message is followed by what saving asks for after
+/// it.
 pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     let mut effects = dispatch(state, message, today);
+    state.settle_sidebar();
     effects.extend(state.step_saving());
     effects
 }
@@ -78,6 +80,11 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     if let Message::Command(_) | Message::Paste(..) = message {
         state.finish_editing();
         state.clear_notice();
+    }
+    if let Message::Command(command) = message
+        && state.sidebar_command(command, today)
+    {
+        return Vec::new();
     }
     match message {
         Message::Command(Command::Quit) => return state.end(Ending::Quit),
@@ -117,6 +124,9 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::Indent) => state.indent(),
         Message::Command(Command::Outdent) => state.outdent(),
         Message::Command(Command::EditDescription(whose)) => state.edit_description(whose),
+        Message::Command(Command::Sidebar) => state.toggle_sidebar(),
+        Message::Command(Command::FocusSidebar) => state.focus_sidebar(true),
+        Message::Command(Command::FocusPane) => state.focus_sidebar(false),
         Message::Navigator(input) => state.navigator_input(input),
         Message::MoveTo(input) => state.move_to_input(input),
         Message::Edit(input) => state.edit_input(input),
@@ -323,6 +333,205 @@ mod tests {
         give(&mut state, Command::Go(Go::Up));
         assert_eq!(titles(&state), ["A", "B"]);
         Ok(())
+    }
+
+    /// The title of the sidebar's focused entry, and of every entry, indented by depth.
+    fn sidebar(state: &State) -> (Option<String>, Vec<String>) {
+        let view = state.sidebar().expect("the sidebar shows");
+        let title = |id| {
+            state
+                .document()
+                .node(id)
+                .and_then(Node::item)
+                .map_or(String::new(), |item| item.title.clone())
+        };
+        let focused = view
+            .focused
+            .and_then(|index| view.entries.get(index))
+            .map(|place| title(place.id));
+        let entries = view
+            .entries
+            .iter()
+            .map(|place| format!("{}{}", "  ".repeat(place.depth), title(place.id)))
+            .collect();
+        (focused, entries)
+    }
+
+    fn type_into(state: &mut State, text: &str) {
+        for c in text.chars() {
+            let message = Message::Edit(EditInput::Text(TextEdit::Insert(c)));
+            assert_eq!(update(state, message, TODAY), []);
+        }
+    }
+
+    fn edit(state: &mut State, input: EditInput) {
+        assert_eq!(update(state, Message::Edit(input), TODAY), []);
+    }
+
+    // FR-VIEW-10, FR-OPS-02, FR-OPS-03, FR-EDIT-06
+    #[test]
+    fn the_sidebar_moves_indents_and_outdents_its_focused_entry() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        for title in ["A", "B"] {
+            document.push(Some(work), Node::Item(Item::new(ItemKind::Project, title)))?;
+        }
+        let mut state = State::new(document, Opened::Demo);
+        assert_eq!(state.sidebar(), None);
+        give(&mut state, Command::Sidebar);
+        assert!(state.sidebar_has_keys());
+        assert_eq!(
+            sidebar(&state),
+            (
+                Some("Work".into()),
+                vec!["Work".into(), "  A".into(), "  B".into()]
+            )
+        );
+        give(&mut state, Command::Focus(Focus::Next));
+        give(&mut state, Command::Move(Direction::Down));
+        assert_eq!(sidebar(&state).1, ["Work", "  B", "  A"]);
+        give(&mut state, Command::Undo);
+        assert_eq!(
+            sidebar(&state),
+            (
+                Some("A".into()),
+                vec!["Work".into(), "  A".into(), "  B".into()]
+            )
+        );
+        give(&mut state, Command::Indent);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::Refused(Refusal::NothingAbove))
+        );
+        give(&mut state, Command::Focus(Focus::Next));
+        give(&mut state, Command::Indent);
+        assert_eq!(
+            sidebar(&state),
+            (
+                Some("B".into()),
+                vec!["Work".into(), "  A".into(), "    B".into()]
+            )
+        );
+        give(&mut state, Command::Outdent);
+        assert_eq!(sidebar(&state).1, ["Work", "  A", "  B"]);
+        give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::Outdent);
+        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
+        let before = state.document().clone();
+        for command in [
+            Command::NewSection(Side::Below),
+            Command::ShowCompleted,
+            Command::ToggleCompleted,
+            Command::Go(Go::Up),
+        ] {
+            give(&mut state, command);
+        }
+        assert_eq!(state.document(), &before, "other commands do nothing");
+        assert!(!state.shows_completed());
+        give(&mut state, Command::Go(Go::Into));
+        assert_eq!(state.container(), work, "opened in the pane");
+        assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
+        give(&mut state, Command::Go(Go::Home));
+        assert_eq!(
+            state.container(),
+            state.document().inbox(),
+            "going home passes"
+        );
+        give(&mut state, Command::Navigator);
+        assert!(state.navigator().is_some(), "the Navigator passes");
+        Ok(())
+    }
+
+    // FR-VIEW-10, FR-EDIT-05, FR-ORG-06, FR-OPS-05
+    #[test]
+    fn the_sidebar_adds_renames_and_deletes_without_moving_the_pane() -> Result<(), PlacementError>
+    {
+        let mut state = state()?;
+        let mut document = state.document().clone();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        state = State::new(document, Opened::Demo);
+        let pane = state.selection().clone();
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::EditTitle);
+        type_into(&mut state, "s");
+        edit(&mut state, EditInput::Next);
+        assert!(state.editing().is_none(), "Enter only ends editing");
+        assert_eq!(sidebar(&state).1, ["Works"]);
+        assert_eq!(state.selection(), &pane, "the pane keeps its focus");
+        give(&mut state, Command::NewTask(Side::Below));
+        assert_eq!(
+            sidebar(&state),
+            (Some(String::new()), vec!["Works".into(), "  ".into()])
+        );
+        edit(&mut state, EditInput::Done);
+        assert_eq!(
+            sidebar(&state),
+            (Some("Works".into()), vec!["Works".into()])
+        );
+        give(&mut state, Command::NewArea(Side::Above));
+        type_into(&mut state, "Home");
+        give(&mut state, Command::Focus(Focus::Next));
+        assert_eq!(
+            sidebar(&state),
+            (Some("Works".into()), vec!["Home".into(), "Works".into()])
+        );
+        assert_eq!(state.selection(), &pane);
+        give(&mut state, Command::Go(Go::Into));
+        give(&mut state, Command::Delete);
+        assert_eq!(sidebar(&state), (Some("Home".into()), vec!["Home".into()]));
+        assert_eq!(
+            state.container(),
+            state.document().inbox(),
+            "the pane leaves it"
+        );
+        give(&mut state, Command::Undo);
+        assert_eq!(state.document().position(work), Some((None, 1)));
+        let before = state.document().clone();
+        give(&mut state, Command::Paste(Side::Below));
+        let branch = crate::domain::Branch {
+            node: Node::Item(Item::new(ItemKind::Task, "pasted")),
+            children: Vec::new(),
+        };
+        let pasted = Message::Paste(Side::Below, vec![branch]);
+        assert_eq!(update(&mut state, pasted, TODAY), []);
+        assert_eq!(
+            state.document(),
+            &before,
+            "nothing is pasted from the sidebar"
+        );
+        give(&mut state, Command::FocusPane);
+        assert!(!state.sidebar_has_keys() && state.sidebar().is_some());
+        give(&mut state, Command::Focus(Focus::Last));
+        assert_eq!(focused(&state), Some("b"), "the pane has the keys");
+        give(&mut state, Command::FocusSidebar);
+        assert!(state.sidebar_has_keys());
+        give(&mut state, Command::Sidebar);
+        assert_eq!(state.sidebar(), None);
+        Ok(())
+    }
+
+    // FR-VIEW-10, FR-EDIT-05
+    #[test]
+    fn an_empty_sidebar_adds_at_the_top_level_and_acts_on_nothing() {
+        let mut state = State::new(Document::new(), Opened::Demo);
+        give(&mut state, Command::Sidebar);
+        let before = state.clone();
+        for command in [
+            Command::EditTitle,
+            Command::Delete,
+            Command::Move(Direction::Up),
+            Command::Indent,
+            Command::Outdent,
+            Command::Go(Go::Into),
+            Command::Focus(Focus::Next),
+        ] {
+            give(&mut state, command);
+        }
+        assert_eq!(state, before);
+        give(&mut state, Command::NewProject(Side::Above));
+        type_into(&mut state, "P");
+        edit(&mut state, EditInput::Done);
+        assert_eq!(sidebar(&state), (Some("P".into()), vec!["P".into()]));
     }
 
     // FR-NAV-02, FR-VIEW-07

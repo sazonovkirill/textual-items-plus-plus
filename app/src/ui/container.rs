@@ -35,19 +35,23 @@ pub(super) struct ContainerPane<'a> {
     rows: Vec<Row>,
     focused: Option<ItemId>,
     editing: Option<(ItemId, Part, &'a TextField)>,
+    /// Whether the pane has the keys, which its focus marker and band show.
+    keys: bool,
     theme: &'a Theme,
     icons: IconSet,
 }
 
 impl<'a> ContainerPane<'a> {
-    /// The pane of the container `state` shows, drawn in `theme` with `icons`.
+    /// The pane of the container `state` shows, drawn in `theme` with `icons`, with the title
+    /// edited and the focus marked unless the sidebar has the keys.
     pub(super) fn new(state: &'a State, theme: &'a Theme, icons: IconSet) -> Self {
         Self {
             document: state.document(),
             container: state.container(),
             rows: state.rows(),
             focused: state.selection().focused(),
-            editing: state.editing(),
+            editing: state.editing().filter(|_| !state.sidebar_has_keys()),
+            keys: !state.sidebar_has_keys(),
             theme,
             icons,
         }
@@ -127,13 +131,14 @@ impl StatefulWidget for ContainerPane<'_> {
         };
         *top = scrolled(*top, shown, y, height);
         *top = scrolled(*top, caret.map(|line| (line, line + 1)), y, height);
-        if let Some((start, end)) = span {
+        let band = span.filter(|_| self.keys);
+        if let Some((start, end)) = band {
             self.band(area, buf, start, end, *top);
         }
         for (piece, &start) in pieces.iter().zip(&lines) {
             draw(piece, start, *top, area, buf);
         }
-        if let Some((start, end)) = span {
+        if let Some((start, end)) = band {
             self.band_text(area, buf, start, end, *top);
         }
     }
@@ -572,6 +577,7 @@ mod tests {
             rows: app::rows(document, container, true),
             focused: focused.map(|title| find(document, title)),
             editing: None,
+            keys: true,
             theme: &theme,
             icons: IconSet::Plain,
         };
@@ -592,6 +598,7 @@ mod tests {
             rows: app::rows(&document, document.inbox(), false),
             focused: Some(id),
             editing: Some((id, Part::Title, field)),
+            keys: true,
             theme: &theme,
             icons: IconSet::Plain,
         };
@@ -613,6 +620,7 @@ mod tests {
             rows: app::rows(&document, document.inbox(), false),
             focused: document.children(document.inbox()).first().copied(),
             editing: Some((document.inbox(), Part::Title, &field)),
+            keys: true,
             theme: &theme,
             icons: IconSet::Plain,
         };
@@ -641,6 +649,7 @@ mod tests {
             rows: app::rows(&document, document.inbox(), false),
             focused: document.children(document.inbox()).first().copied(),
             editing: Some((id, Part::Description, field)),
+            keys: true,
             theme: &theme,
             icons: IconSet::Plain,
         };

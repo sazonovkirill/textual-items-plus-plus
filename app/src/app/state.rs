@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use jiff::civil::Date;
 
 use super::{
-    Direction, EditInput, Effect, Go, History, Notice, Part, Picked, Picker, PickerInput,
-    PickerView, Selection, Side, TextField, Whose, adding, clipboard, completion,
+    Command, Direction, EditInput, Effect, Go, History, Notice, Part, Picked, Picker, PickerInput,
+    PickerView, Selection, Side, SidebarView, TextField, Whose, adding, clipboard, completion,
     container::{self, Row},
     editing::Editing,
     focus::{self, Focus},
@@ -14,6 +14,7 @@ use super::{
     moving,
     navigator::{self, Place},
     saving::Saving,
+    sidebar::{self, Sidebar},
     trash,
     visits::{Visit, Visits},
 };
@@ -42,8 +43,10 @@ pub struct State {
     pub(super) navigator: Option<Picker<Place>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
-    /// The item whose title or description is edited, in edit mode (FR-EDIT-01).
+    /// The item whose title or description is edited, in edit mode (FR-EDIT-01), in the sidebar
+    /// while it has the keys.
     editing: Option<Editing>,
+    sidebar: Sidebar,
     pub(super) saving: Saving,
 }
 
@@ -65,6 +68,7 @@ impl State {
             navigator: None,
             move_to: None,
             editing: None,
+            sidebar: Sidebar::default(),
             saving,
         };
         state.move_focus(Focus::First);
@@ -126,8 +130,21 @@ impl State {
         self.move_to.as_ref().map(MoveTo::view)
     }
 
-    /// The item edited, which of its texts and the text edited, in edit mode: a row's item, or
-    /// the container shown, whose title and description head the pane.
+    /// The sidebar, while it shows (FR-VIEW-10).
+    #[must_use]
+    pub fn sidebar(&self) -> Option<SidebarView> {
+        self.sidebar.view(sidebar::entries(&self.document))
+    }
+
+    /// Whether the sidebar has the keys, so that commands and the title edited are its own.
+    #[must_use]
+    pub fn sidebar_has_keys(&self) -> bool {
+        self.sidebar.has_keys()
+    }
+
+    /// The item edited, which of its texts and the text edited, in edit mode: an entry's item
+    /// while the sidebar has the keys, else a row's item or the container shown, whose title and
+    /// description head the pane.
     #[must_use]
     pub fn editing(&self) -> Option<(ItemId, Part, &TextField)> {
         self.editing
@@ -187,8 +204,12 @@ impl State {
     }
 
     /// Pastes `branches` on `side` of the focused row, as one step to undo, focusing the last
-    /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near.
+    /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near, or
+    /// while the sidebar has the keys.
     pub(super) fn paste(&mut self, side: Side, branches: &[Branch]) {
+        if self.sidebar.has_keys() {
+            return;
+        }
         let target = clipboard::Target {
             container: self.container,
             show_completed: self.show_completed,
@@ -360,7 +381,7 @@ impl State {
         match input {
             EditInput::Text(edit) => editing.input(&mut self.document, edit),
             EditInput::Next => {
-                let row = editing.id() != self.container;
+                let row = editing.id() != self.container && !self.sidebar.has_keys();
                 let next = row
                     && editing.part() == Part::Title
                     && matches!(editing.kind(), ItemKind::Task | ItemKind::Section);
@@ -382,19 +403,23 @@ impl State {
             return false;
         };
         let (id, started) = (editing.id(), editing.revision());
-        let heading = id == self.container;
+        let in_sidebar = self.sidebar.has_keys();
+        let heading = !in_sidebar && id == self.container;
         let (transaction, before) = editing.finish(&mut self.document);
         if transaction.ops().is_empty() {
             self.saving.unchanged(started, self.document.revision());
         }
         let mut after = self.selection.clone();
-        if !heading {
+        if !heading && !in_sidebar {
             after.focus(Some(id));
         }
         self.history
             .commit(&mut self.document, transaction, before.clone(), |_| after)
             .expect("an edit's transaction is made from the document as it was");
         let kept = self.document.node(id).is_some();
+        if in_sidebar {
+            self.sidebar.finish(kept);
+        }
         if !kept {
             self.selection = before;
             if heading {
@@ -431,6 +456,92 @@ impl State {
             self.selection.focus(focused);
         }
         self.settle(&before);
+    }
+
+    /// Shows the sidebar with the keys, focused on the entry of the container shown or the
+    /// closest one above it, or hides it when it has the keys, or gives it the keys.
+    pub(super) fn toggle_sidebar(&mut self) {
+        let entries = sidebar::entries(&self.document);
+        let near = self
+            .path()
+            .into_iter()
+            .rev()
+            .find(|&id| entries.iter().any(|place| place.id == id));
+        self.sidebar.toggle(near);
+    }
+
+    /// Gives the keys to the sidebar while it shows, for `true`, or to the pane.
+    pub(super) fn focus_sidebar(&mut self, keys: bool) {
+        self.sidebar.focus(keys);
+    }
+
+    /// Keeps the sidebar's focus on an entry once a message may have changed the tree.
+    pub(super) fn settle_sidebar(&mut self) {
+        self.sidebar.settle(&sidebar::entries(&self.document));
+    }
+
+    /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
+    /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
+    /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting and
+    /// outdenting, each one step to undo, and opening the entry in the pane. Quitting, undo and
+    /// redo, the Navigator, the sidebar's own commands, going home, back and forward and the
+    /// conflict prompt's commands pass to the app; every other command does nothing.
+    pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
+        let passes = matches!(
+            command,
+            Command::Quit
+                | Command::Undo
+                | Command::Redo
+                | Command::Navigator
+                | Command::Sidebar
+                | Command::FocusSidebar
+                | Command::FocusPane
+                | Command::Go(Go::Home | Go::Back | Go::Forward)
+                | Command::KeepMine
+                | Command::TakeTheirs
+                | Command::ShowDiff
+        );
+        if passes || !self.sidebar.has_keys() {
+            return false;
+        }
+        let entries = sidebar::entries(&self.document);
+        let focused = self.sidebar.focused();
+        let apply = |state: &mut Self, result: Result<Transaction, moving::Refusal>| match result {
+            Ok(transaction) => state.change(transaction),
+            Err(refusal) => state.notify(Notice::Refused(refusal)),
+        };
+        match (command, focused) {
+            (Command::Focus(motion), _) => self.sidebar.move_focus(&entries, motion),
+            (Command::NewTask(side) | Command::NewProject(side), _) => {
+                self.sidebar_new(&entries, ItemKind::Project, side);
+            }
+            (Command::NewArea(side), _) => self.sidebar_new(&entries, ItemKind::Area, side),
+            (Command::EditTitle, Some(id)) => {
+                self.editing = Editing::existing(&self.document, id, self.selection.clone());
+            }
+            (Command::Delete, Some(id)) => {
+                self.change(trash::delete(&self.document, [id], today));
+            }
+            (Command::Move(direction), Some(id)) => {
+                self.change(sidebar::shift(&self.document, id, direction));
+            }
+            (Command::Indent, Some(id)) => apply(self, sidebar::indent(&self.document, id)),
+            (Command::Outdent, Some(id)) => apply(self, sidebar::outdent(&self.document, id)),
+            (Command::Go(Go::Into), Some(id)) => self.open(id, None),
+            _ => {}
+        }
+        true
+    }
+
+    /// Adds an empty item of `kind` from the sidebar's focused entry among `entries`, on `side`
+    /// of it, focuses it and starts editing its title in the sidebar.
+    fn sidebar_new(&mut self, entries: &[Place], kind: ItemKind, side: Side) {
+        let focused = self.sidebar.focused();
+        let place = sidebar::place(&self.document, entries, focused, kind, side)
+            .expect("the sidebar focuses one of its entries, beside which a project or area goes");
+        let editing = Editing::new_item(&mut self.document, kind, place, self.selection.clone());
+        self.sidebar.focus_new(editing.id());
+        self.editing = Some(editing);
     }
 
     /// Shows completed items, or hides them again, moving the focus on when its row hides.

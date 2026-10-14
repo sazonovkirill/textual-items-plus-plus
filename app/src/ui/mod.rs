@@ -9,6 +9,7 @@ mod edit_keys;
 mod file;
 mod keymap;
 mod picker;
+mod sidebar;
 mod status;
 mod text_keys;
 mod theme;
@@ -47,6 +48,7 @@ use conflict::ConflictPrompt;
 use container::ContainerPane;
 use crumbs::Crumbs;
 use file::File;
+use sidebar::SidebarPane;
 use status::StatusLine;
 
 /// What reaches the event loop: what the terminal, the disk worker, the watcher and the process
@@ -312,7 +314,7 @@ impl Tui {
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
     /// query of the Navigator or Move to while one is open, at the caret of the text being edited
-    /// in edit mode, else hidden.
+    /// in edit mode, in the pane or the sidebar, else hidden.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
         if self.state.conflict().is_some() {
@@ -325,15 +327,21 @@ impl Tui {
         if let Some(view) = self.state.move_to() {
             return Some(move_to_popup(&view, &self.theme, self.icons).caret(panes));
         }
+        let sidebar = self.state.sidebar();
+        let [side, pane] = split(panes, sidebar.is_some());
+        if let Some(view) = sidebar.filter(|view| view.keys) {
+            return SidebarPane::new(&self.state, view, &self.theme, self.icons).caret(side);
+        }
         ContainerPane::new(&self.state, &self.theme, self.icons)
-            .caret(pane_layout(panes)[2], self.top)
+            .caret(pane_layout(pane)[2], self.top)
     }
 
     /// The columns the description being edited wraps in, as last drawn.
     fn description_columns(&self) -> usize {
         let [panes, _] = layout(self.area);
+        let [_, pane] = split(panes, self.state.sidebar().is_some());
         ContainerPane::new(&self.state, &self.theme, self.icons)
-            .description_columns(pane_layout(panes)[2])
+            .description_columns(pane_layout(pane)[2])
             .unwrap_or(usize::MAX)
     }
 
@@ -404,6 +412,16 @@ fn layout(area: Rect) -> [Rect; 2] {
     Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area)
 }
 
+/// The parts of the panes' area: the sidebar, empty when it does not show, and the pane.
+fn split(panes: Rect, sidebar: bool) -> [Rect; 2] {
+    let width = if sidebar {
+        sidebar::width(panes.width)
+    } else {
+        0
+    };
+    Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(panes)
+}
+
 /// The parts of a pane: its breadcrumbs, the rule under them and its rows. A terminal too small
 /// for the crumbs, the rule and a row keeps the row.
 fn pane_layout(pane: Rect) -> [Rect; 3] {
@@ -458,13 +476,18 @@ fn move_to_popup<'a>(
 }
 
 impl Widget for &mut Tui {
-    /// Draws the pane, below its breadcrumbs and a rule, over the status line, scrolling the pane
-    /// to keep the focus in view, and the Navigator, Move to or the conflict prompt over the pane
-    /// while it is open.
+    /// Draws the pane, below its breadcrumbs and a rule, beside the sidebar while it shows, over
+    /// the status line, scrolling the pane to keep the focus in view, and the Navigator, Move to
+    /// or the conflict prompt over them while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
         let [panes, status] = layout(area);
-        let [crumbs, rule, pane] = pane_layout(panes);
+        let sidebar = self.state.sidebar();
+        let [side, pane] = split(panes, sidebar.is_some());
+        if let Some(view) = sidebar {
+            SidebarPane::new(&self.state, view, &self.theme, self.icons).render(side, buf);
+        }
+        let [crumbs, rule, pane] = pane_layout(pane);
         let path = self.state.path();
         Crumbs::new(self.state.document(), &path, &self.theme, self.icons).render(crumbs, buf);
         Line::styled(
