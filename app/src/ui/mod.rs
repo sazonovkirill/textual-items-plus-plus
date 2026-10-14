@@ -51,12 +51,12 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction,
-        EditDialogInput, EditDialogView, EditField, EditInput, Effect, Focus, Message, Opened,
-        PaneView, Part, PickerInput, Place, QuickAddInput, Report, SaveAsInput, SaveAsReport,
-        SearchInput, Selected, Settings, Side, State, Stop, Symbol, TagEntry, TagMark, TagsFor,
-        TagsView, TextEdit, view::View,
+        EditDialogInput, EditDialogView, EditField, EditInput, Effect, Focus, KeyGroup, Message,
+        Opened, PaneView, Part, PickerInput, Place, QuickAddInput, Report, SaveAsInput,
+        SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol, TagEntry,
+        TagMark, TagsFor, TagsView, TextEdit, view::View,
     },
-    domain::ItemKind,
+    domain::{ItemKind, dates::DateKind},
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
 };
 use animation::{Animator, Before, DrawnPane, Intent};
@@ -136,6 +136,10 @@ pub struct Tui {
     weather: Weather,
     /// The effects drawn over each frame (FR-UI-07).
     animator: Animator,
+    /// Where the focused row of the pane with the keys, or the sidebar's focused entry while it
+    /// has the keys, was last drawn, while it was on screen, which the context menu drops down
+    /// below (FR-KEY-07).
+    focused_row: Option<Rect>,
 }
 
 impl Tui {
@@ -162,6 +166,7 @@ impl Tui {
             edge: edge.clone(),
             now: Duration::ZERO,
             weather: Weather::default(),
+            focused_row: None,
         }
     }
 
@@ -647,6 +652,8 @@ impl Tui {
             Some(Message::Navigator)
         } else if self.state.palette().is_some() {
             Some(Message::Palette)
+        } else if self.state.context_menu().is_some() {
+            Some(Message::ContextMenu)
         } else if self.state.go_to_symbol().is_some() {
             Some(Message::GoToSymbol)
         } else if self.state.move_to().is_some() {
@@ -709,6 +716,10 @@ impl Tui {
         }
         if let Some(view) = self.state.palette() {
             return palette_popup(&view, &self.theme, self.icons()).caret(panes);
+        }
+        if let Some(view) = self.state.context_menu() {
+            return context_menu_popup(&view, self.focused_row, &self.theme, self.icons())
+                .caret(panes);
         }
         if let Some(view) = self.state.go_to_symbol() {
             return go_to_symbol_popup(&view, &self.theme, self.icons()).caret(panes);
@@ -1021,6 +1032,13 @@ impl Tui {
             if let Some(slot) = self.drawn.get_mut(index) {
                 *slot = kept;
             }
+            if index == current {
+                let focus = pane.selection().focused();
+                self.focused_row = drawn
+                    .iter()
+                    .find(|&&(id, _)| Some(id) == focus)
+                    .map(|&(_, row)| row);
+            }
             self.animator.drawn(DrawnPane {
                 index,
                 focused: index == current
@@ -1174,6 +1192,53 @@ fn palette_popup<'a>(
     icons: IconSet,
 ) -> PickerPopup<'a, Command> {
     PickerPopup::new("Command Palette", view, &|_| Icon::Command, icons, theme)
+}
+
+/// The context menu's window, dropped down below the focused row while it is on screen, else
+/// centered: each command after its icon under its group's heading; drawn, it shows each
+/// command's keys as its badge (FR-KEY-07).
+fn context_menu_popup<'a>(
+    view: &'a app::PickerView<'a, Command>,
+    focused_row: Option<Rect>,
+    theme: &'a Theme,
+    icons: IconSet,
+) -> PickerPopup<'a, Command> {
+    PickerPopup::new(
+        "Context Menu",
+        view,
+        &|&command| command_icon(command),
+        icons,
+        theme,
+    )
+    .headings(&|&command| KeyGroup::of(command).name())
+    .below(focused_row)
+}
+
+/// The icon of `command` in the context menu: the one the app marks the same thing with, such as
+/// a date's or the Trash's, or the generic command icon.
+fn command_icon(command: Command) -> Icon {
+    match command {
+        Command::EditTitle | Command::EditItem => Icon::Edit,
+        Command::ToggleFlagged => Icon::Flag,
+        Command::ToggleEvening => Icon::Evening,
+        Command::EditDescription(_) | Command::OpenNote(_) => Icon::Notes,
+        Command::OpenComments(_) => Icon::Comments,
+        Command::OpenChecklist => Icon::Checklist,
+        Command::ToggleCompleted => Icon::DoneTask,
+        Command::SetDate(DateKind::Start)
+        | Command::DayEarlier(DateKind::Start)
+        | Command::DayLater(DateKind::Start) => Icon::Start,
+        Command::SetDate(DateKind::Due)
+        | Command::DayEarlier(DateKind::Due)
+        | Command::DayLater(DateKind::Due) => Icon::Due,
+        Command::StartToday => Icon::Today,
+        Command::Tags => Icon::Tag,
+        Command::Delete => Icon::Trash,
+        Command::Duplicate => Icon::Duplicate,
+        Command::Convert | Command::GroupIntoProject => Icon::Project,
+        Command::GroupIntoSection => Icon::Section,
+        _ => Icon::Command,
+    }
 }
 
 /// Go to Symbol's window, each item after its kind's icon in its kind's color, the titles above
@@ -1341,10 +1406,16 @@ impl Widget for &mut Tui {
         let [panes, prompt, status] = self.layout(area);
         let sidebar = self.state.sidebar();
         let [side, room] = split(self.strip(panes), sidebar.is_some());
+        let mut sidebar_row = None;
         if let Some(view) = sidebar {
-            SidebarPane::new(&self.state, view, &self.theme, icons).render(side, buf);
+            let drawn = SidebarPane::new(&self.state, view, &self.theme, icons);
+            sidebar_row = drawn.focused_row(side);
+            drawn.render(side, buf);
         }
         self.render_panes(room, buf);
+        if self.state.sidebar_has_keys() {
+            self.focused_row = sidebar_row;
+        }
         let shortcuts = self.shortcuts_area(panes);
         self.render_shortcuts(shortcuts, buf);
         if let Some(view) = self.state.navigator() {
@@ -1353,6 +1424,12 @@ impl Widget for &mut Tui {
         if let Some(view) = self.state.palette() {
             let keys = |&command: &Command| self.keymap.labels(command);
             palette_popup(&view, &self.theme, icons)
+                .badge(&keys)
+                .render(panes, buf);
+        }
+        if let Some(view) = self.state.context_menu() {
+            let keys = |&command: &Command| self.keymap.labels(command);
+            context_menu_popup(&view, self.focused_row, &self.theme, icons)
                 .badge(&keys)
                 .render(panes, buf);
         }

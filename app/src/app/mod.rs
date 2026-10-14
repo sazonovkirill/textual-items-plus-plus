@@ -11,6 +11,7 @@ mod clipboard;
 mod command;
 mod completion;
 mod container;
+mod context_menu;
 mod converting;
 mod date_prompt;
 mod edit_dialog;

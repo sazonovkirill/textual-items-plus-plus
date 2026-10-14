@@ -87,7 +87,7 @@ fn open_the_focused_item_in_a_new_pane() {
     harness.type_text("work");
     harness.key(KeyCode::Enter);
     harness.type_text("G");
-    harness.ctrl('\\');
+    harness.ctrl('t');
     let (left, right) = sides(&harness, 0);
     assert!(left.contains("Work") && left.ends_with(" 1"), "{left}");
     assert!(right.contains("# Blog") && right.ends_with(" 2"), "{right}");
@@ -111,7 +111,7 @@ fn open_the_focused_item_in_a_new_pane() {
 #[test]
 fn narrowing_a_pane_drawn_wider_than_its_width_brings_back_the_pane_beyond_it() {
     let mut harness = today_beside_website();
-    harness.ctrl('\\');
+    harness.ctrl('t');
     harness.ctrl('w');
     harness.type_text("h");
     assert_eq!(rules(&harness).len(), 2, "three panes fit");
@@ -148,8 +148,8 @@ fn narrow_and_widen_a_pane_and_scroll_sideways_when_panes_do_not_fit() {
         harness.press(KeyCode::Char('L'), KeyModifiers::ALT | KeyModifiers::SHIFT);
     }
     assert_eq!(rules(&harness), [46], "eight columns wider again");
-    harness.ctrl('\\');
-    harness.ctrl('\\');
+    harness.ctrl('t');
+    harness.ctrl('t');
     let (_, right) = sides(&harness, 0);
     assert!(right.ends_with(" 4"), "{right}");
     assert_eq!(
@@ -219,7 +219,7 @@ fn long_title_in_two_panes(wrap: bool) -> Harness {
     harness.ctrl('g');
     harness.type_text("runs");
     harness.key(KeyCode::Enter);
-    harness.ctrl('\\');
+    harness.ctrl('t');
     harness
 }
 

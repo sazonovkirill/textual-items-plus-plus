@@ -21,6 +21,8 @@ pub enum Message {
     Navigator(PickerInput),
     /// The user did something in the open command palette (FR-NAV-06).
     Palette(PickerInput),
+    /// The user did something in the open context menu (FR-KEY-07).
+    ContextMenu(PickerInput),
     /// The user did something in the open Go to Symbol (FR-NAV-05).
     GoToSymbol(PickerInput),
     /// The user did something in the open Move to picker (FR-OPS-04).
@@ -180,6 +182,11 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
                 return dispatch(state, Message::Command(command), today);
             }
         }
+        Message::ContextMenu(input) => {
+            if let Some(command) = state.context_menu_input(input) {
+                return dispatch(state, Message::Command(command), today);
+            }
+        }
         Message::MoveTo(input) => state.move_to_input(input),
         Message::Tags(input) => state.tags_input(input),
         Message::Edit(input) => state.edit_input(input),
@@ -219,6 +226,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::Go(to) => state.go(to),
         Command::Navigator => state.toggle_navigator(),
         Command::Palette => state.open_palette(),
+        Command::ContextMenu => state.open_context_menu(),
         Command::GoToSymbol => state.open_go_to_symbol(),
         Command::Search => state.open_search(),
         Command::QuickAdd(prefill) => state.open_quick_add(prefill, today),

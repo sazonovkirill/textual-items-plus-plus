@@ -49,7 +49,7 @@ fn open_today() {
 fn a_task_in_today_opens_where_it_lives_in_a_new_pane() {
     let mut harness = Harness::new(60, 16);
     harness.type_text("gtjj");
-    harness.ctrl('\\');
+    harness.ctrl('t');
     let rows = trimmed(&harness);
     assert!(rows[0].starts_with("  \u{f01a7} Work"), "{rows:#?}");
     assert!(

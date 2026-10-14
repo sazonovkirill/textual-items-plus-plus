@@ -25,7 +25,7 @@ impl State {
 
 /// The transaction that pins the projects among `items`, or unpins them when all are pinned;
 /// `None` when none of them is a project, since only a project is pinned.
-fn toggle(document: &Document, items: &[ItemId]) -> Option<Transaction> {
+pub(super) fn toggle(document: &Document, items: &[ItemId]) -> Option<Transaction> {
     let projects: Vec<(ItemId, &Item)> = items
         .iter()
         .filter_map(|&id| Some((id, document.node(id)?.item()?)))

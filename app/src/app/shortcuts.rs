@@ -31,7 +31,7 @@ pub enum KeyGroup {
 
 impl KeyGroup {
     /// Every group, in the order the panel lists them.
-    const ALL: [Self; 8] = [
+    pub(super) const ALL: [Self; 8] = [
         Self::Moving,
         Self::Selection,
         Self::Going,
@@ -58,7 +58,8 @@ impl KeyGroup {
     }
 
     /// The group `command` is listed in.
-    fn of(command: Command) -> Self {
+    #[must_use]
+    pub fn of(command: Command) -> Self {
         match command {
             Command::Focus(_) => Self::Moving,
             Command::Extend(_)
@@ -129,6 +130,7 @@ impl KeyGroup {
             | Command::Shortcuts
             | Command::ScrollShortcuts(_)
             | Command::Palette
+            | Command::ContextMenu
             | Command::Settings
             | Command::SaveAs
             | Command::StartWeather => Self::View,
@@ -140,10 +142,11 @@ impl KeyGroup {
 impl State {
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
     /// commands and quitting, while an attachments panel has the keys quitting and, while nothing
-    /// in it is edited, the commands it acts on (FR-CHK-03) and those that move the keys, while a picker, the command palette, Go
-    /// to Symbol, the date prompt, Quick Add or the settings window is open, in edit mode or
-    /// while the words to search for are typed only global ones, while the sidebar has the keys
-    /// those it takes, and otherwise any but Toggle Evening outside Today (FR-VIEW-13).
+    /// in it is edited, the commands it acts on (FR-CHK-03) and those that move the keys, while a
+    /// picker, the command palette, the context menu, Go to Symbol, the date prompt, Quick Add or
+    /// the settings window is open, in edit mode or while the words to search for are typed only
+    /// global ones, while the sidebar has the keys those it takes, and otherwise any but Toggle
+    /// Evening outside Today (FR-VIEW-13).
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -159,6 +162,7 @@ impl State {
         } else if self.editing().is_some()
             || self.navigator.is_some()
             || self.palette.is_some()
+            || self.context_menu.is_some()
             || self.go_to_symbol.is_some()
             || self.move_to.is_some()
             || self.tags.is_some()

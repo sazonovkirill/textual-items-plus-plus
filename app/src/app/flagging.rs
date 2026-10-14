@@ -24,7 +24,7 @@ impl State {
 
 /// The transaction that flags the projects and tasks among `items`, or unflags them when all are
 /// flagged; `None` when none of them is one, since only those are flagged.
-fn toggle(document: &Document, items: &[ItemId]) -> Option<Transaction> {
+pub(super) fn toggle(document: &Document, items: &[ItemId]) -> Option<Transaction> {
     let flaggable: Vec<(ItemId, &Item)> = items
         .iter()
         .filter_map(|&id| Some((id, document.node(id)?.item()?)))

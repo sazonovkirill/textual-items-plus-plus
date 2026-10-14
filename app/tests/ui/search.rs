@@ -50,7 +50,7 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives_in_a_new_pan
     );
     harness.key(KeyCode::Enter);
     assert_eq!(harness.tui.cursor(Rect::new(0, 0, 80, 20)), None);
-    harness.ctrl('\\');
+    harness.ctrl('t');
     let screen = harness.screen();
     assert!(screen.contains("# Website"), "{screen}");
     assert!(screen.contains("│▌ ☐ Write the"), "{screen}");
@@ -94,7 +94,7 @@ fn a_result_opens_in_a_new_pane() {
     harness.ctrl('f');
     harness.type_text("portfolios");
     harness.key(KeyCode::Esc);
-    harness.ctrl('\\');
+    harness.ctrl('t');
     let rows = trimmed(&harness);
     assert!(
         rows[0].starts_with("  \u{f0349} Search ") && rows[0].contains("│  \u{f01a7} Work "),

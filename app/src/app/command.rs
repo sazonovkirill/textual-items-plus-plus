@@ -39,6 +39,9 @@ pub enum Command {
     Navigator,
     /// Open the command palette, which runs the command chosen in it (FR-NAV-06).
     Palette,
+    /// Open the context menu of the commands that act on the selected items, which runs the
+    /// command chosen in it (FR-KEY-07).
+    ContextMenu,
     /// Open Go to Symbol, which shows the project, section or task chosen in it where it is
     /// (FR-NAV-05).
     GoToSymbol,
@@ -748,6 +751,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Palette,
         title: "Command Palette",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ContextMenu,
+        title: "Context Menu",
         context: Context::Navigate,
     },
     Entry {

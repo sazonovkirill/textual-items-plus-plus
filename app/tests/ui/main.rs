@@ -8,6 +8,7 @@ mod comments;
 mod completing;
 mod container;
 mod containers;
+mod context_menu;
 mod converting;
 mod dates;
 mod descriptions;

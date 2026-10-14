@@ -156,7 +156,7 @@ fn windows_and_panes_fade_in_and_out() {
     let steps: [(&str, Step); 4] = [
         ("the Navigator opening", |harness| harness.ctrl('k')),
         ("and closing", |harness| harness.key(KeyCode::Esc)),
-        ("a pane opening", |harness| harness.ctrl('\\')),
+        ("a pane opening", |harness| harness.ctrl('t')),
         ("and closing", |harness| {
             harness.ctrl('w');
             harness.type_text("c");

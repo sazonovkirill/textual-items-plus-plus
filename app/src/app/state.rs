@@ -60,6 +60,8 @@ pub struct State {
     pub(super) navigator: Option<Picker<Stop>>,
     /// The command palette, while it is open (FR-NAV-06).
     pub(super) palette: Option<Picker<Command>>,
+    /// The context menu, while it is open (FR-KEY-07).
+    pub(super) context_menu: Option<Picker<Command>>,
     /// Go to Symbol, while it is open (FR-NAV-05).
     pub(super) go_to_symbol: Option<Picker<Symbol>>,
     /// Move to, while its picker is open (FR-OPS-04).
@@ -121,6 +123,7 @@ impl State {
             history: History::default(),
             navigator: None,
             palette: None,
+            context_menu: None,
             go_to_symbol: None,
             move_to: None,
             date_prompt: None,
@@ -356,7 +359,7 @@ impl State {
 
     /// The selected items without those inside another of them, which go along with it, in the
     /// order of the rows: what a command that moves or takes items acts on.
-    fn targets(&self) -> Vec<ItemId> {
+    pub(super) fn targets(&self) -> Vec<ItemId> {
         container::outermost_rows(&self.document, self.pane().selection.items(&self.listed()))
     }
 
@@ -479,13 +482,7 @@ impl State {
     /// Whether `items` are all areas, which have no tags or dates and are not completed, saying so
     /// with `notice` when they are (D-75, D-81).
     fn refuses_areas(&mut self, items: &[ItemId], notice: Notice) -> bool {
-        let areas = !items.is_empty()
-            && items.iter().all(|&id| {
-                self.document
-                    .node(id)
-                    .and_then(Node::item)
-                    .is_some_and(|item| item.kind == ItemKind::Area)
-            });
+        let areas = all_areas(&self.document, items);
         if areas {
             self.notify(notice);
         }
@@ -750,15 +747,7 @@ impl State {
     /// focused row's or the heading's title, picking nothing (D-80). Nothing happens when nothing
     /// is focused.
     pub(super) fn edit_title(&mut self) {
-        let focused = self.pane().selection.focused();
-        let opens = focused
-            .filter(|&id| Some(id) != self.container())
-            .filter(|&id| {
-                let item = self.document.node(id).and_then(Node::item);
-                item.is_some_and(|item| matches!(item.kind, ItemKind::Area | ItemKind::Project))
-                    && container::opens(&self.document, id)
-            });
-        if let Some(id) = opens {
+        if let Some(id) = self.opened_by_title() {
             self.open(id, None);
             return;
         }
@@ -767,6 +756,20 @@ impl State {
             .focused()
             .and_then(|id| Editing::existing(&self.document, id, selection.clone()));
         self.start_editing(editing);
+    }
+
+    /// The focused area or project, other than the container shown, that
+    /// [`edit_title`](Self::edit_title) shows in the pane rather than edits (D-80).
+    pub(super) fn opened_by_title(&self) -> Option<ItemId> {
+        self.pane()
+            .selection
+            .focused()
+            .filter(|&id| Some(id) != self.container())
+            .filter(|&id| {
+                let item = self.document.node(id).and_then(Node::item);
+                item.is_some_and(|item| matches!(item.kind, ItemKind::Area | ItemKind::Project))
+                    && container::opens(&self.document, id)
+            })
     }
 
     /// Enters edit mode with `editing`, if there is one, picking nothing, since what is picked
@@ -1301,7 +1304,7 @@ impl State {
 
     /// Where the focused row leads: the area or project it is, when that opens, or for a section
     /// its container focused on it, or in a view the container listing its task, focused on it.
-    fn inside_focused(&self) -> Option<Visit> {
+    pub(super) fn inside_focused(&self) -> Option<Visit> {
         let document = &self.document;
         let focused = self.pane().selection.focused();
         let row = self
@@ -1526,14 +1529,15 @@ impl State {
         self.pane_mut().width = Some(width);
     }
 
-    /// Opens the Navigator on where the pane is, closing the command palette, Go to Symbol, Move
-    /// to, the date prompt, Quick Add, the tag picker, the settings window and the Save As prompt
-    /// unless it is writing the file, or closes it when it is open.
+    /// Opens the Navigator on where the pane is, closing the command palette, the context menu, Go
+    /// to Symbol, Move to, the date prompt, Quick Add, the tag picker, the settings window and the
+    /// Save As prompt unless it is writing the file, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         if !self.saving_as() {
             self.save_as = None;
         }
         self.palette = None;
+        self.context_menu = None;
         self.go_to_symbol = None;
         self.settings_window = None;
         self.move_to = None;
@@ -1593,11 +1597,23 @@ enum KeyStop {
     Panel(usize),
 }
 
+/// Whether `items` are all areas, which have no tags or dates and are not completed (D-75, D-81);
+/// no items are none.
+pub(super) fn all_areas(document: &Document, items: &[ItemId]) -> bool {
+    !items.is_empty()
+        && items.iter().all(|&id| {
+            document
+                .node(id)
+                .and_then(Node::item)
+                .is_some_and(|item| item.kind == ItemKind::Area)
+        })
+}
+
 /// Whether the sidebar passes `command` to the app while it has the keys: quitting, undo and
-/// redo, the Navigator, Go to Symbol, the command palette, searching, Quick Add, the sidebar's
-/// own commands, focusing a pane, going to the Inbox, a view, back and forward, the shortcuts
-/// panel, the settings window, Save As, the weather and the conflict prompt's commands (D-86,
-/// D-90).
+/// redo, the Navigator, Go to Symbol, the command palette, the context menu, searching, Quick
+/// Add, the sidebar's own commands, focusing a pane, going to the Inbox, a view, back and forward,
+/// the shortcuts panel, the settings window, Save As, the weather and the conflict prompt's
+/// commands (D-86, D-90).
 fn sidebar_passes(command: Command) -> bool {
     matches!(
         command,
@@ -1607,6 +1623,7 @@ fn sidebar_passes(command: Command) -> bool {
             | Command::Navigator
             | Command::GoToSymbol
             | Command::Palette
+            | Command::ContextMenu
             | Command::Search
             | Command::QuickAdd(_)
             | Command::Sidebar

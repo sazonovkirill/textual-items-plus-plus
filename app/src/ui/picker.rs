@@ -15,7 +15,7 @@ use super::{
     keymap::{self, Key},
     text_keys,
 };
-use crate::app::{PickerInput, PickerView};
+use crate::app::{Candidate, PickerInput, PickerView};
 
 /// The keys of an open picker besides the text keys of its query.
 pub(super) const PICKER: &[(Key, PickerInput)] = &[
@@ -58,6 +58,9 @@ pub fn picker_input(event: &Event) -> Option<PickerInput> {
 /// The largest the window gets.
 const SIZE: (u16, u16) = (80, 20);
 
+/// The width of a window dropped down below a row.
+const DROP_DOWN_WIDTH: u16 = 48;
+
 /// What stands before the query.
 const PROMPT: &str = "› ";
 
@@ -67,11 +70,13 @@ type Mark<T> = fn(&Theme, &T) -> Option<(Icon, Color)>;
 /// An open picker titled with what it chooses, such as Navigator: the query, its selection in the
 /// selection colors, then each matching entry's icon and text and, dimmed after it, its detail,
 /// the focused one in the selection colors and kept in view, or a dimmed line saying nothing
-/// matches.
+/// matches; with headings, a heading line before each run of entries under the same heading.
 pub struct PickerPopup<'a, T> {
     title: &'a str,
     view: &'a PickerView<'a, T>,
     icon: &'a dyn Fn(&T) -> Icon,
+    heading: Option<&'a dyn Fn(&T) -> &'static str>,
+    below: Option<Rect>,
     depth: Option<&'a dyn Fn(&T) -> usize>,
     badge: Option<&'a dyn Fn(&T) -> String>,
     color: Option<fn(&Theme, &T) -> Color>,
@@ -96,6 +101,8 @@ impl<'a, T> PickerPopup<'a, T> {
             title,
             view,
             icon,
+            heading: None,
+            below: None,
             depth: None,
             badge: None,
             color: None,
@@ -147,13 +154,70 @@ impl<'a, T> PickerPopup<'a, T> {
         self
     }
 
-    /// Where the window goes in `area`: centered, as wide as it can be up to 80 columns and as
-    /// tall as its entries with the query and the border, up to 20 rows.
+    /// The window with each entry under the heading `heading` gives it, written on a line of
+    /// its own before each run of entries under the same one.
+    #[must_use]
+    pub fn headings(mut self, heading: &'a dyn Fn(&T) -> &'static str) -> Self {
+        self.heading = Some(heading);
+        self
+    }
+
+    /// The window dropped down below `row`, a row on screen, when there is one, rather than
+    /// centered.
+    #[must_use]
+    pub fn below(mut self, row: Option<Rect>) -> Self {
+        self.below = row;
+        self
+    }
+
+    /// Where the window goes in `area`: as tall as its lines with the query and the border, up
+    /// to 20 rows, either centered, as wide as it can be up to 80 columns, or, dropped down below
+    /// a row, 48 columns wide from two columns into the row, under it when it fits there, else
+    /// over it when it fits there, else where there is more room, moved left to stay in `area`.
     #[must_use]
     pub fn area(&self, area: Rect) -> Rect {
-        let entries = u16::try_from(self.view.entries.len().max(1)).unwrap_or(u16::MAX);
-        let height = entries.saturating_add(3).min(SIZE.1);
-        area.centered(Constraint::Length(SIZE.0), Constraint::Length(height))
+        let lines = u16::try_from(self.lines().0.len().max(1)).unwrap_or(u16::MAX);
+        let height = lines.saturating_add(3).min(SIZE.1);
+        let Some(row) = self.below else {
+            return area.centered(Constraint::Length(SIZE.0), Constraint::Length(height));
+        };
+        let width = DROP_DOWN_WIDTH.min(area.width);
+        let x = row
+            .x
+            .saturating_add(2)
+            .min(area.right().saturating_sub(width))
+            .max(area.x);
+        let under = area.bottom().saturating_sub(row.bottom());
+        let over = row.y.saturating_sub(area.y);
+        let (y, height) = if under >= height || under >= over {
+            (row.bottom(), height.min(under))
+        } else {
+            let height = height.min(over);
+            (row.y - height, height)
+        };
+        Rect::new(x, y, width, height).intersection(area)
+    }
+
+    /// The lines below the query: each matching entry, by its position among them, after the
+    /// heading of each run of entries under the same one; and the focused entry's line.
+    fn lines(&self) -> (Vec<Listed<'a, T>>, usize) {
+        let mut lines = Vec::new();
+        let mut last = None;
+        let mut at = 0;
+        for (index, entry) in self.view.entries.iter().enumerate() {
+            if let Some(heading) = self.heading {
+                let heading = heading(&entry.value);
+                if last != Some(heading) {
+                    lines.push(Listed::Heading(heading));
+                    last = Some(heading);
+                }
+            }
+            if index == self.view.focused {
+                at = lines.len();
+            }
+            lines.push(Listed::Entry(index, entry));
+        }
+        (lines, at)
     }
 
     /// Where the terminal's cursor goes when the window is drawn over `area`: at the query's
@@ -188,6 +252,14 @@ impl<'a, T> PickerPopup<'a, T> {
     }
 }
 
+/// A line of an open picker below its query.
+enum Listed<'a, T> {
+    /// A heading over the entries below it.
+    Heading(&'static str),
+    /// An entry, by its position among the matching ones.
+    Entry(usize, &'a Candidate<T>),
+}
+
 impl<T> Widget for PickerPopup<'_, T> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let area = self.area(area);
@@ -212,10 +284,18 @@ impl<T> Widget for PickerPopup<'_, T> {
             return;
         }
         let focused = self.view.focused;
-        let offset = (focused + 1).saturating_sub(rows.len());
-        let entries = self.view.entries.iter().enumerate().skip(offset);
+        let (lines, at) = self.lines();
+        let offset = (at + 1).saturating_sub(rows.len());
         let tree = self.depth.filter(|_| self.view.query.text().is_empty());
-        for ((index, entry), row) in entries.zip(rows) {
+        for (line, row) in lines.into_iter().skip(offset).zip(rows) {
+            let (index, entry) = match line {
+                Listed::Heading(heading) => {
+                    let style = Style::new().fg(theme.headers).bold();
+                    Line::styled(format!(" {heading}"), style).render(row, buf);
+                    continue;
+                }
+                Listed::Entry(index, entry) => (index, entry),
+            };
             let indent = tree.map_or(0, |depth| depth(&entry.value) * 2);
             let style = self.color.map_or_else(Style::new, |color| {
                 Style::new().fg(color(theme, &entry.value))
@@ -582,5 +662,129 @@ mod tests {
             ["│ / Work               2 │", "│ # Blog  Work › Site  3 │",],
             "matches show their details and no tree"
         );
+    }
+
+    /// Odd values under "Odd", even ones under "Even".
+    const HEADING: fn(&u8) -> &'static str = |value| if value % 2 == 1 { "Odd" } else { "Even" };
+
+    // FR-KEY-07
+    #[test]
+    fn drops_down_below_a_row_or_above_it_where_there_is_more_room_within_the_area() {
+        let picker = Picker::new((1..=4).map(|n| candidate(n, "x", "")).collect());
+        let view = picker.view();
+        let colors = theme();
+        let popup = |row| {
+            PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &colors)
+                .headings(&HEADING)
+                .below(Some(row))
+        };
+        let area = Rect::new(0, 0, 100, 30);
+        assert_eq!(
+            popup(Rect::new(10, 4, 60, 1)).area(area),
+            Rect::new(12, 5, 48, 11),
+            "under it, two columns in, as tall as its 4 entries and 4 headings"
+        );
+        assert_eq!(
+            popup(Rect::new(70, 25, 30, 1)).area(area),
+            Rect::new(52, 14, 48, 11),
+            "over it, moved left to stay in the area"
+        );
+        assert_eq!(
+            popup(Rect::new(0, 8, 100, 1)).area(Rect::new(0, 0, 40, 20)),
+            Rect::new(0, 9, 40, 11),
+            "under it when it fits there, narrowed to the area"
+        );
+        assert_eq!(
+            popup(Rect::new(0, 12, 40, 1)).area(Rect::new(0, 0, 40, 20)),
+            Rect::new(0, 1, 40, 11),
+            "over it when only that fits"
+        );
+        assert_eq!(
+            popup(Rect::new(0, 6, 40, 1)).area(Rect::new(0, 0, 40, 14)),
+            Rect::new(0, 7, 40, 7),
+            "where there is more room when it fits neither way, cut to it"
+        );
+        assert_eq!(
+            PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &colors)
+                .below(None)
+                .area(area),
+            Rect::new(10, 12, 80, 7),
+            "centered without a row"
+        );
+    }
+
+    // FR-KEY-07
+    #[test]
+    fn draws_a_heading_before_each_run_of_entries_under_it_and_keeps_the_focused_ones_in_view() {
+        let mut picker = Picker::grouped(
+            [1, 3, 2, 5]
+                .map(|n| candidate(n, &n.to_string(), ""))
+                .to_vec(),
+            vec![0, 0, 1, 2],
+        );
+        let rendered = |picker: &Picker<u8>, height| {
+            let view = picker.view();
+            let area = Rect::new(0, 0, 12, height);
+            let mut buf = Buffer::empty(area);
+            PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &theme())
+                .headings(&HEADING)
+                .render(area, &mut buf);
+            (1..height - 1)
+                .map(|y| (0..12).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rendered(&picker, 10),
+            [
+                "│›         │",
+                "│ Odd      │",
+                "│ # 1      │",
+                "│ # 3      │",
+                "│ Even     │",
+                "│ / 2      │",
+                "│ Odd      │",
+                "│ # 5      │",
+            ]
+        );
+        for _ in 0..2 {
+            picker.input(PickerInput::Next);
+        }
+        assert_eq!(
+            rendered(&picker, 6),
+            [
+                "│›         │",
+                "│ # 3      │",
+                "│ Even     │",
+                "│ / 2      │"
+            ],
+            "the focused entry in view under its heading"
+        );
+        picker.input(PickerInput::Next);
+        assert_eq!(
+            rendered(&picker, 6),
+            [
+                "│›         │",
+                "│ / 2      │",
+                "│ Odd      │",
+                "│ # 5      │"
+            ]
+        );
+    }
+
+    // FR-ORG-12
+    #[test]
+    fn draws_an_entrys_mark_in_its_color_between_its_icon_and_its_text() {
+        let picker = Picker::new([1, 2].map(|n| candidate(n, &n.to_string(), "")).to_vec());
+        let view = picker.view();
+        let area = Rect::new(0, 0, 12, 5);
+        let mut buf = Buffer::empty(area);
+        PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &theme())
+            .mark(|theme, value| (*value == 2).then_some((Icon::Flag, theme.primary)))
+            .render(area, &mut buf);
+        let rows: Vec<String> = (2..4)
+            .map(|y| (0..12).map(|x| buf[(x, y)].symbol()).collect())
+            .collect();
+        assert_eq!(rows, ["│ # 1      │", "│ / ⚑ 2    │"]);
+        assert_eq!(buf[(4, 3)].fg, theme().primary);
     }
 }

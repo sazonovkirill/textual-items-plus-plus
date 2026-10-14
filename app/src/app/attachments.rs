@@ -494,7 +494,7 @@ fn first_of_checklist(document: &Document, id: ItemId) -> Selected {
     Selected::Checklist(checklist::lines(document, id).first().map(|line| line.id))
 }
 
-fn is_task(document: &Document, id: ItemId) -> bool {
+pub(super) fn is_task(document: &Document, id: ItemId) -> bool {
     document
         .node(id)
         .and_then(Node::item)

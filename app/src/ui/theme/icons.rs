@@ -63,6 +63,8 @@ pub enum Icon {
     Command,
     /// Search results and the words searched for.
     Search,
+    /// Duplicating, in the context menu.
+    Duplicate,
 }
 
 impl Icon {
@@ -133,6 +135,8 @@ impl Icon {
             Self::Command => ("\u{f07b7}", "❯"),
             // nf-md-magnify
             Self::Search => ("\u{f0349}", "⌕"),
+            // nf-md-content_copy, as taskpaper-terminal marks Duplicate.
+            Self::Duplicate => ("\u{f018f}", "⧉"),
         }
     }
 }
@@ -143,7 +147,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 28] = [
+    const ICONS: [Icon; 29] = [
         Icon::Area,
         Icon::Project,
         Icon::Section,
@@ -172,6 +176,7 @@ mod tests {
         Icon::Tag,
         Icon::Command,
         Icon::Search,
+        Icon::Duplicate,
     ];
 
     /// The task and fold markers, drawn the same with Nerd Font icons as without.

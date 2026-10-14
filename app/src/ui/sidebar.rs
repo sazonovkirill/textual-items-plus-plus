@@ -102,6 +102,13 @@ impl<'a> SidebarPane<'a> {
         Some(Position::new(x, y))
     }
 
+    /// Where the focused entry is drawn when the sidebar is drawn over `area`, while one is.
+    pub(super) fn focused_row(&self, area: Rect) -> Option<Rect> {
+        let content = content(area);
+        let line = self.lines.get(self.view.focused?)?;
+        content.rows().nth(line.checked_sub(self.offset(content))?)
+    }
+
     /// The first line shown in `content`, so that the focused entry is in view.
     fn offset(&self, content: Rect) -> usize {
         self.view

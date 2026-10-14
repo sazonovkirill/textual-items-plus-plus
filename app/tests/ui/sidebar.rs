@@ -338,7 +338,7 @@ fn the_app_starts_with_the_sidebar_shown_and_the_keys_in_the_first_pane() {
 #[test]
 fn tab_gn_gp_and_g_digits_go_round_the_panes_the_sidebar_first() {
     let mut harness = Harness::launched(120, 24);
-    harness.ctrl('\\');
+    harness.ctrl('t');
     let (sidebar, first, second) = (0, 28, 74);
     assert_eq!(marker_columns(&harness), [second]);
     for (keys, column) in [
@@ -381,7 +381,7 @@ fn tab_gn_gp_and_g_digits_go_round_the_panes_the_sidebar_first() {
 #[test]
 fn gj_gk_and_ctrl_arrows_browse_the_sidebar_in_the_first_pane_from_anywhere() {
     let mut harness = Harness::launched(120, 24);
-    harness.ctrl('\\');
+    harness.ctrl('t');
     harness.type_text("gj");
     assert!(header(&harness, 28).contains("Today"));
     assert!(

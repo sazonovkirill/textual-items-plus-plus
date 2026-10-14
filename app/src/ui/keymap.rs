@@ -63,6 +63,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // taskpaper-terminal's palette key, and **g**o to a **c**ommand, which the owner moved from Show
     // Completed (D-63).
     (Command::Palette, &["ctrl+p", "g c"]),
+    // The owner's context menu key, which a legacy terminal sends as `Ctrl+4` (D-106).
+    (Command::ContextMenu, &["ctrl+\\", "ctrl+4"]),
     // The owner's key, which taskpaper-terminal gives Go to Symbol until search exists (D-69).
     (Command::GoToSymbol, &["/"]),
     // Find, as `Ctrl+F` finds in most apps, and **g**o **s**earch (D-70).
@@ -152,8 +154,9 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::ToggleFlagged, &["m f"]),
     // The owner's key to fold a project in the sidebar (D-67).
     (Command::Collapse, &["'"]),
-    // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends
-    // `Ctrl+\` as `Ctrl+4` (D-60). The owner's keys cycle through the panes, the sidebar first,
+    // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys but `Ctrl+\`, which opens
+    // the context menu: the pickers' keys to open their choice in a new pane open the focused row
+    // in one instead (D-60, D-106). The owner's keys cycle through the panes, the sidebar first,
     // `g` with a digit reaches one, `g0` the sidebar, and `gj`/`gk`, taskpaper-terminal's next and
     // previous sibling, browse the sidebar's entries in the first pane (D-79).
     (Command::Sidebar, &["ctrl+b"]),
@@ -179,7 +182,7 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::FocusPane(7), &["g 7"]),
     (Command::FocusPane(8), &["g 8"]),
     (Command::FocusPane(9), &["g 9"]),
-    (Command::OpenInNewPane, &["ctrl+\\", "ctrl+4", "ctrl+w v"]),
+    (Command::OpenInNewPane, &["alt+enter", "ctrl+t", "ctrl+w v"]),
     (Command::ClosePane, &["ctrl+w c"]),
     (Command::Narrow, &["ctrl+w <", "alt+shift+h"]),
     (Command::Widen, &["ctrl+w >", "alt+shift+l"]),
@@ -722,10 +725,15 @@ mod tests {
             ),
             (
                 press(KeyCode::Char('\\'), KeyModifiers::CONTROL),
-                Command::OpenInNewPane,
+                Command::ContextMenu,
             ),
             (
                 press(KeyCode::Char('4'), KeyModifiers::CONTROL),
+                Command::ContextMenu,
+            ),
+            (press(KeyCode::Enter, alt), Command::OpenInNewPane),
+            (
+                press(KeyCode::Char('t'), KeyModifiers::CONTROL),
                 Command::OpenInNewPane,
             ),
             (

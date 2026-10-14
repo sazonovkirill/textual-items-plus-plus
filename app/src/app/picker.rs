@@ -102,6 +102,9 @@ pub struct Picker<T> {
     /// The positions in `candidates` of those that repeat others, listed only while the query is
     /// empty.
     repeats: Range<usize>,
+    /// The group of each candidate, by position, whose matches are listed together; empty when
+    /// the candidates are not grouped.
+    groups: Vec<usize>,
 }
 
 impl<T: Clone> Picker<T> {
@@ -123,6 +126,18 @@ impl<T: Clone> Picker<T> {
             query: TextField::new(String::new()),
             focused: 0,
             repeats,
+            groups: Vec::new(),
+        }
+    }
+
+    /// A picker over `candidates` as [`new`](Self::new) opens one, each in the group at its
+    /// position in `groups`: the matches of a group are listed together, best first, the groups
+    /// in the order of their best matches, so the best match still comes first.
+    #[must_use]
+    pub fn grouped(candidates: Vec<Candidate<T>>, groups: Vec<usize>) -> Self {
+        Self {
+            groups,
+            ..Self::new(candidates)
         }
     }
 
@@ -139,11 +154,12 @@ impl<T: Clone> Picker<T> {
         }
     }
 
-    /// Lists `candidates` instead, none of them repeating another, matched against the query as
-    /// typed, the first match focused.
+    /// Lists `candidates` instead, none of them repeating another nor grouped, matched against
+    /// the query as typed, the first match focused.
     pub fn relist(&mut self, candidates: Vec<Candidate<T>>) {
         self.candidates = candidates;
         self.repeats = 0..0;
+        self.groups.clear();
         self.rank(false);
         self.focused = 0;
     }
@@ -198,7 +214,8 @@ impl<T: Clone> Picker<T> {
     }
 
     /// Ranks the candidates the query matches, leaving out the repeats unless it is empty: by how
-    /// well their text matches, then in the order given. Each word of the query must match,
+    /// well their text matches, then in the order given, and for grouped candidates each group's
+    /// together where its best match ranks. Each word of the query must match,
     /// fuzzily, ignoring case unless it has a capital and ignoring accents unless it has one;
     /// characters such as `!` or `^` match themselves. With `narrowed`, only those matched before
     /// are gone through.
@@ -230,6 +247,20 @@ impl<T: Clone> Picker<T> {
         };
         scored.sort_unstable();
         self.ranked = scored.into_iter().map(|(_, index)| index).collect();
+        if !self.groups.is_empty() {
+            let groups = &self.groups;
+            let mut order: Vec<Option<usize>> = Vec::new();
+            for &index in &self.ranked {
+                let group = groups.get(index).copied();
+                if !order.contains(&group) {
+                    order.push(group);
+                }
+            }
+            self.ranked.sort_by_key(|&index| {
+                let group = groups.get(index).copied();
+                order.iter().position(|&listed| listed == group)
+            });
+        }
     }
 }
 
@@ -498,5 +529,56 @@ mod tests {
         picker.relist(vec![candidate(9, "Recipes"), candidate(8, "Groceries")]);
         assert_eq!(picker.view().query.text(), "re");
         assert_eq!(listed(&picker), (vec![9, 8], 0));
+    }
+
+    // FR-KEY-07
+    #[test]
+    fn grouped_matches_stay_together_in_the_order_of_each_groups_best_match() {
+        let texts = [
+            "Edit Title",
+            "Move Down",
+            "Set Due Date",
+            "Duplicate",
+            "Delete",
+        ];
+        let candidates: Vec<_> = texts
+            .iter()
+            .zip(0..)
+            .map(|(text, value)| candidate(value, text))
+            .collect();
+        let groups = vec![0, 0, 1, 2, 2];
+        let mut picker = Picker::grouped(candidates.clone(), groups.clone());
+        assert_eq!(listed(&picker), (vec![0, 1, 2, 3, 4], 0), "as given");
+        typed(&mut picker, "de");
+        let mut plain = Picker::new(candidates);
+        typed(&mut plain, "de");
+        let best = listed(&plain).0;
+        let grouped = listed(&picker).0;
+        assert_eq!(
+            grouped.first(),
+            best.first(),
+            "the best match still comes first"
+        );
+        let group = |value: u8| groups.get(usize::from(value)).copied();
+        let mut order: Vec<_> = grouped.iter().map(|&value| group(value)).collect();
+        order.dedup();
+        let mut seen = order.clone();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(
+            order.len(),
+            seen.len(),
+            "each group's matches together: {grouped:?}"
+        );
+        for listed_group in &order {
+            let within = |values: &[u8]| -> Vec<u8> {
+                values
+                    .iter()
+                    .copied()
+                    .filter(|&value| group(value) == *listed_group)
+                    .collect()
+            };
+            assert_eq!(within(&grouped), within(&best), "best first within a group");
+        }
     }
 }
