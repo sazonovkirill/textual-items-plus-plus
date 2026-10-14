@@ -70,5 +70,5 @@ pub use shortcuts::KeyGroup;
 pub use sidebar::SidebarView;
 pub use state::{Opened, State};
 pub use tags::{TagEntry, TagMark, TagsFor, TagsView};
-pub use text_field::{Motion, TextEdit, TextField, grapheme_columns};
+pub use text_field::{Motion, TextEdit, TextField, grapheme_columns, screen_lines};
 pub use update::{Effect, Message, update};

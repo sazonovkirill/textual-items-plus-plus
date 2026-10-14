@@ -166,7 +166,8 @@ fn a_list_pasted_with_carriage_returns_or_a_copied_task_shows_every_line_as_an_i
         "Inbox:\n\t- Groceries\n\t- Write @due(2026-10-20)\n\t\tNOTE @hidden\n\t\t\tDraft\n\t\tCOMMENTS @hidden\n\t\t\t[2026-10-13 21:30] Ask\n",
     )
     .expect("the file is written");
-    let mut harness = Harness::open(path.clone(), 80, 16);
+    // The panel's hint takes two lines at this width.
+    let mut harness = Harness::open(path.clone(), 80, 17);
     harness.type_text("c");
     harness.send(&Event::Paste(
         "Fruit\r\tApples\r\tPears\rBread\r".to_owned(),

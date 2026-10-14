@@ -422,8 +422,9 @@ impl Tui {
         let view = self.state.attachments()?;
         let [panes, ..] = self.layout(self.area);
         let area = AttachmentsPanel::area(self.strip(panes));
-        let selected = AttachmentsPanel::new(view, &self.theme, self.icons()).selected_lines(area);
-        let (top, motion) = scroll.from(self.panel.top, AttachmentsPanel::page(area), selected);
+        let shown = AttachmentsPanel::new(view, &self.theme, self.icons(), self.today);
+        let selected = shown.selected_lines(area);
+        let (top, motion) = scroll.from(self.panel.top, shown.page(area), selected);
         self.panel.top = top;
         motion
     }
@@ -583,7 +584,7 @@ impl Tui {
         }
         let [panes, prompt, _] = self.layout(area);
         if let Some(view) = self.state.attachments() {
-            return AttachmentsPanel::new(view, &self.theme, self.icons())
+            return AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
                 .caret(AttachmentsPanel::area(self.strip(panes)), self.panel.top);
         }
         if let Some(view) = self.state.date_prompt() {
@@ -1169,7 +1170,7 @@ impl Widget for &mut Tui {
                 .render(panes, buf);
         }
         match self.state.attachments() {
-            Some(view) => AttachmentsPanel::new(view, &self.theme, icons).render(
+            Some(view) => AttachmentsPanel::new(view, &self.theme, icons, self.today).render(
                 self.strip(panes),
                 buf,
                 &mut self.panel,

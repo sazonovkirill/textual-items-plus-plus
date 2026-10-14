@@ -172,39 +172,10 @@ impl TextField {
         self.text.get(self.selection()?)
     }
 
-    /// The lines the text takes on screen in `width` columns, at least one, as byte ranges
-    /// without their `\n`: each of its lines, wrapped between words, and inside a word too long
-    /// for a line of its own. Spaces at the end of a line stay on it, even past `width`.
+    /// The lines the text takes on screen in `width` columns, as [`screen_lines`] wraps it.
     #[must_use]
     pub fn screen_lines(&self, width: usize) -> Vec<Range<usize>> {
-        let width = width.max(1);
-        let mut lines = Vec::new();
-        let mut start = 0;
-        for line in self.text.split('\n') {
-            let mut from = start;
-            let mut column = 0;
-            let mut after_space = None;
-            for (at, grapheme) in line.grapheme_indices(true) {
-                let at = start + at;
-                let space = grapheme.chars().all(char::is_whitespace);
-                let columns = grapheme.width();
-                while column + columns > width && at > from && !space {
-                    let to = after_space.unwrap_or(at);
-                    lines.push(from..to);
-                    column = self.text.get(to..at).map_or(0, UnicodeWidthStr::width);
-                    from = to;
-                    after_space = None;
-                }
-                column += columns;
-                if space {
-                    after_space = Some(at + grapheme.len());
-                }
-            }
-            start += line.len();
-            lines.push(from..start);
-            start += 1;
-        }
-        lines
+        screen_lines(&self.text, width)
     }
 
     /// The field after `edit`.
@@ -406,6 +377,41 @@ fn in_line(text: &str, line: Range<usize>, wraps: bool, column: usize) -> usize 
         .take_while(|&(_, before)| before <= column)
         .last()
         .map_or(line.start, |(at, _)| line.start + at)
+}
+
+/// The lines `text` takes on screen in `width` columns, at least one, as byte ranges without
+/// their `\n`: each of its lines, wrapped between words, and inside a word too long for a line
+/// of its own. Spaces at the end of a line stay on it, even past `width`.
+#[must_use]
+pub fn screen_lines(text: &str, width: usize) -> Vec<Range<usize>> {
+    let width = width.max(1);
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for line in text.split('\n') {
+        let mut from = start;
+        let mut column = 0;
+        let mut after_space = None;
+        for (at, grapheme) in line.grapheme_indices(true) {
+            let at = start + at;
+            let space = grapheme.chars().all(char::is_whitespace);
+            let columns = grapheme.width();
+            while column + columns > width && at > from && !space {
+                let to = after_space.unwrap_or(at);
+                lines.push(from..to);
+                column = text.get(to..at).map_or(0, UnicodeWidthStr::width);
+                from = to;
+                after_space = None;
+            }
+            column += columns;
+            if space {
+                after_space = Some(at + grapheme.len());
+            }
+        }
+        start += line.len();
+        lines.push(from..start);
+        start += 1;
+    }
+    lines
 }
 
 /// Each grapheme boundary of `text`, from its start to its end, as its byte offset and the

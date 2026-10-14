@@ -36,6 +36,37 @@ fn mode(harness: &Harness) -> String {
         .to_owned()
 }
 
+// FR-ATT-02, FR-ATT-03
+#[test]
+fn a_long_list_item_in_a_note_wraps_under_its_text() {
+    let mut harness = Harness::new(80, 12);
+    harness.ctrl('g');
+    harness.type_text("Blog");
+    harness.key(KeyCode::Enter);
+    harness.press(KeyCode::Char('n'), KeyModifiers::ALT);
+    harness.type_text("e- a list item long enough to wrap onto a second line");
+    assert_eq!(
+        panel(&harness)[2..4],
+        [
+            "│▌- a list item long enough to wrap    │",
+            "│▌onto a second line                   │",
+        ],
+        "as typed while it is edited"
+    );
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        panel(&harness)[2..4],
+        [
+            "│▌• a list item long enough to wrap    │",
+            "│▌  onto a second line                 │",
+        ]
+    );
+    assert_eq!(
+        panel(&harness)[9],
+        "│ e edit · a comment · Esc close       │"
+    );
+}
+
 // FR-ATT-01, FR-ATT-02, FR-ATT-03, FR-ATT-05, FR-EDIT-03, FR-EDIT-06
 #[test]
 fn write_a_note_on_a_project() {
