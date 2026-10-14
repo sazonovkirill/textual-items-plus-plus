@@ -8,6 +8,7 @@ mod clipboard;
 mod command;
 mod completion;
 mod container;
+mod converting;
 mod editing;
 mod focus;
 mod history;

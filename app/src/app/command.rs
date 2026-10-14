@@ -70,6 +70,13 @@ pub enum Command {
     Indent,
     /// Outdent the selected items out of the item of their kind they are in (FR-OPS-03).
     Outdent,
+    /// Convert the selected items to projects, or to sections when all are projects (FR-TASK-06,
+    /// FR-ORG-06).
+    Convert,
+    /// Make the selected tasks the tasks of a new section and edit its title (FR-OPS-07).
+    GroupIntoSection,
+    /// Make the selected items the contents of a new project and edit its title (FR-OPS-08).
+    GroupIntoProject,
     /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
     Sidebar,
     /// Give the keys to the sidebar while it shows (FR-VIEW-10).
@@ -356,6 +363,21 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::Convert,
+        title: "Convert to Project or Section",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::GroupIntoSection,
+        title: "Group into Section",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::GroupIntoProject,
+        title: "Group into Project",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::EditDescription(Whose::Focused),
         title: "Edit Description",
         context: Context::Navigate,
@@ -490,7 +512,8 @@ mod tests {
         }
     }
 
-    // FR-EDIT-01, FR-EDIT-03, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-ORG-06
+    // FR-EDIT-01, FR-EDIT-03, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-OPS-07,
+    // FR-OPS-08, FR-ORG-06, FR-TASK-06
     #[test]
     fn editing_adding_deleting_and_the_clipboard_are_navigate_commands() {
         let added = [
@@ -517,6 +540,9 @@ mod tests {
             Command::Duplicate,
             Command::Copy,
             Command::Cut,
+            Command::Convert,
+            Command::GroupIntoSection,
+            Command::GroupIntoProject,
         ];
         for command in added.chain(others) {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);

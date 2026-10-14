@@ -2,7 +2,7 @@
 //! included, can be undone and redone (FR-EDIT-06, N-UX-02).
 
 use super::{Document, Entry, PlacementError};
-use crate::domain::item::{Item, ItemId, Node};
+use crate::domain::item::{Item, ItemId, ItemKind, Node};
 
 /// A primitive change to a document; every edit, its undo and its redo is a sequence of these.
 /// Each records the state it expects, so applying it to a document that no longer matches fails
@@ -120,6 +120,24 @@ impl Snapshot {
     /// Every node, top node first.
     fn entries(&self) -> impl Iterator<Item = &(ItemId, Entry)> {
         std::iter::once(&self.top).chain(&self.below)
+    }
+
+    /// Makes the item `id` in this subtree one of kind `kind`; kept content and nodes outside it
+    /// stay as they are.
+    pub(super) fn retype(&mut self, id: ItemId, kind: ItemKind) {
+        let entry = std::iter::once(&mut self.top)
+            .chain(&mut self.below)
+            .find(|(at, _)| *at == id);
+        if let Some((
+            _,
+            Entry {
+                node: Node::Item(item),
+                ..
+            },
+        )) = entry
+        {
+            item.kind = kind;
+        }
     }
 }
 

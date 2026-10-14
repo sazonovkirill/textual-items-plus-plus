@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use super::item::{Item, ItemId, ItemKind, Node};
 
+mod converting;
 mod edit;
 mod moving;
 

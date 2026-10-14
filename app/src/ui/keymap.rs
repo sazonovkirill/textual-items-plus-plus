@@ -79,6 +79,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Move(Direction::Down), &["alt+j", "alt+down"]),
     (Command::Indent, &["]", "tab"]),
     (Command::Outdent, &["[", "shift+tab"]),
+    // taskpaper-terminal's convert type and group keys; `S` for a section beside its `G`, which
+    // groups in a new parent as a new project does here (D-47).
+    (Command::Convert, &["m y"]),
+    (Command::GroupIntoSection, &["g S"]),
+    (Command::GroupIntoProject, &["g G"]),
     // `m` modifies the focused item (FR-KEY-06); `n` for the notes, as TaskPaper calls the lines a
     // description is stored as, and shifted for the container shown, whose title stands above
     // the rows (D-43).
@@ -398,6 +403,26 @@ mod tests {
         let mut keymap = Keymap::default();
         let ctrl_q = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
         assert_eq!(keymap.press(&ctrl_q), Some(Command::Quit));
+    }
+
+    // FR-TASK-06, FR-OPS-07, FR-OPS-08, FR-KEY-02
+    #[test]
+    fn m_y_converts_and_g_shift_s_and_g_shift_g_group() {
+        let mut keymap = Keymap::default();
+        let shifted = |c| press(KeyCode::Char(c), KeyModifiers::SHIFT);
+        for (second, command) in [
+            (char('y'), Command::Convert),
+            (shifted('s'), Command::GroupIntoSection),
+            (shifted('g'), Command::GroupIntoProject),
+        ] {
+            let first = if command == Command::Convert {
+                'm'
+            } else {
+                'g'
+            };
+            assert_eq!(keymap.press(&char(first)), None);
+            assert_eq!(keymap.press(&second), Some(command), "{second:?}");
+        }
     }
 
     // FR-NAV-01, FR-KEY-02

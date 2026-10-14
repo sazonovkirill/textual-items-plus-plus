@@ -8,6 +8,7 @@ use super::{
     Command, Direction, EditInput, Effect, Go, History, Notice, Part, Picked, Picker, PickerInput,
     PickerView, Selection, Side, SidebarView, TextField, Whose, adding, clipboard, completion,
     container::{self, Row},
+    converting,
     editing::Editing,
     focus::{self, Focus},
     move_to::{Destination, MoveTo},
@@ -315,6 +316,38 @@ impl State {
         }
     }
 
+    /// Converts the selected items in their place to projects, or to sections when all are
+    /// projects, as one step to undo, keeping the focus on its item; the status line says why
+    /// when the hierarchy refuses every one (FR-TASK-06, FR-ORG-06).
+    pub(super) fn convert(&mut self) {
+        match converting::convert_all(&self.document, &self.targets()) {
+            Ok(transaction) => self.change(transaction),
+            Err(refusal) => self.notify(Notice::Refused(refusal)),
+        }
+    }
+
+    /// Adds a section or a project, as `kind` says, where the first selected item is, moves the
+    /// selected items into it and starts editing its title in its row, picking nothing; the
+    /// status line says why when the hierarchy refuses (FR-OPS-07, FR-OPS-08).
+    pub(super) fn group(&mut self, kind: ItemKind) {
+        let items = self.targets();
+        match converting::group_place(&self.document, &items, kind) {
+            Ok(Some(place)) => {
+                let editing = Editing::group(
+                    &mut self.document,
+                    kind,
+                    place,
+                    &items,
+                    self.selection.clone(),
+                );
+                self.selection.focus(Some(editing.id()));
+                self.start_editing(Some(editing));
+            }
+            Ok(None) => {}
+            Err(refusal) => self.notify(Notice::Refused(refusal)),
+        }
+    }
+
     /// Starts editing the focused row's title, picking nothing. Nothing happens unless a row is
     /// focused.
     pub(super) fn edit_title(&mut self) {
@@ -527,10 +560,11 @@ impl State {
 
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
-    /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting and
-    /// outdenting, each one step to undo, and opening the entry in the pane. Quitting, undo and
-    /// redo, the Navigator, the sidebar's own commands, going home, back and forward and the
-    /// conflict prompt's commands pass to the app; every other command does nothing.
+    /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting,
+    /// outdenting and converting, each one step to undo, and opening the entry in the pane.
+    /// Quitting, undo and redo, the Navigator, the sidebar's own commands, going home, back and
+    /// forward and the conflict prompt's commands pass to the app; every other command does
+    /// nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
         let passes = matches!(
             command,
@@ -571,6 +605,9 @@ impl State {
                 self.change(sidebar::shift(&self.document, id, direction));
             }
             (Command::Indent, Some(id)) => apply(self, sidebar::indent(&self.document, id)),
+            (Command::Convert, Some(id)) => {
+                apply(self, converting::convert_all(&self.document, &[id]));
+            }
             (Command::Outdent, Some(id)) => apply(self, sidebar::outdent(&self.document, id)),
             (Command::Go(Go::Into), Some(id)) => self.open(id, None),
             _ => {}

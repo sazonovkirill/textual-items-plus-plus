@@ -4,7 +4,9 @@
 //! other, and the whole session becomes one change to undo when it ends.
 
 use super::{Selection, TextEdit, TextField};
-use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Snapshot, Transaction};
+use crate::domain::{
+    Destination, Document, Item, ItemId, ItemKind, Node, Op, Snapshot, Transaction,
+};
 
 /// What the user does while a title or a description is edited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +49,11 @@ enum Origin {
     /// It was there, as this item.
     Existing(Item),
     /// It was added for editing, at this index among this parent's children, or the top-level
-    /// nodes for `None`.
+    /// nodes for `None`, and then had the items this transaction moves moved into it.
     New {
         parent: Option<ItemId>,
         index: usize,
+        contents: Transaction,
     },
 }
 
@@ -99,7 +102,21 @@ impl Editing {
     pub(super) fn new_item(
         document: &mut Document,
         kind: ItemKind,
+        place: (Option<ItemId>, usize),
+        before: Selection,
+    ) -> Self {
+        Self::group(document, kind, place, &[], before)
+    }
+
+    /// Adds an empty item of `kind` as [`new_item`](Self::new_item) does, moves `items` into it,
+    /// each the last of its children in turn, and starts editing it: adding it, moving them and
+    /// naming it are one change, which leaving it empty does not make (FR-OPS-07, FR-OPS-08). The
+    /// caller groups items that fit in the new one and do not hold its place.
+    pub(super) fn group(
+        document: &mut Document,
+        kind: ItemKind,
         (parent, index): (Option<ItemId>, usize),
+        items: &[ItemId],
         before: Selection,
     ) -> Self {
         let revision = document.revision();
@@ -107,13 +124,27 @@ impl Editing {
         document
             .apply(&insert(parent, index, id, kind, String::new()))
             .expect("the caller places a new item where its kind fits");
+        let mut ops = Vec::new();
+        for &item in items {
+            let moved = document
+                .move_to(item, Destination::Last(Some(id)))
+                .expect("the caller groups items that fit in the new one");
+            document
+                .apply(&moved)
+                .expect("a transaction made from the document as it is fits it");
+            ops.extend_from_slice(moved.ops());
+        }
         Self {
             id,
             kind,
             part: Part::Title,
             field: TextField::new(String::new()),
             before,
-            origin: Origin::New { parent, index },
+            origin: Origin::New {
+                parent,
+                index,
+                contents: Transaction::new(ops),
+            },
             revision,
         }
     }
@@ -208,15 +239,23 @@ impl Editing {
                     }])
                 }
             }
-            &Origin::New { parent, index } => {
+            Origin::New {
+                parent,
+                index,
+                contents,
+            } => {
+                let added = |title: String| {
+                    let insert = insert(*parent, *index, self.id, self.kind, title);
+                    Transaction::new([insert.ops(), contents.ops()].concat())
+                };
                 let draft = self.field.text().to_owned();
                 document
-                    .apply(&insert(parent, index, self.id, self.kind, draft).inverse())
+                    .apply(&added(draft).inverse())
                     .expect("the new item stays where it was added while it is edited");
                 if text.is_empty() {
                     Transaction::default()
                 } else {
-                    insert(parent, index, self.id, self.kind, text.to_owned())
+                    added(text.to_owned())
                 }
             }
         };
@@ -239,7 +278,7 @@ fn word_starts(text: &str) -> usize {
 
 /// Whether `title`, as a project's line, would read back as a task: it starts, once trimmed as
 /// it will be, with `-` and a space.
-fn reads_as_task(title: &str) -> bool {
+pub(super) fn reads_as_task(title: &str) -> bool {
     let mut chars = title.trim_start().chars();
     chars.next() == Some('-') && chars.next().is_some_and(char::is_whitespace)
 }

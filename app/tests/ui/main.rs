@@ -4,6 +4,7 @@ mod clipboard;
 mod completing;
 mod container;
 mod containers;
+mod converting;
 mod descriptions;
 mod editing;
 mod moving;

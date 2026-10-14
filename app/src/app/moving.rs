@@ -14,7 +14,8 @@ pub enum Direction {
     Down,
 }
 
-/// Why an item was not indented or outdented, for the status line to say (FR-OPS-03).
+/// Why the hierarchy refused to indent, outdent, convert or group items, for the status line to
+/// say (FR-OPS-03, FR-TASK-06, FR-ORG-06, FR-OPS-07, FR-OPS-08).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
     /// Only projects and checklist items nest in items of their own kind.
@@ -23,6 +24,14 @@ pub enum Refusal {
     NothingAbove,
     /// It is not inside an item of its own kind to come out of.
     NotNested,
+    /// A section would be where only an area or a project holds one.
+    NoRoomForSection,
+    /// A project would be in a section or the Inbox, which hold none.
+    NoRoomForProject,
+    /// A section would hold something other than tasks.
+    SectionHoldsTasks,
+    /// A task's title starts with `-` and a space, so it would read back as a task's again.
+    ReadsAsTask,
 }
 
 /// The transaction that moves `id` one step `direction` among `rows`, the rows of the container
@@ -236,7 +245,7 @@ pub(super) fn outdent_all(document: &Document, items: &[ItemId]) -> Result<Trans
 
 /// The transaction of `step` taken for each of `ordered` in turn, on the document as the steps
 /// before left it, and the first refusal, if any step refused.
-fn each(
+pub(super) fn each(
     document: &Document,
     ordered: impl IntoIterator<Item = ItemId>,
     mut step: impl FnMut(&Document, ItemId) -> Result<Transaction, Refusal>,

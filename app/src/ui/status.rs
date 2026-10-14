@@ -108,6 +108,16 @@ fn kept(state: &State) -> String {
         }
         Notice::Refused(Refusal::NothingAbove) => "nothing above to indent into".to_owned(),
         Notice::Refused(Refusal::NotNested) => "nothing to outdent from".to_owned(),
+        Notice::Refused(Refusal::NoRoomForSection) => {
+            "a section goes only in an area or a project".to_owned()
+        }
+        Notice::Refused(Refusal::NoRoomForProject) => {
+            "a project can't go in a section or the Inbox".to_owned()
+        }
+        Notice::Refused(Refusal::SectionHoldsTasks) => "a section holds only tasks".to_owned(),
+        Notice::Refused(Refusal::ReadsAsTask) => {
+            "only a task's title can start with \"- \"".to_owned()
+        }
     });
     if let Some(notice) = notice {
         return notice;

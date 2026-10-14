@@ -127,6 +127,9 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::Move(direction)) => state.move_item(direction),
         Message::Command(Command::Indent) => state.indent(),
         Message::Command(Command::Outdent) => state.outdent(),
+        Message::Command(Command::Convert) => state.convert(),
+        Message::Command(Command::GroupIntoSection) => state.group(ItemKind::Section),
+        Message::Command(Command::GroupIntoProject) => state.group(ItemKind::Project),
         Message::Command(Command::EditDescription(whose)) => state.edit_description(whose),
         Message::Command(Command::Sidebar) => state.toggle_sidebar(),
         Message::Command(Command::FocusSidebar) => state.focus_sidebar(true),
@@ -556,6 +559,92 @@ mod tests {
         let effects = update(&mut state, Message::Command(Command::Go(Go::Home)), TODAY);
         assert_eq!(effects, []);
         assert_eq!(state.container(), state.document().inbox());
+        Ok(())
+    }
+
+    // FR-TASK-06, FR-ORG-06, FR-OPS-07, FR-OPS-08, FR-EDIT-06
+    #[test]
+    fn converting_and_grouping_change_the_state_with_no_effect() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        for (command, refusal) in [
+            (Command::Convert, Refusal::NoRoomForProject),
+            (Command::GroupIntoSection, Refusal::NoRoomForSection),
+            (Command::GroupIntoProject, Refusal::NoRoomForProject),
+        ] {
+            give(&mut state, command);
+            assert_eq!(
+                state.notice(),
+                Some(&Notice::Refused(refusal)),
+                "{command:?}"
+            );
+        }
+        let mut empty = State::new(Document::new(), Opened::Demo);
+        let before = empty.clone();
+        for command in [
+            Command::Convert,
+            Command::GroupIntoSection,
+            Command::GroupIntoProject,
+        ] {
+            give(&mut empty, command);
+        }
+        assert_eq!(empty, before, "with nothing selected nothing happens");
+        let mut document = Document::new();
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        for title in ["a", "b", "c"] {
+            document.push(Some(area), Node::Item(Item::new(ItemKind::Task, title)))?;
+        }
+        let mut state = State::new(document, Opened::Demo);
+        for command in [
+            Command::Sidebar,
+            Command::Go(Go::Into),
+            Command::FocusPane,
+            Command::Extend(Direction::Down),
+            Command::GroupIntoSection,
+        ] {
+            give(&mut state, command);
+        }
+        assert_eq!(titles(&state), ["c", "", "a", "b"]);
+        type_into(&mut state, "S");
+        edit(&mut state, EditInput::Done);
+        assert_eq!(titles(&state), ["c", "S", "a", "b"]);
+        assert_eq!(focused(&state), Some("S"));
+        give(&mut state, Command::Undo);
+        assert_eq!(titles(&state), ["a", "b", "c"], "one step to undo");
+        give(&mut state, Command::ClearSelection);
+        give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::Convert);
+        assert_eq!(titles(&state), ["b", "c", "a"]);
+        assert_eq!(focused(&state), Some("a"));
+        give(&mut state, Command::Convert);
+        assert_eq!(titles(&state), ["b", "c", "a"]);
+        assert_eq!(
+            state.rows().last().map(|row| row.id()),
+            state.selection().focused()
+        );
+        give(&mut state, Command::GroupIntoProject);
+        assert_eq!(titles(&state), ["b", "c", ""]);
+        edit(&mut state, EditInput::Done);
+        assert_eq!(
+            titles(&state),
+            ["b", "c", "a"],
+            "left empty, nothing is grouped"
+        );
+        give(&mut state, Command::FocusSidebar);
+        give(&mut state, Command::Convert);
+        assert_eq!(
+            state
+                .document()
+                .node(area)
+                .and_then(Node::item)
+                .map(|it| it.kind),
+            Some(ItemKind::Project)
+        );
+        give(&mut state, Command::Convert);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::Refused(Refusal::NoRoomForSection)),
+            "a top-level project can't be a section"
+        );
         Ok(())
     }
 }
