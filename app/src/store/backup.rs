@@ -77,7 +77,8 @@ impl Backups {
 
     /// Writes `contents`, a version of `file` a conflict's choice discards, to a conflict copy
     /// `<YYYY-MM-DD>-<HHMMSS>-conflict.taskpaper` in the file's folder, named by the local time
-    /// `now`, or the first later second no copy is named by, and returns its path. The newest
+    /// `now`, or the first later second no copy is named by, so it never replaces another, even
+    /// one another session writes meanwhile; returns its path. The newest
     /// [`KEEP`] conflict copies are kept, counted apart from the daily copies. A file gone from
     /// disk still has its folder.
     ///
@@ -94,12 +95,20 @@ impl Backups {
         let (source, permissions) = locate(file)?;
         let folder = backups.join(folder_name(&source));
         fs::create_dir_all(&folder)?;
+        record_source(&source, &folder, permissions.clone())?;
         let mut time = now;
-        while fs::exists(folder.join(conflict_name(time)))? {
-            time = time.saturating_add(SignedDuration::from_secs(1));
-        }
-        let copy = folder.join(conflict_name(time));
-        write_copy(&source, &copy, contents, permissions)?;
+        let copy = loop {
+            let copy = folder.join(conflict_name(time));
+            match atomic::create(&copy, contents, permissions.clone()) {
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    time = time.saturating_add(SignedDuration::from_secs(1));
+                }
+                created => {
+                    created?;
+                    break copy;
+                }
+            }
+        };
         let mut times = conflict_copies(&folder)?;
         times.sort_unstable_by(|a, b| b.cmp(a));
         for old in times.into_iter().skip(KEEP) {
@@ -147,7 +156,8 @@ fn daily(file: &Path, backups: &Path, today: Date) -> io::Result<()> {
     {
         return Ok(());
     }
-    write_copy(&source, &copy, &bytes, permissions)?;
+    record_source(&source, &folder, permissions.clone())?;
+    atomic::replace(&copy, &bytes, permissions)?;
     dates.push(today);
     dates.sort_unstable_by(|a, b| b.cmp(a));
     for old in dates.into_iter().skip(KEEP) {
@@ -156,19 +166,12 @@ fn daily(file: &Path, backups: &Path, today: Date) -> io::Result<()> {
     Ok(())
 }
 
-/// Writes `contents` to `copy` with `permissions`, so a copy is as private as its file, or those
-/// of a new file without them, and records the path of `source` in the folder's [`SOURCE`] file, so a person can tell which file
-/// the folder belongs to.
-fn write_copy(
-    source: &Path,
-    copy: &Path,
-    contents: &[u8],
-    permissions: Option<Permissions>,
-) -> io::Result<()> {
-    let folder = copy.parent().unwrap_or(copy);
+/// Records the path of `source` in its backup folder's [`SOURCE`] file, so a person can tell
+/// which file the folder belongs to. It and the copies have `permissions`, so they are as private
+/// as the file, or those of a new file without them.
+fn record_source(source: &Path, folder: &Path, permissions: Option<Permissions>) -> io::Result<()> {
     let path = source.as_os_str().as_encoded_bytes();
-    atomic::replace(&folder.join(SOURCE), path, permissions.clone())?;
-    atomic::replace(copy, contents, permissions)
+    atomic::replace(&folder.join(SOURCE), path, permissions)
 }
 
 /// `<file name>-<hash>`, where the hash of the canonical path tells apart files with one name.
@@ -436,6 +439,37 @@ mod tests {
             "on disk",
             "the file is left alone"
         );
+        Ok(())
+    }
+
+    // F-FILE-06, D-38
+    #[test]
+    fn sessions_writing_conflict_copies_at_once_never_replace_each_others() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let (file, backups, _) = setup(dir.path(), "x")?;
+        let sessions = 2;
+        let start = std::sync::Barrier::new(sessions);
+        let copies = std::thread::scope(|scope| {
+            let writers: Vec<_> = (0..sessions)
+                .map(|session| {
+                    let (file, backups, start) = (&file, &backups, &start);
+                    scope.spawn(move || {
+                        let contents = format!("session {session}");
+                        start.wait();
+                        let copy = backups.conflict(file, contents.as_bytes(), NOW);
+                        copy.map(|copy| (copy, contents))
+                    })
+                })
+                .collect();
+            writers
+                .into_iter()
+                .map(|writer| writer.join().expect("no writer panics"))
+                .collect::<Vec<_>>()
+        });
+        for copy in copies {
+            let (copy, contents) = copy?;
+            assert_eq!(fs::read_to_string(copy)?, contents);
+        }
         Ok(())
     }
 
