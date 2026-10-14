@@ -12,12 +12,10 @@ use jiff::civil::Date;
 use super::{
     Effect, Refusal, State,
     autosave::{Autosave, Ending, SaveState, Step},
-    container,
     move_to::MoveTo,
-    navigator, text_path,
-    view::{self, Shown},
+    navigator, text_path, view,
 };
-use crate::domain::{Document, ItemId};
+use crate::domain::Document;
 
 /// What the frontend reports of disk work the core asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -388,31 +386,11 @@ impl State {
         let nearest = |id| text_path::find(&old, new, id).map(|(found, _)| found);
         let exact =
             |id| text_path::find(&old, new, id).and_then(|(found, exact)| exact.then_some(found));
-        let opens = |id: ItemId| container::opens(new, id).then_some(id);
-        if let Shown::Container(id) = self.shown {
-            let kept = exact(id).and_then(opens);
-            if kept.is_none() {
-                self.filter.clear();
-            }
-            self.shown = Shown::Container(
-                kept.or_else(|| nearest(id).and_then(opens))
-                    .unwrap_or_else(|| new.inbox()),
-            );
-        }
-        let focused = self.selection.focused();
-        let rows = self.rows();
-        let row = |id: ItemId| rows.iter().any(|row| row.id() == id).then_some(id);
-        let focus = focused
-            .and_then(exact)
-            .and_then(row)
-            .or_else(|| focused.and_then(nearest).and_then(row))
-            .or_else(|| rows.first().map(|row| row.id()));
-        self.selection.focus(focus);
-        self.selection.keep(&rows, exact);
-        self.visits.rematch(|id| nearest(id).and_then(opens), exact);
+        let today = self.today;
+        self.pane.reload(new, today, nearest, exact);
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
-            self.navigator = Some(navigator::reopen(new, self.shown, &query));
+            self.navigator = Some(navigator::reopen(new, self.shown(), &query));
         }
         if let Some(move_to) = &self.move_to {
             let query = move_to.view().query.text().to_owned();
@@ -426,8 +404,8 @@ impl State {
         self.panel = self.panel.and_then(exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
-            let rows = view::rows(new, self.shown, self.today, self.shows_completed());
-            self.tags = tags.reopen(new, items, &rows, &self.filter);
+            let rows = view::rows(new, self.shown(), self.today, self.shows_completed());
+            self.tags = tags.reopen(new, items, &rows, self.tag_filter());
         }
         self.history = super::History::default();
         self.saving.autosave.reloaded(new.revision());
@@ -506,9 +484,10 @@ mod tests {
     use super::*;
     use crate::app::{
         Command, DateInput, EditInput, Go, History, Message, Opened, PickerInput, Side, TextEdit,
-        Whose, update, view::View,
+        Whose, update,
+        view::{Shown, View},
     };
-    use crate::domain::{Item, ItemKind, Node, PlacementError, dates::DateKind};
+    use crate::domain::{Item, ItemId, ItemKind, Node, PlacementError, dates::DateKind};
 
     const TODAY: Date = date(2026, 10, 14);
 
@@ -692,8 +671,8 @@ mod tests {
     fn a_reload_falls_back_to_the_nearest_container_and_row_found() -> TestResult {
         let mut state = opened(&["a"])?;
         let project = titled(&state, "P").ok_or("P")?;
-        state.shown = Shown::Container(project);
-        state.selection.focus(titled(&state, "p2"));
+        state.pane.shown = Shown::Container(project);
+        state.pane.selection.focus(titled(&state, "p2"));
         let mut theirs = document(&["a"])?;
         let p2 = find(&theirs, "p2").ok_or("p2")?;
         theirs.set(p2, Item::new(ItemKind::Task, "renamed"))?;
@@ -705,7 +684,7 @@ mod tests {
             "the first row"
         );
         let mut state = opened(&["a"])?;
-        state.shown = Shown::Container(project);
+        state.pane.shown = Shown::Container(project);
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(Document::new())),
@@ -723,8 +702,8 @@ mod tests {
     #[test]
     fn a_reload_keeps_the_tag_filter_only_on_the_container_found_as_it_was() -> TestResult {
         let mut state = opened(&["a"])?;
-        state.shown = Shown::Container(titled(&state, "P").ok_or("P")?);
-        state.filter = vec!["x".to_owned()];
+        state.pane.shown = Shown::Container(titled(&state, "P").ok_or("P")?);
+        state.pane.filter = vec!["x".to_owned()];
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(document(&["b"])?)),
@@ -747,7 +726,7 @@ mod tests {
     fn a_reload_keeps_a_view_shown_with_its_tag_filter() -> TestResult {
         let mut state = opened(&["a"])?;
         state.go(Go::View(View::Today));
-        state.filter = vec!["x".to_owned()];
+        state.pane.filter = vec!["x".to_owned()];
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(Document::new())),

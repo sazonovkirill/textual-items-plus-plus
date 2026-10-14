@@ -44,7 +44,7 @@ impl State {
     /// says. Nothing opens with nothing focused.
     pub(super) fn open_note(&mut self, whose: Whose) {
         let id = match whose {
-            Whose::Focused => self.selection.focused(),
+            Whose::Focused => self.pane().selection.focused(),
             Whose::Shown => self.container(),
         };
         if let Some(id) = id {
@@ -73,7 +73,7 @@ impl State {
         match input {
             AttachmentsInput::EditNote => {
                 if self.editing().is_none() {
-                    let editing = Editing::note(&self.document, id, self.selection.clone());
+                    let editing = Editing::note(&self.document, id, self.pane().selection.clone());
                     self.start_editing(editing);
                 }
             }

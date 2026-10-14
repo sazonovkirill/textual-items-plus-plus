@@ -16,12 +16,12 @@ use super::{
     move_to::{Destination, MoveTo},
     moving,
     navigator::{self, Stop},
+    pane::{Pane, listed},
     saving::Saving,
     sidebar::{self, Sidebar},
-    tags::{self, Choice, TagPicker, TagsView},
+    tags::{Choice, TagPicker, TagsView},
     trash,
     view::{self, Group, Shown, View},
-    visits::{Visit, Visits},
 };
 use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Tag, Transaction, dates::DateKind};
 
@@ -39,14 +39,10 @@ pub enum Opened {
 pub struct State {
     pub(super) document: Document,
     opened: Opened,
-    pub(super) shown: Shown,
     /// The local date by the frontend's clock at the latest message, which views list by.
     pub(super) today: Date,
-    pub(super) selection: Selection,
+    pub(super) pane: Pane,
     pub(super) history: History,
-    /// Whether the pane shows completed items (FR-VIEW-11); per pane once there are several.
-    show_completed: bool,
-    pub(super) visits: Visits,
     pub(super) navigator: Option<Picker<Stop>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
@@ -54,9 +50,6 @@ pub struct State {
     pub(super) date_prompt: Option<DatePrompt>,
     /// The tag picker, while it is open (FR-TAG-02, FR-TAG-04).
     pub(super) tags: Option<TagPicker>,
-    /// The tags every row the pane shows carries, none for every row (FR-TAG-04); per pane once
-    /// there are several.
-    pub(super) filter: Vec<String>,
     /// The item whose title, description or note is edited, in edit mode (FR-EDIT-01), in the
     /// sidebar while it has the keys.
     editing: Option<Editing>,
@@ -73,27 +66,31 @@ impl State {
     #[must_use]
     pub fn new(document: Document, opened: Opened, today: Date) -> Self {
         let saving = Saving::new(document.revision(), true, matches!(opened, Opened::File(_)));
-        let mut state = Self {
-            shown: Shown::Container(document.inbox()),
+        Self {
+            pane: Pane::new(&document, today, Shown::Container(document.inbox()), false),
             today,
             document,
             opened,
-            selection: Selection::default(),
             history: History::default(),
-            show_completed: false,
-            visits: Visits::default(),
             navigator: None,
             move_to: None,
             date_prompt: None,
             tags: None,
-            filter: Vec::new(),
             editing: None,
             panel: None,
             sidebar: Sidebar::default(),
             saving,
-        };
-        state.move_focus(Focus::First);
-        state
+        }
+    }
+
+    /// The pane with the keys.
+    pub(super) fn pane(&self) -> &Pane {
+        &self.pane
+    }
+
+    /// The pane with the keys, to change.
+    pub(super) fn pane_mut(&mut self) -> &mut Pane {
+        &mut self.pane
     }
 
     /// The document.
@@ -111,58 +108,39 @@ impl State {
     /// What the pane shows.
     #[must_use]
     pub fn shown(&self) -> Shown {
-        self.shown
+        self.pane().shown
     }
 
     /// The container shown, unless the pane shows a view.
     #[must_use]
     pub fn container(&self) -> Option<ItemId> {
-        match self.shown {
-            Shown::Container(id) => Some(id),
-            Shown::View(_) => None,
-        }
+        self.pane().container()
     }
 
     /// The containers from the top level down to the one shown, which the breadcrumbs show
     /// (FR-NAV-03); none for a view.
     #[must_use]
     pub fn path(&self) -> Vec<ItemId> {
-        self.container()
-            .map(|id| container::path(&self.document, id))
-            .unwrap_or_default()
+        self.pane().path(&self.document)
     }
 
     /// The rows the pane lists, in order, those the tag filter keeps.
     #[must_use]
     pub fn rows(&self) -> Vec<Row> {
-        listed(
-            &self.document,
-            (self.shown, self.today),
-            self.show_completed,
-            &self.filter,
-        )
+        self.pane().rows(&self.document, self.today)
     }
 
     /// The groups of the view shown, each under its heading, with the rows the tag filter keeps;
     /// none for a container.
     #[must_use]
     pub fn groups(&self) -> Vec<Group> {
-        let Shown::View(shown) = self.shown else {
-            return Vec::new();
-        };
-        view::groups(&self.document, shown, self.today, self.show_completed)
-            .into_iter()
-            .filter_map(|group| {
-                let rows = tags::filtered(&self.document, group.rows, &self.filter);
-                (!rows.is_empty()).then_some(Group { rows, ..group })
-            })
-            .collect()
+        self.pane().groups(&self.document, self.today)
     }
 
     /// The tags the pane is filtered by, none when it is not (FR-TAG-04).
     #[must_use]
     pub fn tag_filter(&self) -> &[String] {
-        &self.filter
+        &self.pane().filter
     }
 
     /// Keeps `today`, the local date by the frontend's clock, for the views to list by.
@@ -177,13 +155,13 @@ impl State {
     /// Whether completed items are shown.
     #[must_use]
     pub fn shows_completed(&self) -> bool {
-        self.show_completed
+        self.pane().show_completed
     }
 
     /// The items the next command acts on.
     #[must_use]
     pub fn selection(&self) -> &Selection {
-        &self.selection
+        &self.pane().selection
     }
 
     /// The Navigator, while it is open.
@@ -234,8 +212,8 @@ impl State {
 
     /// Moves the focus as `motion` says, keeping what is picked.
     pub(super) fn move_focus(&mut self, motion: Focus) {
-        let target = focus::target(&self.rows(), self.selection.focused(), motion);
-        self.selection.focus(target);
+        let (document, today) = (&self.document, self.today);
+        self.pane.move_focus(document, today, motion);
     }
 
     /// Moves the focus a row `direction`, picking the rows from where the run of extensions
@@ -246,35 +224,36 @@ impl State {
             Direction::Up => Focus::Previous,
             Direction::Down => Focus::Next,
         };
-        let target = focus::target(&rows, self.selection.focused(), motion);
-        self.selection.extend(&rows, target);
+        let target = focus::target(&rows, self.pane().selection.focused(), motion);
+        self.pane_mut().selection.extend(&rows, target);
     }
 
     /// Picks the focused row, or unpicks it when it is picked (FR-OPS-01).
     pub(super) fn toggle_picked(&mut self) {
-        self.selection.toggle();
+        self.pane_mut().selection.toggle();
     }
 
     /// Picks every row (FR-OPS-01).
     pub(super) fn select_all(&mut self) {
-        self.selection.select_all(&self.rows());
+        let rows = self.rows();
+        self.pane_mut().selection.select_all(&rows);
     }
 
     /// Picks nothing, so that commands take the focused row again (FR-OPS-01).
     pub(super) fn clear_selection(&mut self) {
-        self.selection.clear();
+        self.pane_mut().selection.clear();
     }
 
     /// The selected items without those inside another of them, which go along with it, in the
     /// order of the rows: what a command that moves or takes items acts on.
     fn targets(&self) -> Vec<ItemId> {
-        container::outermost_rows(&self.document, self.selection.items(&self.rows()))
+        container::outermost_rows(&self.document, self.pane().selection.items(&self.rows()))
     }
 
     /// Completes the selected items on `today`, or uncompletes them when all are completed, as
     /// one step to undo, moving the focus on when its row hides.
     pub(super) fn toggle_completed(&mut self, today: Date) {
-        let items = self.selection.items(&self.rows());
+        let items = self.pane().selection.items(&self.rows());
         let transaction = completion::toggle(&self.document, items, today);
         self.change(transaction);
     }
@@ -282,8 +261,8 @@ impl State {
     /// Opens the date prompt for the `kind` date of the selected items, resolving what is typed
     /// against `today`. Nothing opens when none of them takes a date.
     pub(super) fn open_date_prompt(&mut self, kind: DateKind, today: Date) {
-        let items = self.selection.items(&self.rows());
-        let focused = self.selection.focused();
+        let items = self.pane().selection.items(&self.rows());
+        let focused = self.pane().selection.focused();
         self.date_prompt = DatePrompt::open(&self.document, items, kind, today, focused);
     }
 
@@ -308,7 +287,7 @@ impl State {
 
     /// Sets the start date of the selected items to `today`, as one step to undo.
     pub(super) fn start_today(&mut self, today: Date) {
-        let items = self.selection.items(&self.rows());
+        let items = self.pane().selection.items(&self.rows());
         let transaction = date_prompt::set(&self.document, items, DateKind::Start, Some(today));
         self.change(transaction);
     }
@@ -316,9 +295,9 @@ impl State {
     /// Moves the selected items to the Trash on `today`, or in the Trash deletes them for good,
     /// as one step to undo, moving the focus on from the rows that leave (FR-VIEW-04).
     pub(super) fn delete(&mut self, today: Date) {
-        let transaction = if self.shown == Shown::View(View::Trash) {
+        let transaction = if self.pane().shown == Shown::View(View::Trash) {
             // Taking items out of the document is what cutting does once they are copied.
-            clipboard::cut(&self.document, &self.selection.items(&self.rows()))
+            clipboard::cut(&self.document, &self.pane().selection.items(&self.rows()))
         } else {
             trash::delete(&self.document, self.targets(), today)
         };
@@ -328,7 +307,7 @@ impl State {
     /// Puts the selected items in the Trash back where they were, as one step to undo, moving the
     /// focus on from the rows that leave; nothing selected elsewhere is in the Trash (FR-VIEW-04).
     pub(super) fn restore_selected(&mut self) {
-        let items = self.selection.items(&self.rows());
+        let items = self.pane().selection.items(&self.rows());
         self.change(trash::restore(&self.document, items));
     }
 
@@ -336,7 +315,7 @@ impl State {
     /// in it for good, as one step to undo; otherwise asks to confirm, unless the Trash is empty
     /// (FR-VIEW-04).
     pub(super) fn empty_trash(&mut self, asked: bool) {
-        if self.shown != Shown::View(View::Trash) {
+        if self.pane().shown != Shown::View(View::Trash) {
             return;
         }
         let items = trash::items(&self.document);
@@ -352,7 +331,7 @@ impl State {
     pub(super) fn duplicate(&mut self) {
         let taken = self.targets();
         let (transaction, last) = clipboard::duplicate(&mut self.document, &taken);
-        self.change_focusing(transaction, last.or(self.selection.focused()));
+        self.change_focusing(transaction, last.or(self.pane().selection.focused()));
     }
 
     /// Asks for the selected items, with their contents, to go on the clipboard; nothing when no
@@ -387,12 +366,12 @@ impl State {
         };
         let target = clipboard::Target {
             container,
-            show_completed: self.show_completed,
-            focused: self.selection.focused(),
+            show_completed: self.pane().show_completed,
+            focused: self.pane().selection.focused(),
             side,
         };
         if let Some((transaction, shown)) = clipboard::paste(&mut self.document, target, branches) {
-            self.change_focusing(transaction, shown.or(self.selection.focused()));
+            self.change_focusing(transaction, shown.or(self.pane().selection.focused()));
         }
     }
 
@@ -401,7 +380,7 @@ impl State {
     pub(super) fn open_move_to(&mut self) {
         self.navigator = None;
         self.tags = None;
-        self.move_to = MoveTo::open(&self.document, self.selection.items(&self.rows()));
+        self.move_to = MoveTo::open(&self.document, self.pane().selection.items(&self.rows()));
     }
 
     /// Applies `input` to the open Move to picker: choosing a destination closes it and moves the
@@ -425,7 +404,7 @@ impl State {
     /// Opens the tag picker for the selected items, closing the Navigator and Move to (FR-TAG-02,
     /// FR-OPS-06). Nothing opens with nothing selected.
     pub(super) fn open_tags(&mut self) {
-        let items = self.selection.items(&self.rows());
+        let items = self.pane().selection.items(&self.rows());
         self.open_tags_for(items);
     }
 
@@ -440,8 +419,17 @@ impl State {
     pub(super) fn open_tag_filter(&mut self) {
         self.navigator = None;
         self.move_to = None;
-        let rows = view::rows(&self.document, self.shown, self.today, self.show_completed);
-        self.tags = Some(TagPicker::for_filter(&self.document, &rows, &self.filter));
+        let rows = view::rows(
+            &self.document,
+            self.pane().shown,
+            self.today,
+            self.pane().show_completed,
+        );
+        self.tags = Some(TagPicker::for_filter(
+            &self.document,
+            &rows,
+            &self.pane().filter,
+        ));
     }
 
     /// Applies `input` to the open tag picker: choosing a tag closes it and adds the tag to the
@@ -460,7 +448,7 @@ impl State {
         match closed {
             Picked::Chosen(Choice::Items(transaction)) => self.change(transaction),
             Picked::Chosen(Choice::Filter(name)) => {
-                let mut filter = self.filter.clone();
+                let mut filter = self.pane().filter.clone();
                 if filter.contains(&name) {
                     filter.retain(|chosen| *chosen != name);
                 } else {
@@ -480,7 +468,7 @@ impl State {
     /// Filters the pane by `filter`, moving the focus on when its row hides.
     fn set_filter(&mut self, filter: Vec<String>) {
         let before = self.rows();
-        self.filter = filter;
+        self.pane_mut().filter = filter;
         self.settle(&before);
     }
 
@@ -491,8 +479,8 @@ impl State {
         let Some(container) = self.container() else {
             return;
         };
-        let (today, show_completed) = (self.today, self.show_completed);
-        let filter = self.filter.clone();
+        let (today, show_completed) = (self.today, self.pane().show_completed);
+        let filter = self.pane().filter.clone();
         let transaction =
             moving::shift_all(&self.document, &self.targets(), direction, |document| {
                 listed(
@@ -554,14 +542,15 @@ impl State {
         let items = self.targets();
         match converting::group_place(&self.document, &items, kind) {
             Ok(Some(place)) => {
+                let selection = self.pane().selection.clone();
                 let editing = Editing::group(
                     &mut self.document,
                     Item::new(kind, ""),
                     place,
                     &items,
-                    self.selection.clone(),
+                    selection,
                 );
-                self.selection.focus(Some(editing.id()));
+                self.pane_mut().selection.focus(Some(editing.id()));
                 self.start_editing(Some(editing));
             }
             Ok(None) => {}
@@ -572,10 +561,10 @@ impl State {
     /// Starts editing the focused row's title, picking nothing. Nothing happens unless a row is
     /// focused.
     pub(super) fn edit_title(&mut self) {
-        let editing = self
-            .selection
+        let selection = &self.pane().selection;
+        let editing = selection
             .focused()
-            .and_then(|id| Editing::existing(&self.document, id, self.selection.clone()));
+            .and_then(|id| Editing::existing(&self.document, id, selection.clone()));
         self.start_editing(editing);
     }
 
@@ -583,7 +572,7 @@ impl State {
     /// is not what is edited.
     pub(super) fn start_editing(&mut self, editing: Option<Editing>) {
         if editing.is_some() {
-            self.selection.clear();
+            self.pane_mut().selection.clear();
         }
         self.editing = editing;
     }
@@ -592,11 +581,11 @@ impl State {
     /// says, picking nothing. Nothing happens with nothing focused.
     pub(super) fn edit_description(&mut self, whose: Whose) {
         let id = match whose {
-            Whose::Focused => self.selection.focused(),
+            Whose::Focused => self.pane().selection.focused(),
             Whose::Shown => self.container(),
         };
-        let editing =
-            id.and_then(|id| Editing::description(&self.document, id, self.selection.clone()));
+        let editing = id
+            .and_then(|id| Editing::description(&self.document, id, self.pane().selection.clone()));
         self.start_editing(editing);
     }
 
@@ -611,18 +600,14 @@ impl State {
             &self.document,
             container,
             &self.rows(),
-            self.selection.focused(),
+            self.pane().selection.focused(),
             side,
         );
         let (parent, index) = place;
         let item = self.new_item(ItemKind::Task);
-        let editing = Editing::new_item(
-            &mut self.document,
-            item,
-            (Some(parent), index),
-            self.selection.clone(),
-        );
-        self.selection.focus(Some(editing.id()));
+        let selection = self.pane().selection.clone();
+        let editing = Editing::new_item(&mut self.document, item, (Some(parent), index), selection);
+        self.pane_mut().selection.focus(Some(editing.id()));
         self.start_editing(Some(editing));
     }
 
@@ -638,7 +623,7 @@ impl State {
             &self.document,
             container,
             &self.rows(),
-            self.selection.focused(),
+            self.pane().selection.focused(),
             kind,
             side,
         ) else {
@@ -648,15 +633,11 @@ impl State {
             return;
         }
         let item = self.new_item(kind);
-        let editing = Editing::new_item(
-            &mut self.document,
-            item,
-            (parent, index),
-            self.selection.clone(),
-        );
+        let selection = self.pane().selection.clone();
+        let editing = Editing::new_item(&mut self.document, item, (parent, index), selection);
         let id = editing.id();
         if parent == Some(container) {
-            self.selection.focus(Some(id));
+            self.pane_mut().selection.focus(Some(id));
         } else {
             self.open(id, None);
         }
@@ -668,6 +649,7 @@ impl State {
     fn new_item(&self, kind: ItemKind) -> Item {
         Item {
             tags: self
+                .pane()
                 .filter
                 .iter()
                 .map(|name| Tag::plain(name.as_str()))
@@ -681,7 +663,7 @@ impl State {
     pub(super) fn rename_container(&mut self) {
         let editing = self
             .container()
-            .and_then(|id| Editing::existing(&self.document, id, self.selection.clone()));
+            .and_then(|id| Editing::existing(&self.document, id, self.pane().selection.clone()));
         self.start_editing(editing);
     }
 
@@ -736,7 +718,7 @@ impl State {
         if transaction.ops().is_empty() {
             self.saving.unchanged(started, self.document.revision());
         }
-        let mut after = self.selection.clone();
+        let mut after = self.pane().selection.clone();
         if !heading && !in_sidebar {
             after.focus(Some(id));
         }
@@ -748,7 +730,7 @@ impl State {
             self.sidebar.finish(kept);
         }
         if !kept {
-            self.selection = before;
+            self.pane_mut().selection = before;
             if heading {
                 self.go(Go::Back);
             }
@@ -758,30 +740,27 @@ impl State {
 
     /// Applies `transaction` as one step to undo, moving the focus on when its row leaves.
     fn change(&mut self, transaction: Transaction) {
-        self.change_focusing(transaction, self.selection.focused());
+        self.change_focusing(transaction, self.pane().selection.focused());
     }
 
     /// Applies `transaction` as one step to undo, then focuses `focused`, or the row nearest it
     /// when it is not a row.
     fn change_focusing(&mut self, transaction: Transaction, focused: Option<ItemId>) {
         let before = self.rows();
-        let (shown, today, show_completed) = (self.shown, self.today, self.show_completed);
-        let filter = self.filter.clone();
-        let mut after = self.selection.clone();
+        let (shown, today, show_completed) =
+            (self.pane().shown, self.today, self.pane().show_completed);
+        let filter = self.pane().filter.clone();
+        let mut after = self.pane().selection.clone();
+        let selection = after.clone();
         self.history
-            .commit(
-                &mut self.document,
-                transaction,
-                self.selection.clone(),
-                |document| {
-                    let rows = listed(document, (shown, today), show_completed, &filter);
-                    after.focus(focus::kept(&before, &rows, focused));
-                    after
-                },
-            )
+            .commit(&mut self.document, transaction, selection, |document| {
+                let rows = listed(document, (shown, today), show_completed, &filter);
+                after.focus(focus::kept(&before, &rows, focused));
+                after
+            })
             .expect("a transaction made from the document as it is fits it");
-        if focused != self.selection.focused() {
-            self.selection.focus(focused);
+        if focused != self.pane().selection.focused() {
+            self.pane_mut().selection.focus(focused);
         }
         self.settle(&before);
     }
@@ -790,7 +769,7 @@ impl State {
     /// closest container above it, or hides it when it has the keys, or gives it the keys.
     pub(super) fn toggle_sidebar(&mut self) {
         let entries = sidebar::entries(&self.document);
-        let near = std::iter::once(self.shown)
+        let near = std::iter::once(self.pane().shown)
             .chain(self.path().into_iter().rev().map(Shown::Container))
             .find(|&shown| entries.iter().any(|stop| stop.shown() == shown));
         self.sidebar.toggle(near);
@@ -851,7 +830,7 @@ impl State {
             }
             (Command::Go(Go::Into), Some(shown)) => self.show(shown, None),
             (Command::RenameContainer, Some(Shown::Container(id))) => {
-                self.editing = Editing::existing(&self.document, id, self.selection.clone());
+                self.editing = Editing::existing(&self.document, id, self.pane().selection.clone());
             }
             (Command::Delete, Some(Shown::Container(id))) => {
                 self.change(trash::delete(&self.document, [id], today));
@@ -894,12 +873,8 @@ impl State {
         let focused = self.sidebar.focused();
         let place = sidebar::place(&self.document, entries, focused, kind, side)
             .expect("the sidebar focuses one of its entries, beside which a project or area goes");
-        let editing = Editing::new_item(
-            &mut self.document,
-            Item::new(kind, ""),
-            place,
-            self.selection.clone(),
-        );
+        let selection = self.pane().selection.clone();
+        let editing = Editing::new_item(&mut self.document, Item::new(kind, ""), place, selection);
         self.sidebar.focus_new(editing.id());
         self.editing = Some(editing);
     }
@@ -907,7 +882,7 @@ impl State {
     /// Shows completed items, or hides them again, moving the focus on when its row hides.
     pub(super) fn toggle_show_completed(&mut self) {
         let before = self.rows();
-        self.show_completed = !self.show_completed;
+        self.pane_mut().show_completed = !self.pane().show_completed;
         self.settle(&before);
     }
 
@@ -934,41 +909,16 @@ impl State {
     /// Selects `selection`, if there is one, keeping the focus on a row shown.
     fn restore(&mut self, selection: Option<Selection>, before: &[Row]) {
         if let Some(selection) = selection {
-            self.selection = selection;
+            self.pane_mut().selection = selection;
             self.settle(before);
         }
     }
 
     /// Keeps the focus on a row now that the rows `before` have changed, and when the container
-    /// shown no longer opens, having gone to the Trash or into a completed item, shows the
-    /// nearest one above it that does, else the Inbox, focused where it was.
+    /// shown no longer opens gives way to the nearest one above it that does.
     fn settle(&mut self, before: &[Row]) {
-        if !view::opens(&self.document, self.shown) {
-            let path = self.path();
-            let document = &self.document;
-            let visit = path
-                .array_windows()
-                .rev()
-                .find(|&&[parent, _]| container::opens(document, parent))
-                .map_or(
-                    Visit {
-                        shown: Shown::Container(document.inbox()),
-                        focused: None,
-                    },
-                    |&[parent, child]| Visit {
-                        shown: Shown::Container(parent),
-                        focused: Some(child),
-                    },
-                );
-            self.arrive(visit);
-            return;
-        }
-        let rows = self.rows();
-        let focused = focus::kept(before, &rows, self.selection.focused());
-        if focused != self.selection.focused() {
-            self.selection.focus(focused);
-        }
-        self.selection.keep(&rows, Some);
+        let (document, today) = (&self.document, self.today);
+        self.pane.settle(document, today, before);
     }
 
     /// Shows the place `to` says.
@@ -976,7 +926,7 @@ impl State {
         let document = &self.document;
         match to {
             Go::Into => {
-                let focused = self.selection.focused();
+                let focused = self.pane().selection.focused();
                 let row = self
                     .rows()
                     .into_iter()
@@ -1004,20 +954,12 @@ impl State {
             Go::Home => self.open(document.inbox(), None),
             Go::View(shown) => self.show(Shown::View(shown), None),
             Go::Back => {
-                let visit = self
-                    .visits
-                    .back(self.visit(), |shown| view::opens(document, shown));
-                if let Some(visit) = visit {
-                    self.arrive(visit);
-                }
+                let today = self.today;
+                self.pane.back(document, today);
             }
             Go::Forward => {
-                let visit = self
-                    .visits
-                    .forward(self.visit(), |shown| view::opens(document, shown));
-                if let Some(visit) = visit {
-                    self.arrive(visit);
-                }
+                let today = self.today;
+                self.pane.forward(document, today);
             }
         }
     }
@@ -1030,7 +972,7 @@ impl State {
         self.tags = None;
         self.navigator = match self.navigator {
             Some(_) => None,
-            None => Some(navigator::open(&self.document, self.shown)),
+            None => Some(navigator::open(&self.document, self.pane().shown)),
         };
     }
 
@@ -1052,14 +994,6 @@ impl State {
         }
     }
 
-    /// Where the pane is.
-    fn visit(&self) -> Visit {
-        Visit {
-            shown: self.shown,
-            focused: self.selection.focused(),
-        }
-    }
-
     /// Shows `container` as [`show`](Self::show) does.
     fn open(&mut self, container: ItemId, focused: Option<ItemId>) {
         self.show(Shown::Container(container), focused);
@@ -1068,40 +1002,9 @@ impl State {
     /// Shows `shown`, focused on `focused` or its first row, so that Back returns to where the
     /// pane was. Showing what is shown changes nothing.
     fn show(&mut self, shown: Shown, focused: Option<ItemId>) {
-        if shown != self.shown {
-            self.visits.leave(self.visit());
-            self.arrive(Visit { shown, focused });
-        }
+        let (document, today) = (&self.document, self.today);
+        self.pane.show(document, today, shown, focused);
     }
-
-    /// Shows what `visit` showed, focused on its item when that is a row there and on the first
-    /// row otherwise, with nothing picked and no tag filter.
-    fn arrive(&mut self, visit: Visit) {
-        self.selection.clear();
-        self.filter.clear();
-        self.shown = visit.shown;
-        let rows = self.rows();
-        let focused = visit
-            .focused
-            .filter(|&id| rows.iter().any(|row| row.id() == id))
-            .or_else(|| rows.first().map(|row| row.id()));
-        self.selection.focus(focused);
-    }
-}
-
-/// The rows `shown` lists in `document` on the date it is shown, completed items among them when
-/// `show_completed`, those carrying every tag of `filter`.
-fn listed(
-    document: &Document,
-    (shown, today): (Shown, Date),
-    show_completed: bool,
-    filter: &[String],
-) -> Vec<Row> {
-    tags::filtered(
-        document,
-        view::rows(document, shown, today, show_completed),
-        filter,
-    )
 }
 
 #[cfg(test)]
@@ -2152,7 +2055,7 @@ mod tests {
             ..
         } = dated()?;
         state.go(Go::View(View::Today));
-        state.selection.focus(Some(in_launch));
+        state.pane_mut().selection.focus(Some(in_launch));
         state.go(Go::Into);
         assert_eq!(
             at(&state),
@@ -2160,11 +2063,11 @@ mod tests {
             "a section's task shows in its project, under the section's heading"
         );
         state.go(Go::Back);
-        state.selection.focus(Some(overdue));
+        state.pane_mut().selection.focus(Some(overdue));
         state.go(Go::Into);
         assert_eq!(at(&state), (Some(work), Some(overdue)));
         state.go(Go::Back);
-        state.selection.focus(Some(site));
+        state.pane_mut().selection.focus(Some(site));
         state.go(Go::Into);
         assert_eq!(state.container(), Some(site), "a project opens");
         state.go(Go::Into);
@@ -2174,7 +2077,7 @@ mod tests {
             "in a container a task does not open"
         );
         state.go(Go::View(View::Today));
-        state.selection.focus(Some(inbox_task));
+        state.pane_mut().selection.focus(Some(inbox_task));
         state.go(Go::Into);
         assert_eq!(
             state.shown(),
@@ -2225,7 +2128,7 @@ mod tests {
             ..
         } = dated()?;
         state.go(Go::View(View::Today));
-        state.selection.focus(Some(overdue));
+        state.pane_mut().selection.focus(Some(overdue));
         state.set_today(date(2026, 10, 15));
         assert!(state.rows().iter().any(|row| row.id() == tomorrow));
         assert_eq!(state.selection().focused(), Some(overdue));

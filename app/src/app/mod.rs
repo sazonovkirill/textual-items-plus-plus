@@ -19,6 +19,7 @@ mod logbook;
 mod move_to;
 mod moving;
 mod navigator;
+mod pane;
 mod picker;
 mod saving;
 mod selection;
