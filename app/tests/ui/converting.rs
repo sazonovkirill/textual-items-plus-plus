@@ -169,3 +169,19 @@ fn a_task_whose_title_starts_like_a_task_line_stays_a_task() {
     assert!(status(&harness).ends_with(r#"only a task's title can start with "- ""#));
     assert_eq!(saved(&mut harness, &path), text);
 }
+
+// FR-TASK-06, FR-STORE-09, D-47
+#[test]
+fn a_task_with_a_kind_tag_stays_a_task() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\nWork: @area\n\t- Plan @area\n";
+    fs::write(&path, text).expect("the fixture is written");
+    let mut harness = Harness::open(path.clone(), 70, 20);
+    harness.ctrl('g');
+    harness.type_text("work");
+    harness.key(KeyCode::Enter);
+    keys(&mut harness, "my");
+    assert!(status(&harness).ends_with("only a task can be tagged @area or @section"));
+    assert_eq!(saved(&mut harness, &path), text);
+}

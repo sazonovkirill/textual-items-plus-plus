@@ -6,13 +6,14 @@ use super::{
     editing,
     moving::{self, Refusal},
 };
-use crate::domain::{Document, ItemId, ItemKind, Node, Transaction};
+use crate::domain::{Document, Item, ItemId, ItemKind, Node, Transaction};
 
 /// The transaction that converts each of `items` in its place to a project, or to a section when
 /// every one is a project, as a project can't become an area (D-25); items already of that kind
 /// stay as they are, and so does each one the hierarchy refuses, such as an area holding projects
 /// or a section in a project, since no project goes in a project (D-75), or whose title, as a
-/// task's can, starts with `-` and a space, which would read back as a task (FR-TASK-06,
+/// task's can, starts with `-` and a space, which would read back as a task, or that has a bare
+/// `@area` or `@section` tag, as a task can, which would read back as another kind (FR-TASK-06,
 /// FR-ORG-06, D-47).
 ///
 /// # Errors
@@ -29,12 +30,12 @@ pub(super) fn convert_all(document: &Document, items: &[ItemId]) -> Result<Trans
         ItemKind::Project
     };
     match moving::each(document, items.iter().copied(), |document, id| {
-        let title = document
-            .node(id)
-            .and_then(Node::item)
-            .map(|item| item.title.as_str());
-        if title.is_some_and(editing::reads_as_task) {
+        let item = document.node(id).and_then(Node::item);
+        if item.is_some_and(|item| editing::reads_as_task(&item.title)) {
             return Err(Refusal::ReadsAsTask);
+        }
+        if item.is_some_and(has_kind_tag) {
+            return Err(Refusal::KindTag);
         }
         // The file's rule lets a project hold one, which the app never makes (D-57, D-75).
         if !fits(document, id, to) {
@@ -97,6 +98,14 @@ fn no_room(kind: ItemKind) -> Refusal {
     }
 }
 
+/// Whether `item` has a tag that, bare on a project's line, makes it an area or a section
+/// (OQ-17).
+fn has_kind_tag(item: &Item) -> bool {
+    item.tags
+        .iter()
+        .any(|tag| tag.value.is_none() && matches!(tag.name.as_str(), "area" | "section"))
+}
+
 /// Whether `id` holds a project.
 fn holds_projects(document: &Document, id: ItemId) -> bool {
     document
@@ -119,7 +128,7 @@ fn kind(document: &Document, id: ItemId) -> Option<ItemKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Item, PlacementError};
+    use crate::domain::{PlacementError, Tag};
     use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
     /// The Inbox holds `inboxed`; area Work holds tasks `paint` and `order`, section `section`
@@ -253,6 +262,23 @@ mod tests {
             Err(Refusal::ReadsAsTask),
             "a project titled so would read back as a task"
         );
+        for name in ["area", "section"] {
+            let mut tagged = Item::new(Task, "Plan");
+            tagged.tags = vec![Tag::plain("x"), Tag::plain(name)];
+            let plan = dashed.push(Some(area), Node::Item(tagged))?;
+            assert_eq!(
+                convert_all(&dashed, &[plan]),
+                Err(Refusal::KindTag),
+                "a project tagged @{name} would read back as another kind"
+            );
+        }
+        let mut valued = Item::new(Task, "Plan");
+        valued.tags = vec![Tag {
+            name: "area".to_owned(),
+            value: Some("home".to_owned()),
+        }];
+        let plan = dashed.push(Some(area), Node::Item(valued))?;
+        assert_eq!(kind(&converted(&dashed, &[plan]), plan), Some(Project));
         let one = converted(&document, &[top, site]);
         assert_eq!(
             (kind(&one, top), kind(&one, site)),

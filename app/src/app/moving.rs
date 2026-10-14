@@ -30,6 +30,8 @@ pub enum Refusal {
     SectionHoldsTasks,
     /// A task's title starts with `-` and a space, so it would read back as a task's again.
     ReadsAsTask,
+    /// A task has a bare `@area` or `@section` tag, so it would read back as another kind.
+    KindTag,
 }
 
 /// The transaction that moves `id` one step `direction` among `rows`, the rows of the container

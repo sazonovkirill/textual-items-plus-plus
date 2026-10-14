@@ -147,6 +147,7 @@ const fn why(refusal: Refusal) -> &'static str {
         Refusal::NoRoomForProject => "a project goes only in an area or at the top level",
         Refusal::SectionHoldsTasks => "a section holds only tasks",
         Refusal::ReadsAsTask => "only a task's title can start with \"- \"",
+        Refusal::KindTag => "only a task can be tagged @area or @section",
     }
 }
 
@@ -308,6 +309,7 @@ mod tests {
             Refusal::NoRoomForProject,
             Refusal::SectionHoldsTasks,
             Refusal::ReadsAsTask,
+            Refusal::KindTag,
         ]
         .map(why);
         assert_eq!(
@@ -319,6 +321,7 @@ mod tests {
                 "a project goes only in an area or at the top level",
                 "a section holds only tasks",
                 "only a task's title can start with \"- \"",
+                "only a task can be tagged @area or @section",
             ]
         );
     }
