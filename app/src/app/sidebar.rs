@@ -1,10 +1,11 @@
-//! The sidebar: the Inbox, and the areas and projects as a tree beside the pane, where they are created,
+//! The sidebar: the Inbox, the views, and the areas and projects as a tree beside the pane, where they are created,
 //! renamed, deleted, reordered, indented and outdented with keys (FR-VIEW-10, OQ-10). Hides which
 //! entry it keeps focused as the tree changes and where its changes put items in the document.
 
 use super::{
     Direction, Focus, Refusal, Side,
-    navigator::{self, Place},
+    navigator::{self, Stop},
+    view::{Shown, View},
 };
 use crate::domain::{Destination, Document, ItemId, ItemKind, Node, Transaction};
 
@@ -13,18 +14,18 @@ use crate::domain::{Destination, Document, ItemId, ItemKind, Node, Transaction};
 pub(super) struct Sidebar {
     shown: bool,
     keys: bool,
-    focused: Option<ItemId>,
+    focused: Option<Shown>,
     /// Where the focused entry was in the tree, so that the focus stays there once it leaves.
     index: usize,
     /// The entry focused before a new one was added, to go back to when it is left empty.
-    left: Option<ItemId>,
+    left: Option<Shown>,
 }
 
 /// What a frontend draws of the sidebar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SidebarView {
-    /// The areas and projects, in the order of the tree.
-    pub entries: Vec<Place>,
+    /// The Inbox, the views, and the areas and projects in the order of the tree.
+    pub entries: Vec<Stop>,
     /// The index of the focused entry, if any.
     pub focused: Option<usize>,
     /// Whether the sidebar has the keys, rather than the pane.
@@ -34,7 +35,7 @@ pub struct SidebarView {
 impl Sidebar {
     /// Shows the sidebar with the keys, focused on `near` when given, or hides it when it has
     /// the keys, giving them back to the pane, or gives it the keys when it shows without them.
-    pub(super) fn toggle(&mut self, near: Option<ItemId>) {
+    pub(super) fn toggle(&mut self, near: Option<Shown>) {
         match (self.shown, self.keys) {
             (false, _) => {
                 self.shown = true;
@@ -59,8 +60,8 @@ impl Sidebar {
         self.keys
     }
 
-    /// The focused entry's item, if any.
-    pub(super) fn focused(&self) -> Option<ItemId> {
+    /// What the focused entry opens, if any.
+    pub(super) fn focused(&self) -> Option<Shown> {
         self.focused
     }
 
@@ -69,7 +70,7 @@ impl Sidebar {
     /// [`finish`]: Self::finish
     pub(super) fn focus_new(&mut self, id: ItemId) {
         self.left = self.focused;
-        self.focused = Some(id);
+        self.focused = Some(Shown::Container(id));
     }
 
     /// Ends adding an entry: one left empty, and so not added, gives the focus back to the entry
@@ -82,11 +83,11 @@ impl Sidebar {
 
     /// Moves the focus among `entries` as `motion` says: to the next or previous entry, the first
     /// or last, the area or project holding it, or the next or previous one at the top level.
-    pub(super) fn move_focus(&mut self, entries: &[Place], motion: Focus) {
+    pub(super) fn move_focus(&mut self, entries: &[Stop], motion: Focus) {
         let Some(at) = self.at(entries) else {
             return;
         };
-        let depth = |index: usize| entries.get(index).map_or(0, |place| place.depth);
+        let depth = |index: usize| entries.get(index).map_or(0, |stop| stop.depth());
         let earlier = (0..at).rev();
         let target = match motion {
             Focus::Next => Some((at + 1).min(entries.len() - 1)),
@@ -97,14 +98,14 @@ impl Sidebar {
             Focus::NextSection => (at + 1..entries.len()).find(|&index| depth(index) == 0),
             Focus::PreviousSection => earlier.clone().find(|&index| depth(index) == 0),
         };
-        if let Some(place) = target.and_then(|index| entries.get(index)) {
-            self.focused = Some(place.id);
+        if let Some(stop) = target.and_then(|index| entries.get(index)) {
+            self.focused = Some(stop.shown());
         }
     }
 
     /// Keeps the focus on one of `entries` now that the tree may have changed: on the entry
     /// focused while it is there, else on the one now where it was, else on the last.
-    pub(super) fn settle(&mut self, entries: &[Place]) {
+    pub(super) fn settle(&mut self, entries: &[Stop]) {
         if !self.shown {
             return;
         }
@@ -112,11 +113,11 @@ impl Sidebar {
         self.index = at.unwrap_or(0);
         self.focused = at
             .and_then(|index| entries.get(index))
-            .map(|place| place.id);
+            .map(|stop| stop.shown());
     }
 
     /// What a frontend draws of the sidebar with `entries`, while it shows.
-    pub(super) fn view(&self, entries: Vec<Place>) -> Option<SidebarView> {
+    pub(super) fn view(&self, entries: Vec<Stop>) -> Option<SidebarView> {
         self.shown.then(|| SidebarView {
             focused: self.at(&entries),
             keys: self.keys,
@@ -125,35 +126,42 @@ impl Sidebar {
     }
 
     /// The index of the focused entry among `entries`, or of the one now where it was.
-    fn at(&self, entries: &[Place]) -> Option<usize> {
+    fn at(&self, entries: &[Stop]) -> Option<usize> {
         let last = entries.len().checked_sub(1)?;
         let found = self
             .focused
-            .and_then(|id| entries.iter().position(|place| place.id == id));
+            .and_then(|shown| entries.iter().position(|stop| stop.shown() == shown));
         Some(found.unwrap_or(self.index.min(last)))
     }
 }
 
-/// The places of `document` as the sidebar lists them: the Navigator's tree with the Inbox
-/// first, then the projects in no area and then the areas, each followed by what it holds, as
-/// Things 3's sidebar groups them. Within each group they keep the order of the file.
-pub(super) fn entries(document: &Document) -> Vec<Place> {
-    let (mut inbox, mut projects, mut areas) = (Vec::new(), Vec::new(), Vec::new());
+/// The entries of `document` as the sidebar lists them: the Navigator's with the Inbox and the
+/// views first, then the projects in no area and then the areas, each followed by what it holds,
+/// as Things 3's sidebar groups them. Within each group they keep the order of the file. The
+/// Logbook is left out, as the owner's order of the sidebar leaves it (D-45).
+pub(super) fn entries(document: &Document) -> Vec<Stop> {
+    let (mut first, mut projects, mut areas) = (Vec::new(), Vec::new(), Vec::new());
     let mut group = ItemKind::Inbox;
-    for place in navigator::places(document)
+    for stop in navigator::stops(document)
         .into_iter()
         .map(|candidate| candidate.value)
     {
+        let Stop::Place(place) = stop else {
+            if stop != Stop::View(View::Logbook) {
+                first.push(stop);
+            }
+            continue;
+        };
         if place.depth == 0 {
             group = place.kind;
         }
         match group {
-            ItemKind::Inbox => inbox.push(place),
-            ItemKind::Area => areas.push(place),
-            _ => projects.push(place),
+            ItemKind::Inbox => first.push(stop),
+            ItemKind::Area => areas.push(stop),
+            _ => projects.push(stop),
         }
     }
-    [inbox, projects, areas].concat()
+    [first, projects, areas].concat()
 }
 
 /// The transaction that moves `id` one step `direction` among its siblings in the tree, past the
@@ -224,15 +232,15 @@ pub(super) fn outdent(document: &Document, id: ItemId) -> Result<Transaction, Re
 
 /// Where a new item of `kind` goes from the entry `focused` among `entries`, on `side` of it, as
 /// its parent, `None` for the top level, and its index there. An area goes beside the area
-/// holding the focus, or first among the areas from the Inbox or a project in no area. A project
+/// holding the focus, or first among the areas from the Inbox, a view or a project in no area. A project
 /// goes above the focused entry, or below it, as the first of the entries it holds when it is an
 /// area, on either side, or holds any, as a new task below a section heading is its first, and from the Inbox
-/// first among the projects in no area. With nothing focused either goes last at the top level,
+/// or a view first among the projects in no area. With nothing focused either goes last at the top level,
 /// and any other kind goes nowhere.
 pub(super) fn place(
     document: &Document,
-    entries: &[Place],
-    focused: Option<ItemId>,
+    entries: &[Stop],
+    focused: Option<Shown>,
     kind: ItemKind,
     side: Side,
 ) -> Option<(Option<ItemId>, usize)> {
@@ -241,10 +249,11 @@ pub(super) fn place(
         return matches!(kind, ItemKind::Area | ItemKind::Project).then_some(end);
     };
     // The top level lists projects apart from areas, each kind in the order of the file, so the
-    // first place there is the first of either kind.
-    if focused == document.inbox() {
-        return matches!(kind, ItemKind::Area | ItemKind::Project).then_some((None, 0));
-    }
+    // first place there is the first of either kind. The views are listed with the Inbox.
+    let focused = match focused {
+        Shown::Container(id) if id != document.inbox() => id,
+        _ => return matches!(kind, ItemKind::Area | ItemKind::Project).then_some((None, 0)),
+    };
     let below = usize::from(side == Side::Below);
     match kind {
         ItemKind::Area => {
@@ -257,10 +266,12 @@ pub(super) fn place(
         }
         ItemKind::Project => {
             let (parent, index) = document.position(focused)?;
-            let at = entries.iter().position(|place| place.id == focused)?;
+            let at = entries
+                .iter()
+                .position(|stop| stop.shown() == Shown::Container(focused))?;
             let holds = entries
                 .get(at + 1)
-                .filter(|next| next.depth > entries.get(at).map_or(0, |place| place.depth));
+                .filter(|next| next.depth() > entries.get(at).map_or(0, |stop| stop.depth()));
             let area = document
                 .node(focused)
                 .and_then(Node::item)
@@ -271,9 +282,12 @@ pub(super) fn place(
                 return Some((parent, index));
             }
             match (holds, area) {
-                (Some(first), _) => document.position(first.id),
-                (None, true) => Some((Some(focused), document.children(focused).len())),
-                (None, false) => Some((parent, index + 1)),
+                (Some(&Stop::Place(first)), _) => document.position(first.id),
+                // The views are listed at the top level, so no entry holds one.
+                (None | Some(Stop::View(_)), true) => {
+                    Some((Some(focused), document.children(focused).len()))
+                }
+                (None | Some(Stop::View(_)), false) => Some((parent, index + 1)),
             }
         }
         _ => None,
@@ -311,6 +325,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
+    use crate::app::view::REGISTRY;
     use crate::domain::{Item, PlacementError};
     use ItemKind::{Area, Project, Section, Task};
 
@@ -356,16 +371,19 @@ mod tests {
         found.expect("the test's document holds the title")
     }
 
-    /// The entries, each title indented two spaces per level.
+    /// The entries of containers, each title indented two spaces per level.
     fn tree(document: &Document) -> Vec<String> {
         entries(document)
             .iter()
-            .map(|place| {
+            .filter_map(|stop| {
+                let Stop::Place(place) = stop else {
+                    return None;
+                };
                 let title = document
                     .node(place.id)
                     .and_then(Node::item)
                     .map_or("", |it| &it.title);
-                format!("{}{title}", "  ".repeat(place.depth))
+                Some(format!("{}{title}", "  ".repeat(place.depth)))
             })
             .collect()
     }
@@ -387,9 +405,22 @@ mod tests {
 
     // FR-VIEW-10
     #[test]
-    fn lists_the_inbox_then_the_projects_in_no_area_then_the_areas_without_the_trash() {
+    fn lists_the_inbox_and_the_views_then_the_projects_in_no_area_then_the_areas_without_the_trash()
+    {
+        let document = document();
+        let views: Vec<Stop> = REGISTRY
+            .iter()
+            .map(|entry| Stop::View(entry.view))
+            .filter(|&stop| stop != Stop::View(View::Logbook))
+            .collect();
+        let listed = entries(&document);
+        assert_eq!(listed.get(1..=views.len()), Some(&views[..]));
+        assert!(
+            !listed.contains(&Stop::View(View::Logbook)),
+            "the owner's order leaves the Logbook out"
+        );
         assert_eq!(
-            tree(&document()),
+            tree(&document),
             [
                 "Inbox", "Solo", "Work", "  Site", "    Blog", "  Docs", "Home"
             ]
@@ -497,7 +528,7 @@ mod tests {
         kind: ItemKind,
         side: Side,
     ) -> Option<(String, String)> {
-        let focused = focused.map(|title| find(document, title));
+        let focused = focused.map(|title| Shown::Container(find(document, title)));
         let (parent, index) = place(document, &entries(document), focused, kind, side)?;
         let title = |id: Option<&ItemId>| {
             id.and_then(|&id| document.node(id).and_then(Node::item))
@@ -551,7 +582,13 @@ mod tests {
         let gone = find(&document, "Gone");
         let entries = entries(&document);
         assert_eq!(
-            place(&document, &entries, Some(gone), Project, Side::Below),
+            place(
+                &document,
+                &entries,
+                Some(Shown::Container(gone)),
+                Project,
+                Side::Below
+            ),
             None,
             "from no entry"
         );
@@ -572,13 +609,16 @@ mod tests {
             "first among the areas from a project in no area"
         );
         let entries = entries(&document);
-        let inbox = Some(document.inbox());
+        let inbox = Some(Shown::Container(document.inbox()));
+        let today = Some(Shown::View(View::Today));
         for (kind, side) in [(Area, Side::Above), (Project, Side::Below)] {
-            assert_eq!(
-                place(&document, &entries, inbox, kind, side),
-                Some((None, 0)),
-                "first of its kind from the Inbox"
-            );
+            for from in [inbox, today] {
+                assert_eq!(
+                    place(&document, &entries, from, kind, side),
+                    Some((None, 0)),
+                    "first of its kind from the Inbox and the views listed with it"
+                );
+            }
         }
         assert_eq!(
             place(&document, &entries, inbox, Section, Side::Below),
@@ -595,8 +635,10 @@ mod tests {
         let entries = entries(document);
         sidebar.move_focus(&entries, motion);
         sidebar.settle(&entries);
-        let id = sidebar.focused()?;
-        Some(document.node(id)?.item()?.title.clone())
+        match sidebar.focused()? {
+            Shown::Container(id) => Some(document.node(id)?.item()?.title.clone()),
+            Shown::View(view) => Some(view.title().to_owned()),
+        }
     }
 
     // FR-VIEW-10
@@ -609,8 +651,18 @@ mod tests {
         assert!(!sidebar.has_keys(), "a hidden sidebar takes no keys");
         sidebar.toggle(None);
         assert!(sidebar.has_keys());
+        let views: Vec<&str> = entries(&document)
+            .into_iter()
+            .filter_map(|stop| match stop {
+                Stop::View(view) => Some(view.title()),
+                Stop::Place(_) => None,
+            })
+            .collect();
         let mut go = |motion| moved(&document, &mut sidebar, motion);
         assert_eq!(go(Focus::Previous).as_deref(), Some("Inbox"));
+        for &view in &views {
+            assert_eq!(go(Focus::Next).as_deref(), Some(view));
+        }
         assert_eq!(go(Focus::Next).as_deref(), Some("Solo"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Work"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Site"));
@@ -631,14 +683,14 @@ mod tests {
         let view = sidebar.view(entries(&document));
         assert_eq!(
             view.map(|view| (view.focused, view.keys, view.entries.len())),
-            Some((Some(0), true, 7))
+            Some((Some(0), true, 7 + views.len()))
         );
         let mut empty = Sidebar::default();
         empty.toggle(None);
         assert_eq!(
-            moved(&Document::new(), &mut empty, Focus::Next).as_deref(),
-            Some("Inbox"),
-            "a new document lists its Inbox"
+            moved(&Document::new(), &mut empty, Focus::Last).as_deref(),
+            views.last().copied(),
+            "a new document lists its Inbox and the views"
         );
     }
 
@@ -646,7 +698,7 @@ mod tests {
     #[test]
     fn showing_hiding_and_giving_the_keys() {
         let document = document();
-        let blog = find(&document, "Blog");
+        let blog = Shown::Container(find(&document, "Blog"));
         let mut sidebar = Sidebar::default();
         sidebar.toggle(Some(blog));
         assert_eq!((sidebar.has_keys(), sidebar.focused()), (true, Some(blog)));
@@ -672,13 +724,16 @@ mod tests {
         let mut document = document();
         let mut sidebar = Sidebar::default();
         let docs = find(&document, "Docs");
-        sidebar.toggle(Some(docs));
+        sidebar.toggle(Some(Shown::Container(docs)));
         sidebar.settle(&entries(&document));
         let mut gone = Item::new(Project, "Docs");
         gone.deleted = Some(date(2026, 10, 2));
         document.set(docs, gone)?;
         sidebar.settle(&entries(&document));
-        assert_eq!(sidebar.focused(), Some(find(&document, "Home")));
+        assert_eq!(
+            sidebar.focused(),
+            Some(Shown::Container(find(&document, "Home")))
+        );
         let mut hidden = Sidebar::default();
         hidden.settle(&entries(&document));
         assert_eq!(hidden.focused(), None, "a hidden sidebar is left alone");
@@ -694,17 +749,17 @@ mod tests {
         let document = document();
         let (work, solo) = (find(&document, "Work"), find(&document, "Solo"));
         let mut sidebar = Sidebar::default();
-        sidebar.toggle(Some(work));
+        sidebar.toggle(Some(Shown::Container(work)));
         sidebar.focus_new(solo);
-        assert_eq!(sidebar.focused(), Some(solo));
+        assert_eq!(sidebar.focused(), Some(Shown::Container(solo)));
         sidebar.finish(false);
-        assert_eq!(sidebar.focused(), Some(work));
+        assert_eq!(sidebar.focused(), Some(Shown::Container(work)));
         sidebar.focus_new(solo);
         sidebar.finish(true);
         sidebar.finish(false);
         assert_eq!(
             sidebar.focused(),
-            Some(solo),
+            Some(Shown::Container(solo)),
             "kept, and finished only once"
         );
     }

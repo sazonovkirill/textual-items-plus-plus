@@ -15,7 +15,7 @@ use super::{
     focus::{self, Focus},
     move_to::{Destination, MoveTo},
     moving,
-    navigator::{self, Place, Stop},
+    navigator::{self, Stop},
     saving::Saving,
     sidebar::{self, Sidebar},
     tags::{self, Choice, TagPicker, TagsView},
@@ -786,15 +786,13 @@ impl State {
         self.settle(&before);
     }
 
-    /// Shows the sidebar with the keys, focused on the entry of the container shown or the
-    /// closest one above it, or hides it when it has the keys, or gives it the keys.
+    /// Shows the sidebar with the keys, focused on the entry of what the pane shows or of the
+    /// closest container above it, or hides it when it has the keys, or gives it the keys.
     pub(super) fn toggle_sidebar(&mut self) {
         let entries = sidebar::entries(&self.document);
-        let near = self
-            .path()
-            .into_iter()
-            .rev()
-            .find(|&id| entries.iter().any(|place| place.id == id));
+        let near = std::iter::once(self.shown)
+            .chain(self.path().into_iter().rev().map(Shown::Container))
+            .find(|&shown| entries.iter().any(|stop| stop.shown() == shown));
         self.sidebar.toggle(near);
     }
 
@@ -812,8 +810,8 @@ impl State {
     /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
     /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting,
     /// outdenting, converting and setting its dates, each one step to undo, opening Move to for
-    /// it, and opening the entry in the pane, `Enter` giving the pane the keys.
-    /// Quitting, undo and redo, the Navigator, the sidebar's own commands, going home, back and
+    /// it, and opening the entry in the pane, `Enter` giving the pane the keys; a view's entry is
+    /// only opened. Quitting, undo and redo, the Navigator, the sidebar's own commands, going home, back and
     /// forward and the conflict prompt's commands pass to the app; every other command does
     /// nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
@@ -846,38 +844,42 @@ impl State {
                 self.sidebar_new(&entries, ItemKind::Project, side);
             }
             (Command::NewArea(side), _) => self.sidebar_new(&entries, ItemKind::Area, side),
-            (Command::EditTitle, Some(id)) => {
-                self.open(id, None);
+            (Command::EditTitle, Some(shown)) => {
+                self.show(shown, None);
                 self.sidebar.focus(false);
             }
-            (Command::RenameContainer, Some(id)) => {
+            (Command::Go(Go::Into), Some(shown)) => self.show(shown, None),
+            (Command::RenameContainer, Some(Shown::Container(id))) => {
                 self.editing = Editing::existing(&self.document, id, self.selection.clone());
             }
-            (Command::Delete, Some(id)) => {
+            (Command::Delete, Some(Shown::Container(id))) => {
                 self.change(trash::delete(&self.document, [id], today));
             }
-            (Command::Move(direction), Some(id)) => {
+            (Command::Move(direction), Some(Shown::Container(id))) => {
                 self.change(sidebar::shift(&self.document, id, direction));
             }
-            (Command::Indent, Some(id)) => apply(self, sidebar::indent(&self.document, id)),
-            (Command::Convert, Some(id)) => {
+            (Command::Indent, Some(Shown::Container(id))) => {
+                apply(self, sidebar::indent(&self.document, id));
+            }
+            (Command::Convert, Some(Shown::Container(id))) => {
                 apply(self, converting::convert_all(&self.document, &[id]));
             }
-            (Command::Outdent, Some(id)) => apply(self, sidebar::outdent(&self.document, id)),
-            (Command::Go(Go::Into), Some(id)) => self.open(id, None),
-            (Command::MoveTo, Some(id)) if id != self.document.inbox() => {
+            (Command::Outdent, Some(Shown::Container(id))) => {
+                apply(self, sidebar::outdent(&self.document, id));
+            }
+            (Command::MoveTo, Some(Shown::Container(id))) if id != self.document.inbox() => {
                 self.navigator = None;
                 self.move_to = MoveTo::open(&self.document, [id]);
             }
-            (Command::SetDate(kind), Some(id)) => {
+            (Command::SetDate(kind), Some(Shown::Container(id))) => {
                 self.date_prompt = DatePrompt::open(&self.document, [id], kind, today, Some(id));
             }
-            (Command::StartToday, Some(id)) => {
+            (Command::StartToday, Some(Shown::Container(id))) => {
                 let transaction =
                     date_prompt::set(&self.document, [id], DateKind::Start, Some(today));
                 self.change(transaction);
             }
-            (Command::Tags, Some(id)) => self.open_tags_for(vec![id]),
+            (Command::Tags, Some(Shown::Container(id))) => self.open_tags_for(vec![id]),
             _ => {}
         }
         true
@@ -885,7 +887,7 @@ impl State {
 
     /// Adds an empty item of `kind` from the sidebar's focused entry among `entries`, on `side`
     /// of it, focuses it and starts editing its title in the sidebar.
-    fn sidebar_new(&mut self, entries: &[Place], kind: ItemKind, side: Side) {
+    fn sidebar_new(&mut self, entries: &[Stop], kind: ItemKind, side: Side) {
         let focused = self.sidebar.focused();
         let place = sidebar::place(&self.document, entries, focused, kind, side)
             .expect("the sidebar focuses one of its entries, beside which a project or area goes");

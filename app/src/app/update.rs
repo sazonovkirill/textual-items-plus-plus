@@ -162,7 +162,10 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::{Direction, Focus, Go, Notice, Opened, Refusal, Side, TextEdit};
+    use crate::app::{
+        Direction, Focus, Go, Notice, Opened, Refusal, Side, Stop, TextEdit,
+        view::{Shown, View},
+    };
     use crate::domain::{
         Completion, Document, Item, ItemKind, Node, PlacementError, dates::DateKind,
     };
@@ -360,28 +363,41 @@ mod tests {
         Ok(())
     }
 
-    /// The title of the sidebar's focused entry, and of every entry after the Inbox, which every
-    /// sidebar lists first, indented by depth.
+    /// The title of the sidebar's focused entry, and of every container's entry after the Inbox,
+    /// which every sidebar lists first, indented by depth.
     fn sidebar(state: &State) -> (Option<String>, Vec<String>) {
         let view = state.sidebar().expect("the sidebar shows");
-        let title = |id| {
-            state
+        let title = |stop: &Stop| match *stop {
+            Stop::Place(place) => state
                 .document()
-                .node(id)
+                .node(place.id)
                 .and_then(Node::item)
-                .map_or(String::new(), |item| item.title.clone())
+                .map_or(String::new(), |item| item.title.clone()),
+            Stop::View(view) => view.title().to_owned(),
         };
         let focused = view
             .focused
             .and_then(|index| view.entries.get(index))
-            .map(|place| title(place.id));
+            .map(title);
         let entries = view
             .entries
             .iter()
             .skip(1)
-            .map(|place| format!("{}{}", "  ".repeat(place.depth), title(place.id)))
+            .filter(|stop| matches!(stop, Stop::Place(_)))
+            .map(|stop| format!("{}{}", "  ".repeat(stop.depth()), title(stop)))
             .collect();
         (focused, entries)
+    }
+
+    /// Moves the sidebar's focus from the Inbox past the views listed after it.
+    fn past_the_views(state: &mut State) {
+        let views = state.sidebar().map_or(0, |view| {
+            let views = view.entries.iter();
+            views.filter(|stop| matches!(stop, Stop::View(_))).count()
+        });
+        for _ in 0..=views {
+            give(state, Command::Focus(Focus::Next));
+        }
     }
 
     fn type_into(state: &mut State, text: &str) {
@@ -407,7 +423,7 @@ mod tests {
         assert_eq!(state.sidebar(), None);
         give(&mut state, Command::Sidebar);
         assert!(state.sidebar_has_keys());
-        give(&mut state, Command::Focus(Focus::Next));
+        past_the_views(&mut state);
         assert_eq!(
             sidebar(&state),
             (
@@ -449,7 +465,7 @@ mod tests {
         );
         update(&mut state, Message::MoveTo(PickerInput::Dismiss), TODAY);
         give(&mut state, Command::Focus(Focus::First));
-        give(&mut state, Command::Focus(Focus::Next));
+        past_the_views(&mut state);
         give(&mut state, Command::Outdent);
         assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
         let before = state.document().clone();
@@ -517,7 +533,7 @@ mod tests {
         state = State::new(document, Opened::Demo, TODAY);
         let pane = state.selection().clone();
         give(&mut state, Command::Sidebar);
-        give(&mut state, Command::Focus(Focus::Next));
+        past_the_views(&mut state);
         give(&mut state, Command::RenameContainer);
         type_into(&mut state, "s");
         edit(&mut state, EditInput::Next);
@@ -727,7 +743,7 @@ mod tests {
             item.map(|item| (item.start, item.due))
         };
         give(&mut state, Command::Sidebar);
-        give(&mut state, Command::Focus(Focus::Next));
+        past_the_views(&mut state);
         give(&mut state, Command::StartToday);
         assert_eq!(dated(&state), Some((Some(TODAY), None)));
         give(&mut state, Command::SetDate(DateKind::Due));
@@ -740,6 +756,55 @@ mod tests {
         give(&mut empty, Command::SetDate(DateKind::Due));
         give(&mut empty, Command::StartToday);
         assert_eq!(empty, before, "an empty sidebar dates nothing");
+        Ok(())
+    }
+
+    // FR-VIEW-10, FR-VIEW-06
+    #[test]
+    fn the_sidebar_lists_the_views_after_the_inbox_and_only_opens_them()
+    -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let mut task = Item::new(ItemKind::Task, "due");
+        task.due = Some(TODAY);
+        document.push(Some(work), Node::Item(task))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Next));
+        assert_eq!(sidebar(&state).0.as_deref(), Some("Today"));
+        let before = state.clone();
+        for command in [
+            Command::RenameContainer,
+            Command::Delete,
+            Command::Move(Direction::Down),
+            Command::Indent,
+            Command::Outdent,
+            Command::Convert,
+            Command::MoveTo,
+            Command::SetDate(DateKind::Due),
+            Command::StartToday,
+            Command::Tags,
+        ] {
+            give(&mut state, command);
+        }
+        assert_eq!(state, before, "a view is only opened");
+        give(&mut state, Command::Go(Go::Into));
+        assert_eq!(state.shown(), Shown::View(View::Today));
+        assert!(state.sidebar_has_keys(), "the keys stay in the sidebar");
+        give(&mut state, Command::Go(Go::Home));
+        give(&mut state, Command::EditTitle);
+        assert_eq!(state.shown(), Shown::View(View::Today));
+        assert_eq!(focused(&state), Some("due"));
+        assert!(!state.sidebar_has_keys(), "Enter gives the pane the keys");
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::NewProject(Side::Below));
+        type_into(&mut state, "P");
+        edit(&mut state, EditInput::Done);
+        assert_eq!(
+            sidebar(&state).1,
+            ["P", "Work"],
+            "from a view a project goes first among those in no area, as from the Inbox"
+        );
         Ok(())
     }
 
@@ -796,9 +861,9 @@ mod tests {
             document.push(Some(area), Node::Item(Item::new(ItemKind::Task, title)))?;
         }
         let mut state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Command::Sidebar);
+        past_the_views(&mut state);
         for command in [
-            Command::Sidebar,
-            Command::Focus(Focus::Next),
             Command::Go(Go::Into),
             Command::FocusPane,
             Command::Extend(Direction::Down),

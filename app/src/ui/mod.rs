@@ -25,7 +25,7 @@ use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Position, Rect},
-    style::Style,
+    style::{Color, Style},
     text::Line,
     widgets::{StatefulWidget, Widget},
 };
@@ -477,27 +477,35 @@ fn navigator_popup<'a>(
     theme: &'a Theme,
     icons: IconSet,
 ) -> PickerPopup<'a, Stop> {
-    let icon: &dyn Fn(&Stop) -> Icon = &|stop| match stop {
+    let icon: &dyn Fn(&Stop) -> Icon = &|&stop| stop_icon(stop);
+    PickerPopup::new("Navigator", view, icon, icons, theme)
+        .tree(&|stop| stop.depth())
+        .color(|theme, &stop| stop_color(theme, stop))
+        .badge(&|stop| match stop {
+            Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
+            Stop::Place(place) => place.open_tasks.to_string(),
+        })
+}
+
+/// The icon of `stop` in the Navigator and the sidebar: a place's kind's, or a view's own.
+fn stop_icon(stop: Stop) -> Icon {
+    match stop {
         Stop::Place(place) => match place.kind {
             ItemKind::Inbox => Icon::Inbox,
             ItemKind::Area => Icon::Area,
             _ => Icon::Project,
         },
-        Stop::View(view) => view_icon(*view),
-    };
-    PickerPopup::new("Navigator", view, icon, icons, theme)
-        .tree(&|stop| match stop {
-            Stop::Place(place) => place.depth,
-            Stop::View(_) => 0,
-        })
-        .color(|theme, stop| match stop {
-            Stop::Place(place) => theme.kind(place.kind),
-            Stop::View(_) => theme.primary,
-        })
-        .badge(&|stop| match stop {
-            Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
-            Stop::Place(place) => place.open_tasks.to_string(),
-        })
+        Stop::View(view) => view_icon(view),
+    }
+}
+
+/// The color of `stop` in the Navigator and the sidebar: a place's kind's, or for a view the
+/// color its pane's heading has.
+fn stop_color(theme: &Theme, stop: Stop) -> Color {
+    match stop {
+        Stop::Place(place) => theme.kind(place.kind),
+        Stop::View(_) => theme.primary,
+    }
 }
 
 /// The icon standing for `view` in its pane's heading and crumbs.

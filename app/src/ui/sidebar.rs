@@ -1,6 +1,6 @@
-//! The sidebar left of the pane: the Inbox, the areas and projects as a tree, each after its kind's icon
-//! with its open tasks counted at the right, as the Navigator lists them, the entry of the
-//! container shown on the selection background, the focused one marked while the sidebar has the
+//! The sidebar left of the pane: the Inbox, the views, the areas and projects as a tree, each after its icon
+//! with a container's open tasks counted at the right, as the Navigator lists them, the entry of what the
+//! pane shows on the selection background, the focused one marked while the sidebar has the
 //! keys and the title being edited there as a text field in its row (FR-VIEW-10).
 
 use ratatui::{
@@ -11,9 +11,9 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use super::{Icon, IconSet, Theme};
+use super::{IconSet, Theme};
 use crate::{
-    app::{Part, Place, SidebarView, State, TextField},
+    app::{Part, SidebarView, State, Stop, TextField, view::Shown},
     domain::{Document, ItemId, ItemKind, Node},
 };
 
@@ -34,8 +34,8 @@ pub(super) struct SidebarPane<'a> {
     view: SidebarView,
     /// The line each entry is drawn on, the blank lines between its groups left out.
     lines: Vec<usize>,
-    /// The entry of the container shown, or of the closest one above it.
-    current: Option<ItemId>,
+    /// The entry of what the pane shows, or of the closest container above it.
+    current: Option<Shown>,
     editing: Option<(ItemId, &'a TextField)>,
     theme: &'a Theme,
     icons: IconSet,
@@ -56,11 +56,9 @@ impl<'a> SidebarPane<'a> {
         theme: &'a Theme,
         icons: IconSet,
     ) -> Self {
-        let current = state
-            .path()
-            .into_iter()
-            .rev()
-            .find(|&id| view.entries.iter().any(|place| place.id == id));
+        let current = std::iter::once(state.shown())
+            .chain(state.path().into_iter().rev().map(Shown::Container))
+            .find(|&shown| view.entries.iter().any(|stop| stop.shown() == shown));
         Self {
             document: state.document(),
             editing: state
@@ -81,18 +79,18 @@ impl<'a> SidebarPane<'a> {
         let (id, field) = self.editing?;
         let content = content(area);
         let offset = self.offset(content);
-        let (index, place) = self
+        let (index, stop) = self
             .view
             .entries
             .iter()
             .enumerate()
-            .find(|(_, place)| place.id == id)?;
+            .find(|(_, stop)| stop.shown() == Shown::Container(id))?;
         let row = self.lines.get(index)?.checked_sub(offset)?;
         let y = content.y
             + u16::try_from(row)
                 .ok()
                 .filter(|&row| row < content.height)?;
-        let title = self.title(place, content);
+        let title = self.title(*stop, content);
         let caret = Span::raw(field.text().get(..field.caret()).unwrap_or_default()).width();
         let x = usize::from(title.x) + caret - title.shift;
         let x = u16::try_from(x).ok().filter(|&x| x < content.right())?;
@@ -109,15 +107,15 @@ impl<'a> SidebarPane<'a> {
             })
     }
 
-    /// Where the title of `place` starts in `content`, and how far it is scrolled sideways to
+    /// Where the title of `stop` starts in `content`, and how far it is scrolled sideways to
     /// keep the caret in view while it is edited.
-    fn title(&self, place: &Place, content: Rect) -> Title {
+    fn title(&self, stop: Stop, content: Rect) -> Title {
         let column = |columns: usize| u16::try_from(columns).unwrap_or(u16::MAX);
-        let icon_x = content.x.saturating_add(column(place.depth * 2 + 1));
-        let glyph = Span::raw(icon(place.kind).glyph(self.icons)).width() + 1;
+        let icon_x = content.x.saturating_add(column(stop.depth() * 2 + 1));
+        let glyph = Span::raw(super::stop_icon(stop).glyph(self.icons)).width() + 1;
         let x = icon_x.saturating_add(column(glyph));
         let shift = match self.editing {
-            Some((id, field)) if id == place.id => {
+            Some((id, field)) if stop.shown() == Shown::Container(id) => {
                 let caret = Span::raw(field.text().get(..field.caret()).unwrap_or_default());
                 let room = usize::from(content.right().saturating_sub(x));
                 (caret.width() + 1).saturating_sub(room).min(caret.width())
@@ -131,22 +129,22 @@ impl<'a> SidebarPane<'a> {
         }
     }
 
-    /// How the title of `place` is drawn: in its kind's color, areas bold as headers.
-    fn title_style(&self, place: &Place) -> Style {
-        let style = Style::new().fg(self.theme.kind(place.kind));
-        if place.kind == ItemKind::Area {
+    /// How the title of `stop` is drawn: in its color, areas bold as headers.
+    fn title_style(&self, stop: Stop) -> Style {
+        let style = Style::new().fg(super::stop_color(self.theme, stop));
+        if matches!(stop, Stop::Place(place) if place.kind == ItemKind::Area) {
             style.add_modifier(Modifier::BOLD)
         } else {
             style
         }
     }
 
-    /// The line of the title of `place`: its text, or the text edited with the selected part in
+    /// The line of the title of `stop`: its text, or the text edited with the selected part in
     /// the selection colors.
-    fn title_line(&self, place: &Place) -> Line<'a> {
-        let style = self.title_style(place);
-        match self.editing {
-            Some((id, field)) if id == place.id => {
+    fn title_line(&self, stop: Stop) -> Line<'a> {
+        let style = self.title_style(stop);
+        match (self.editing, stop) {
+            (Some((id, field)), Stop::Place(place)) if id == place.id => {
                 let text = field.text();
                 let selection = field.selection().unwrap_or(field.caret()..field.caret());
                 let selected = Style::new()
@@ -158,7 +156,7 @@ impl<'a> SidebarPane<'a> {
                     Span::styled(text.get(selection.end..).unwrap_or_default(), style),
                 ])
             }
-            _ => {
+            (_, Stop::Place(place)) => {
                 let title = self
                     .document
                     .node(place.id)
@@ -166,6 +164,7 @@ impl<'a> SidebarPane<'a> {
                     .map_or("", |item| item.title.as_str());
                 Line::styled(title, style)
             }
+            (_, Stop::View(view)) => Line::styled(view.title(), style),
         }
     }
 }
@@ -184,14 +183,16 @@ impl Widget for SidebarPane<'_> {
         let offset = self.offset(content);
         let rows: Vec<Rect> = content.rows().collect();
         let entries = self.view.entries.iter().zip(&self.lines).enumerate();
-        for (index, (place, &line)) in entries {
+        for (index, (&stop, &line)) in entries {
             let Some(&row) = line.checked_sub(offset).and_then(|row| rows.get(row)) else {
                 continue;
             };
             let focused = self.view.keys && Some(index) == self.view.focused;
-            let editing = self.editing.is_some_and(|(id, _)| id == place.id);
+            let editing = self
+                .editing
+                .is_some_and(|(id, _)| stop.shown() == Shown::Container(id));
             // The text field marks its selection on the selection background.
-            if Some(place.id) == self.current && !editing {
+            if Some(stop.shown()) == self.current && !editing {
                 buf.set_style(row, Style::new().bg(theme.selection));
             } else if focused {
                 buf.set_style(row, Style::new().bg(theme.current_line));
@@ -199,15 +200,21 @@ impl Widget for SidebarPane<'_> {
             if focused {
                 buf.set_string(row.x, row.y, FOCUS_MARKER, Style::new().fg(theme.focus));
             }
-            let title = self.title(place, content);
-            let count = match place.open_tasks {
-                0 => Span::raw(""),
-                count => Span::styled(format!(" {count}"), Style::new().fg(theme.dim_text)),
+            let title = self.title(stop, content);
+            let count = match stop {
+                Stop::Place(place) if place.open_tasks > 0 => Span::styled(
+                    format!(" {}", place.open_tasks),
+                    Style::new().fg(theme.dim_text),
+                ),
+                _ => Span::raw(""),
             };
             let count_width = u16::try_from(count.width()).unwrap_or(u16::MAX);
             let icon_area = Rect::new(title.icon, row.y, title.x.saturating_sub(title.icon), 1);
-            Span::styled(icon(place.kind).glyph(self.icons), self.title_style(place))
-                .render(icon_area.intersection(row), buf);
+            Span::styled(
+                super::stop_icon(stop).glyph(self.icons),
+                self.title_style(stop),
+            )
+            .render(icon_area.intersection(row), buf);
             let right = if editing { 0 } else { count_width };
             let text = Rect::new(
                 title.x,
@@ -215,7 +222,7 @@ impl Widget for SidebarPane<'_> {
                 row.right().saturating_sub(title.x).saturating_sub(right),
                 1,
             );
-            Paragraph::new(self.title_line(place))
+            Paragraph::new(self.title_line(stop))
                 .scroll((0, u16::try_from(title.shift).unwrap_or(u16::MAX)))
                 .render(text.intersection(row), buf);
             if !editing {
@@ -239,32 +246,41 @@ fn content(area: Rect) -> Rect {
     }
 }
 
-/// The line each of `entries` is drawn on: a blank line sets off the Inbox, the projects in no
-/// area and each area with what it holds.
-fn lines(entries: &[Place]) -> Vec<usize> {
+/// The line each of `entries` is drawn on: a blank line sets off the Inbox, the views, the
+/// projects in no area and each area with what it holds (D-45).
+fn lines(entries: &[Stop]) -> Vec<usize> {
+    #[derive(PartialEq)]
+    enum Group {
+        Inbox,
+        Views,
+        Projects,
+        Area,
+    }
     let mut line = 0;
     let mut group = None;
     let mut lines = Vec::with_capacity(entries.len());
-    for place in entries {
-        if place.depth == 0 {
-            if group.is_some() && (place.kind == ItemKind::Area || group == Some(ItemKind::Inbox)) {
+    for &stop in entries {
+        if stop.depth() == 0 {
+            let this = match stop {
+                Stop::Place(place) => match place.kind {
+                    ItemKind::Inbox => Group::Inbox,
+                    ItemKind::Area => Group::Area,
+                    _ => Group::Projects,
+                },
+                Stop::View(_) => Group::Views,
+            };
+            if group
+                .as_ref()
+                .is_some_and(|group| this == Group::Area || *group != this)
+            {
                 line += 1;
             }
-            group = Some(place.kind);
+            group = Some(this);
         }
         lines.push(line);
         line += 1;
     }
     lines
-}
-
-/// The icon of an entry of `kind`.
-fn icon(kind: ItemKind) -> Icon {
-    match kind {
-        ItemKind::Inbox => Icon::Inbox,
-        ItemKind::Area => Icon::Area,
-        _ => Icon::Project,
-    }
 }
 
 #[cfg(test)]
@@ -273,7 +289,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::{Command, Message, Motion, Opened, TextEdit, update},
+        app::{Command, Message, Motion, Opened, TextEdit, update, view::View},
         domain::{Item, PlacementError},
         ui::BuiltIn,
     };
@@ -324,14 +340,19 @@ mod tests {
     fn draws_the_groups_with_counts_and_marks_the_focus_while_it_has_the_keys()
     -> Result<(), PlacementError> {
         let mut state = state()?;
-        for _ in 0..3 {
-            give(&mut state, Command::Focus(crate::app::Focus::Next));
+        for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
+            give(&mut state, Command::Focus(motion));
         }
-        let (rows, buf, caret) = draw(&state, 20, 8);
+        let (rows, buf, caret) = draw(&state, 20, 13);
         assert_eq!(
             rows,
             [
                 " ⊔ Inbox           │",
+                "                   │",
+                " ☼ Today           │",
+                " » Upcoming        │",
+                " ∷ All             │",
+                " ✕ Trash           │",
                 "                   │",
                 " ○ Learn Rust      │",
                 "                   │",
@@ -342,31 +363,43 @@ mod tests {
             ]
         );
         assert_eq!(caret, None, "nothing is edited");
+        let line = |title: &str| {
+            let at = rows.iter().position(|row| row.contains(title));
+            at.and_then(|at| u16::try_from(at).ok()).unwrap_or(u16::MAX)
+        };
+        let (today, work, website) = (line("Today"), line("Work"), line("Website"));
         let theme = BuiltIn::default().colors();
-        assert_eq!(buf[(5, 5)].bg, theme.current_line);
-        assert_eq!(buf[(0, 5)].fg, theme.focus);
+        assert_eq!(buf[(5, website)].bg, theme.current_line);
+        assert_eq!(buf[(0, website)].fg, theme.focus);
         assert_eq!(
             (buf[(3, 0)].fg, buf[(5, 0)].bg),
             (theme.primary, theme.selection),
             "the Inbox, shown in the pane"
         );
-        assert_eq!(buf[(3, 4)].fg, theme.headers, "an area");
-        assert_eq!(buf[(7, 6)].fg, theme.primary, "a project");
-        assert_eq!(buf[(17, 4)].fg, theme.dim_text, "a count");
+        assert_eq!(buf[(3, today)].fg, theme.primary, "a view");
+        assert_eq!(buf[(3, work)].fg, theme.headers, "an area");
+        assert_eq!(buf[(7, website)].fg, theme.primary, "a project");
+        assert_eq!(buf[(17, work)].fg, theme.dim_text, "a count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusPane);
-        let (rows, buf, _) = draw(&state, 20, 8);
-        assert!(rows[5].starts_with("   ○ Website"), "no marker: {rows:?}");
-        assert_ne!(buf[(5, 5)].bg, theme.current_line);
+        let (rows, buf, _) = draw(&state, 20, 13);
+        assert!(
+            rows[usize::from(website)].starts_with("   ○ Website"),
+            "no marker: {rows:?}"
+        );
+        assert_ne!(buf[(5, website)].bg, theme.current_line);
         give(&mut state, Command::FocusSidebar);
         give(&mut state, Command::Go(crate::app::Go::Into));
-        let (_, buf, _) = draw(&state, 20, 8);
+        let (_, buf, _) = draw(&state, 20, 13);
         assert_eq!(
-            (buf[(5, 5)].fg, buf[(5, 5)].bg),
+            (buf[(5, website)].fg, buf[(5, website)].bg),
             (theme.primary, theme.selection),
             "the container shown keeps its kind's color on the selection background"
         );
         assert_ne!(buf[(5, 0)].bg, theme.selection);
+        give(&mut state, Command::Go(crate::app::Go::View(View::Today)));
+        let (_, buf, _) = draw(&state, 20, 13);
+        assert_eq!(buf[(5, today)].bg, theme.selection, "the view shown");
         Ok(())
     }
 
@@ -395,8 +428,8 @@ mod tests {
     fn the_title_edited_shows_in_its_row_scrolled_to_keep_the_caret() -> Result<(), PlacementError>
     {
         let mut state = state()?;
-        for _ in 0..3 {
-            give(&mut state, Command::Focus(crate::app::Focus::Next));
+        for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
+            give(&mut state, Command::Focus(motion));
         }
         give(&mut state, Command::RenameContainer);
         let (rows, _, caret) = draw(&state, 20, 3);

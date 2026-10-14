@@ -88,3 +88,22 @@ fn filter_today_by_a_tag() {
         "the crumbs name the view and the filter, and only the group with a tagged row is left"
     );
 }
+
+// FR-VIEW-06, FR-VIEW-10
+#[test]
+fn open_today_from_the_sidebar() {
+    let mut harness = Harness::new(80, 16);
+    harness.type_text("Mj");
+    harness.key(KeyCode::Enter);
+    let rows = trimmed(&harness);
+    assert!(
+        rows[1].starts_with("                         │"),
+        "{rows:#?}"
+    );
+    assert!(rows[2].starts_with(" 󰖙 Today"), "{rows:#?}");
+    assert!(rows[0].contains("│  󰖙 Today"), "Enter opens it: {rows:#?}");
+    assert!(
+        !rows.iter().any(|row| row.contains("Logbook")),
+        "the Logbook is left out of the sidebar"
+    );
+}

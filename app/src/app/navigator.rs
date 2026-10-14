@@ -17,6 +17,26 @@ pub enum Stop {
     View(View),
 }
 
+impl Stop {
+    /// What a pane shows of it.
+    #[must_use]
+    pub const fn shown(self) -> Shown {
+        match self {
+            Self::Place(place) => Shown::Container(place.id),
+            Self::View(view) => Shown::View(view),
+        }
+    }
+
+    /// How deep in the tree it is: 0 for a view.
+    #[must_use]
+    pub const fn depth(self) -> usize {
+        match self {
+            Self::Place(place) => place.depth,
+            Self::View(_) => 0,
+        }
+    }
+}
+
 /// A place the Navigator lists, with what it shows of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Place {
@@ -62,7 +82,7 @@ pub(super) fn reopen(document: &Document, shown: Shown, query: &str) -> Picker<S
 
 /// Every entry, in order: the Inbox, then the views as the view registry lists them, then the
 /// other [`places`].
-fn stops(document: &Document) -> Vec<Candidate<Stop>> {
+pub(super) fn stops(document: &Document) -> Vec<Candidate<Stop>> {
     let mut places = places(document).into_iter().map(|place| Candidate {
         value: Stop::Place(place.value),
         text: place.text,

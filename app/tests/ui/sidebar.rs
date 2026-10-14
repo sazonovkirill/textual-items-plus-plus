@@ -38,10 +38,10 @@ fn status(harness: &Harness) -> String {
 }
 
 /// The demo with the sidebar shown, focused on its project in no area, Learn Rust, below the
-/// Inbox.
+/// Inbox and the views.
 fn sidebar() -> Harness {
     let mut harness = Harness::new(80, 24);
-    harness.type_text("Mj");
+    harness.type_text("Mjjjjj");
     harness
 }
 
@@ -53,6 +53,10 @@ fn reorder_areas_in_the_sidebar() {
         entries(&harness),
         [
             " 󰚇 Inbox                3",
+            " 󰖙 Today",
+            " 󱄵 Upcoming",
+            " 󰉹 All",
+            " 󰩺 Trash",
             "*󰉖 Learn Rust           2",
             " 󰆧 Work                 7",
             "   󰉖 Website            5",
@@ -67,12 +71,12 @@ fn reorder_areas_in_the_sidebar() {
             .is_some_and(|row| row.chars().take(25).all(|c| c == ' '))
     };
     assert!(
-        blank(1) && blank(3) && blank(7),
+        blank(1) && blank(6) && blank(8) && blank(12),
         "blank lines set the groups off"
     );
     harness.press(KeyCode::Char('j'), KeyModifiers::ALT);
     assert_eq!(
-        entries(&harness).get(1).map(String::as_str),
+        entries(&harness).get(5).map(String::as_str),
         Some("*󰉖 Learn Rust           2"),
         "no other project in no area to change places with"
     );
@@ -81,7 +85,7 @@ fn reorder_areas_in_the_sidebar() {
     harness.press(KeyCode::Char('k'), KeyModifiers::ALT);
     let moved = entries(&harness);
     assert_eq!(
-        moved.get(2..5),
+        moved.get(6..9),
         Some(
             &[
                 "*󰆧 Home                 5".to_owned(),
@@ -93,7 +97,7 @@ fn reorder_areas_in_the_sidebar() {
     );
     harness.type_text("z");
     assert_eq!(
-        entries(&harness).get(5).map(String::as_str),
+        entries(&harness).get(9).map(String::as_str),
         Some("*󰆧 Home                 5")
     );
     harness.type_text("M");
@@ -112,14 +116,14 @@ fn add_rename_and_open_entries_in_the_sidebar() {
     harness.type_text("op");
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
-        Some(Position::new(3, 2)),
+        Some(Position::new(3, 7)),
         "the caret in the new entry, first of the projects in no area"
     );
     harness.type_text("Garden");
     harness.key(KeyCode::Enter);
     let added = entries(&harness);
     assert_eq!(
-        added.get(1).map(String::as_str),
+        added.get(5).map(String::as_str),
         Some("*󰉖 Garden"),
         "{added:?}"
     );
@@ -131,14 +135,14 @@ fn add_rename_and_open_entries_in_the_sidebar() {
     harness.type_text("s");
     harness.key(KeyCode::Enter);
     assert_eq!(
-        entries(&harness).get(1).map(String::as_str),
+        entries(&harness).get(5).map(String::as_str),
         Some("*󰉖 Gardens")
     );
     harness.type_text("Oa");
     harness.type_text("Errands");
     harness.key(KeyCode::Enter);
     assert_eq!(
-        entries(&harness).get(3).map(String::as_str),
+        entries(&harness).get(7).map(String::as_str),
         Some("*󰆧 Errands"),
         "first of the areas"
     );
@@ -164,7 +168,7 @@ fn move_a_project_into_an_area_and_outdent_it_again() {
     );
     harness.type_text("[");
     assert_eq!(
-        entries(&harness).get(1).map(String::as_str),
+        entries(&harness).get(5).map(String::as_str),
         Some("*󰉖 Learn Rust           2")
     );
     harness.type_text("gg]");
@@ -216,12 +220,12 @@ fn the_keys_go_to_the_pane_and_back_to_the_sidebar() {
     harness.ctrl('w');
     harness.key(KeyCode::Left);
     assert_eq!(
-        entries(&harness).get(1).map(String::as_str),
+        entries(&harness).get(5).map(String::as_str),
         Some("*󰉖 Learn Rust           2")
     );
     harness.type_text("k");
     assert_eq!(pane_focus(&harness), None);
-    assert!(entries(&harness)[0].starts_with('*'));
+    assert_eq!(entries(&harness)[4], "*󰩺 Trash");
 }
 
 // FR-VIEW-10, FR-EDIT-04, FR-UI-05
