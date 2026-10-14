@@ -476,8 +476,9 @@ impl State {
     /// again, else on the Inbox, and each pane's attachments panel open while its item is and
     /// [stays](attachments::stays) open, on what it selected as far as that is found again, and
     /// the sidebar on its entry and its collapsed areas as they are found again. The tag filter
-    /// stays while the container shown is found again as it was. The undo history is cleared,
-    /// since its steps fit only the document as it was.
+    /// stays while the container shown is found again as it was. The context menu closes, since
+    /// what it offers was worked out from the document as it was (D-110). The undo history is
+    /// cleared, since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -519,6 +520,7 @@ impl State {
         }
         self.edit_dialog =
             (self.edit_dialog.take()).and_then(|dialog| dialog.rematched(new, exact));
+        self.context_menu = None;
         self.sidebar.rematch(exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
@@ -982,6 +984,34 @@ mod tests {
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
         assert!(state.edit_dialog().is_none(), "a, which it edits, is gone");
+        Ok(())
+    }
+
+    // F-FILE-06, FR-KEY-07
+    #[test]
+    fn a_reload_closes_the_context_menu() -> TestResult {
+        let mut state = opened(&["a", "b"])?;
+        command(&mut state, Command::Focus(Focus::Last));
+        command(&mut state, Command::ContextMenu);
+        assert!(state.context_menu().is_some());
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a"])?)),
+        );
+        assert!(
+            state.context_menu().is_none(),
+            "b, which it acts on, is gone"
+        );
+        let mut state = opened(&["a", "b"])?;
+        command(&mut state, Command::ContextMenu);
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a", "b", "c"])?)),
+        );
+        assert!(
+            state.context_menu().is_none(),
+            "what it offers fits the document as it was"
+        );
         Ok(())
     }
 

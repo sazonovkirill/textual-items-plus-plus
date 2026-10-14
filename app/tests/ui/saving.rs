@@ -174,6 +174,22 @@ fn a_reload_keeps_the_sidebar_on_its_entry_and_its_areas_collapsed() {
     );
 }
 
+// F-FILE-06, FR-KEY-07, D-110
+#[test]
+fn a_reload_closes_the_context_menu() {
+    let (_dir, path, mut harness) = on_file("Inbox:\n\t- Added ext\n\t- Buy milk\n\t- Call mom\n");
+    harness.type_text("G");
+    harness.press(KeyCode::Char('\\'), KeyModifiers::CONTROL);
+    assert!(harness.screen().contains("Context Menu"));
+    fs::write(&path, "Inbox:\n\t- Added ext\n\t- Buy milk\n").expect("written");
+    harness.check();
+    assert!(
+        !harness.screen().contains("Context Menu"),
+        "{}",
+        harness.screen()
+    );
+}
+
 // F-FILE-06
 #[test]
 fn the_watcher_sees_a_change_made_elsewhere() {
