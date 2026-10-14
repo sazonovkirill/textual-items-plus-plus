@@ -62,7 +62,7 @@ impl Walk {
             return;
         }
         if let Some(row) = self.row(id, item) {
-            let bucket = if item.completed.is_some() {
+            let bucket = if item.completion().is_some() {
                 Bucket::Completed
             } else if item.overdue(self.today) {
                 Bucket::Overdue
@@ -71,7 +71,7 @@ impl Walk {
             };
             self.entries.push((bucket, row));
         }
-        if item.completed.is_some() {
+        if item.completion().is_some() {
             return;
         }
         for &child in document.children(id) {
@@ -82,7 +82,8 @@ impl Walk {
     /// The row Today lists `item`, numbered `id`, in, if it lists it.
     fn row(&self, id: ItemId, item: &Item) -> Option<Row> {
         let come = |date: Option<Date>| date.is_some_and(|date| date <= self.today);
-        if !(come(item.start) || come(item.due)) || item.completed.is_some() && !self.show_completed
+        if !(come(item.start) || come(item.due))
+            || item.completion().is_some() && !self.show_completed
         {
             return None;
         }
@@ -217,6 +218,24 @@ mod tests {
             item.completed = Some(Completion::On(TODAY));
         });
         assert_eq!(groups(&document, TODAY, false), []);
+    }
+
+    // D-81, FR-VIEW-06
+    #[test]
+    fn an_area_a_file_marks_done_is_open_and_lists_what_it_holds() {
+        let mut document = Document::new();
+        let area = add(&mut document, None, Area, None, None);
+        change(&mut document, area, |item| {
+            item.completed = Some(Completion::Undated);
+        });
+        let inside = add(&mut document, Some(area), Task, Some(0), None);
+        assert_eq!(
+            groups(&document, TODAY, false),
+            [Group {
+                heading: None,
+                rows: vec![task(inside)],
+            }]
+        );
     }
 
     #[test]

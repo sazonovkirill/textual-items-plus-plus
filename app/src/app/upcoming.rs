@@ -115,11 +115,11 @@ fn collect(document: &Document, id: ItemId, today: Date, dated: &mut Vec<Entry>)
     if let (Some(row), Some(date)) = (row, date) {
         dated.push(Entry {
             date,
-            completed: item.completed.is_some(),
+            completed: item.completion().is_some(),
             row,
         });
     }
-    if item.completed.is_none() {
+    if item.completion().is_none() {
         for &child in document.children(id) {
             collect(document, child, today, dated);
         }
@@ -346,6 +346,19 @@ mod tests {
             listed(&document, TODAY, true),
             [(tomorrow, vec![open, done])]
         );
+        Ok(())
+    }
+
+    // D-81, FR-VIEW-02
+    #[test]
+    fn an_area_a_file_marks_done_is_open_and_lists_what_it_holds() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let mut area = Item::new(ItemKind::Area, "done");
+        area.completed = Some(Completion::Undated);
+        let area = document.push(None, Node::Item(area))?;
+        let inside = task(&mut document, area, TOMORROW, None)?;
+        let tomorrow = Some(Heading::Period(Period::Day(date(2026, 10, 15))));
+        assert_eq!(listed(&document, TODAY, false), [(tomorrow, vec![inside])]);
         Ok(())
     }
 
