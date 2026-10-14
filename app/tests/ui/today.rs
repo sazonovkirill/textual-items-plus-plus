@@ -25,7 +25,7 @@ fn open_today() {
         "▌ ☐ Answer the recruiter's email                \u{f0a31} yesterday",
         "▌   Work",
         "  ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
-        "    Work / Website › Launch",
+        "    Work › Website › Launch",
         "  ☐ Review two portfolios                           \u{f166c} today",
         "    Work › Hiring",
         "  ☐ Water the plants                            \u{f166d} yesterday",
@@ -78,7 +78,7 @@ fn filter_today_by_a_tag() {
         "  \u{f0599} Today                                        \u{f04fc} @writing",
         "",
         "▌ ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
-        "▌   Work / Website › Launch",
+        "▌   Work › Website › Launch",
     ];
     filtered.resize(15, "");
     filtered.push(" \u{f01bf} NAVIGATE · Demo data · not saved");
