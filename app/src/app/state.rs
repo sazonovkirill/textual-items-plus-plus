@@ -20,6 +20,7 @@ use super::{
     sidebar::{self, Sidebar},
     tags::{self, Choice, TagPicker, TagsView},
     trash,
+    view::{self, Group, Shown},
     visits::{Visit, Visits},
 };
 use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Tag, Transaction, dates::DateKind};
@@ -38,7 +39,9 @@ pub enum Opened {
 pub struct State {
     pub(super) document: Document,
     opened: Opened,
-    pub(super) container: ItemId,
+    pub(super) shown: Shown,
+    /// The local date by the frontend's clock at the latest message, which views list by.
+    pub(super) today: Date,
     pub(super) selection: Selection,
     pub(super) history: History,
     /// Whether the pane shows completed items (FR-VIEW-11); per pane once there are several.
@@ -62,14 +65,15 @@ pub struct State {
 }
 
 impl State {
-    /// The app showing `document`, opened from `opened`, at home: the Inbox, its first row
-    /// focused (FR-NAV-02). The file holds the document, and every change to it is saved; the
+    /// The app showing `document`, opened from `opened` on `today`, at home: the Inbox, its first
+    /// row focused (FR-NAV-02). The file holds the document, and every change to it is saved; the
     /// demo document is never saved (FR-STORE-01, FR-STORE-09).
     #[must_use]
-    pub fn new(document: Document, opened: Opened) -> Self {
+    pub fn new(document: Document, opened: Opened, today: Date) -> Self {
         let saving = Saving::new(document.revision(), true, matches!(opened, Opened::File(_)));
         let mut state = Self {
-            container: document.inbox(),
+            shown: Shown::Container(document.inbox()),
+            today,
             document,
             opened,
             selection: Selection::default(),
@@ -101,34 +105,70 @@ impl State {
         &self.opened
     }
 
-    /// The container shown.
+    /// What the pane shows.
     #[must_use]
-    pub fn container(&self) -> ItemId {
-        self.container
+    pub fn shown(&self) -> Shown {
+        self.shown
+    }
+
+    /// The container shown, unless the pane shows a view.
+    #[must_use]
+    pub fn container(&self) -> Option<ItemId> {
+        match self.shown {
+            Shown::Container(id) => Some(id),
+            Shown::View(_) => None,
+        }
     }
 
     /// The containers from the top level down to the one shown, which the breadcrumbs show
-    /// (FR-NAV-03).
+    /// (FR-NAV-03); none for a view.
     #[must_use]
     pub fn path(&self) -> Vec<ItemId> {
-        container::path(&self.document, self.container)
+        self.container()
+            .map(|id| container::path(&self.document, id))
+            .unwrap_or_default()
     }
 
-    /// The rows the shown container lists, in order, those the tag filter keeps.
+    /// The rows the pane lists, in order, those the tag filter keeps.
     #[must_use]
     pub fn rows(&self) -> Vec<Row> {
-        shown(
+        listed(
             &self.document,
-            self.container,
+            (self.shown, self.today),
             self.show_completed,
             &self.filter,
         )
+    }
+
+    /// The groups of the view shown, each under its heading, with the rows the tag filter keeps;
+    /// none for a container.
+    #[must_use]
+    pub fn groups(&self) -> Vec<Group> {
+        let Shown::View(shown) = self.shown else {
+            return Vec::new();
+        };
+        view::groups(&self.document, shown, self.today, self.show_completed)
+            .into_iter()
+            .filter_map(|group| {
+                let rows = tags::filtered(&self.document, group.rows, &self.filter);
+                (!rows.is_empty()).then_some(Group { rows, ..group })
+            })
+            .collect()
     }
 
     /// The tags the pane is filtered by, none when it is not (FR-TAG-04).
     #[must_use]
     pub fn tag_filter(&self) -> &[String] {
         &self.filter
+    }
+
+    /// Keeps `today`, the local date by the frontend's clock, for the views to list by.
+    pub(super) fn set_today(&mut self, today: Date) {
+        if today != self.today {
+            let before = self.rows();
+            self.today = today;
+            self.settle(&before);
+        }
     }
 
     /// Whether completed items are shown.
@@ -309,14 +349,14 @@ impl State {
     }
 
     /// Pastes `branches` on `side` of the focused row, as one step to undo, focusing the last
-    /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near, or
-    /// while the sidebar has the keys.
+    /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near, while
+    /// the sidebar has the keys, or in a view, which has no place to paste into.
     pub(super) fn paste(&mut self, side: Side, branches: &[Branch]) {
-        if self.sidebar.has_keys() {
+        let Some(container) = self.container().filter(|_| !self.sidebar.has_keys()) else {
             return;
-        }
+        };
         let target = clipboard::Target {
-            container: self.container,
+            container,
             show_completed: self.show_completed,
             focused: self.selection.focused(),
             side,
@@ -370,7 +410,7 @@ impl State {
     pub(super) fn open_tag_filter(&mut self) {
         self.navigator = None;
         self.move_to = None;
-        let rows = container::rows(&self.document, self.container, self.show_completed);
+        let rows = view::rows(&self.document, self.shown, self.today, self.show_completed);
         self.tags = Some(TagPicker::for_filter(&self.document, &rows, &self.filter));
     }
 
@@ -415,21 +455,34 @@ impl State {
     }
 
     /// Moves the selected items one step `direction` among their rows, as one step to undo,
-    /// keeping the focus where it is (FR-OPS-02, FR-OPS-10).
+    /// keeping the focus where it is (FR-OPS-02, FR-OPS-10). A view's order is not the file's,
+    /// so nothing moves there.
     pub(super) fn move_item(&mut self, direction: Direction) {
-        let (container, show_completed) = (self.container, self.show_completed);
+        let Some(container) = self.container() else {
+            return;
+        };
+        let (today, show_completed) = (self.today, self.show_completed);
         let filter = self.filter.clone();
         let transaction =
             moving::shift_all(&self.document, &self.targets(), direction, |document| {
-                shown(document, container, show_completed, &filter)
+                listed(
+                    document,
+                    (Shown::Container(container), today),
+                    show_completed,
+                    &filter,
+                )
             });
         self.change(transaction);
     }
 
     /// Indents the selected items into the item of their kind above them, as one step to undo,
     /// focusing the item the focused one went into, since what it holds is not shown; the status
-    /// line says why when the hierarchy refuses every one (FR-OPS-03).
+    /// line says why when the hierarchy refuses every one (FR-OPS-03). A view has no tree to
+    /// indent in, so nothing happens there.
     pub(super) fn indent(&mut self) {
+        if self.container().is_none() {
+            return;
+        }
         match moving::indent_all(&self.document, &self.targets()) {
             Ok((transaction, moved)) => {
                 let focused = self.selection.focused();
@@ -442,8 +495,11 @@ impl State {
 
     /// Outdents the selected items out of the item of their kind they are in, as one step to
     /// undo, moving the focus on when it leaves the rows; the status line says why when the
-    /// hierarchy refuses every one (FR-OPS-03).
+    /// hierarchy refuses every one (FR-OPS-03). Nothing happens in a view, as for indenting.
     pub(super) fn outdent(&mut self) {
+        if self.container().is_none() {
+            return;
+        }
         match moving::outdent_all(&self.document, &self.targets()) {
             Ok(transaction) => self.change(transaction),
             Err(refusal) => self.notify(Notice::Refused(refusal)),
@@ -462,8 +518,12 @@ impl State {
 
     /// Adds a section or a project, as `kind` says, where the first selected item is, moves the
     /// selected items into it and starts editing its title in its row, picking nothing; the
-    /// status line says why when the hierarchy refuses (FR-OPS-07, FR-OPS-08).
+    /// status line says why when the hierarchy refuses (FR-OPS-07, FR-OPS-08). Nothing happens
+    /// in a view, where the new item would be no row.
     pub(super) fn group(&mut self, kind: ItemKind) {
+        if self.container().is_none() {
+            return;
+        }
         let items = self.targets();
         match converting::group_place(&self.document, &items, kind) {
             Ok(Some(place)) => {
@@ -506,7 +566,7 @@ impl State {
     pub(super) fn edit_description(&mut self, whose: Whose) {
         let id = match whose {
             Whose::Focused => self.selection.focused(),
-            Whose::Shown => Some(self.container),
+            Whose::Shown => self.container(),
         };
         let editing =
             id.and_then(|id| Editing::description(&self.document, id, self.selection.clone()));
@@ -515,14 +575,14 @@ impl State {
 
     /// Adds an empty task on `side` of the focused row, focuses it and starts editing its title.
     /// Nothing is added to a container whose contents are hidden for being completed
-    /// (FR-ORG-09), where it would not show.
+    /// (FR-ORG-09), where it would not show, nor in a view, which has no place for it.
     pub(super) fn new_task(&mut self, side: Side) {
-        if self.document.conceals(self.container) {
+        let Some(container) = self.container().filter(|&id| !self.document.conceals(id)) else {
             return;
-        }
+        };
         let place = adding::place(
             &self.document,
-            self.container,
+            container,
             &self.rows(),
             self.selection.focused(),
             side,
@@ -542,11 +602,14 @@ impl State {
     /// Adds an empty section, project or area, as `kind` says, on `side` of the focus as near as
     /// it can go, and starts editing its title: in its row when the container shown lists it, else
     /// in the pane's heading, the new item opened. Nothing is added where the kind can go nowhere
-    /// near, as a section from the Inbox, or inside a completed container (FR-ORG-09).
+    /// near, as a section from the Inbox, inside a completed container (FR-ORG-09) or from a view.
     pub(super) fn new_container(&mut self, kind: ItemKind, side: Side) {
+        let Some(container) = self.container() else {
+            return;
+        };
         let Some((parent, index)) = adding::container_place(
             &self.document,
-            self.container,
+            container,
             &self.rows(),
             self.selection.focused(),
             kind,
@@ -565,7 +628,7 @@ impl State {
             self.selection.clone(),
         );
         let id = editing.id();
-        if parent == Some(self.container) {
+        if parent == Some(container) {
             self.selection.focus(Some(id));
         } else {
             self.open(id, None);
@@ -587,21 +650,26 @@ impl State {
     }
 
     /// Starts editing the title of the container shown, in the pane's heading. The Inbox keeps
-    /// its name (FR-STORE-08).
+    /// its name (FR-STORE-08), and a view has no container to rename.
     pub(super) fn rename_container(&mut self) {
-        let editing = Editing::existing(&self.document, self.container, self.selection.clone());
+        let editing = self
+            .container()
+            .and_then(|id| Editing::existing(&self.document, id, self.selection.clone()));
         self.start_editing(editing);
     }
 
     /// Moves the container shown to the Trash on `today`, as one step to undo; the pane then
-    /// shows the nearest container above it. The Inbox stays.
+    /// shows the nearest container above it. The Inbox stays, as does a view.
     pub(super) fn delete_container(&mut self, today: Date) {
-        let transaction = trash::delete(&self.document, [self.container], today);
-        self.change(transaction);
+        if let Some(id) = self.container() {
+            let transaction = trash::delete(&self.document, [id], today);
+            self.change(transaction);
+        }
     }
 
     /// Applies `input` to the edited title. Nothing happens outside edit mode.
     pub(super) fn edit_input(&mut self, input: EditInput) {
+        let container = self.container();
         let Some(editing) = self.editing.as_mut() else {
             return;
         };
@@ -612,7 +680,8 @@ impl State {
                 }
             }
             EditInput::Next => {
-                let row = editing.id() != self.container && !self.sidebar.has_keys();
+                let row =
+                    container.is_some_and(|id| id != editing.id()) && !self.sidebar.has_keys();
                 let next = row
                     && editing.part() == Part::Title
                     && matches!(editing.kind(), ItemKind::Task | ItemKind::Section);
@@ -635,7 +704,7 @@ impl State {
         };
         let (id, started) = (editing.id(), editing.revision());
         let in_sidebar = self.sidebar.has_keys();
-        let heading = !in_sidebar && id == self.container;
+        let heading = !in_sidebar && Some(id) == self.container();
         let (transaction, before) = editing.finish(&mut self.document);
         if transaction.ops().is_empty() {
             self.saving.unchanged(started, self.document.revision());
@@ -669,7 +738,7 @@ impl State {
     /// when it is not a row.
     fn change_focusing(&mut self, transaction: Transaction, focused: Option<ItemId>) {
         let before = self.rows();
-        let (container, show_completed) = (self.container, self.show_completed);
+        let (shown, today, show_completed) = (self.shown, self.today, self.show_completed);
         let filter = self.filter.clone();
         let mut after = self.selection.clone();
         self.history
@@ -678,7 +747,7 @@ impl State {
                 transaction,
                 self.selection.clone(),
                 |document| {
-                    let rows = shown(document, container, show_completed, &filter);
+                    let rows = listed(document, (shown, today), show_completed, &filter);
                     after.focus(focus::kept(&before, &rows, focused));
                     after
                 },
@@ -730,7 +799,7 @@ impl State {
                 | Command::Sidebar
                 | Command::FocusSidebar
                 | Command::FocusPane
-                | Command::Go(Go::Home | Go::Back | Go::Forward)
+                | Command::Go(Go::Home | Go::Back | Go::Forward | Go::View(_))
                 | Command::KeepMine
                 | Command::TakeTheirs
                 | Command::ShowDiff
@@ -842,7 +911,7 @@ impl State {
     /// shown no longer opens, having gone to the Trash or into a completed item, shows the
     /// nearest one above it that does, else the Inbox, focused where it was.
     fn settle(&mut self, before: &[Row]) {
-        if !container::opens(&self.document, self.container) {
+        if !view::opens(&self.document, self.shown) {
             let path = self.path();
             let document = &self.document;
             let visit = path
@@ -851,11 +920,11 @@ impl State {
                 .find(|&&[parent, _]| container::opens(document, parent))
                 .map_or(
                     Visit {
-                        container: document.inbox(),
+                        shown: Shown::Container(document.inbox()),
                         focused: None,
                     },
                     |&[parent, child]| Visit {
-                        container: parent,
+                        shown: Shown::Container(parent),
                         focused: Some(child),
                     },
                 );
@@ -880,21 +949,28 @@ impl State {
                     .rows()
                     .into_iter()
                     .find(|row| Some(row.id()) == focused);
-                if let Some(Row::Section(id) | Row::Project(id)) = row {
-                    self.open(id, None);
+                match row {
+                    Some(Row::Section(id) | Row::Project(id)) => self.open(id, None),
+                    Some(Row::Task { id, .. }) if self.container().is_none() => {
+                        if let Some(listing) = container::listing(document, id) {
+                            self.open(listing, Some(id));
+                        }
+                    }
+                    _ => {}
                 }
             }
             Go::Up => {
                 let path = self.path();
-                if let [.., parent, _] = path.as_slice() {
-                    self.open(*parent, Some(self.container));
+                if let [.., parent, shown] = path.as_slice() {
+                    self.open(*parent, Some(*shown));
                 }
             }
             Go::Home => self.open(document.inbox(), None),
+            Go::View(shown) => self.show(Shown::View(shown), None),
             Go::Back => {
                 let visit = self
                     .visits
-                    .back(self.visit(), |id| container::opens(document, id));
+                    .back(self.visit(), |shown| view::opens(document, shown));
                 if let Some(visit) = visit {
                     self.arrive(visit);
                 }
@@ -902,7 +978,7 @@ impl State {
             Go::Forward => {
                 let visit = self
                     .visits
-                    .forward(self.visit(), |id| container::opens(document, id));
+                    .forward(self.visit(), |shown| view::opens(document, shown));
                 if let Some(visit) = visit {
                     self.arrive(visit);
                 }
@@ -918,7 +994,7 @@ impl State {
         self.tags = None;
         self.navigator = match self.navigator {
             Some(_) => None,
-            None => Some(navigator::open(&self.document, self.container)),
+            None => Some(navigator::open(&self.document, self.container())),
         };
     }
 
@@ -941,26 +1017,31 @@ impl State {
     /// Where the pane is.
     fn visit(&self) -> Visit {
         Visit {
-            container: self.container,
+            shown: self.shown,
             focused: self.selection.focused(),
         }
     }
 
-    /// Shows `container`, focused on `focused` or its first row, so that Back returns to where
-    /// the pane was. Opening the container shown changes nothing.
+    /// Shows `container` as [`show`](Self::show) does.
     fn open(&mut self, container: ItemId, focused: Option<ItemId>) {
-        if container != self.container {
+        self.show(Shown::Container(container), focused);
+    }
+
+    /// Shows `shown`, focused on `focused` or its first row, so that Back returns to where the
+    /// pane was. Showing what is shown changes nothing.
+    fn show(&mut self, shown: Shown, focused: Option<ItemId>) {
+        if shown != self.shown {
             self.visits.leave(self.visit());
-            self.arrive(Visit { container, focused });
+            self.arrive(Visit { shown, focused });
         }
     }
 
-    /// Shows the container of `visit`, focused on its item when that is a row there and on the
-    /// first row otherwise, with nothing picked and no tag filter.
+    /// Shows what `visit` showed, focused on its item when that is a row there and on the first
+    /// row otherwise, with nothing picked and no tag filter.
     fn arrive(&mut self, visit: Visit) {
         self.selection.clear();
         self.filter.clear();
-        self.container = visit.container;
+        self.shown = visit.shown;
         let rows = self.rows();
         let focused = visit
             .focused
@@ -970,17 +1051,17 @@ impl State {
     }
 }
 
-/// The rows `container` shows in `document`, completed items among them when `show_completed`,
-/// those carrying every tag of `filter`.
-fn shown(
+/// The rows `shown` lists in `document` on the date it is shown, completed items among them when
+/// `show_completed`, those carrying every tag of `filter`.
+fn listed(
     document: &Document,
-    container: ItemId,
+    (shown, today): (Shown, Date),
     show_completed: bool,
     filter: &[String],
 ) -> Vec<Row> {
     tags::filtered(
         document,
-        container::rows(document, container, show_completed),
+        view::rows(document, shown, today, show_completed),
         filter,
     )
 }
@@ -990,7 +1071,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::TextEdit;
+    use crate::app::{TagMark, TextEdit, view::View};
     use crate::domain::{Item, ItemKind, Node, PlacementError};
 
     // FR-NAV-02, FR-STORE-01
@@ -1000,8 +1081,8 @@ mod tests {
         let inbox = document.inbox();
         let first = document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "a")))?;
         document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "b")))?;
-        let state = State::new(document.clone(), Opened::Demo);
-        assert_eq!(state.container(), inbox);
+        let state = State::new(document.clone(), Opened::Demo, TODAY);
+        assert_eq!(state.container(), Some(inbox));
         assert_eq!(state.selection().focused(), Some(first));
         assert_eq!(state.rows(), container::rows(&document, inbox, false));
         assert_eq!(state.document(), &document);
@@ -1014,6 +1095,7 @@ mod tests {
         let state = State::new(
             Document::new(),
             Opened::File(PathBuf::from("todo.taskpaper")),
+            TODAY,
         );
         assert_eq!(state.selection(), &Selection::default());
         assert_eq!(
@@ -1029,7 +1111,7 @@ mod tests {
         let inbox = document.inbox();
         document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "a")))?;
         let last = document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "b")))?;
-        let mut state = State::new(document, Opened::Demo);
+        let mut state = State::new(document, Opened::Demo, TODAY);
         state.move_focus(Focus::Last);
         assert_eq!(state.selection().items(&state.rows()), [last]);
         Ok(())
@@ -1062,7 +1144,7 @@ mod tests {
         let site = add(&mut document, work, ItemKind::Project, "Site")?;
         let in_site = add(&mut document, site, ItemKind::Task, "p")?;
         Ok(Fixture {
-            state: State::new(document, Opened::Demo),
+            state: State::new(document, Opened::Demo, TODAY),
             inbox_task,
             work,
             loose,
@@ -1082,7 +1164,7 @@ mod tests {
         state.navigator_input(PickerInput::Choose);
     }
 
-    fn at(state: &State) -> (ItemId, Option<ItemId>) {
+    fn at(state: &State) -> (Option<ItemId>, Option<ItemId>) {
         (state.container(), state.selection().focused())
     }
 
@@ -1101,22 +1183,30 @@ mod tests {
             ..
         } = fixture()?;
         navigate(&mut state, "Work");
-        assert_eq!(at(&state), (work, Some(loose)));
+        assert_eq!(at(&state), (Some(work), Some(loose)));
         assert_eq!(state.path(), [work]);
         state.go(Go::Into);
-        assert_eq!(at(&state), (work, Some(loose)), "a task does not open");
+        assert_eq!(
+            at(&state),
+            (Some(work), Some(loose)),
+            "a task does not open"
+        );
         state.move_focus(Focus::NextSection);
         state.go(Go::Into);
-        assert_eq!(at(&state), (section, Some(in_section)));
+        assert_eq!(at(&state), (Some(section), Some(in_section)));
         assert_eq!(state.path(), [work, section]);
         state.go(Go::Up);
-        assert_eq!(at(&state), (work, Some(section)));
+        assert_eq!(at(&state), (Some(work), Some(section)));
         state.move_focus(Focus::Last);
         state.go(Go::Into);
-        assert_eq!(at(&state), (site, Some(in_site)));
+        assert_eq!(at(&state), (Some(site), Some(in_site)));
         state.go(Go::Up);
         state.go(Go::Up);
-        assert_eq!(at(&state), (work, Some(site)), "nothing is above an area");
+        assert_eq!(
+            at(&state),
+            (Some(work), Some(site)),
+            "nothing is above an area"
+        );
         Ok(())
     }
 
@@ -1131,11 +1221,11 @@ mod tests {
         } = fixture()?;
         let inbox = state.document().inbox();
         navigate(&mut state, "Work");
-        assert_eq!(state.container(), work);
+        assert_eq!(state.container(), Some(work));
         state.go(Go::Home);
-        assert_eq!(at(&state), (inbox, Some(inbox_task)));
+        assert_eq!(at(&state), (Some(inbox), Some(inbox_task)));
         state.go(Go::Up);
-        assert_eq!(state.container(), inbox, "nothing is above the Inbox");
+        assert_eq!(state.container(), Some(inbox), "nothing is above the Inbox");
         Ok(())
     }
 
@@ -1156,16 +1246,16 @@ mod tests {
         state.move_focus(Focus::NextSection);
         state.go(Go::Into);
         state.go(Go::Back);
-        assert_eq!(at(&state), (work, Some(section)));
+        assert_eq!(at(&state), (Some(work), Some(section)));
         state.go(Go::Back);
-        assert_eq!(at(&state), (inbox, Some(inbox_task)));
+        assert_eq!(at(&state), (Some(inbox), Some(inbox_task)));
         state.go(Go::Back);
-        assert_eq!(state.container(), inbox, "nothing is further back");
+        assert_eq!(state.container(), Some(inbox), "nothing is further back");
         state.go(Go::Forward);
         state.go(Go::Forward);
-        assert_eq!(at(&state), (section, Some(in_section)));
+        assert_eq!(at(&state), (Some(section), Some(in_section)));
         state.go(Go::Forward);
-        assert_eq!(state.container(), section, "nothing is further ahead");
+        assert_eq!(state.container(), Some(section), "nothing is further ahead");
         // A place gone to the Trash is passed over, and its focus, when gone, falls to the first
         // row.
         state.go(Go::Home);
@@ -1175,9 +1265,9 @@ mod tests {
         trashed.deleted = Some(jiff::civil::date(2026, 10, 1));
         state.document.set(section, trashed)?;
         state.go(Go::Back);
-        assert_eq!(state.container(), site);
+        assert_eq!(state.container(), Some(site));
         state.go(Go::Back);
-        assert_eq!(state.container(), inbox);
+        assert_eq!(state.container(), Some(inbox));
         Ok(())
     }
 
@@ -1252,7 +1342,7 @@ mod tests {
         state.go(Go::Home);
         let mut document = state.document().clone();
         document.push(None, Node::Item(Item::new(ItemKind::Project, "Empty")))?;
-        state = State::new(document, Opened::Demo);
+        state = State::new(document, Opened::Demo, TODAY);
         navigate(&mut state, "Empty");
         assert_eq!(state.selection().focused(), None);
         state.edit_title();
@@ -1314,7 +1404,7 @@ mod tests {
     // FR-ORG-10
     #[test]
     fn with_nothing_focused_no_description_is_edited() {
-        let mut state = State::new(Document::new(), Opened::Demo);
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         state.edit_description(Whose::Focused);
         assert!(state.editing().is_none());
     }
@@ -1434,11 +1524,11 @@ mod tests {
         state.delete(TODAY);
         state.undo();
         state.go(Go::Into);
-        assert_eq!(at(&state), (section, Some(in_section)));
+        assert_eq!(at(&state), (Some(section), Some(in_section)));
         state.redo();
         assert_eq!(
             at(&state),
-            (work, Some(loose)),
+            (Some(work), Some(loose)),
             "the section is gone, so its area opens on its first row"
         );
         // With everything above gone too, home is left.
@@ -1448,7 +1538,7 @@ mod tests {
         gone.deleted = Some(TODAY);
         state.document.set(work, gone)?;
         state.redo();
-        assert_eq!(state.container(), state.document().inbox());
+        assert_eq!(state.container(), Some(state.document().inbox()));
         Ok(())
     }
 
@@ -1477,14 +1567,14 @@ mod tests {
         move_to(&mut state, "Site");
         assert!(state.move_to().is_none(), "choosing closes it");
         assert_eq!(state.document().children(site), [in_site, loose]);
-        assert_eq!(at(&state), (work, Some(section)));
+        assert_eq!(at(&state), (Some(work), Some(section)));
         state.undo();
-        assert_eq!(at(&state), (work, Some(loose)));
+        assert_eq!(at(&state), (Some(work), Some(loose)));
         assert_eq!(state.document().position(loose), Some((Some(work), 0)));
         // Into a section of the container shown, the task stays a row and keeps the focus.
         move_to(&mut state, "S");
         assert_eq!(state.document().position(loose), Some((Some(section), 1)));
-        assert_eq!(at(&state), (work, Some(loose)));
+        assert_eq!(at(&state), (Some(work), Some(loose)));
         Ok(())
     }
 
@@ -1525,7 +1615,7 @@ mod tests {
         state.navigator_input(PickerInput::Choose);
         assert_eq!(
             state.container(),
-            inbox,
+            Some(inbox),
             "a closed Navigator takes no input"
         );
         state.toggle_navigator();
@@ -1541,16 +1631,16 @@ mod tests {
         state.toggle_navigator();
         state.navigator_input(PickerInput::Dismiss);
         assert!(state.navigator().is_none());
-        assert_eq!(state.container(), inbox, "dismissing goes nowhere");
+        assert_eq!(state.container(), Some(inbox), "dismissing goes nowhere");
         navigate(&mut state, "Inbox");
         state.go(Go::Back);
         assert_eq!(
             state.container(),
-            inbox,
+            Some(inbox),
             "choosing where the pane is records no visit"
         );
         navigate(&mut state, "Work");
-        assert_eq!(state.container(), work);
+        assert_eq!(state.container(), Some(work));
         Ok(())
     }
 
@@ -1567,7 +1657,7 @@ mod tests {
         navigate(&mut state, "Work");
         state.new_container(ItemKind::Section, Side::Below);
         let (new, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
-        assert_eq!(state.container(), work);
+        assert_eq!(state.container(), Some(work));
         assert_eq!(state.selection().focused(), Some(new));
         assert_eq!(
             state.rows().get(1),
@@ -1625,22 +1715,26 @@ mod tests {
         let inbox = state.document().inbox();
         state.new_container(ItemKind::Area, Side::Below);
         let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
-        assert_eq!(at(&state), (area, None));
+        assert_eq!(at(&state), (Some(area), None));
         assert_eq!(state.document().top_level(), [area, work]);
         type_text(&mut state, " ");
         state.edit_input(EditInput::Next);
-        assert_eq!(at(&state), (inbox, Some(inbox_task)));
+        assert_eq!(at(&state), (Some(inbox), Some(inbox_task)));
         assert_eq!(state.document().top_level(), [work]);
         state.go(Go::Forward);
-        assert_eq!(state.container(), inbox, "the area left empty is not there");
+        assert_eq!(
+            state.container(),
+            Some(inbox),
+            "the area left empty is not there"
+        );
         state.new_container(ItemKind::Area, Side::Above);
         type_text(&mut state, "Home");
         state.edit_input(EditInput::Done);
         let home = state.document().top_level()[0];
-        assert_eq!(at(&state), (home, None));
+        assert_eq!(at(&state), (Some(home), None));
         assert_eq!(title(&state, home), Some("Home"));
         state.go(Go::Back);
-        assert_eq!(at(&state), (inbox, Some(inbox_task)));
+        assert_eq!(at(&state), (Some(inbox), Some(inbox_task)));
         Ok(())
     }
 
@@ -1686,10 +1780,13 @@ mod tests {
         type_text(&mut state, "s");
         state.edit_input(EditInput::Next);
         assert!(state.editing().is_none(), "Enter only ends editing");
-        assert_eq!(at(&state), (site, Some(in_site)));
+        assert_eq!(at(&state), (Some(site), Some(in_site)));
         assert_eq!(title(&state, site), Some("Sites"));
         state.delete_container(date(2026, 10, 14));
-        assert_eq!(at(&state), (work, state.rows().first().map(|row| row.id())));
+        assert_eq!(
+            at(&state),
+            (Some(work), state.rows().first().map(|row| row.id()))
+        );
         assert!(!state.rows().contains(&Row::Project(site)));
         state.undo();
         assert!(state.rows().contains(&Row::Project(site)));
@@ -1703,7 +1800,7 @@ mod tests {
         let mut add =
             |title| document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, title)));
         let tasks = [add("a")?, add("b")?, add("c")?, add("d")?];
-        Ok((State::new(document, Opened::Demo), tasks))
+        Ok((State::new(document, Opened::Demo, TODAY), tasks))
     }
 
     fn picked(state: &State) -> Vec<ItemId> {
@@ -1823,7 +1920,7 @@ mod tests {
         };
         let two = add(&mut document, "Two")?;
         let three = add(&mut document, "Three")?;
-        state = State::new(document, Opened::Demo);
+        state = State::new(document, Opened::Demo, TODAY);
         navigate(&mut state, "Work");
         state.toggle_picked();
         state.move_focus(Focus::Next);
@@ -1869,6 +1966,288 @@ mod tests {
             state.selection().focused(),
             Some(site),
             "the focus, not on an item indented, stays"
+        );
+        Ok(())
+    }
+
+    /// A state on the Inbox, holding `inbox_task @work` starting today, beside area `work`
+    /// holding `overdue @home`, due yesterday, and project `site` due today, holding
+    /// `in_launch`, starting today in section `launch`, and `tomorrow`, starting tomorrow.
+    struct Dated {
+        state: State,
+        inbox_task: ItemId,
+        work: ItemId,
+        overdue: ItemId,
+        site: ItemId,
+        launch: ItemId,
+        in_launch: ItemId,
+        tomorrow: ItemId,
+    }
+
+    fn dated() -> Result<Dated, PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let mut add = |parent, kind, start: Option<Date>, due: Option<Date>, tags: &[&str]| {
+            let item = Item {
+                start,
+                due,
+                tags: tags.iter().map(|&name| Tag::plain(name)).collect(),
+                ..Item::new(kind, "x")
+            };
+            document.push(parent, Node::Item(item))
+        };
+        let (yesterday, tomorrow) = (date(2026, 10, 13), date(2026, 10, 15));
+        let inbox_task = add(Some(inbox), ItemKind::Task, Some(TODAY), None, &["work"])?;
+        let work = add(None, ItemKind::Area, None, None, &[])?;
+        let overdue = add(Some(work), ItemKind::Task, None, Some(yesterday), &["home"])?;
+        let site = add(Some(work), ItemKind::Project, None, Some(TODAY), &[])?;
+        let launch = add(Some(site), ItemKind::Section, None, None, &[])?;
+        let in_launch = add(Some(launch), ItemKind::Task, Some(TODAY), None, &[])?;
+        let tomorrow = add(Some(site), ItemKind::Task, Some(tomorrow), None, &[])?;
+        Ok(Dated {
+            state: State::new(document, Opened::Demo, TODAY),
+            inbox_task,
+            work,
+            overdue,
+            site,
+            launch,
+            in_launch,
+            tomorrow,
+        })
+    }
+
+    // FR-VIEW-06, FR-NAV-04, FR-KEY-06
+    #[test]
+    fn today_shows_in_the_pane_and_back_and_forward_pass_through_it() -> Result<(), PlacementError>
+    {
+        let Dated {
+            mut state,
+            inbox_task,
+            work,
+            overdue,
+            site,
+            in_launch,
+            ..
+        } = dated()?;
+        let inbox = state.document().inbox();
+        state.go(Go::View(View::Today));
+        assert_eq!(state.shown(), Shown::View(View::Today));
+        assert_eq!(state.container(), None);
+        assert_eq!(state.path(), []);
+        let ids: Vec<ItemId> = state.rows().into_iter().map(Row::id).collect();
+        assert_eq!(ids, [inbox_task, overdue, site, in_launch]);
+        assert_eq!(
+            state
+                .groups()
+                .iter()
+                .map(|group| group.heading)
+                .collect::<Vec<_>>(),
+            [None, Some(work), Some(site)]
+        );
+        assert_eq!(state.selection().focused(), Some(inbox_task));
+        state.move_focus(Focus::Next);
+        state.go(Go::View(View::Today));
+        assert_eq!(
+            state.selection().focused(),
+            Some(overdue),
+            "showing it again changes nothing"
+        );
+        state.go(Go::Back);
+        assert_eq!(
+            at(&state),
+            (Some(inbox), None),
+            "the Inbox view leaves out its scheduled task"
+        );
+        assert_eq!(state.groups(), [], "a container has no groups");
+        state.go(Go::Forward);
+        assert_eq!(state.shown(), Shown::View(View::Today));
+        assert_eq!(state.selection().focused(), Some(overdue));
+        state.toggle_navigator();
+        state.navigator_input(PickerInput::Choose);
+        assert_eq!(
+            at(&state),
+            (Some(inbox), None),
+            "the Navigator opens on its first entry"
+        );
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-NAV-02
+    #[test]
+    fn going_into_a_row_of_today_shows_where_it_lives() -> Result<(), PlacementError> {
+        let Dated {
+            mut state,
+            site,
+            launch,
+            in_launch,
+            inbox_task,
+            work,
+            overdue,
+            ..
+        } = dated()?;
+        state.go(Go::View(View::Today));
+        state.selection.focus(Some(in_launch));
+        state.go(Go::Into);
+        assert_eq!(
+            at(&state),
+            (Some(site), Some(in_launch)),
+            "a section's task shows in its project, under the section's heading"
+        );
+        state.go(Go::Back);
+        state.selection.focus(Some(overdue));
+        state.go(Go::Into);
+        assert_eq!(at(&state), (Some(work), Some(overdue)));
+        state.go(Go::Back);
+        state.selection.focus(Some(site));
+        state.go(Go::Into);
+        assert_eq!(state.container(), Some(site), "a project opens");
+        state.go(Go::Into);
+        assert_eq!(
+            state.container(),
+            Some(site),
+            "in a container a task does not open"
+        );
+        state.go(Go::View(View::Today));
+        state.selection.focus(Some(inbox_task));
+        state.go(Go::Into);
+        assert_eq!(
+            state.shown(),
+            Shown::View(View::Today),
+            "the Inbox view does not list a scheduled task, so it stays in Today"
+        );
+        assert_eq!(container::listing(state.document(), launch), None);
+        assert_eq!(container::listing(state.document(), ItemId::new(99)), None);
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-TASK-02, FR-EDIT-06
+    #[test]
+    fn completing_in_today_takes_the_item_out_and_undo_brings_it_back() -> Result<(), PlacementError>
+    {
+        let Dated {
+            mut state,
+            inbox_task,
+            overdue,
+            ..
+        } = dated()?;
+        state.go(Go::View(View::Today));
+        state.toggle_completed(TODAY);
+        assert_eq!(state.selection().focused(), Some(overdue));
+        assert!(!state.rows().iter().any(|row| row.id() == inbox_task));
+        state.toggle_show_completed();
+        assert_eq!(
+            state.groups()[0].rows,
+            [Row::Task {
+                id: inbox_task,
+                section: None
+            }]
+        );
+        state.toggle_show_completed();
+        state.undo();
+        assert_eq!(state.selection().focused(), Some(inbox_task));
+        assert_eq!(state.shown(), Shown::View(View::Today));
+        Ok(())
+    }
+
+    // FR-VIEW-06
+    #[test]
+    fn today_follows_the_date() -> Result<(), PlacementError> {
+        let Dated {
+            mut state,
+            overdue,
+            tomorrow,
+            ..
+        } = dated()?;
+        state.go(Go::View(View::Today));
+        state.selection.focus(Some(overdue));
+        state.set_today(date(2026, 10, 15));
+        assert!(state.rows().iter().any(|row| row.id() == tomorrow));
+        assert_eq!(state.selection().focused(), Some(overdue));
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-EDIT-01
+    #[test]
+    fn commands_that_need_a_container_do_nothing_in_today() -> Result<(), PlacementError> {
+        let Dated {
+            mut state,
+            inbox_task,
+            ..
+        } = dated()?;
+        state.go(Go::View(View::Today));
+        let before = state.document().clone();
+        state.new_task(Side::Below);
+        for kind in [ItemKind::Section, ItemKind::Project, ItemKind::Area] {
+            state.new_container(kind, Side::Below);
+        }
+        let branch = Branch {
+            node: Node::Item(Item::new(ItemKind::Task, "pasted")),
+            children: Vec::new(),
+        };
+        state.paste(Side::Below, &[branch]);
+        state.move_item(Direction::Down);
+        state.indent();
+        state.outdent();
+        state.group(ItemKind::Section);
+        state.delete_container(TODAY);
+        state.go(Go::Up);
+        assert_eq!(state.document(), &before);
+        state.rename_container();
+        state.edit_description(Whose::Shown);
+        assert_eq!(state.editing(), None);
+        state.edit_title();
+        type_text(&mut state, "y");
+        state.edit_input(EditInput::Next);
+        assert_eq!(state.editing(), None, "Enter only ends editing");
+        assert_eq!(title(&state, inbox_task), Some("xy"));
+        assert_eq!(state.shown(), Shown::View(View::Today));
+        assert_eq!(state.rows().len(), 4, "no task was added");
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-TAG-04
+    #[test]
+    fn a_tag_filter_in_today_hides_the_groups_it_empties() -> Result<(), PlacementError> {
+        let Dated {
+            mut state,
+            work,
+            overdue,
+            ..
+        } = dated()?;
+        state.go(Go::View(View::Today));
+        state.set_filter(vec!["home".to_owned()]);
+        assert_eq!(
+            state.groups(),
+            [Group {
+                heading: Some(work),
+                rows: vec![Row::Task {
+                    id: overdue,
+                    section: None
+                }]
+            }],
+            "the groups with no row carrying the tag are dropped"
+        );
+        let flattened: Vec<Row> = state.groups().into_iter().flat_map(|g| g.rows).collect();
+        assert_eq!(state.rows(), flattened);
+        assert_eq!(state.selection().focused(), Some(overdue));
+        state.open_tag_filter();
+        let listed: Vec<(String, TagMark)> = state
+            .tags()
+            .map(|tags| {
+                tags.picker
+                    .entries
+                    .iter()
+                    .map(|entry| (entry.value.name.clone(), entry.value.mark))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(
+            listed,
+            [
+                ("home".to_owned(), TagMark::All),
+                ("work".to_owned(), TagMark::Off)
+            ],
+            "the picker lists the tags of every row Today lists, filtered or not"
         );
         Ok(())
     }

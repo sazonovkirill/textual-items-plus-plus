@@ -74,6 +74,7 @@ pub enum Effect {
 /// keys, it takes the commands it acts on. Every message is followed by what saving asks for after
 /// it.
 pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
+    state.set_today(today);
     let mut effects = dispatch(state, message, today);
     state.settle_sidebar();
     effects.extend(state.step_saving());
@@ -171,7 +172,7 @@ mod tests {
         for title in ["a", "b"] {
             document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, title)))?;
         }
-        Ok(State::new(document, Opened::Demo))
+        Ok(State::new(document, Opened::Demo, TODAY))
     }
 
     #[test]
@@ -320,7 +321,7 @@ mod tests {
         give(&mut state, Command::Move(Direction::Up));
         assert_eq!(state.notice(), None);
         assert_eq!(titles(&state), ["a", "b"]);
-        let mut empty = State::new(Document::new(), Opened::Demo);
+        let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
         let before = empty.clone();
         for command in [
             Command::Move(Direction::Up),
@@ -335,7 +336,7 @@ mod tests {
         for title in ["A", "B"] {
             document.push(Some(area), Node::Item(Item::new(ItemKind::Project, title)))?;
         }
-        let mut state = State::new(document, Opened::Demo);
+        let mut state = State::new(document, Opened::Demo, TODAY);
         for message in [
             Message::Command(Command::Navigator),
             Message::Navigator(PickerInput::Next),
@@ -399,7 +400,7 @@ mod tests {
         for title in ["A", "B"] {
             document.push(Some(work), Node::Item(Item::new(ItemKind::Project, title)))?;
         }
-        let mut state = State::new(document, Opened::Demo);
+        let mut state = State::new(document, Opened::Demo, TODAY);
         assert_eq!(state.sidebar(), None);
         give(&mut state, Command::Sidebar);
         assert!(state.sidebar_has_keys());
@@ -460,16 +461,16 @@ mod tests {
         assert_eq!(state.document(), &before, "other commands do nothing");
         assert!(!state.shows_completed());
         give(&mut state, Command::Go(Go::Into));
-        assert_eq!(state.container(), work, "opened in the pane");
+        assert_eq!(state.container(), Some(work), "opened in the pane");
         assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
         give(&mut state, Command::Go(Go::Home));
         assert_eq!(
             state.container(),
-            state.document().inbox(),
+            Some(state.document().inbox()),
             "going home passes"
         );
         give(&mut state, Command::EditTitle);
-        assert_eq!(state.container(), work, "Enter opens it");
+        assert_eq!(state.container(), Some(work), "Enter opens it");
         assert!(
             !state.sidebar_has_keys() && state.sidebar().is_some(),
             "Enter gives the keys to the pane"
@@ -485,7 +486,7 @@ mod tests {
     fn the_sidebar_tags_its_focused_entry() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
-        let mut state = State::new(document, Opened::Demo);
+        let mut state = State::new(document, Opened::Demo, TODAY);
         give(&mut state, Command::Sidebar);
         give(&mut state, Command::Focus(Focus::Last));
         assert_eq!(sidebar(&state).0.as_deref(), Some("Work"));
@@ -510,7 +511,7 @@ mod tests {
         let mut state = state()?;
         let mut document = state.document().clone();
         let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
-        state = State::new(document, Opened::Demo);
+        state = State::new(document, Opened::Demo, TODAY);
         let pane = state.selection().clone();
         give(&mut state, Command::Sidebar);
         give(&mut state, Command::Focus(Focus::Next));
@@ -543,7 +544,7 @@ mod tests {
         assert_eq!(sidebar(&state), (Some("Home".into()), vec!["Home".into()]));
         assert_eq!(
             state.container(),
-            state.document().inbox(),
+            Some(state.document().inbox()),
             "the pane leaves it"
         );
         give(&mut state, Command::Undo);
@@ -575,7 +576,7 @@ mod tests {
     // FR-VIEW-10, FR-EDIT-05
     #[test]
     fn the_sidebar_lists_the_inbox_first_and_only_opens_it() {
-        let mut state = State::new(Document::new(), Opened::Demo);
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut state, Command::Sidebar);
         assert_eq!(sidebar(&state), (Some("Inbox".into()), vec![]));
         let before = state.document().clone();
@@ -602,13 +603,13 @@ mod tests {
         assert_eq!(sidebar(&state), (Some("P".into()), vec!["P".into()]));
         let inbox = state.document().inbox();
         give(&mut state, Command::Go(Go::Into));
-        assert_ne!(state.container(), inbox);
+        assert_ne!(state.container(), Some(inbox));
         give(&mut state, Command::Focus(Focus::First));
         give(&mut state, Command::Go(Go::Into));
-        assert_eq!(state.container(), inbox, "Go Into opens the Inbox");
+        assert_eq!(state.container(), Some(inbox), "Go Into opens the Inbox");
         give(&mut state, Command::Go(Go::Back));
         give(&mut state, Command::EditTitle);
-        assert_eq!(state.container(), inbox, "and so does Enter");
+        assert_eq!(state.container(), Some(inbox), "and so does Enter");
         assert!(!state.sidebar_has_keys(), "Enter gives the pane the keys");
     }
 
@@ -690,7 +691,7 @@ mod tests {
         give(&mut state, Command::Navigator);
         assert!(state.date_prompt().is_none(), "the Navigator closes it");
         assert!(state.navigator().is_some());
-        let mut empty = State::new(Document::new(), Opened::Demo);
+        let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut empty, Command::SetDate(DateKind::Start));
         assert!(empty.date_prompt().is_none(), "nothing to date");
         Ok(())
@@ -717,7 +718,7 @@ mod tests {
     fn the_sidebar_dates_its_focused_entry() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
-        let mut state = State::new(document, Opened::Demo);
+        let mut state = State::new(document, Opened::Demo, TODAY);
         let dated = |state: &State| {
             let item = state.document().node(work).and_then(Node::item);
             item.map(|item| (item.start, item.due))
@@ -730,7 +731,7 @@ mod tests {
         type_date(&mut state, "tomorrow");
         prompt(&mut state, DateInput::Apply);
         assert_eq!(dated(&state), Some((Some(TODAY), Some(date(2026, 10, 15)))));
-        let mut empty = State::new(Document::new(), Opened::Demo);
+        let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut empty, Command::Sidebar);
         let before = empty.clone();
         give(&mut empty, Command::SetDate(DateKind::Due));
@@ -745,7 +746,7 @@ mod tests {
         let mut state = state()?;
         let mut document = state.document().clone();
         let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
-        state = State::new(document, Opened::Demo);
+        state = State::new(document, Opened::Demo, TODAY);
         for message in [
             Message::Command(Command::Navigator),
             Message::Navigator(PickerInput::Next),
@@ -753,10 +754,10 @@ mod tests {
         ] {
             assert_eq!(update(&mut state, message, TODAY), []);
         }
-        assert_eq!(state.container(), area);
+        assert_eq!(state.container(), Some(area));
         let effects = update(&mut state, Message::Command(Command::Go(Go::Home)), TODAY);
         assert_eq!(effects, []);
-        assert_eq!(state.container(), state.document().inbox());
+        assert_eq!(state.container(), Some(state.document().inbox()));
         Ok(())
     }
 
@@ -776,7 +777,7 @@ mod tests {
                 "{command:?}"
             );
         }
-        let mut empty = State::new(Document::new(), Opened::Demo);
+        let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
         let before = empty.clone();
         for command in [
             Command::Convert,
@@ -791,7 +792,7 @@ mod tests {
         for title in ["a", "b", "c"] {
             document.push(Some(area), Node::Item(Item::new(ItemKind::Task, title)))?;
         }
-        let mut state = State::new(document, Opened::Demo);
+        let mut state = State::new(document, Opened::Demo, TODAY);
         for command in [
             Command::Sidebar,
             Command::Focus(Focus::Next),

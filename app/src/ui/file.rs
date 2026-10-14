@@ -79,7 +79,7 @@ impl File {
                     source,
                     version,
                 } = store::open(&path)?;
-                (State::new(document, opened), source, version)
+                (State::new(document, opened, today), source, version)
             }
             Some(recovered) => {
                 let OpenFile {
@@ -87,7 +87,7 @@ impl File {
                     source,
                     version,
                 } = store::recover(&path, recovered, &backups, (edge.clock)())?;
-                (State::recovered(document, opened), source, version)
+                (State::recovered(document, opened, today), source, version)
             }
         };
         let inputs = edge.inputs.clone();

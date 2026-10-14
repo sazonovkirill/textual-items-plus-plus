@@ -18,7 +18,10 @@ use ratatui::{
 
 use super::{Icon, IconSet, Theme};
 use crate::{
-    app::{Part, Row, Selection, State, TextField},
+    app::{
+        Part, Row, Selection, State, TextField,
+        view::{Group, Shown, View},
+    },
     domain::{Document, Item, ItemId, ItemKind, Node, dates},
 };
 
@@ -28,12 +31,14 @@ const GUTTER: u16 = 2;
 /// The glyph marking the focused row (D-30 of taskpaper-terminal).
 const FOCUS_MARKER: &str = "▌";
 
-/// The pane showing a container of a document with its rows. Its state is the first line of the
-/// content shown, which it moves only as far as it takes to keep the focused row in view.
+/// The pane showing a container of a document with its rows, or a view with its groups. Its state
+/// is the first line of the content shown, which it moves only as far as it takes to keep the
+/// focused row in view.
 pub(super) struct ContainerPane<'a> {
     document: &'a Document,
-    container: ItemId,
+    shown: Shown,
     rows: Vec<Row>,
+    groups: Vec<Group>,
     selection: &'a Selection,
     editing: Option<(ItemId, Part, &'a TextField)>,
     /// Whether the pane has the keys, which its focus marker and band show.
@@ -45,13 +50,14 @@ pub(super) struct ContainerPane<'a> {
 }
 
 impl<'a> ContainerPane<'a> {
-    /// The pane of the container `state` shows on `today`, drawn in `theme` with `icons`, with the
-    /// title edited and the focus marked unless the sidebar has the keys.
+    /// The pane of the container or view `state` shows on `today`, drawn in `theme` with `icons`,
+    /// with the title edited and the focus marked unless the sidebar has the keys.
     pub(super) fn new(state: &'a State, today: Date, theme: &'a Theme, icons: IconSet) -> Self {
         Self {
             document: state.document(),
-            container: state.container(),
+            shown: state.shown(),
             rows: state.rows(),
+            groups: state.groups(),
             selection: state.selection(),
             editing: state.editing().filter(|_| !state.sidebar_has_keys()),
             keys: !state.sidebar_has_keys(),
@@ -254,7 +260,7 @@ impl<'a> ContainerPane<'a> {
             .editing
             .filter(|&(_, part, _)| part == Part::Description)?;
         let item = self.document.node(id).and_then(Node::item)?;
-        let x = if id == self.container {
+        let x = if self.shown == Shown::Container(id) {
             0
         } else {
             self.title_column(item)
@@ -263,73 +269,133 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// The pane's content in content `width`: the container's title and description, then its
-    /// rows.
+    /// rows; or the view's name, then each of its groups after a blank line, under its heading.
     fn pieces(&self, width: u16) -> Vec<Piece<'a>> {
-        let document = self.document;
-        let item = |id: ItemId| document.node(id).and_then(Node::item);
-        let edited = |id: ItemId, part: Part| match self.editing {
+        let mut pieces = Vec::new();
+        match self.shown {
+            Shown::Container(id) => {
+                if let Some(container) = self.item(id) {
+                    pieces.push(match self.edited(id, Part::Title) {
+                        Some(field) => self.field(container, field, None),
+                        None => self.title(container, None),
+                    });
+                    if let Some(field) = self.edited(id, Part::Description) {
+                        pieces.push(self.description_field(field, 0, width, None));
+                    } else if !container.description.is_empty() {
+                        pieces.push(Piece {
+                            x: 0,
+                            text: wrapped(Text::styled(
+                                container.description.as_str(),
+                                self.description_style(),
+                            )),
+                            left: Line::default(),
+                            right: Line::default(),
+                            row: None,
+                            caret: None,
+                        });
+                    }
+                }
+                let rows = &self.rows;
+                let shown = rows
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, row)| Some((index, row, self.item(row.id())?)));
+                for (index, row, item) in shown {
+                    let before = index.checked_sub(1).and_then(|before| rows.get(before));
+                    let opens_group = index == 0
+                        || match row {
+                            Row::Section(_) => true,
+                            Row::Project(_) => !matches!(before, Some(Row::Project(_))),
+                            Row::Task { .. } => false,
+                        };
+                    if opens_group {
+                        pieces.push(Piece::blank());
+                    }
+                    self.row_pieces(index, *row, item, width, &mut pieces);
+                }
+            }
+            Shown::View(view) => {
+                pieces.push(self.view_title(view));
+                let mut indexes = 0..;
+                for group in &self.groups {
+                    pieces.push(Piece::blank());
+                    let heading = group.heading.and_then(|id| self.item(id));
+                    pieces.extend(heading.map(|heading| Piece {
+                        right: Line::default(),
+                        ..self.title(heading, None)
+                    }));
+                    let shown = group
+                        .rows
+                        .iter()
+                        .zip(&mut indexes)
+                        .filter_map(|(row, index)| Some((index, row, self.item(row.id())?)));
+                    for (index, row, item) in shown {
+                        self.row_pieces(index, *row, item, width, &mut pieces);
+                    }
+                }
+            }
+        }
+        pieces
+    }
+
+    /// The item numbered `id`, if it is one.
+    fn item(&self, id: ItemId) -> Option<&'a Item> {
+        self.document.node(id).and_then(Node::item)
+    }
+
+    /// The field editing `part` of item `id`, if it is edited.
+    fn edited(&self, id: ItemId, part: Part) -> Option<&'a TextField> {
+        match self.editing {
             Some((edited, edited_part, field)) if edited == id && edited_part == part => {
                 Some(field)
             }
             _ => None,
-        };
-        let mut pieces = Vec::new();
-        if let Some(container) = item(self.container) {
-            pieces.push(match edited(self.container, Part::Title) {
-                Some(field) => self.field(container, field, None),
-                None => self.title(container, None),
-            });
-            if let Some(field) = edited(self.container, Part::Description) {
-                pieces.push(self.description_field(field, 0, width, None));
-            } else if !container.description.is_empty() {
-                pieces.push(Piece {
-                    x: 0,
-                    text: wrapped(Text::styled(
-                        container.description.as_str(),
-                        self.description_style(),
-                    )),
-                    left: Line::default(),
-                    right: Line::default(),
-                    row: None,
-                    caret: None,
-                });
-            }
         }
-        let rows = &self.rows;
-        let shown = rows
-            .iter()
-            .enumerate()
-            .filter_map(|(index, row)| Some((index, row, item(row.id())?)));
-        for (index, row, shown) in shown {
-            let before = index.checked_sub(1).and_then(|before| rows.get(before));
-            let opens_group = index == 0
-                || match row {
-                    Row::Section(_) => true,
-                    Row::Project(_) => !matches!(before, Some(Row::Project(_))),
-                    Row::Task { .. } => false,
-                };
-            if opens_group {
-                pieces.push(Piece::blank());
-            }
-            pieces.push(match edited(row.id(), Part::Title) {
-                Some(field) => self.field(shown, field, Some(index)),
-                None => self.title(shown, Some(index)),
+    }
+
+    /// Adds to `pieces` the lines of `row`, numbered `index`, showing `shown`, in content
+    /// `width`: its title, or the field editing it, and the first line of its description, or the
+    /// field editing it.
+    fn row_pieces(
+        &self,
+        index: usize,
+        row: Row,
+        shown: &'a Item,
+        width: u16,
+        pieces: &mut Vec<Piece<'a>>,
+    ) {
+        pieces.push(match self.edited(row.id(), Part::Title) {
+            Some(field) => self.field(shown, field, Some(index)),
+            None => self.title(shown, Some(index)),
+        });
+        let x = self.title_column(shown);
+        if let Some(field) = self.edited(row.id(), Part::Description) {
+            pieces.push(self.description_field(field, x, width, Some(index)));
+        } else if let Some(first) = shown.description.lines().next() {
+            pieces.push(Piece {
+                x,
+                text: wrapped(Text::styled(first, self.description_style())),
+                left: Line::default(),
+                right: Line::default(),
+                row: Some(index),
+                caret: None,
             });
-            let x = self.title_column(shown);
-            if let Some(field) = edited(row.id(), Part::Description) {
-                pieces.push(self.description_field(field, x, width, Some(index)));
-            } else if let Some(first) = shown.description.lines().next() {
-                pieces.push(Piece {
-                    x,
-                    text: wrapped(Text::styled(first, self.description_style())),
-                    left: Line::default(),
-                    right: Line::default(),
-                    row: Some(index),
-                    caret: None,
-                });
-            }
         }
-        pieces
+    }
+
+    /// The line naming `view` at the top of the pane: its icon, then its name, in the Inbox's
+    /// style.
+    fn view_title(&self, view: View) -> Piece<'a> {
+        let style = Style::new().fg(self.theme.primary).bold();
+        let icon = super::view_icon(view).glyph(self.icons);
+        Piece {
+            x: u16::try_from(Span::raw(icon).width() + 1).unwrap_or(u16::MAX),
+            text: wrapped(Text::styled(view.title(), style)),
+            left: Line::styled(icon, style),
+            right: Line::default(),
+            row: None,
+            caret: None,
+        }
     }
 
     /// The line naming `item`: its marker or icon, then its title and its tags wrapping under
@@ -632,7 +698,8 @@ mod tests {
         selection.focus(focused.map(|title| find(document, title)));
         let pane = ContainerPane {
             document,
-            container,
+            shown: Shown::Container(container),
+            groups: Vec::new(),
             rows: app::rows(document, container, true),
             selection: &selection,
             editing: None,
@@ -656,7 +723,8 @@ mod tests {
         selection.focus(Some(id));
         let pane = ContainerPane {
             document: &document,
-            container: document.inbox(),
+            shown: Shown::Container(document.inbox()),
+            groups: Vec::new(),
             rows: app::rows(&document, document.inbox(), false),
             selection: &selection,
             editing: Some((id, Part::Title, field)),
@@ -681,7 +749,8 @@ mod tests {
         selection.focus(document.children(document.inbox()).first().copied());
         let pane = ContainerPane {
             document: &document,
-            container: document.inbox(),
+            shown: Shown::Container(document.inbox()),
+            groups: Vec::new(),
             rows: app::rows(&document, document.inbox(), false),
             selection: &selection,
             editing: Some((document.inbox(), Part::Title, &field)),
@@ -713,7 +782,8 @@ mod tests {
         selection.focus(document.children(document.inbox()).first().copied());
         let pane = || ContainerPane {
             document: &document,
-            container: document.inbox(),
+            shown: Shown::Container(document.inbox()),
+            groups: Vec::new(),
             rows: app::rows(&document, document.inbox(), false),
             selection: &selection,
             editing: Some((id, Part::Description, field)),
@@ -797,10 +867,38 @@ mod tests {
         assert_eq!(caret, Some(Position::new(3, 2)));
     }
 
+    // FR-VIEW-06
+    #[test]
+    fn a_view_shows_its_name_then_each_group_under_its_heading() {
+        let mut state = app::State::new(demo(), app::Opened::Demo, TODAY);
+        let today = app::Command::Go(app::Go::View(View::Today));
+        app::update(&mut state, app::Message::Command(today), TODAY);
+        let theme = BuiltIn::default().colors();
+        let pane = ContainerPane::new(&state, TODAY, &theme, IconSet::Plain);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 8));
+        pane.render(buf.area, &mut buf, &mut 0);
+        assert_eq!(
+            lines(&buf)
+                .iter()
+                .map(|line| line.trim_end())
+                .collect::<Vec<_>>(),
+            [
+                "  ☼ Today",
+                "",
+                "  ◆ Work",
+                "▌ - Answer the recruiter's  ! yesterday",
+                "▌   email",
+                "  - Review two portfolios       ⇥ today",
+                "",
+                "  ○ Website",
+            ]
+        );
+    }
+
     // FR-OPS-01
     #[test]
     fn picked_rows_get_the_focus_marker_dimmed() {
-        let mut state = app::State::new(demo(), app::Opened::Demo);
+        let mut state = app::State::new(demo(), app::Opened::Demo, TODAY);
         let extend = app::Message::Command(app::Command::Extend(app::Direction::Down));
         app::update(&mut state, extend, TODAY);
         let theme = BuiltIn::default().colors();

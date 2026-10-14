@@ -7,12 +7,15 @@
 
 use std::{path::PathBuf, time::Duration};
 
+use jiff::civil::Date;
+
 use super::{
     Effect, Refusal, State,
     autosave::{Autosave, Ending, SaveState, Step},
     container,
     move_to::MoveTo,
     navigator, text_path,
+    view::{self, Shown},
 };
 use crate::domain::{Document, ItemId};
 
@@ -157,10 +160,10 @@ impl State {
     /// The app showing `document`, recovered after a crash, as [`new`](Self::new) shows it, but
     /// holding changes the file lacks, which are saved over it like any change (N-REL-01).
     #[must_use]
-    pub fn recovered(document: Document, opened: super::Opened) -> Self {
+    pub fn recovered(document: Document, opened: super::Opened, today: Date) -> Self {
         let saveable = matches!(opened, super::Opened::File(_));
         let revision = document.revision();
-        let mut state = Self::new(document, opened);
+        let mut state = Self::new(document, opened, today);
         state.saving = Saving::new(revision, false, saveable);
         state
     }
@@ -384,13 +387,16 @@ impl State {
         let exact =
             |id| text_path::find(&old, new, id).and_then(|(found, exact)| exact.then_some(found));
         let opens = |id: ItemId| container::opens(new, id).then_some(id);
-        let kept = exact(self.container).and_then(opens);
-        if kept.is_none() {
-            self.filter.clear();
+        if let Shown::Container(id) = self.shown {
+            let kept = exact(id).and_then(opens);
+            if kept.is_none() {
+                self.filter.clear();
+            }
+            self.shown = Shown::Container(
+                kept.or_else(|| nearest(id).and_then(opens))
+                    .unwrap_or_else(|| new.inbox()),
+            );
         }
-        self.container = kept
-            .or_else(|| nearest(self.container).and_then(opens))
-            .unwrap_or_else(|| new.inbox());
         let focused = self.selection.focused();
         let rows = self.rows();
         let row = |id: ItemId| rows.iter().any(|row| row.id() == id).then_some(id);
@@ -404,7 +410,7 @@ impl State {
         self.visits.rematch(|id| nearest(id).and_then(opens), exact);
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
-            self.navigator = Some(navigator::reopen(new, self.container, &query));
+            self.navigator = Some(navigator::reopen(new, self.container(), &query));
         }
         if let Some(move_to) = &self.move_to {
             let query = move_to.view().query.text().to_owned();
@@ -417,7 +423,7 @@ impl State {
             .and_then(|prompt| prompt.rematched(exact));
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
-            let rows = container::rows(new, self.container, self.shows_completed());
+            let rows = view::rows(new, self.shown, self.today, self.shows_completed());
             self.tags = tags.reopen(new, items, &rows, &self.filter);
         }
         self.history = super::History::default();
@@ -496,8 +502,8 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Command, DateInput, EditInput, History, Message, Opened, PickerInput, Side, TextEdit,
-        update,
+        Command, DateInput, EditInput, Go, History, Message, Opened, PickerInput, Side, TextEdit,
+        update, view::View,
     };
     use crate::domain::{Item, ItemKind, Node, PlacementError, dates::DateKind};
 
@@ -528,6 +534,7 @@ mod tests {
         Ok(State::new(
             document(titles)?,
             Opened::File("todo.taskpaper".into()),
+            TODAY,
         ))
     }
 
@@ -592,7 +599,7 @@ mod tests {
         assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
         assert_eq!(send(&mut state, Message::Disk(Report::Saved)), []);
         assert_eq!(state.save_state(), SaveState::Saved);
-        let mut demo = State::new(document(&["a"])?, Opened::Demo);
+        let mut demo = State::new(document(&["a"])?, Opened::Demo, TODAY);
         command(&mut demo, Command::ToggleCompleted);
         assert_eq!(demo.deadline(), None);
         assert_eq!(send(&mut demo, Message::Tick(secs(5))), []);
@@ -650,7 +657,7 @@ mod tests {
             [Effect::Reloaded]
         );
         assert_eq!(state.document(), &theirs);
-        assert_eq!(state.container(), state.document().inbox());
+        assert_eq!(state.container(), Some(state.document().inbox()));
         assert_eq!(state.selection().focused(), titled(&state, "c"));
         assert_eq!(state.history, History::default());
         assert_eq!(state.notice(), Some(&Notice::Reloaded));
@@ -682,25 +689,29 @@ mod tests {
     fn a_reload_falls_back_to_the_nearest_container_and_row_found() -> TestResult {
         let mut state = opened(&["a"])?;
         let project = titled(&state, "P").ok_or("P")?;
-        state.container = project;
+        state.shown = Shown::Container(project);
         state.selection.focus(titled(&state, "p2"));
         let mut theirs = document(&["a"])?;
         let p2 = find(&theirs, "p2").ok_or("p2")?;
         theirs.set(p2, Item::new(ItemKind::Task, "renamed"))?;
         send(&mut state, Message::OnDisk(OnDisk::Changed(theirs)));
-        assert_eq!(state.container(), titled(&state, "P").ok_or("P")?);
+        assert_eq!(state.container(), Some(titled(&state, "P").ok_or("P")?));
         assert_eq!(
             state.selection().focused(),
             titled(&state, "p1"),
             "the first row"
         );
         let mut state = opened(&["a"])?;
-        state.container = project;
+        state.shown = Shown::Container(project);
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(Document::new())),
         );
-        assert_eq!(state.container(), state.document().inbox(), "P is gone");
+        assert_eq!(
+            state.container(),
+            Some(state.document().inbox()),
+            "P is gone"
+        );
         assert_eq!(state.selection().focused(), None);
         Ok(())
     }
@@ -709,7 +720,7 @@ mod tests {
     #[test]
     fn a_reload_keeps_the_tag_filter_only_on_the_container_found_as_it_was() -> TestResult {
         let mut state = opened(&["a"])?;
-        state.container = titled(&state, "P").ok_or("P")?;
+        state.shown = Shown::Container(titled(&state, "P").ok_or("P")?);
         state.filter = vec!["x".to_owned()];
         send(
             &mut state,
@@ -725,6 +736,21 @@ mod tests {
             [] as [String; 0],
             "P is not found as it was"
         );
+        Ok(())
+    }
+
+    // F-FILE-06, FR-VIEW-06, FR-TAG-04
+    #[test]
+    fn a_reload_keeps_a_view_shown_with_its_tag_filter() -> TestResult {
+        let mut state = opened(&["a"])?;
+        state.go(Go::View(View::Today));
+        state.filter = vec!["x".to_owned()];
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(Document::new())),
+        );
+        assert_eq!(state.shown(), Shown::View(View::Today));
+        assert_eq!(state.tag_filter(), ["x"]);
         Ok(())
     }
 
@@ -829,7 +855,7 @@ mod tests {
         let navigator = state.navigator().ok_or("open")?;
         assert_eq!(navigator.query.text(), "p");
         send(&mut state, Message::Navigator(PickerInput::Choose));
-        assert_eq!(state.container(), titled(&state, "P").ok_or("P")?);
+        assert_eq!(state.container(), Some(titled(&state, "P").ok_or("P")?));
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
@@ -837,7 +863,7 @@ mod tests {
         command(&mut state, Command::Go(crate::app::Go::Back));
         assert_eq!(
             state.container(),
-            state.document().inbox(),
+            Some(state.document().inbox()),
             "back where it was"
         );
         Ok(())
@@ -1184,10 +1210,10 @@ mod tests {
     // N-REL-01
     #[test]
     fn a_recovered_document_is_saved_over_the_file() -> TestResult {
-        let mut state = State::recovered(document(&["a"])?, Opened::File("todo".into()));
+        let mut state = State::recovered(document(&["a"])?, Opened::File("todo".into()), TODAY);
         assert_eq!(state.save_state(), SaveState::Unsaved);
         assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
-        let state = State::recovered(document(&["a"])?, Opened::Demo);
+        let state = State::recovered(document(&["a"])?, Opened::Demo, TODAY);
         assert_eq!(state.deadline(), None);
         Ok(())
     }

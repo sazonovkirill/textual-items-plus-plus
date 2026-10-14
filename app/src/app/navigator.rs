@@ -18,12 +18,13 @@ pub struct Place {
     pub open_tasks: usize,
 }
 
-/// The Navigator over `document`, focused on the entry of `shown`, else on that of the closest
-/// container above it that has one, such as a section's project, as an editor's file tree follows
-/// the open file.
-pub(super) fn open(document: &Document, shown: ItemId) -> Picker<Place> {
+/// The Navigator over `document`, focused on the entry of the container `shown`, else on that of
+/// the closest container above it that has one, such as a section's project, as an editor's file
+/// tree follows the open file; on its first entry while the pane shows a view.
+pub(super) fn open(document: &Document, shown: Option<ItemId>) -> Picker<Place> {
     let mut picker = Picker::new(places(document));
-    for id in container::path(document, shown).into_iter().rev() {
+    let path = shown.map(|id| container::path(document, id));
+    for id in path.unwrap_or_default().into_iter().rev() {
         if picker.focus_where(|place| place.id == id) {
             break;
         }
@@ -33,7 +34,7 @@ pub(super) fn open(document: &Document, shown: ItemId) -> Picker<Place> {
 
 /// The Navigator over `document` as [`open`] opens it, with `query` typed again, as after a
 /// reload, which lists the places anew.
-pub(super) fn reopen(document: &Document, shown: ItemId, query: &str) -> Picker<Place> {
+pub(super) fn reopen(document: &Document, shown: Option<ItemId>, query: &str) -> Picker<Place> {
     let mut picker = open(document, shown);
     for c in query.chars() {
         picker.input(PickerInput::Edit(TextEdit::Insert(c)));
@@ -228,7 +229,7 @@ mod tests {
         let site = add(&mut document, Some(work), Project, "Site")?;
         let section = add(&mut document, Some(site), Section, "Launch")?;
         let chosen = |shown| {
-            let mut picker = open(&document, shown);
+            let mut picker = open(&document, Some(shown));
             picker.input(PickerInput::Choose)
         };
         let place = |id| {

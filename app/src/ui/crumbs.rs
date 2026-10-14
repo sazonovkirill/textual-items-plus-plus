@@ -1,5 +1,6 @@
 //! The breadcrumbs at the top of the pane: the path to the container it shows, after the home
-//! icon, as Workflowy and taskpaper-terminal show it (FR-NAV-03,
+//! icon, as Workflowy and taskpaper-terminal show it, or the view it shows, after its icon in the
+//! home icon's place (FR-NAV-03,
 //! [ui.md §1](../../../specs/reference/taskpaper-terminal/specs/ui.md#1-layout)).
 
 use ratatui::{
@@ -11,7 +12,10 @@ use ratatui::{
 };
 
 use super::{Icon, IconSet, Theme};
-use crate::domain::{Document, ItemId, Node};
+use crate::{
+    app::view::View,
+    domain::{Document, ItemId, Node},
+};
 
 /// What stands between two crumbs.
 const SEPARATOR: &str = " › ";
@@ -19,27 +23,31 @@ const SEPARATOR: &str = " › ";
 /// What stands for the crumbs left out at the start.
 const ELLIPSIS: &str = "…";
 
-/// The breadcrumb line of a pane showing the last container of `path`, with the tags it is
-/// filtered by.
+/// The breadcrumb line of a pane showing the last container of `path`, or `view`, with the tags
+/// it is filtered by.
 pub(super) struct Crumbs<'a> {
     document: &'a Document,
     path: &'a [ItemId],
+    view: Option<View>,
     filter: &'a [String],
     theme: &'a Theme,
     icons: IconSet,
 }
 
 impl<'a> Crumbs<'a> {
-    /// The crumbs of `path` in `document`, drawn in `theme` with `icons`.
+    /// The crumbs of `path` in `document`, or of `view` when it is one, drawn in `theme` with
+    /// `icons`.
     pub(super) fn new(
         document: &'a Document,
         path: &'a [ItemId],
+        view: Option<View>,
         theme: &'a Theme,
         icons: IconSet,
     ) -> Self {
         Self {
             document,
             path,
+            view,
             filter: &[],
             theme,
             icons,
@@ -77,13 +85,17 @@ impl Widget for Crumbs<'_> {
         let [area, tags] =
             Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)]).areas(area);
         filtered.render(tags, buf);
-        let titles: Vec<&str> = self
-            .path
-            .iter()
-            .filter_map(|&id| Some(self.document.node(id).and_then(Node::item)?.title.as_str()))
-            .collect();
+        let titles: Vec<&str> = match self.view {
+            Some(view) => vec![view.title()],
+            None => self
+                .path
+                .iter()
+                .filter_map(|&id| Some(self.document.node(id).and_then(Node::item)?.title.as_str()))
+                .collect(),
+        };
+        let icon = self.view.map_or(Icon::Home, super::view_icon);
         let dim = Style::new().fg(self.theme.dim_text);
-        let home = format!("  {} ", Icon::Home.glyph(self.icons));
+        let home = format!("  {} ", icon.glyph(self.icons));
         let room = usize::from(area.width).saturating_sub(Span::raw(&home).width());
         let ellipsis = Span::raw(format!("{ELLIPSIS}{SEPARATOR}")).width();
         // The columns the crumbs from the one numbered `first` on take, with `…` before them.

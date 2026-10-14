@@ -7,7 +7,7 @@ use std::{collections::HashMap, time::Duration};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::{
-    app::{Command, Direction, Focus, Go, Side, Whose},
+    app::{Command, Direction, Focus, Go, Side, Whose, view::View},
     domain::dates::DateKind,
 };
 
@@ -52,6 +52,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::Home), &["ctrl+'", "g h", "g i"]),
     (Command::Go(Go::Back), &["H", "alt+shift+left"]),
     (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
+    // FR-KEY-06's go-to keys for the views (D-23).
+    (Command::Go(Go::View(View::Today)), &["g t"]),
     (Command::Navigator, &["ctrl+g"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37), with its type
     // letters after the creation keys, and `a` for an area (D-40).
@@ -370,6 +372,7 @@ mod tests {
             (vec![press(KeyCode::Left, alt_shift)], go(Go::Back)),
             (vec![char('L')], go(Go::Forward)),
             (vec![press(KeyCode::Right, alt_shift)], go(Go::Forward)),
+            (vec![char('g'), char('t')], go(Go::View(View::Today))),
             (
                 vec![press(KeyCode::Char('g'), KeyModifiers::CONTROL)],
                 Some(Command::Navigator),

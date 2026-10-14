@@ -269,6 +269,8 @@ fn icon(kind: ItemKind) -> Icon {
 
 #[cfg(test)]
 mod tests {
+    const TODAY: jiff::civil::Date = jiff::civil::date(2026, 10, 14);
+
     use super::*;
     use crate::{
         app::{Command, Message, Motion, Opened, TextEdit, update},
@@ -290,7 +292,7 @@ mod tests {
         }
         add(&mut document, Some(website), ItemKind::Project, "Blog")?;
         add(&mut document, None, ItemKind::Project, "Learn Rust")?;
-        let mut state = State::new(document, Opened::Demo);
+        let mut state = State::new(document, Opened::Demo, TODAY);
         give(&mut state, Command::Sidebar);
         Ok(state)
     }
@@ -381,7 +383,7 @@ mod tests {
         );
         let (rows, _, _) = draw(&state, 20, 2);
         assert_eq!(rows, ["                   │", "▌◆ Work           3│"]);
-        let mut new = State::new(Document::new(), Opened::Demo);
+        let mut new = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut new, Command::Sidebar);
         let (rows, _, _) = draw(&new, 20, 2);
         assert_eq!(rows, ["▌⊔ Inbox           │", "                   │"]);

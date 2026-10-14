@@ -215,7 +215,7 @@ mod tests {
         let site = add(&mut document, Some(work), Project, "Site")?;
         add(&mut document, Some(site), Task, "p")?;
         Ok(Fixture {
-            state: State::new(document, Opened::Demo),
+            state: State::new(document, Opened::Demo, TODAY),
             work,
             section,
             s,

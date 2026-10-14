@@ -85,6 +85,26 @@ pub(super) fn path(document: &Document, container: ItemId) -> Vec<ItemId> {
     path
 }
 
+/// The container whose rows list task `task`, completed ones shown: the one holding it, or the
+/// one holding its section, which lists it under the section's heading (FR-VIEW-05); none for
+/// anything else, or a task no container lists, as a scheduled one in the Inbox (FR-VIEW-01).
+pub(super) fn listing(document: &Document, task: ItemId) -> Option<ItemId> {
+    let kind = |id| document.node(id).and_then(Node::item).map(|item| item.kind);
+    let parent = |id| document.position(id).and_then(|(parent, _)| parent);
+    if kind(task)? != ItemKind::Task {
+        return None;
+    }
+    let holder = parent(task)?;
+    let container = match kind(holder)? {
+        ItemKind::Section => parent(holder)?,
+        _ => holder,
+    };
+    rows(document, container, true)
+        .iter()
+        .any(|row| row.id() == task)
+        .then_some(container)
+}
+
 /// The projects, sections and tasks among `items`, the kinds rows show, without those inside
 /// another of them, which go along with it, in order: the items a command on the selection takes
 /// with everything inside them.

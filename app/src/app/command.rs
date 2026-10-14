@@ -2,7 +2,7 @@
 //! given in. A frontend binds its own keys to these commands and lists them in its palette and
 //! shortcuts panel.
 
-use super::{Direction, Focus, Side};
+use super::{Direction, Focus, Side, view::View};
 use crate::domain::dates::DateKind;
 
 /// A command: one user intent, whatever key, menu or palette gives it.
@@ -118,6 +118,8 @@ pub enum Go {
     Back,
     /// Forward again to where Back left (FR-NAV-04).
     Forward,
+    /// To a view, such as Today (FR-VIEW-06, FR-KEY-06).
+    View(View),
 }
 
 /// Whose description a [`Command::EditDescription`] edits.
@@ -262,6 +264,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Go(Go::Forward),
         title: "Go Forward",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Go(Go::View(View::Today)),
+        title: "Go to Today",
         context: Context::Navigate,
     },
     Entry {
@@ -535,7 +542,14 @@ mod tests {
                 .find(|entry| entry.command == command)
                 .map(|entry| entry.context)
         };
-        for to in [Go::Into, Go::Up, Go::Home, Go::Back, Go::Forward] {
+        for to in [
+            Go::Into,
+            Go::Up,
+            Go::Home,
+            Go::Back,
+            Go::Forward,
+            Go::View(View::Today),
+        ] {
             assert_eq!(context(Command::Go(to)), Some(Context::Navigate), "{to:?}");
         }
         assert_eq!(context(Command::Navigator), Some(Context::Global));

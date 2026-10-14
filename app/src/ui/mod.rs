@@ -40,6 +40,7 @@ use crate::{
     app::{
         self, Command, Context, DateInput, Destination, EditInput, Effect, Message, Opened, Part,
         PickerInput, Place, REGISTRY, Side, State, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
+        view::{Shown, View},
     },
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
@@ -127,7 +128,7 @@ impl Tui {
     ) -> Result<Self, OpenError> {
         let Some(path) = path else {
             return Ok(Self::new(
-                State::new(store::demo::document(today), Opened::Demo),
+                State::new(store::demo::document(today), Opened::Demo, today),
                 today,
             ));
         };
@@ -489,6 +490,13 @@ fn navigator_popup<'a>(
         })
 }
 
+/// The icon standing for `view` in its pane's heading and crumbs.
+fn view_icon(view: View) -> Icon {
+    match view {
+        View::Today => Icon::Today,
+    }
+}
+
 /// The Move to window, each destination after its kind's icon, in a tree (FR-OPS-04).
 fn move_to_popup<'a>(
     view: &'a app::PickerView<'a, Destination>,
@@ -552,7 +560,11 @@ impl Widget for &mut Tui {
         }
         let [crumbs, rule, pane] = pane_layout(pane);
         let path = self.state.path();
-        Crumbs::new(self.state.document(), &path, &self.theme, self.icons)
+        let view = match self.state.shown() {
+            Shown::View(view) => Some(view),
+            Shown::Container(_) => None,
+        };
+        Crumbs::new(self.state.document(), &path, view, &self.theme, self.icons)
             .filter(self.state.tag_filter())
             .render(crumbs, buf);
         Line::styled(

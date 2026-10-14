@@ -24,6 +24,7 @@ mod state;
 mod tags;
 mod text_field;
 mod text_path;
+mod today;
 mod trash;
 mod update;
 pub mod view;

@@ -159,6 +159,8 @@ fn tail(text: &str, room: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    const TODAY: jiff::civil::Date = jiff::civil::date(2026, 10, 14);
+
     use std::path::PathBuf;
 
     use super::*;
@@ -167,7 +169,7 @@ mod tests {
     #[track_caller]
     fn check(opened: &Opened, pending: &str, width: u16, expected: &str) {
         check_state(
-            &State::new(Document::new(), opened.clone()),
+            &State::new(Document::new(), opened.clone(), TODAY),
             pending,
             width,
             expected,
@@ -201,7 +203,7 @@ mod tests {
     // FR-EDIT-01
     #[test]
     fn edit_mode_is_named_first() {
-        let mut state = State::new(Document::new(), Opened::Demo);
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         app::update(
             &mut state,
             app::Message::Command(app::Command::NewTask(app::Side::Below)),
