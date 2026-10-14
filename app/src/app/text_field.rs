@@ -1,10 +1,11 @@
 //! A text being edited with the standard text keys, on one line or on several: a caret and a
 //! selection that move by grapheme, word and line, insertion, deletion and pasting (FR-EDIT-04,
-//! N-PORT-04). Hides grapheme and word segmentation.
+//! N-PORT-04), and the lines it takes on screen. Hides grapheme and word segmentation and wrapping.
 
 use std::{iter, ops::Range};
 
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 /// A change to a [`TextField`], as a text key asks for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,12 +47,20 @@ pub enum Motion {
     LineStart,
     /// To the end of the caret's line.
     LineEnd,
-    /// To the line above, as near the column the caret moved up or down from as that line
-    /// allows, or to the start of the text from its first line.
-    Up,
-    /// To the line below, as near the column the caret moved up or down from as that line
-    /// allows, or to the end of the text from its last line.
-    Down,
+    /// To the line above on screen, as near the column the caret moved up or down from as that
+    /// line allows, or to the start of the text from its first line; the lines are those of
+    /// [`TextField::screen_lines`] in `width` columns.
+    Up {
+        /// The columns the text wraps in.
+        width: usize,
+    },
+    /// To the line below on screen, as near the column the caret moved up or down from as that
+    /// line allows, or to the end of the text from its last line; the lines are those of
+    /// [`TextField::screen_lines`] in `width` columns.
+    Down {
+        /// The columns the text wraps in.
+        width: usize,
+    },
     /// To the start of the text.
     Start,
     /// To the end of the text.
@@ -161,6 +170,41 @@ impl TextField {
         self.text.get(self.selection()?)
     }
 
+    /// The lines the text takes on screen in `width` columns, at least one, as byte ranges
+    /// without their `\n`: each of its lines, wrapped between words, and inside a word too long
+    /// for a line of its own. Spaces at the end of a line stay on it, even past `width`.
+    #[must_use]
+    pub fn screen_lines(&self, width: usize) -> Vec<Range<usize>> {
+        let width = width.max(1);
+        let mut lines = Vec::new();
+        let mut start = 0;
+        for line in self.text.split('\n') {
+            let mut from = start;
+            let mut column = 0;
+            let mut after_space = None;
+            for (at, grapheme) in line.grapheme_indices(true) {
+                let at = start + at;
+                let space = grapheme.chars().all(char::is_whitespace);
+                let columns = grapheme.width();
+                while column + columns > width && at > from && !space {
+                    let to = after_space.unwrap_or(at);
+                    lines.push(from..to);
+                    column = self.text.get(to..at).map_or(0, UnicodeWidthStr::width);
+                    from = to;
+                    after_space = None;
+                }
+                column += columns;
+                if space {
+                    after_space = Some(at + grapheme.len());
+                }
+            }
+            start += line.len();
+            lines.push(from..start);
+            start += 1;
+        }
+        lines
+    }
+
     /// The field after `edit`.
     #[must_use]
     pub fn edited(&self, edit: TextEdit) -> Self {
@@ -225,7 +269,7 @@ impl TextField {
 
     fn moved(&self, motion: Motion, select: bool) -> Self {
         let selection = self.selection().filter(|_| !select);
-        let column = self.goal.unwrap_or_else(|| self.column());
+        let mut goal = None;
         let caret = match (motion, selection) {
             (Motion::Left, Some(selection)) => selection.start,
             (Motion::Right, Some(selection)) => selection.end,
@@ -235,16 +279,32 @@ impl TextField {
             (Motion::WordRight, _) => self.word_right(),
             (Motion::LineStart, _) => self.line_start(),
             (Motion::LineEnd, _) => self.line_end(self.caret),
-            (Motion::Up, _) => self
-                .line_start()
-                .checked_sub(1)
-                .map_or(0, |end| self.in_line(self.line_start_at(end), column)),
-            (Motion::Down, _) => {
-                let end = self.line_end(self.caret);
-                if end == self.text.len() {
-                    end
-                } else {
-                    self.in_line(end + 1, column)
+            (Motion::Up { width } | Motion::Down { width }, _) => {
+                let lines = self.screen_lines(width);
+                let index = lines
+                    .iter()
+                    .rposition(|line| line.start <= self.caret)
+                    .unwrap_or_default();
+                let column = self.goal.unwrap_or_else(|| {
+                    lines
+                        .get(index)
+                        .and_then(|line| self.text.get(line.start..self.caret))
+                        .map_or(0, |before| before.graphemes(true).count())
+                });
+                goal = Some(column);
+                let target = match motion {
+                    Motion::Up { .. } => index.checked_sub(1),
+                    _ => Some(index + 1),
+                };
+                match target.and_then(|target| Some((target, lines.get(target)?))) {
+                    Some((target, line)) => {
+                        let wraps = lines
+                            .get(target + 1)
+                            .is_some_and(|next| next.start == line.end);
+                        in_line(&self.text, line.clone(), wraps, column)
+                    }
+                    None if matches!(motion, Motion::Up { .. }) => 0,
+                    None => self.text.len(),
                 }
             }
             (Motion::Start, _) => 0,
@@ -254,7 +314,7 @@ impl TextField {
         Self {
             caret,
             anchor: select.then(|| self.anchor.unwrap_or(self.caret)),
-            goal: matches!(motion, Motion::Up | Motion::Down).then_some(column),
+            goal,
             ..self.clone()
         }
     }
@@ -327,15 +387,22 @@ impl TextField {
             .and_then(|after| after.find('\n'))
             .map_or(self.text.len(), |newline| at + newline)
     }
+}
 
-    /// The offset `column` graphemes into the line starting at `start`, or its end when it is
-    /// shorter.
-    fn in_line(&self, start: usize, column: usize) -> usize {
-        let end = self.line_end(start);
-        self.text
-            .get(start..end)
-            .and_then(|line| line.grapheme_indices(true).nth(column))
-            .map_or(end, |(at, _)| start + at)
+/// The offset `column` graphemes into `line`, a screen line of `text`, or the end of the line
+/// when it is shorter; the start of its last grapheme when the text `wraps` after it, since its
+/// end is where the next line starts.
+fn in_line(text: &str, line: Range<usize>, wraps: bool, column: usize) -> usize {
+    let starts: Vec<usize> = text
+        .get(line.clone())
+        .unwrap_or_default()
+        .grapheme_indices(true)
+        .map(|(at, _)| line.start + at)
+        .collect();
+    match starts.get(column) {
+        Some(&at) => at,
+        None if wraps => starts.last().copied().unwrap_or(line.end),
+        None => line.end,
     }
 }
 
@@ -354,6 +421,10 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+
+    /// Up and down by the lines of the text, which never wrap.
+    const UP: Motion = Motion::Up { width: usize::MAX };
+    const DOWN: Motion = Motion::Down { width: usize::MAX };
 
     /// A one-line field written with `|` for the caret and `[` for the selection's anchor.
     fn field(marked: &str) -> TextField {
@@ -472,10 +543,7 @@ mod tests {
     fn a_multi_line_field_takes_each_line_break_as_a_newline() {
         let field = TextField::multi_line("a\r\nbc\rd");
         assert_eq!(field.text(), "a\nbc\nd");
-        assert_eq!(
-            marked(&field.edited(go(Motion::Up)).edited(go(Motion::Up))),
-            "a|\nbc\nd"
-        );
+        assert_eq!(marked(&field.edited(go(UP)).edited(go(UP))), "a|\nbc\nd");
     }
 
     #[test]
@@ -585,12 +653,12 @@ mod tests {
     // FR-EDIT-04
     #[test]
     fn moves_up_and_down_to_the_same_column() {
-        check_area("abc\nd|ef", go(Motion::Up), "a|bc\ndef");
-        check_area("a|bc\ndef", go(Motion::Down), "abc\nd|ef");
-        check_area("abc\ndef|", go(Motion::Up), "abc|\ndef");
+        check_area("abc\nd|ef", go(UP), "a|bc\ndef");
+        check_area("a|bc\ndef", go(DOWN), "abc\nd|ef");
+        check_area("abc\ndef|", go(UP), "abc|\ndef");
         check_area(
             &format!("{FAMILY}a\nb|c"),
-            go(Motion::Up),
+            go(UP),
             &format!("{FAMILY}|a\nbc"),
         );
     }
@@ -598,14 +666,14 @@ mod tests {
     // FR-EDIT-04
     #[test]
     fn moving_up_or_down_to_a_shorter_line_stops_at_its_end() {
-        check_area("a\nbc|", go(Motion::Up), "a|\nbc");
-        check_area("abc|\n\nd", go(Motion::Down), "abc\n|\nd");
+        check_area("a\nbc|", go(UP), "a|\nbc");
+        check_area("abc|\n\nd", go(DOWN), "abc\n|\nd");
     }
 
     // FR-EDIT-04
     #[test]
     fn moving_up_or_down_past_a_shorter_line_keeps_the_column() {
-        let (up, down) = (go(Motion::Up), go(Motion::Down));
+        let (up, down) = (go(UP), go(DOWN));
         assert_eq!(edited_area("abc|\nd\nefg", &[down, down]), "abc\nd\nefg|");
         assert_eq!(edited_area("abc\nd\nef|g", &[up, up]), "ab|c\nd\nefg");
         assert_eq!(
@@ -623,11 +691,62 @@ mod tests {
     // FR-EDIT-04
     #[test]
     fn moving_up_from_the_first_line_or_down_from_the_last_goes_to_the_end() {
-        check_area("a|b\ncd", go(Motion::Up), "|ab\ncd");
-        check_area("ab\nc|d", go(Motion::Down), "ab\ncd|");
-        check("a|b", go(Motion::Up), "|ab");
-        check("a|b", go(Motion::Down), "ab|");
-        check("a|b", select(Motion::Down), "a[b|");
+        check_area("a|b\ncd", go(UP), "|ab\ncd");
+        check_area("ab\nc|d", go(DOWN), "ab\ncd|");
+        check("a|b", go(UP), "|ab");
+        check("a|b", go(DOWN), "ab|");
+        check("a|b", select(DOWN), "a[b|");
+    }
+
+    /// The screen lines of `text` in `width` columns, as text.
+    fn screen(text: &str, width: usize) -> Vec<&str> {
+        TextField::multi_line(text)
+            .screen_lines(width)
+            .into_iter()
+            .map(|line| &text[line])
+            .collect()
+    }
+
+    // FR-UI-05
+    #[test]
+    fn lines_wrap_between_words_and_inside_words_too_long_for_a_line() {
+        assert_eq!(screen("one two three", 6), ["one ", "two ", "three"]);
+        assert_eq!(screen("one two three", 7), ["one two ", "three"]);
+        assert_eq!(screen("abcdefgh ij", 3), ["abc", "def", "gh ", "ij"]);
+        assert_eq!(
+            screen("a  b", 1),
+            ["a  ", "b"],
+            "spaces stay at the end of a line"
+        );
+        assert_eq!(screen("ab\n\ncd", 9), ["ab", "", "cd"]);
+        assert_eq!(screen("", 9), [""]);
+        assert_eq!(screen("ab", 0), ["a", "b"], "a line is at least a column");
+        assert_eq!(
+            screen("日本語", 4),
+            ["日本", "語"],
+            "by columns, not graphemes"
+        );
+        assert_eq!(screen(&format!("a{FAMILY}b"), 2), ["a", FAMILY, "b"]);
+    }
+
+    // FR-EDIT-04, FR-UI-05
+    #[test]
+    fn moves_up_and_down_by_lines_on_screen() {
+        let (up, down) = (Motion::Up { width: 4 }, Motion::Down { width: 4 });
+        check_area("ab c|d ef\ngh", go(up), "a|b cd ef\ngh");
+        check_area("a|b cd ef\ngh", go(down), "ab c|d ef\ngh");
+        check_area("ab cd e|f\ngh", go(down), "ab cd ef\ng|h");
+        check_area("ab cd ef\ng|h", go(up), "ab cd e|f\ngh");
+        check_area("ab|c defg", go(down), "abc de|fg");
+        // The end of a line that wraps is where the next one starts, so the caret stops before
+        // it.
+        check_area("ab cdef|", go(up), "ab| cdef");
+        check_area("a|b cd", select(down), "a[b c|d");
+        assert_eq!(
+            edited_area("abc|d e\nfghi", &[go(down), go(down)]),
+            "abcd e\nfgh|i",
+            "the column holds past a shorter line"
+        );
     }
 
     #[test]
@@ -652,7 +771,7 @@ mod tests {
         check("a|b[c", select(Motion::Left), "|ab[c");
         check("a|b[c", select(Motion::End), "ab[c|");
         check("one two|", select(Motion::WordLeft), "one |two[");
-        check_area("ab\nc|d", select(Motion::Up), "a|b\nc[d");
+        check_area("ab\nc|d", select(UP), "a|b\nc[d");
         check_area("ab\nc|d", select(Motion::LineStart), "ab\n|c[d");
         check("ab|", TextEdit::SelectAll, "[ab|");
         check_area("a|\nb", TextEdit::SelectAll, "[a\nb|");
@@ -669,7 +788,7 @@ mod tests {
         check("a|bc[d", go(Motion::Right), "abc|d");
         check("a[bc|d", go(Motion::End), "abcd|");
         check("a[bc|d", go(Motion::WordLeft), "|abcd");
-        check_area("ab\nc|d[e", go(Motion::Up), "a|b\ncde");
+        check_area("ab\nc|d[e", go(UP), "a|b\ncde");
     }
 
     // FR-EDIT-04
@@ -733,8 +852,10 @@ mod tests {
             Just(Motion::WordRight),
             Just(Motion::LineStart),
             Just(Motion::LineEnd),
-            Just(Motion::Up),
-            Just(Motion::Down),
+            Just(UP),
+            Just(DOWN),
+            (1..6usize).prop_map(|width| Motion::Up { width }),
+            (1..6usize).prop_map(|width| Motion::Down { width }),
             Just(Motion::Start),
             Just(Motion::End),
             (0..40usize).prop_map(Motion::To),
@@ -780,6 +901,26 @@ mod tests {
                 }
                 prop_assert!(many || !field.text().contains(breaks_line), "{field:?}");
             }
+        }
+
+        // FR-UI-05
+        #[test]
+        fn screen_lines_hold_the_text_in_order_each_within_its_width(
+            text in "[ab \u{301}日\n]{0,16}",
+            width in 1..6usize,
+        ) {
+            let mut end = 0;
+            for line in TextField::multi_line(&text).screen_lines(width) {
+                let gap = &text[end..line.start];
+                prop_assert!(gap.is_empty() || gap == "\n", "{line:?} after {end}");
+                let shown = text[line.clone()].trim_end();
+                prop_assert!(
+                    shown.width() <= width || shown.graphemes(true).count() == 1,
+                    "{shown:?}"
+                );
+                end = line.end;
+            }
+            prop_assert_eq!(end, text.len());
         }
     }
 }

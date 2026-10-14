@@ -1,29 +1,40 @@
-//! Editing the title of a task, section, project or area in place, an existing one's or one just
-//! added (FR-EDIT-01, FR-EDIT-02, FR-EDIT-05, FR-ORG-06). The title is written to the document as
-//! it is typed, so the item is drawn like any other, and the whole session becomes one change to
-//! undo when it ends.
+//! Editing in place the title of a task, section, project or area, an existing one's or one just
+//! added, or any item's description (FR-EDIT-01, FR-EDIT-02, FR-EDIT-03, FR-EDIT-05, FR-ORG-06,
+//! FR-ORG-10). The text is written to the document as it is typed, so the item is drawn like any
+//! other, and the whole session becomes one change to undo when it ends.
 
 use super::{Selection, TextEdit, TextField};
 use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Snapshot, Transaction};
 
-/// What the user does while a title is edited.
+/// What the user does while a title or a description is edited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditInput {
     /// Changes the text being edited.
     Text(TextEdit),
-    /// Ends editing and adds the next task below, unless the task edited was new and is left
-    /// empty, which only ends editing.
+    /// Ends editing and, for a title, adds the next task below, unless the task edited was new
+    /// and is left empty, which only ends editing.
     Next,
     /// Ends editing.
     Done,
 }
 
-/// An item whose title is being edited, its kind, the text edited, the selection before editing
-/// started and how the item was before it, and the document's revision then.
+/// Which text of an item is edited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Part {
+    /// Its title, on one line.
+    Title,
+    /// Its description, Markdown on any number of lines (FR-ORG-10).
+    Description,
+}
+
+/// An item whose title or description is being edited, its kind, which text is edited, the text
+/// edited, the selection before editing started and how the item was before it, and the
+/// document's revision then.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Editing {
     id: ItemId,
     kind: ItemKind,
+    part: Part,
     field: TextField,
     before: Selection,
     origin: Origin,
@@ -56,7 +67,26 @@ impl Editing {
         Some(Self {
             id,
             kind: item.kind,
+            part: Part::Title,
             field: TextField::new(item.title.clone()),
+            before,
+            origin: Origin::Existing(item.clone()),
+            revision: document.revision(),
+        })
+    }
+
+    /// Starts editing the description of `id`, the caret at its end, unless it is a checklist
+    /// item, which has none; `before` is the selection to restore when the session is undone.
+    pub(super) fn description(document: &Document, id: ItemId, before: Selection) -> Option<Self> {
+        let item = document
+            .node(id)
+            .and_then(Node::item)
+            .filter(|item| item.kind != ItemKind::ChecklistItem)?;
+        Some(Self {
+            id,
+            kind: item.kind,
+            part: Part::Description,
+            field: TextField::multi_line(&item.description),
             before,
             origin: Origin::Existing(item.clone()),
             revision: document.revision(),
@@ -80,6 +110,7 @@ impl Editing {
         Self {
             id,
             kind,
+            part: Part::Title,
             field: TextField::new(String::new()),
             before,
             origin: Origin::New { parent, index },
@@ -97,6 +128,11 @@ impl Editing {
         self.kind
     }
 
+    /// Which of its texts is edited.
+    pub(super) fn part(&self) -> Part {
+        self.part
+    }
+
     /// The document's revision when editing started.
     pub(super) fn revision(&self) -> u64 {
         self.revision
@@ -107,15 +143,17 @@ impl Editing {
         &self.field
     }
 
-    /// Applies `edit` to the text and shows it as the item's title. An edit that puts `@` at the
-    /// start of a word, by typing it or by deleting what stood before it, is refused: TaskPaper
-    /// has no escape for it, so the word would read back as a tag. So is an edit that starts a
-    /// section's, project's or area's title with `-` and a space, which would read back as a
-    /// task.
+    /// Applies `edit` to the text and shows it as the item's title or description. An edit that
+    /// puts `@` at the start of a word of a title, by typing it or by deleting what stood before
+    /// it, is refused: TaskPaper has no escape for it, so the word would read back as a tag. So is
+    /// an edit that starts a section's, project's or area's title with `-` and a space, which
+    /// would read back as a task. A description's lines are guarded, so they hold any text
+    /// (FR-STORE-04).
     pub(super) fn input(&mut self, document: &mut Document, edit: TextEdit) {
         let edited = self.field.edited(edit);
-        if word_starts(edited.text()) > word_starts(self.field.text())
-            || (self.kind != ItemKind::Task && reads_as_task(edited.text()))
+        if self.part == Part::Title
+            && (word_starts(edited.text()) > word_starts(self.field.text())
+                || (self.kind != ItemKind::Task && reads_as_task(edited.text())))
         {
             return;
         }
@@ -124,49 +162,61 @@ impl Editing {
             .node(self.id)
             .and_then(Node::item)
             .expect("the edited item stays in the document while it is edited");
-        let item = Item {
-            title: self.field.text().to_owned(),
-            ..item.clone()
-        };
+        let item = self.with_text(item, self.field.text().to_owned());
         document
             .set(self.id, item)
-            .expect("an item keeps its kind when its title changes");
+            .expect("an item keeps its kind when its text changes");
+    }
+
+    /// `item` with `text` as the part edited.
+    fn with_text(&self, item: &Item, text: String) -> Item {
+        match self.part {
+            Part::Title => Item {
+                title: text,
+                ..item.clone()
+            },
+            Part::Description => Item {
+                description: text,
+                ..item.clone()
+            },
+        }
     }
 
     /// Ends editing: puts the document back as it was before and returns the change the session
-    /// made, to apply as one step, with the selection from before it. The title is trimmed. A new
+    /// made, to apply as one step, with the selection from before it. A title is trimmed: a new
     /// item left empty is not added, and an existing one emptied keeps its title, so either
-    /// makes no change, as does a title left as it was.
+    /// makes no change. A description loses the space and empty lines at its end, which the file
+    /// does not keep, so emptying it removes it. Text left as it was makes no change.
     pub(super) fn finish(self, document: &mut Document) -> (Transaction, Selection) {
-        let title = self.field.text().trim().to_owned();
-        let transaction = match self.origin {
+        let text = match self.part {
+            Part::Title => self.field.text().trim(),
+            Part::Description => self.field.text().trim_end(),
+        };
+        let transaction = match &self.origin {
             Origin::Existing(item) => {
-                let after = Item {
-                    title,
-                    ..item.clone()
-                };
+                let after = self.with_text(item, text.to_owned());
                 document
                     .set(self.id, item.clone())
-                    .expect("an item keeps its kind when its title changes");
-                if after.title.is_empty() || after.title == item.title {
+                    .expect("an item keeps its kind when its text changes");
+                if (self.part == Part::Title && text.is_empty()) || after == *item {
                     Transaction::default()
                 } else {
                     Transaction::new(vec![Op::Set {
                         id: self.id,
-                        before: item,
+                        before: item.clone(),
                         after,
                     }])
                 }
             }
-            Origin::New { parent, index } => {
+            &Origin::New { parent, index } => {
                 let draft = self.field.text().to_owned();
                 document
                     .apply(&insert(parent, index, self.id, self.kind, draft).inverse())
                     .expect("the new item stays where it was added while it is edited");
-                if title.is_empty() {
+                if text.is_empty() {
                     Transaction::default()
                 } else {
-                    insert(parent, index, self.id, self.kind, title)
+                    insert(parent, index, self.id, self.kind, text.to_owned())
                 }
             }
         };
@@ -431,6 +481,71 @@ mod tests {
         task.input(&mut document, TextEdit::SelectAll);
         typed(&mut task, &mut document, "- a");
         assert_eq!(title(&document, a), Some("- a"), "a task's may");
+        Ok(())
+    }
+
+    fn description(document: &Document, id: ItemId) -> Option<&str> {
+        Some(document.node(id)?.item()?.description.as_str())
+    }
+
+    // FR-ORG-10, FR-EDIT-03, FR-STORE-04
+    #[test]
+    fn a_description_takes_lines_and_any_text_and_ends_as_one_change() -> Result<(), PlacementError>
+    {
+        let (mut document, a, _, selection) = document()?;
+        let original = document.clone();
+        let mut editing = Editing::description(&document, a, selection.clone())
+            .ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(editing.part(), Part::Description);
+        typed(&mut editing, &mut document, "@due Goals:\n- one  \n\n");
+        assert_eq!(description(&document, a), Some("@due Goals:\n- one  \n\n"));
+        assert_eq!(title(&document, a), Some("a"));
+        let (transaction, before) = editing.finish(&mut document);
+        assert_eq!(document, original, "finishing puts the document back");
+        assert_eq!(before, selection);
+        document.apply(&transaction)?;
+        assert_eq!(
+            description(&document, a),
+            Some("@due Goals:\n- one"),
+            "space and empty lines at the end go"
+        );
+        let mut editing =
+            Editing::description(&document, a, selection).ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(editing.field().caret(), "@due Goals:\n- one".len());
+        editing.input(&mut document, TextEdit::SelectAll);
+        editing.input(&mut document, TextEdit::DeleteBackward);
+        let (transaction, _) = editing.finish(&mut document);
+        document.apply(&transaction)?;
+        assert_eq!(
+            description(&document, a),
+            Some(""),
+            "emptying it removes it"
+        );
+        Ok(())
+    }
+
+    // FR-ORG-10
+    #[test]
+    fn a_description_left_as_it_was_changes_nothing() -> Result<(), PlacementError> {
+        let (mut document, a, _, selection) = document()?;
+        let mut editing =
+            Editing::description(&document, a, selection).ok_or(PlacementError::DoesNotFit)?;
+        typed(&mut editing, &mut document, " \n");
+        assert_eq!(editing.finish(&mut document).0, Transaction::default());
+        Ok(())
+    }
+
+    // FR-ORG-05, FR-ORG-10
+    #[test]
+    fn every_item_but_a_checklist_item_has_a_description() -> Result<(), PlacementError> {
+        let (mut document, a, check, selection) = document()?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        for id in [document.inbox(), area, a] {
+            assert!(Editing::description(&document, id, selection.clone()).is_some());
+        }
+        for id in [check, ItemId::new(99)] {
+            assert_eq!(Editing::description(&document, id, selection.clone()), None);
+        }
         Ok(())
     }
 }

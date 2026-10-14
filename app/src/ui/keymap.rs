@@ -6,7 +6,7 @@ use std::{collections::HashMap, time::Duration};
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
-use crate::app::{Command, Direction, Focus, Go, Side};
+use crate::app::{Command, Direction, Focus, Go, Side, Whose};
 
 /// How long a sequence waits for its next key, as in taskpaper-terminal (its keybindings.md §1).
 const TIMEOUT: Duration = Duration::from_secs(1);
@@ -67,6 +67,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Move(Direction::Down), &["alt+j", "alt+down"]),
     (Command::Indent, &["]", "tab"]),
     (Command::Outdent, &["[", "shift+tab"]),
+    // `m` modifies the focused item (FR-KEY-06); `n` for the notes, as TaskPaper calls the lines a
+    // description is stored as, and shifted for the container shown, whose title stands above
+    // the rows (D-43).
+    (Command::EditDescription(Whose::Focused), &["m n"]),
+    (Command::EditDescription(Whose::Shown), &["m N"]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
     // while the user types (its D-115, D-38).
     (Command::KeepMine, &["ctrl+k"]),
@@ -432,6 +437,22 @@ mod tests {
         }
         assert_eq!(keymap.press(&char('g')), None);
         assert_eq!(keymap.press(&char('c')), Some(Command::ShowCompleted));
+    }
+
+    // FR-EDIT-03, FR-KEY-06
+    #[test]
+    fn m_n_edits_the_focused_description_and_m_shift_n_the_containers() {
+        let mut keymap = Keymap::default();
+        assert_eq!(keymap.press(&char('m')), None);
+        assert_eq!(
+            keymap.press(&char('n')),
+            Some(Command::EditDescription(Whose::Focused))
+        );
+        assert_eq!(keymap.press(&char('m')), None);
+        assert_eq!(
+            keymap.press(&press(KeyCode::Char('n'), KeyModifiers::SHIFT)),
+            Some(Command::EditDescription(Whose::Shown))
+        );
     }
 
     // FR-NAV-01, FR-KEY-02

@@ -25,9 +25,9 @@ pub mod view;
 mod visits;
 
 pub use adding::Side;
-pub use command::{Command, Context, Entry, Go, REGISTRY};
+pub use command::{Command, Context, Entry, Go, REGISTRY, Whose};
 pub use container::{Row, rows};
-pub use editing::EditInput;
+pub use editing::{EditInput, Part};
 pub use focus::Focus;
 pub use history::History;
 pub use move_to::Destination;

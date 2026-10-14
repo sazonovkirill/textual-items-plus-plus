@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use jiff::civil::Date;
 
 use super::{
-    Direction, EditInput, Go, History, Notice, Picked, Picker, PickerInput, PickerView, Selection,
-    Side, TextField, adding, completion,
+    Direction, EditInput, Go, History, Notice, Part, Picked, Picker, PickerInput, PickerView,
+    Selection, Side, TextField, Whose, adding, completion,
     container::{self, Row},
     editing::Editing,
     focus::{self, Focus},
@@ -42,7 +42,7 @@ pub struct State {
     pub(super) navigator: Option<Picker<Place>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
-    /// The item whose title is edited, in edit mode (FR-EDIT-01).
+    /// The item whose title or description is edited, in edit mode (FR-EDIT-01).
     editing: Option<Editing>,
     pub(super) saving: Saving,
 }
@@ -126,13 +126,13 @@ impl State {
         self.move_to.as_ref().map(MoveTo::view)
     }
 
-    /// The item whose title is edited and the text edited, in edit mode: a row's item, or the
-    /// container shown, whose title heads the pane.
+    /// The item edited, which of its texts and the text edited, in edit mode: a row's item, or
+    /// the container shown, whose title and description head the pane.
     #[must_use]
-    pub fn editing(&self) -> Option<(ItemId, &TextField)> {
+    pub fn editing(&self) -> Option<(ItemId, Part, &TextField)> {
         self.editing
             .as_ref()
-            .map(|editing| (editing.id(), editing.field()))
+            .map(|editing| (editing.id(), editing.part(), editing.field()))
     }
 
     /// Moves the focus as `motion` says, selecting only the newly focused row.
@@ -225,6 +225,17 @@ impl State {
         self.editing = editing;
     }
 
+    /// Starts editing the description of the focused item or of the container shown, as `whose`
+    /// says. Nothing happens with nothing focused.
+    pub(super) fn edit_description(&mut self, whose: Whose) {
+        let id = match whose {
+            Whose::Focused => self.selection.focused(),
+            Whose::Shown => Some(self.container),
+        };
+        self.editing =
+            id.and_then(|id| Editing::description(&self.document, id, self.selection.clone()));
+    }
+
     /// Adds an empty task on `side` of the focused row, focuses it and starts editing its title.
     /// Nothing is added to a container whose contents are hidden for being completed
     /// (FR-ORG-09), where it would not show.
@@ -305,7 +316,9 @@ impl State {
             EditInput::Text(edit) => editing.input(&mut self.document, edit),
             EditInput::Next => {
                 let row = editing.id() != self.container;
-                let next = row && matches!(editing.kind(), ItemKind::Task | ItemKind::Section);
+                let next = row
+                    && editing.part() == Part::Title
+                    && matches!(editing.kind(), ItemKind::Task | ItemKind::Section);
                 if self.finish_editing() && next {
                     self.new_task(Side::Below);
                 }
@@ -752,7 +765,7 @@ mod tests {
             ..
         } = fixture()?;
         state.edit_title();
-        assert_eq!(state.editing().map(|(id, _)| id), Some(inbox_task));
+        assert_eq!(state.editing().map(|(id, ..)| id), Some(inbox_task));
         type_text(&mut state, "dea");
         assert_eq!(title(&state, inbox_task), Some("idea"));
         state.edit_input(EditInput::Done);
@@ -780,7 +793,7 @@ mod tests {
         navigate(&mut state, "Work");
         state.move_focus(Focus::NextSection);
         state.edit_title();
-        assert_eq!(state.editing().map(|(id, _)| id), Some(section));
+        assert_eq!(state.editing().map(|(id, ..)| id), Some(section));
         type_text(&mut state, "ection");
         state.edit_input(EditInput::Done);
         assert_eq!(title(&state, section), Some("Section"));
@@ -796,6 +809,62 @@ mod tests {
             "with nothing focused nothing is edited"
         );
         Ok(())
+    }
+
+    fn description(state: &State, id: ItemId) -> Option<&str> {
+        Some(state.document().node(id)?.item()?.description.as_str())
+    }
+
+    // FR-ORG-10, FR-EDIT-03, FR-EDIT-06
+    #[test]
+    fn the_focused_items_or_the_shown_containers_description_is_edited_in_place()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            loose,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        let rows = state.rows();
+        state.edit_description(Whose::Focused);
+        assert_eq!(
+            state.editing().map(|(id, part, _)| (id, part)),
+            Some((loose, Part::Description))
+        );
+        type_text(&mut state, "a\nb");
+        state.edit_input(EditInput::Next);
+        assert!(state.editing().is_none(), "the next task is for titles");
+        assert_eq!(state.rows(), rows, "no task was added");
+        assert_eq!(description(&state, loose), Some("a\nb"));
+        state.move_focus(Focus::Last);
+        let last = state.selection().focused();
+        state.edit_description(Whose::Shown);
+        assert_eq!(state.editing().map(|(id, ..)| id), Some(work));
+        type_text(&mut state, "w");
+        state.edit_input(EditInput::Done);
+        assert_eq!(description(&state, work), Some("w"));
+        assert_eq!(state.selection().focused(), last);
+        state.undo();
+        assert_eq!(description(&state, work), Some(""));
+        state.redo();
+        assert_eq!(
+            state.selection().focused(),
+            last,
+            "redo keeps the focus where it was"
+        );
+        state.undo();
+        state.undo();
+        assert_eq!(description(&state, loose), Some(""));
+        Ok(())
+    }
+
+    // FR-ORG-10
+    #[test]
+    fn with_nothing_focused_no_description_is_edited() {
+        let mut state = State::new(Document::new(), Opened::Demo);
+        state.edit_description(Whose::Focused);
+        assert!(state.editing().is_none());
     }
 
     // FR-EDIT-05, FR-EDIT-06
@@ -841,7 +910,7 @@ mod tests {
         } = fixture()?;
         let before = state.clone();
         state.new_task(Side::Above);
-        let new = state.editing().map(|(id, _)| id);
+        let new = state.editing().map(|(id, ..)| id);
         assert_eq!(state.selection().focused(), new);
         assert_eq!(state.rows().first().map(|row| row.id()), new);
         state.edit_input(EditInput::Done);
@@ -1045,7 +1114,7 @@ mod tests {
         } = fixture()?;
         navigate(&mut state, "Work");
         state.new_container(ItemKind::Section, Side::Below);
-        let (new, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        let (new, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(state.container(), work);
         assert_eq!(state.selection().focused(), Some(new));
         assert_eq!(
@@ -1055,7 +1124,7 @@ mod tests {
         );
         type_text(&mut state, "Next");
         state.edit_input(EditInput::Next);
-        let (task, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        let (task, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(state.document().children(new), [task]);
         state.edit_input(EditInput::Done);
         assert_eq!(title(&state, new), Some("Next"));
@@ -1081,7 +1150,7 @@ mod tests {
         navigate(&mut state, "Work");
         state.move_focus(Focus::Last);
         state.new_container(ItemKind::Project, Side::Above);
-        let (new, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        let (new, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(state.rows().last(), Some(&Row::Project(site)));
         type_text(&mut state, "Garden");
         state.edit_input(EditInput::Next);
@@ -1103,7 +1172,7 @@ mod tests {
         } = fixture()?;
         let inbox = state.document().inbox();
         state.new_container(ItemKind::Area, Side::Below);
-        let (area, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(at(&state), (area, None));
         assert_eq!(state.document().top_level(), [area, work]);
         type_text(&mut state, " ");
@@ -1142,7 +1211,7 @@ mod tests {
             assert_eq!(state, before, "{kind:?} in a completed area");
         }
         state.new_container(ItemKind::Area, Side::Below);
-        let (area, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(state.document().top_level(), [work, area]);
         Ok(())
     }
@@ -1161,7 +1230,7 @@ mod tests {
         assert!(state.editing().is_none(), "the Inbox keeps its name");
         navigate(&mut state, "Site");
         state.rename_container();
-        assert_eq!(state.editing().map(|(id, _)| id), Some(site));
+        assert_eq!(state.editing().map(|(id, ..)| id), Some(site));
         type_text(&mut state, "s");
         state.edit_input(EditInput::Next);
         assert!(state.editing().is_none(), "Enter only ends editing");

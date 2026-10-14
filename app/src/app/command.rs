@@ -35,6 +35,8 @@ pub enum Command {
     /// Add an area on this side of the one holding the container shown and edit its title
     /// (FR-EDIT-05, FR-ORG-06).
     NewArea(Side),
+    /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
+    EditDescription(Whose),
     /// Move the selected items to the Trash (FR-OPS-05, OQ-19).
     Delete,
     /// Open the picker that moves the selected items to another container (FR-OPS-04).
@@ -72,6 +74,15 @@ pub enum Go {
     Back,
     /// Forward again to where Back left (FR-NAV-04).
     Forward,
+}
+
+/// Whose description a [`Command::EditDescription`] edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Whose {
+    /// The focused item's, under its row.
+    Focused,
+    /// The container's shown in the pane, under its title.
+    Shown,
 }
 
 /// Where a command can be given. Later steps add the modes and windows that take keys of their
@@ -269,6 +280,16 @@ pub const REGISTRY: &[Entry] = &[
         title: "Outdent",
         context: Context::Navigate,
     },
+    Entry {
+        command: Command::EditDescription(Whose::Focused),
+        title: "Edit Description",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::EditDescription(Whose::Shown),
+        title: "Edit Container Description",
+        context: Context::Navigate,
+    },
     // Global, so that its key closes the Navigator too.
     Entry {
         command: Command::Navigator,
@@ -346,7 +367,7 @@ mod tests {
         assert_eq!(context(Command::Navigator), Some(Context::Global));
     }
 
-    // FR-EDIT-01, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-ORG-06
+    // FR-EDIT-01, FR-EDIT-03, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-ORG-06
     #[test]
     fn editing_adding_and_deleting_are_navigate_commands() {
         let added = [
@@ -359,6 +380,8 @@ mod tests {
         .flat_map(|new| [new(Side::Below), new(Side::Above)]);
         let others = [
             Command::EditTitle,
+            Command::EditDescription(Whose::Focused),
+            Command::EditDescription(Whose::Shown),
             Command::Delete,
             Command::MoveTo,
             Command::RenameContainer,

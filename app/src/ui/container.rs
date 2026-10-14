@@ -2,7 +2,10 @@
 //! taskpaper-terminal ([ui.md §2](../../../specs/reference/taskpaper-terminal/specs/ui.md#2-blocks)):
 //! its title and description, then a row for each of its items, with the focus marker and band
 //! on the focused one, wrapping long text and scrolling to keep the focus in view, and the title
-//! being edited, if any, as a text field in its row, or in the heading for the container's own.
+//! being edited, if any, as a text field in its row, or in the heading for the container's own;
+//! a description being edited shows whole where it shows.
+
+use std::ops::Range;
 
 use ratatui::{
     buffer::Buffer,
@@ -14,7 +17,7 @@ use ratatui::{
 
 use super::{Icon, IconSet, Theme};
 use crate::{
-    app::{Row, State, TextField},
+    app::{Part, Row, State, TextField},
     domain::{Document, Item, ItemId, ItemKind, Node},
 };
 
@@ -31,7 +34,7 @@ pub(super) struct ContainerPane<'a> {
     container: ItemId,
     rows: Vec<Row>,
     focused: Option<ItemId>,
-    editing: Option<(ItemId, &'a TextField)>,
+    editing: Option<(ItemId, Part, &'a TextField)>,
     theme: &'a Theme,
     icons: IconSet,
 }
@@ -53,15 +56,15 @@ impl<'a> ContainerPane<'a> {
 
 /// A run of lines of the pane: a wrapped paragraph starting `x` columns after the gutter, with
 /// what is drawn right after the gutter and at the right of its first line, part of the row
-/// numbered `row`, if any. A text field is one line instead, with its caret `caret` columns
-/// into it.
+/// numbered `row`, if any. A text field is laid out in lines of its own instead, with its caret
+/// on line `caret.0`, `caret.1` columns into it.
 struct Piece<'a> {
     x: u16,
     text: Paragraph<'a>,
     left: Line<'a>,
     right: Line<'a>,
     row: Option<usize>,
-    caret: Option<usize>,
+    caret: Option<(usize, usize)>,
 }
 
 impl Piece<'_> {
@@ -93,8 +96,9 @@ impl Piece<'_> {
     /// fits, else as many as keep the caret in the last column, and never past the caret.
     fn shift(&self, width: u16) -> usize {
         let columns = usize::from(self.text_width(width));
-        self.caret
-            .map_or(0, |caret| (caret + 1).saturating_sub(columns).min(caret))
+        self.caret.map_or(0, |(_, caret)| {
+            (caret + 1).saturating_sub(columns).min(caret)
+        })
     }
 }
 
@@ -107,18 +111,22 @@ impl StatefulWidget for ContainerPane<'_> {
         let focused = self.focused_row();
         let span = focused.map(|row| row_span(&pieces, &lines, width, row));
         // Focusing the first row shows the container's title and description above it, when
-        // they fit with the row; editing the title shows it.
+        // they fit with the row, as does editing that description. A caret stays in view.
         let height = usize::from(area.height);
-        let heading = self.editing.is_some_and(|(id, _)| id == self.container);
-        let shown = if heading {
-            Some((0, lines.get(1).copied().unwrap_or(y)))
-        } else {
-            span.map(|(start, end)| match focused {
+        let caret = pieces
+            .iter()
+            .zip(&lines)
+            .find_map(|(piece, start)| Some(start + piece.caret?.0));
+        let in_row = |line| span.is_some_and(|(start, end)| (start..end).contains(&line));
+        let shown = match caret {
+            Some(line) if !in_row(line) => Some((if line < height { 0 } else { line }, line + 1)),
+            _ => span.map(|(start, end)| match focused {
                 Some(0) if end <= height => (0, end),
                 _ => (start, end),
-            })
+            }),
         };
         *top = scrolled(*top, shown, y, height);
+        *top = scrolled(*top, caret.map(|line| (line, line + 1)), y, height);
         if let Some((start, end)) = span {
             self.band(area, buf, start, end, *top);
         }
@@ -195,10 +203,11 @@ impl<'a> ContainerPane<'a> {
             .iter()
             .zip(&lines)
             .find(|(piece, _)| piece.caret.is_some())?;
-        let row = start
+        let (line, column) = piece.caret?;
+        let row = (start + line)
             .checked_sub(top)
             .filter(|&row| row < usize::from(area.height))?;
-        let column = piece.caret? - piece.shift(width);
+        let column = column - piece.shift(width);
         let x = usize::from(area.x + GUTTER + piece.x) + column;
         let x = u16::try_from(x).ok().filter(|&x| x < area.right())?;
         Some(Position::new(x, area.y + u16::try_from(row).ok()?))
@@ -207,7 +216,7 @@ impl<'a> ContainerPane<'a> {
     /// The pane's content in content `width`: its pieces, the content line each starts at and
     /// the lines they take in all.
     fn laid_out(&self, width: u16) -> (Vec<Piece<'a>>, Vec<usize>, usize) {
-        let pieces = self.pieces();
+        let pieces = self.pieces(width);
         let mut lines = Vec::with_capacity(pieces.len());
         let mut y = 0;
         for piece in &pieces {
@@ -223,17 +232,41 @@ impl<'a> ContainerPane<'a> {
         self.rows.iter().position(|row| row.id() == focused)
     }
 
-    /// The pane's content: the container's title and description, then its rows.
-    fn pieces(&self) -> Vec<Piece<'a>> {
+    /// The columns the description being edited wraps in when the pane is drawn over `area`, if
+    /// one is: the container's, under its title, or a row's, under the row's title.
+    pub(super) fn description_columns(&self, area: Rect) -> Option<usize> {
+        let (id, ..) = self
+            .editing
+            .filter(|&(_, part, _)| part == Part::Description)?;
+        let item = self.document.node(id).and_then(Node::item)?;
+        let x = if id == self.container {
+            0
+        } else {
+            self.title_column(item)
+        };
+        Some(field_columns(area.width.saturating_sub(GUTTER), x))
+    }
+
+    /// The pane's content in content `width`: the container's title and description, then its
+    /// rows.
+    fn pieces(&self, width: u16) -> Vec<Piece<'a>> {
         let document = self.document;
         let item = |id: ItemId| document.node(id).and_then(Node::item);
+        let edited = |id: ItemId, part: Part| match self.editing {
+            Some((edited, edited_part, field)) if edited == id && edited_part == part => {
+                Some(field)
+            }
+            _ => None,
+        };
         let mut pieces = Vec::new();
         if let Some(container) = item(self.container) {
-            pieces.push(match self.editing {
-                Some((id, field)) if id == self.container => self.field(container, field, None),
-                _ => self.title(container, None),
+            pieces.push(match edited(self.container, Part::Title) {
+                Some(field) => self.field(container, field, None),
+                None => self.title(container, None),
             });
-            if !container.description.is_empty() {
+            if let Some(field) = edited(self.container, Part::Description) {
+                pieces.push(self.description_field(field, 0, width, None));
+            } else if !container.description.is_empty() {
                 pieces.push(Piece {
                     x: 0,
                     text: wrapped(Text::styled(
@@ -263,13 +296,16 @@ impl<'a> ContainerPane<'a> {
             if opens_group {
                 pieces.push(Piece::blank());
             }
-            pieces.push(match self.editing {
-                Some((id, field)) if id == row.id() => self.field(shown, field, Some(index)),
-                _ => self.title(shown, Some(index)),
+            pieces.push(match edited(row.id(), Part::Title) {
+                Some(field) => self.field(shown, field, Some(index)),
+                None => self.title(shown, Some(index)),
             });
-            if let Some(first) = shown.description.lines().next() {
+            let x = self.title_column(shown);
+            if let Some(field) = edited(row.id(), Part::Description) {
+                pieces.push(self.description_field(field, x, width, Some(index)));
+            } else if let Some(first) = shown.description.lines().next() {
                 pieces.push(Piece {
-                    x: self.title_column(shown),
+                    x,
                     text: wrapped(Text::styled(first, self.description_style())),
                     left: Line::default(),
                     right: Line::default(),
@@ -307,20 +343,66 @@ impl<'a> ContainerPane<'a> {
     /// that scrolls sideways to keep the caret in view.
     fn field(&self, item: &'a Item, field: &'a TextField, row: Option<usize>) -> Piece<'a> {
         let text = field.text();
+        let caret = text.get(..field.caret()).unwrap_or_default();
+        Piece {
+            caret: Some((0, Span::raw(caret).width())),
+            text: Paragraph::new(self.selected(field, 0..text.len())),
+            ..self.title(item, row)
+        }
+    }
+
+    /// The lines of `field` while it edits a description `x` columns after the gutter, wrapped
+    /// as the field wraps them in content `width`, the selected part in the selection colors,
+    /// part of the row numbered `row`, if any. A caret after spaces past the line's end stands in
+    /// its last column, so that the lines never scroll sideways.
+    fn description_field(
+        &self,
+        field: &'a TextField,
+        x: u16,
+        width: u16,
+        row: Option<usize>,
+    ) -> Piece<'a> {
+        let text = field.text();
+        let columns = field_columns(width, x);
+        let lines = field.screen_lines(columns);
+        let line = lines
+            .iter()
+            .rposition(|line| line.start <= field.caret())
+            .unwrap_or_default();
+        let column = lines
+            .get(line)
+            .and_then(|line| text.get(line.start..field.caret()))
+            .map_or(0, |before| Span::raw(before).width())
+            .min(columns);
+        Piece {
+            x,
+            text: Paragraph::new(
+                lines
+                    .into_iter()
+                    .map(|line| self.selected(field, line))
+                    .collect::<Vec<_>>(),
+            ),
+            left: Line::default(),
+            right: Line::default(),
+            row,
+            caret: Some((line, column)),
+        }
+    }
+
+    /// The bytes `line` of `field`'s text, its selected part in the selection colors.
+    fn selected(&self, field: &'a TextField, line: Range<usize>) -> Line<'a> {
+        let text = field.text();
         let selection = field.selection().unwrap_or(field.caret()..field.caret());
+        let start = selection.start.clamp(line.start, line.end);
+        let end = selection.end.clamp(line.start, line.end);
         let selected = Style::new()
             .bg(self.theme.selection)
             .fg(self.theme.band_text);
-        let caret = text.get(..field.caret()).unwrap_or_default();
-        Piece {
-            caret: Some(Span::raw(caret).width()),
-            text: Paragraph::new(Line::from(vec![
-                Span::raw(text.get(..selection.start).unwrap_or_default()),
-                Span::styled(text.get(selection.clone()).unwrap_or_default(), selected),
-                Span::raw(text.get(selection.end..).unwrap_or_default()),
-            ])),
-            ..self.title(item, row)
-        }
+        Line::from(vec![
+            Span::raw(text.get(line.start..start).unwrap_or_default()),
+            Span::styled(text.get(start..end).unwrap_or_default(), selected),
+            Span::raw(text.get(end..line.end).unwrap_or_default()),
+        ])
     }
 
     /// The column after the marker and its space, where a row's title starts.
@@ -425,6 +507,12 @@ impl<'a> ContainerPane<'a> {
     }
 }
 
+/// The columns a text field `x` columns after the gutter wraps in, in content `width`: all it
+/// has but the last, kept for the caret at the end of a line.
+fn field_columns(width: u16, x: u16) -> usize {
+    usize::from(width.saturating_sub(x)).saturating_sub(1)
+}
+
 /// `text` wrapping between words (FR-UI-05).
 fn wrapped(text: Text<'_>) -> Paragraph<'_> {
     Paragraph::new(text).wrap(Wrap { trim: true })
@@ -503,7 +591,7 @@ mod tests {
             container: document.inbox(),
             rows: app::rows(&document, document.inbox(), false),
             focused: Some(id),
-            editing: Some((id, field)),
+            editing: Some((id, Part::Title, field)),
             theme: &theme,
             icons: IconSet::Plain,
         };
@@ -511,6 +599,124 @@ mod tests {
         let caret = pane.caret(buf.area, 0);
         pane.render(buf.area, &mut buf, &mut 0);
         (buf, caret)
+    }
+
+    // FR-ORG-06, FR-EDIT-02
+    #[test]
+    fn the_title_of_the_container_shown_is_edited_in_its_heading() {
+        let document = demo();
+        let theme = BuiltIn::default().colors();
+        let field = TextField::new("Tray".to_owned());
+        let pane = ContainerPane {
+            document: &document,
+            container: document.inbox(),
+            rows: app::rows(&document, document.inbox(), false),
+            focused: document.children(document.inbox()).first().copied(),
+            editing: Some((document.inbox(), Part::Title, &field)),
+            theme: &theme,
+            icons: IconSet::Plain,
+        };
+        let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
+        pane.render(buf.area, &mut buf, &mut 0);
+        assert_eq!(
+            lines(&buf).first().map(String::as_str),
+            Some("  ⊔ Tray            ")
+        );
+    }
+
+    /// Draws the Inbox of the demo document, `width` by `height`, while `field` edits the
+    /// description of its item titled `title`, and returns the buffer, where the caret is and the
+    /// columns the description wraps in.
+    fn draw_description(
+        title: &str,
+        field: &TextField,
+        (width, height): (u16, u16),
+    ) -> (Buffer, Option<Position>, Option<usize>) {
+        let document = demo();
+        let theme = BuiltIn::default().colors();
+        let id = find(&document, title);
+        let pane = || ContainerPane {
+            document: &document,
+            container: document.inbox(),
+            rows: app::rows(&document, document.inbox(), false),
+            focused: document.children(document.inbox()).first().copied(),
+            editing: Some((id, Part::Description, field)),
+            theme: &theme,
+            icons: IconSet::Plain,
+        };
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        let area = buf.area;
+        let mut top = 0;
+        pane().render(area, &mut buf, &mut top);
+        (
+            buf,
+            pane().caret(area, top),
+            pane().description_columns(area),
+        )
+    }
+
+    // FR-ORG-10, FR-EDIT-02, FR-EDIT-04
+    #[test]
+    fn the_description_edited_shows_whole_wrapped_as_the_field_wraps_it() {
+        let field = TextField::multi_line("one two three\nfour").edited(app::TextEdit::Move {
+            motion: app::Motion::To(8),
+            select: true,
+        });
+        let (buf, caret, columns) = draw_description("Inbox", &field, (12, 8));
+        assert_eq!(
+            lines(&buf)[..5],
+            [
+                "  ⊔ Inbox   ",
+                "  one two   ",
+                "  three     ",
+                "  four      ",
+                "            ",
+            ],
+            "the container's description under its title, the last column kept for the caret"
+        );
+        assert_eq!(columns, Some(9));
+        let theme = BuiltIn::default().colors();
+        assert_eq!(buf[(2, 2)].bg, theme.selection, "selected from the caret");
+        assert_eq!(
+            buf[(5, 3)].bg,
+            theme.selection,
+            "across the line break to the end"
+        );
+        assert_eq!(buf[(8, 1)].bg, Color::Reset, "not before the caret");
+        assert_eq!(caret, Some(Position::new(2, 2)));
+        let (buf, caret, columns) =
+            draw_description("Call the bank about the card", &field, (12, 4));
+        assert_eq!(
+            lines(&buf),
+            [
+                "▌   about   ",
+                "▌   the card",
+                "▌   one two ",
+                "▌   three   ",
+            ],
+            "a row's description under its title, scrolled to keep the caret in view"
+        );
+        assert_eq!(columns, Some(7));
+        assert_eq!(caret, Some(Position::new(4, 3)));
+        let spaced = TextField::multi_line("abcdefghi  \nfour").edited(app::TextEdit::Move {
+            motion: app::Motion::To(11),
+            select: false,
+        });
+        let (buf, caret, _) = draw_description("Inbox", &spaced, (12, 8));
+        assert_eq!(
+            lines(&buf)[1..3],
+            ["  abcdefghi ", "  four      "],
+            "spaces past the end of a line scroll nothing sideways"
+        );
+        assert_eq!(caret, Some(Position::new(11, 1)));
+        let long = TextField::multi_line("a\nb\nc\nd");
+        let (buf, caret, _) = draw_description("Inbox", &long, (12, 3));
+        assert_eq!(
+            lines(&buf),
+            ["  b         ", "  c         ", "  d         "],
+            "a caret below the pane's height scrolls the title away"
+        );
+        assert_eq!(caret, Some(Position::new(3, 2)));
     }
 
     // FR-EDIT-02, FR-EDIT-04

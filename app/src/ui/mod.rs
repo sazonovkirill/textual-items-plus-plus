@@ -33,7 +33,9 @@ pub use picker::{PickerPopup, picker_input};
 pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
-    app::{self, Command, Context, Destination, Effect, Message, Opened, Place, REGISTRY, State},
+    app::{
+        self, Command, Context, Destination, Effect, Message, Opened, Part, Place, REGISTRY, State,
+    },
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
 };
@@ -67,6 +69,8 @@ pub struct Tui {
     icons: IconSet,
     /// The first line of the container pane's content on screen.
     top: usize,
+    /// Where the app was last drawn.
+    area: Rect,
     quit: bool,
     file: Option<File>,
     /// The local date, as last given.
@@ -83,6 +87,7 @@ impl Tui {
             theme: BuiltIn::default().colors(),
             icons: IconSet::default(),
             top: 0,
+            area: Rect::default(),
             quit: false,
             file: None,
             today,
@@ -171,8 +176,8 @@ impl Tui {
     /// it to the core, and the core's effects are carried out. While the conflict prompt is open
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
-    /// Move to picker (FR-OPS-04) and, in edit mode, the title being edited take them the same
-    /// way (FR-EDIT-01). A key that cuts a sequence short gives the sequence's command first,
+    /// Move to picker (FR-OPS-04) and, in edit mode, the title or description being edited take
+    /// them the same way (FR-EDIT-01). A key that cuts a sequence short gives the sequence's command first,
     /// then acts on its own.
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
@@ -184,10 +189,15 @@ impl Tui {
                 .press(event)
                 .filter(|&command| self.allows(command))
                 .map(Message::Command)
-        } else if self.state.editing().is_some() {
-            edit_keys::edit_input(event)
-                .map(Message::Edit)
-                .or_else(|| self.global(event))
+        } else if let Some((_, part, _)) = self.state.editing() {
+            match part {
+                Part::Title => edit_keys::edit_input(event),
+                Part::Description => {
+                    edit_keys::description_input(event, self.description_columns())
+                }
+            }
+            .map(Message::Edit)
+            .or_else(|| self.global(event))
         } else if self.state.navigator().is_some() {
             picker_input(event)
                 .map(Message::Navigator)
@@ -247,8 +257,8 @@ impl Tui {
     }
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
-    /// query of the Navigator or Move to while one is open, at the caret of the title being
-    /// edited in edit mode, else hidden.
+    /// query of the Navigator or Move to while one is open, at the caret of the text being edited
+    /// in edit mode, else hidden.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
         if self.state.conflict().is_some() {
@@ -263,6 +273,14 @@ impl Tui {
         }
         ContainerPane::new(&self.state, &self.theme, self.icons)
             .caret(pane_layout(panes)[2], self.top)
+    }
+
+    /// The columns the description being edited wraps in, as last drawn.
+    fn description_columns(&self) -> usize {
+        let [panes, _] = layout(self.area);
+        ContainerPane::new(&self.state, &self.theme, self.icons)
+            .description_columns(pane_layout(panes)[2])
+            .unwrap_or(usize::MAX)
     }
 
     /// Carries out one effect of the core.
@@ -385,6 +403,7 @@ impl Widget for &mut Tui {
     /// to keep the focus in view, and the Navigator, Move to or the conflict prompt over the pane
     /// while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
+        self.area = area;
         let [panes, status] = layout(area);
         let [crumbs, rule, pane] = pane_layout(panes);
         let path = self.state.path();
