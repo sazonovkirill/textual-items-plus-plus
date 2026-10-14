@@ -620,23 +620,28 @@ fn has_bare_tag(read: &Line, name: &str) -> bool {
 /// The item of kind `kind` that the line `read` holds, without what its children hold: its
 /// title, and its tags, the dates and states among them, a project's pin and a project's or a
 /// task's flag read as fields (FR-STORE-07, FR-VIEW-12, FR-ORG-12). A date tag whose value is not
-/// a `YYYY-MM-DD` day stays a tag, and so does every other tag.
+/// a `YYYY-MM-DD` day stays a tag, and so does every other tag. The first tag read as a field
+/// counts for that field, and the first ordinary tag of a name for that name, so a field and an
+/// ordinary tag of the same name are both kept (D-33, D-115).
 fn fields(read: &Line, kind: ItemKind) -> Item {
     let mut item = Item::new(kind, read.display_text());
     for tag in read.tags() {
         let value = tag.value.as_deref();
         let day = value.and_then(day);
         match (tag.name.as_str(), day) {
-            ("start", Some(day)) => item.start = Some(day),
-            ("due", Some(day)) => item.due = Some(day),
-            ("done", Some(day)) => item.completed = Some(Completion::On(day)),
-            ("done", None) if value.is_none() => item.completed = Some(Completion::Undated),
-            ("deleted", Some(day)) => item.deleted = Some(day),
+            ("start", Some(day)) => _ = item.start.get_or_insert(day),
+            ("due", Some(day)) => _ = item.due.get_or_insert(day),
+            ("done", Some(day)) => _ = item.completed.get_or_insert(Completion::On(day)),
+            ("done", None) if value.is_none() => {
+                item.completed.get_or_insert(Completion::Undated);
+            }
+            ("deleted", Some(day)) => _ = item.deleted.get_or_insert(day),
             ("later", None) if value.is_none() => item.later = true,
             ("area", None) if value.is_none() && kind == ItemKind::Area => {}
             ("section", None) if value.is_none() && kind == ItemKind::Section => {}
             ("pinned", None) if value.is_none() && kind == ItemKind::Project => item.pinned = true,
             ("flagged", None) if value.is_none() && kind.takes_flag() => item.flagged = true,
+            _ if item.tags.iter().any(|seen| seen.name == tag.name) => {}
             _ => item.tags.push(domain::Tag {
                 name: tag.name.clone(),
                 value: tag.value.clone(),
@@ -1745,6 +1750,131 @@ Secret @hidden
         let old = item(&document, old);
         assert!(!old.flagged, "a flag has no value");
         assert_eq!(old.tags, [tag("flagged", Some("yes"))]);
+    }
+
+    // FR-STORE-10, N-REL-02
+    #[test]
+    fn a_tag_read_as_a_field_and_an_ordinary_tag_of_its_name_both_survive_a_rewrite() {
+        let text = concat!(
+            "Inbox:\n",
+            "\t- t @flagged @flagged(high)\n",
+            "\t- u @later(x) @later\n",
+            "\t- v @due(soon) @due(2026-10-20) @done(no) @done @done(2026-10-21)\n",
+            "\t- w @home @home(2) @due(2026-10-20) @due(2026-10-30)\n",
+            "P: @pinned(yes) @pinned\n",
+            "A: @area(x) @area\n",
+        );
+        let (document, _) = load(text);
+        let [flagged, later, dated, repeated] =
+            children(&document, Some(document.inbox())).map(|id| item(&document, id));
+        let [pinned, area] = children(&document, None).map(|id| item(&document, id));
+        assert!(flagged.flagged);
+        assert_eq!(flagged.tags, [tag("flagged", Some("high"))]);
+        assert!(later.later);
+        assert_eq!(later.tags, [tag("later", Some("x"))]);
+        assert_eq!(
+            (dated.due, dated.completed),
+            (Some(date(2026, 10, 20)), Some(Completion::Undated))
+        );
+        assert_eq!(
+            dated.tags,
+            [tag("due", Some("soon")), tag("done", Some("no"))]
+        );
+        assert_eq!(
+            repeated.due,
+            Some(date(2026, 10, 20)),
+            "the first field counts"
+        );
+        assert_eq!(
+            repeated.tags,
+            [tag("home", None)],
+            "the first ordinary tag counts"
+        );
+        assert!(pinned.pinned);
+        assert_eq!(pinned.tags, [tag("pinned", Some("yes"))]);
+        assert_eq!(area.kind, ItemKind::Area);
+        assert_eq!(area.tags, [tag("area", Some("x"))]);
+        let first = |document: &Document| document.children(document.inbox())[0];
+        assert_eq!(
+            edited(text, first, |task| task.flagged = false),
+            text.replace("- t @flagged @flagged(high)", "- t @flagged(high)")
+        );
+        let timed = edited(
+            "Inbox:\n\t- g @done(2026-10-13 14:22) @deleted(x)\n",
+            first,
+            |task| {
+                task.completed = Some(Completion::On(date(2026, 10, 14)));
+                task.deleted = Some(date(2026, 10, 15));
+            },
+        );
+        let (reread, _) = load(&timed);
+        let [completed] = children(&reread, Some(reread.inbox()));
+        let completed = item(&reread, completed);
+        assert_eq!(
+            (completed.completed, completed.deleted),
+            (
+                Some(Completion::On(date(2026, 10, 14))),
+                Some(date(2026, 10, 15))
+            ),
+            "{timed}"
+        );
+        assert_eq!(
+            completed.tags,
+            [
+                tag("done", Some("2026-10-13 14:22")),
+                tag("deleted", Some("x"))
+            ]
+        );
+    }
+
+    /// The item of kind `kind` that the line `text` holds.
+    fn read_line(text: &str, kind: ItemKind) -> Item {
+        let read = parse(text);
+        fields(
+            read.get(read.get(read.root()).unwrap().children()[0])
+                .unwrap(),
+            kind,
+        )
+    }
+
+    proptest! {
+        // FR-STORE-07, FR-STORE-10, N-REL-02
+        #[test]
+        fn every_item_line_reads_back_as_the_item_it_was_written_from(
+            kind in prop::sample::select(vec![
+                ItemKind::Task, ItemKind::ChecklistItem, ItemKind::Project, ItemKind::Area,
+                ItemKind::Section,
+            ]),
+            tags in prop::collection::vec(prop::sample::select(vec![
+                "@later", "@later(x)", "@flagged", "@flagged(high)", "@pinned", "@pinned(yes)",
+                "@start(2026-10-01)", "@start(soon)", "@due(2026-10-02)", "@due(soon)", "@done",
+                "@done(2026-10-03)", "@done(x)", "@deleted(2026-10-04)", "@deleted", "@area",
+                "@area(x)", "@section", "@section(y)", "@home", "@home(2)",
+            ]), 0..8),
+            later in any::<bool>(),
+            flagged in any::<bool>(),
+            pinned in any::<bool>(),
+            start in prop::option::of(1..28_i8),
+            due in prop::option::of(1..28_i8),
+            completed in prop::option::of(prop::option::of(1..28_i8)),
+            deleted in prop::option::of(1..28_i8),
+        ) {
+            let mut line = line_text(&Item::new(kind, "t"));
+            for tag in tags {
+                line.push(' ');
+                line.push_str(tag);
+            }
+            let mut changed = read_line(&line, kind);
+            changed.later = later;
+            changed.flagged = flagged && kind.takes_flag();
+            changed.pinned = pinned && kind == ItemKind::Project;
+            changed.start = start.map(|day| date(2026, 11, day));
+            changed.due = due.map(|day| date(2026, 11, day));
+            changed.completed = completed
+                .map(|day| day.map_or(Completion::Undated, |day| Completion::On(date(2026, 11, day))));
+            changed.deleted = deleted.map(|day| date(2026, 11, day));
+            prop_assert_eq!(read_line(&line_text(&changed), kind), changed);
+        }
     }
 
     // FR-STORE-02, FR-STORE-03, FR-STORE-06, FR-STORE-08

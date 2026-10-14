@@ -192,7 +192,7 @@ impl Line {
         self.kind
     }
 
-    /// The tags on this line, first occurrence per name.
+    /// The tags on this line, every occurrence in order.
     #[must_use]
     pub fn tags(&self) -> &[Tag] {
         &self.tags
@@ -300,11 +300,18 @@ mod tests {
         assert_eq!(task.display_text(), "Milk");
         assert_eq!(
             task.tags(),
-            [Tag {
-                span: 6..12,
-                name: "done".to_owned(),
-                value: None,
-            }]
+            [
+                Tag {
+                    span: 6..12,
+                    name: "done".to_owned(),
+                    value: None,
+                },
+                Tag {
+                    span: 12..30,
+                    name: "done".to_owned(),
+                    value: Some("2026-10-01".to_owned()),
+                },
+            ]
         );
     }
 }

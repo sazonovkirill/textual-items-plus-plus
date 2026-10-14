@@ -92,14 +92,14 @@ fn parse_text(text: &str, bom: bool) -> Outline {
     outline
 }
 
-/// The TaskPaper type of a line body, its tags, keeping only the first occurrence of each name
-/// (file-format.md §5), and its display text: the body without a task's `- `, a project's `:` and
-/// every tag (data-model.md §2).
+/// The TaskPaper type of a line body, every tag on it, and its display text: the body without a
+/// task's `- `, a project's `:` and every tag (data-model.md §2). Every occurrence of a repeated
+/// tag is kept, since which one counts depends on what the reader takes each to mean (D-115).
 fn read(text: &str) -> (LineKind, Vec<tags::Tag>, String) {
     let scanned = tags::scan(text);
     let kind = kind_of(text, &scanned);
     let display_text = display_text_of(text, kind, &scanned);
-    (kind, first_of_each(scanned), display_text)
+    (kind, scanned, display_text)
 }
 
 /// The type of `text`, whose tags are `scanned`.
@@ -125,17 +125,6 @@ fn display_text_of(text: &str, kind: LineKind, scanned: &[tags::Tag]) -> String 
         LineKind::Project => shown.strip_suffix(':').unwrap_or(&shown).to_owned(),
         LineKind::Note => shown,
     }
-}
-
-/// `scanned` with only the first occurrence of each name.
-fn first_of_each(scanned: Vec<tags::Tag>) -> Vec<tags::Tag> {
-    let mut found: Vec<tags::Tag> = Vec::new();
-    for tag in scanned {
-        if found.iter().all(|seen| seen.name != tag.name) {
-            found.push(tag);
-        }
-    }
-    found
 }
 
 /// Removes every tag occurrence, `scanned`. A tag's span starts at the whitespace before it, so
@@ -706,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn tags_keep_the_first_occurrence_per_name() {
+    fn tags_keep_every_occurrence_in_order() {
         let found: Vec<_> = tags("- a @done @due(1) b @done(2026-10-01) @due(2) @x")
             .into_iter()
             .map(|tag| (tag.name, tag.value, tag.span))
@@ -716,6 +705,8 @@ mod tests {
             [
                 ("done".to_owned(), None, 3..9),
                 ("due".to_owned(), Some("1".to_owned()), 9..17),
+                ("done".to_owned(), Some("2026-10-01".to_owned()), 19..37),
+                ("due".to_owned(), Some("2".to_owned()), 37..45),
                 ("x".to_owned(), None, 45..48),
             ]
         );

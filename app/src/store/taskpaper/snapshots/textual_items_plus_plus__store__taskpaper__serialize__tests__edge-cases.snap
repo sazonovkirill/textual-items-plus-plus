@@ -12,7 +12,7 @@ expression: line_tree(&outline)
 1 0 "@2 @-x @.x digit, dash and dot names" Note [@2 @-x @.x]
 1 0 "end of sentence @tag." Note [@tag.]
 1 0 "@tag, followed by text" Note []
-1 0 "- duplicate @a(1) @a(2)" Task [@a(1)]
+1 0 "- duplicate @a(1) @a(2)" Task [@a(1) @a(2)]
 1 0 "@id @text @type(x) are reserved" Note []
 1 0 "@a() and @b" Note [@a() @b]
 1 0 "escaped @v(\\(x\\) and \\\\ backslash)" Note [@v((x) and \\ backslash)]
