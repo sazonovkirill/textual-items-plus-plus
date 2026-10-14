@@ -54,6 +54,8 @@ pub struct State {
     pub(super) right: Vec<Pane>,
     pub(super) history: History,
     pub(super) navigator: Option<Picker<Stop>>,
+    /// The command palette, while it is open (FR-NAV-06).
+    pub(super) palette: Option<Picker<Command>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
     /// The date prompt, while it is open (FR-DATE-02).
@@ -95,6 +97,7 @@ impl State {
             opened,
             history: History::default(),
             navigator: None,
+            palette: None,
             move_to: None,
             date_prompt: None,
             tags: None,
@@ -1233,9 +1236,10 @@ impl State {
         self.pane_mut().width = Some(width);
     }
 
-    /// Opens the Navigator on where the pane is, closing Move to, the date prompt and the tag
-    /// picker, or closes it when it is open.
+    /// Opens the Navigator on where the pane is, closing the command palette, Move to, the date
+    /// prompt and the tag picker, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
+        self.palette = None;
         self.move_to = None;
         self.date_prompt = None;
         self.tags = None;

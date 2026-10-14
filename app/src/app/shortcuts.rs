@@ -107,7 +107,8 @@ impl KeyGroup {
             | Command::Narrow
             | Command::Widen
             | Command::Shortcuts
-            | Command::ScrollShortcuts(_) => Self::View,
+            | Command::ScrollShortcuts(_)
+            | Command::Palette => Self::View,
             Command::KeepMine | Command::TakeTheirs | Command::ShowDiff => Self::Conflict,
         }
     }
@@ -116,8 +117,8 @@ impl KeyGroup {
 impl State {
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
     /// commands and quitting, while the attachments panel is open quitting and, while nothing in
-    /// it is edited, the commands it acts on (FR-CHK-03), while a picker or the date prompt is
-    /// open or in edit mode only global ones, and otherwise any.
+    /// it is edited, the commands it acts on (FR-CHK-03), while a picker, the command palette or
+    /// the date prompt is open or in edit mode only global ones, and otherwise any.
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -130,6 +131,7 @@ impl State {
             command == Command::Quit || (self.editing().is_none() && attachments::acts_on(command))
         } else if self.editing().is_some()
             || self.navigator.is_some()
+            || self.palette.is_some()
             || self.move_to.is_some()
             || self.tags.is_some()
             || self.date_prompt.is_some()

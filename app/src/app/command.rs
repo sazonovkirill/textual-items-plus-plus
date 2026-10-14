@@ -34,6 +34,8 @@ pub enum Command {
     Go(Go),
     /// Open the Navigator, or close it when it is open (FR-VIEW-07).
     Navigator,
+    /// Open the command palette, which runs the command chosen in it (FR-NAV-06).
+    Palette,
     /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
     EditTitle,
     /// Add an item of the focused row's kind on this side of it, a task in a pane without rows,
@@ -606,6 +608,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Shortcuts,
         title: "Toggle Shortcuts",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Palette,
+        title: "Command Palette",
         context: Context::Navigate,
     },
     Entry {

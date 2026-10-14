@@ -62,7 +62,7 @@ fn completing_a_task_in_upcoming_takes_it_out_until_completed_items_are_shown() 
         rows[5].starts_with("▌ - Call the bank about the card"),
         "the focus moves on: {rows:#?}"
     );
-    harness.type_text("gc");
+    harness.ctrl('o');
     let rows = trimmed(&harness);
     assert_eq!(rows[4], "  Tomorrow · Tue 6 Oct", "{rows:#?}");
     assert!(

@@ -16,6 +16,7 @@ mod logbook;
 mod moving;
 mod navigation;
 mod notes;
+mod palette;
 mod panes;
 mod quitting;
 mod rearranging;

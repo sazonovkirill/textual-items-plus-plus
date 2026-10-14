@@ -42,7 +42,7 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // taskpaper-terminal's keys; a legacy terminal sends `Ctrl+Shift+Z` as `Ctrl+Z`, which
     // undoes (D-35).
     (Command::ToggleCompleted, &["x", "ctrl+enter"]),
-    (Command::ShowCompleted, &["ctrl+o", "g c"]),
+    (Command::ShowCompleted, &["ctrl+o"]),
     (Command::Undo, &["z", "ctrl+z"]),
     (Command::Redo, &["Z", "ctrl+shift+z", "ctrl+y"]),
     // taskpaper-terminal's zoom, home and history keys; home is the Inbox, so its Go to Inbox key
@@ -62,6 +62,9 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // taskpaper-terminal's Navigator key, with the owner's `Ctrl+K` and **g**o **n**avigate
     // (D-36).
     (Command::Navigator, &["ctrl+g", "ctrl+k", "g n"]),
+    // taskpaper-terminal's palette key, and **g**o to a **c**ommand, which the owner moved from Show
+    // Completed (D-63).
+    (Command::Palette, &["ctrl+p", "g c"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o` and `O` add
     // the focused row's kind, and the lower and upper case of a kind's letter add one at the
     // bottom and the top of the container shown (owner, D-40).
@@ -603,8 +606,16 @@ mod tests {
         ] {
             assert_eq!(keymap.press(&event), Some(command), "{event:?}");
         }
+    }
+
+    // FR-NAV-06
+    #[test]
+    fn ctrl_p_and_g_c_open_the_command_palette() {
+        let mut keymap = Keymap::default();
+        let ctrl_p = press(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        assert_eq!(keymap.press(&ctrl_p), Some(Command::Palette));
         assert_eq!(keymap.press(&char('g')), None);
-        assert_eq!(keymap.press(&char('c')), Some(Command::ShowCompleted));
+        assert_eq!(keymap.press(&char('c')), Some(Command::Palette));
     }
 
     // FR-ATT-02

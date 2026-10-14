@@ -225,8 +225,9 @@ impl Tui {
     /// it to the core, and the core's effects are carried out. While the conflict prompt is open
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
-    /// Move to picker (FR-OPS-04) and, in edit mode, the title, description or note being edited
-    /// take them the same way (FR-EDIT-01), and so does the date prompt (FR-DATE-02). The open
+    /// command palette (FR-NAV-06), the Move to picker (FR-OPS-04) and, in edit mode, the title,
+    /// description or note being edited take them the same way (FR-EDIT-01), and so does the date
+    /// prompt (FR-DATE-02). The open
     /// attachments panel takes them, scrolling itself (FR-ATT-01), leaving quitting and the
     /// commands it acts on (FR-CHK-03).
     pub fn handle(&mut self, event: &Event, today: Date) {
@@ -388,11 +389,13 @@ impl Tui {
         }
     }
 
-    /// What carries an input to the open picker, the Navigator, Move to or the tag picker, while
-    /// one is open.
+    /// What carries an input to the open picker, the Navigator, the command palette, Move to or
+    /// the tag picker, while one is open.
     fn open_picker(&self) -> Option<fn(PickerInput) -> Message> {
         if self.state.navigator().is_some() {
             Some(Message::Navigator)
+        } else if self.state.palette().is_some() {
+            Some(Message::Palette)
         } else if self.state.move_to().is_some() {
             Some(Message::MoveTo)
         } else if self.state.tags().is_some() {
@@ -417,9 +420,9 @@ impl Tui {
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
     /// note being edited in the attachments panel while it is open, else at the caret of the
-    /// query of the Navigator or Move to while one is open, at the caret of the date prompt while
-    /// it is open, at the caret of the text being edited in edit mode, in the pane or the sidebar,
-    /// else hidden.
+    /// query of the Navigator, the command palette or Move to while one is open, at the caret of
+    /// the date prompt while it is open, at the caret of the text being edited in edit mode, in
+    /// the pane or the sidebar, else hidden.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
         if self.state.conflict().is_some() {
@@ -435,6 +438,9 @@ impl Tui {
         }
         if let Some(view) = self.state.navigator() {
             return Some(navigator_popup(&view, &self.theme, self.icons).caret(panes));
+        }
+        if let Some(view) = self.state.palette() {
+            return Some(palette_popup(&view, &self.theme, self.icons).caret(panes));
         }
         if let Some(view) = self.state.move_to() {
             return Some(move_to_popup(&view, &self.theme, self.icons).caret(panes));
@@ -716,6 +722,16 @@ fn navigator_popup<'a>(
         })
 }
 
+/// The command palette's window, each command after the command icon; drawn, it shows each
+/// command's keys as its badge (FR-NAV-06).
+fn palette_popup<'a>(
+    view: &'a app::PickerView<'a, Command>,
+    theme: &'a Theme,
+    icons: IconSet,
+) -> PickerPopup<'a, Command> {
+    PickerPopup::new("Command Palette", view, &|_| Icon::Command, icons, theme)
+}
+
 /// The icon of `stop` in the Navigator and the sidebar: a place's kind's, or a view's own.
 fn stop_icon(stop: Stop) -> Icon {
     match stop {
@@ -800,8 +816,8 @@ impl Widget for &mut Tui {
     /// Draws the panes side by side, a dim rule apart, each below its breadcrumbs and a rule,
     /// beside the sidebar while it shows and the shortcuts panel at the right while it shows, over
     /// the status line, scrolling each pane to keep its focus in view, the date prompt between
-    /// them while it is open, and the Navigator, Move to, the attachments panel or the conflict
-    /// prompt over them while it is open.
+    /// them while it is open, and the Navigator, the command palette, Move to, the attachments
+    /// panel or the conflict prompt over them while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
         let [panes, prompt, status] = self.layout(area);
@@ -862,6 +878,12 @@ impl Widget for &mut Tui {
         self.render_shortcuts(shortcuts, buf);
         if let Some(view) = self.state.navigator() {
             navigator_popup(&view, &self.theme, self.icons).render(panes, buf);
+        }
+        if let Some(view) = self.state.palette() {
+            let keys = |&command: &Command| self.keymap.labels(command);
+            palette_popup(&view, &self.theme, self.icons)
+                .badge(&keys)
+                .render(panes, buf);
         }
         if let Some(view) = self.state.move_to() {
             move_to_popup(&view, &self.theme, self.icons).render(panes, buf);
