@@ -129,6 +129,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::StartToday, &["m t"]),
     // `m` and **l**ater, as Things 3's Someday, whose `Cmd+O` no terminal sends (D-89).
     (Command::ToggleLater, &["m l"]),
+    // `m` and **e**vening, as Things 3's `Cmd+E` for This Evening (FR-VIEW-13).
+    (Command::ToggleEvening, &["m e"]),
     // The owner's brackets nudge a date a day, as taskpaper-terminal's `[`/`]` nudge the start
     // date: the plain ones the start date, the curly ones the due date (D-82).
     (Command::DayEarlier(DateKind::Start), &["["]),

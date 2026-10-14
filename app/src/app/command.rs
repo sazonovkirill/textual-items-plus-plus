@@ -79,6 +79,9 @@ pub enum Command {
     /// Mark the selected tasks and projects Later, or take them out of Later when all are
     /// (FR-ORG-11, FR-OPS-06).
     ToggleLater,
+    /// In Today, put the selected items in its Evening part, or take them out of it when all are
+    /// in it (FR-VIEW-13).
+    ToggleEvening,
     /// Move the selected items' date a day earlier, a missing one to yesterday (FR-DATE-06,
     /// FR-OPS-06).
     DayEarlier(DateKind),
@@ -569,6 +572,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::ToggleLater,
         title: "Toggle Later",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ToggleEvening,
+        title: "Toggle Evening",
         context: Context::Navigate,
     },
     Entry {

@@ -4,7 +4,10 @@
 
 use jiff::civil::Date;
 
-use super::{container::Row, view::Group};
+use super::{
+    container::Row,
+    view::{Group, Heading},
+};
 use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 
 /// The one group Today shows of `document` on `today`, without a heading: the tasks, sections
@@ -12,8 +15,9 @@ use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 /// `today` (FR-DATE-04), first, then the others, each in file order, then, only when
 /// `show_completed`, the completed ones (FR-VIEW-11). A container's dates are its own (OQ-20).
 /// A Later item, or one inside a Later project, shows only once it is due (D-92).
-/// Items in the Trash and the contents of a completed item are not shown (FR-ORG-09); with
-/// nothing to show there is no group.
+/// Items in the Trash and the contents of a completed item are not shown (FR-ORG-09). The items
+/// put in the Evening on `today` follow in a group of their own under the Evening heading, in the
+/// same order (FR-VIEW-13); a group with nothing to show is left out.
 #[must_use]
 pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> Vec<Group> {
     let mut walk = Walk {
@@ -26,15 +30,20 @@ pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> 
         walk.visit(document, id);
     }
     // Stable, so each bucket keeps the file's order.
-    walk.entries.sort_by_key(|&(bucket, _)| bucket);
-    let rows: Vec<Row> = walk.entries.into_iter().map(|(_, row)| row).collect();
-    if rows.is_empty() {
-        return Vec::new();
-    }
-    vec![Group {
-        heading: None,
-        rows,
-    }]
+    walk.entries
+        .sort_by_key(|&(evening, bucket, _)| (evening, bucket));
+    let (evening, day): (Vec<_>, Vec<_>) = walk
+        .entries
+        .into_iter()
+        .partition(|&(evening, _, _)| evening);
+    [(None, day), (Some(Heading::Evening), evening)]
+        .into_iter()
+        .filter(|(_, entries)| !entries.is_empty())
+        .map(|(heading, entries)| Group {
+            heading,
+            rows: entries.into_iter().map(|(_, _, row)| row).collect(),
+        })
+        .collect()
 }
 
 /// The walk through the document in file order, collecting Today's rows with where in the list
@@ -42,7 +51,8 @@ pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> 
 struct Walk {
     today: Date,
     show_completed: bool,
-    entries: Vec<(Bucket, Row)>,
+    /// Each row, with whether it is in the Evening and where in its part it goes.
+    entries: Vec<(bool, Bucket, Row)>,
 }
 
 /// Where in the list a row goes, in order.
@@ -73,7 +83,8 @@ impl Walk {
             } else {
                 Bucket::Due
             };
-            self.entries.push((bucket, row));
+            self.entries
+                .push((item.in_evening(self.today), bucket, row));
         }
         if item.completion().is_some() {
             return;
@@ -200,6 +211,52 @@ mod tests {
             }],
             "one list without headings, the overdue first, each part in file order, and no area, \
              which has no dates (D-75)"
+        );
+    }
+
+    // FR-VIEW-13
+    #[test]
+    fn items_put_in_the_evening_today_follow_under_its_heading() {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let open = add(&mut document, inbox, Task, Some(0), None);
+        let evening = add(&mut document, inbox, Task, Some(0), None);
+        let yesterday = add(&mut document, inbox, Task, Some(-1), None);
+        let overdue = add(&mut document, inbox, Task, None, Some(-1));
+        let done = add(&mut document, inbox, Task, Some(0), None);
+        let previous = TODAY.yesterday().expect("a day before");
+        change(&mut document, yesterday, |item| {
+            item.evening = Some(previous);
+        });
+        for id in [evening, overdue, done] {
+            change(&mut document, id, |item| item.evening = Some(TODAY));
+        }
+        change(&mut document, done, |item| {
+            item.completed = Some(Completion::On(TODAY));
+        });
+        assert_eq!(
+            groups(&document, TODAY, true),
+            [
+                Group {
+                    heading: None,
+                    rows: vec![task(open), task(yesterday)],
+                },
+                Group {
+                    heading: Some(Heading::Evening),
+                    rows: vec![task(overdue), task(evening), task(done)],
+                },
+            ],
+            "the Evening of an earlier day is over, and the Evening orders as the rest does"
+        );
+        for id in [open, yesterday] {
+            change(&mut document, id, |item| item.evening = Some(TODAY));
+        }
+        assert_eq!(
+            groups(&document, TODAY, false),
+            [Group {
+                heading: Some(Heading::Evening),
+                rows: vec![task(overdue), task(open), task(evening), task(yesterday)],
+            }]
         );
     }
 

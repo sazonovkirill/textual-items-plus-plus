@@ -14,6 +14,7 @@ mod container;
 mod converting;
 mod date_prompt;
 mod editing;
+mod evening;
 mod focus;
 mod go_to_symbol;
 mod history;

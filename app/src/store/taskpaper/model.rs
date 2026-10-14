@@ -615,8 +615,8 @@ fn has_bare_tag(read: &Line, name: &str) -> bool {
 }
 
 /// The item of kind `kind` that the line `read` holds, without what its children hold: its
-/// title, and its tags, the dates and states among them and a project's pin read as fields
-/// (FR-STORE-07, FR-VIEW-12). A date tag whose value is not a `YYYY-MM-DD` day stays a tag, and so
+/// title, and its tags, the dates and states among them, a project's pin and the day it was put in
+/// the Evening read as fields (FR-STORE-07, FR-VIEW-12, FR-VIEW-13). A date tag whose value is not a `YYYY-MM-DD` day stays a tag, and so
 /// does every other tag.
 fn fields(read: &Line, kind: ItemKind) -> Item {
     let mut item = Item::new(kind, read.display_text());
@@ -630,6 +630,7 @@ fn fields(read: &Line, kind: ItemKind) -> Item {
             ("done", None) if value.is_none() => item.completed = Some(Completion::Undated),
             ("deleted", Some(day)) => item.deleted = Some(day),
             ("later", None) if value.is_none() => item.later = true,
+            ("evening", Some(day)) => item.evening = Some(day),
             ("area", None) if value.is_none() && kind == ItemKind::Area => {}
             ("section", None) if value.is_none() && kind == ItemKind::Section => {}
             ("pinned", None) if value.is_none() && kind == ItemKind::Project => item.pinned = true,
@@ -651,8 +652,8 @@ fn day(value: &str) -> Option<Date> {
 }
 
 /// The line of `item`: its title as a task or a project, then its kind tag, its pin, start and due
-/// dates, its Later mark, its other tags, and its completion and deletion (OQ-17, FR-STORE-07,
-/// FR-VIEW-12, D-89).
+/// dates, its Later mark, the day it was put in the Evening, its other tags, and its completion
+/// and deletion (OQ-17, FR-STORE-07, FR-VIEW-12, FR-VIEW-13, D-89).
 fn line_text(item: &Item) -> String {
     let mut text = match item.kind {
         ItemKind::Task | ItemKind::ChecklistItem => format!("- {}", item.title),
@@ -685,6 +686,9 @@ fn line_text(item: &Item) -> String {
     }
     if item.later {
         add("later", None);
+    }
+    if let Some(evening) = item.evening {
+        add("evening", Some(evening.to_string()));
     }
     for tag in &item.tags {
         add(&tag.name, tag.value.clone());
@@ -1657,6 +1661,30 @@ Secret @hidden
                 .get(read.get(read.root()).unwrap().children()[0])
                 .unwrap();
             assert_eq!(fields(read, kind), item, "{line}");
+        }
+    }
+
+    // FR-VIEW-13, FR-STORE-10
+    #[test]
+    fn the_evening_day_is_read_from_its_tag_and_written_after_later() {
+        let (document, _) = load(concat!(
+            "Inbox:\n",
+            "\t- t @home @evening(2026-10-14) @later @start(2026-10-14)\n",
+            "\t- u @evening\n",
+            "\t- v @evening(tonight)\n",
+        ));
+        let [t, u, v] = children(&document, Some(document.inbox()));
+        let t = item(&document, t);
+        assert_eq!(t.evening, Some(jiff::civil::date(2026, 10, 14)));
+        assert_eq!(t.tags, [tag("home", None)]);
+        assert_eq!(
+            line_text(t),
+            "- t @start(2026-10-14) @later @evening(2026-10-14) @home"
+        );
+        for (other, value) in [(u, None), (v, Some("tonight"))] {
+            let other = item(&document, other);
+            assert_eq!(other.evening, None, "the Evening is a day");
+            assert_eq!(other.tags, [tag("evening", value)], "it keeps the tag");
         }
     }
 

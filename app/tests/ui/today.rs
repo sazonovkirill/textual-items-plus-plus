@@ -113,3 +113,93 @@ fn open_today_from_the_sidebar() {
         "the Logbook between All and the Trash: {rows:#?}"
     );
 }
+
+// FR-VIEW-13, FR-OPS-06
+#[test]
+fn me_puts_a_task_in_the_evening_at_the_bottom_of_today_and_takes_it_out() {
+    let mut harness = Harness::new(60, 18);
+    harness.type_text("gtjme");
+    assert_eq!(
+        trimmed(&harness)[2..12],
+        [
+            "  ☐ Answer the recruiter's email                \u{f0a31} yesterday",
+            "    Work",
+            "  ☐ Review two portfolios                           \u{f166c} today",
+            "    Work › Hiring",
+            "  ☐ Water the plants                            \u{f166d} yesterday",
+            "    Home",
+            "",
+            "  \u{f0594} Evening",
+            "▌ ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+            "▌   Work › Website › Launch",
+        ],
+        "under the Evening heading after the rest, still focused"
+    );
+    harness.type_text("kme");
+    assert_eq!(
+        trimmed(&harness)[6..12],
+        [
+            "",
+            "  \u{f0594} Evening",
+            "  ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+            "    Work › Website › Launch",
+            "▌ ☐ Water the plants                            \u{f166d} yesterday",
+            "▌   Home",
+        ],
+        "in file order within the Evening"
+    );
+    harness.type_text("Vkme");
+    assert_eq!(
+        trimmed(&harness)[2..10],
+        [
+            "  ☐ Answer the recruiter's email                \u{f0a31} yesterday",
+            "    Work",
+            "▌ ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+            "▌   Work › Website › Launch",
+            "  ☐ Review two portfolios                           \u{f166c} today",
+            "    Work › Hiring",
+            "▌ ☐ Water the plants                            \u{f166d} yesterday",
+            "▌   Home",
+        ],
+        "once all selected are in the Evening, the same key takes them out"
+    );
+    assert!(!trimmed(&harness).iter().any(|row| row.contains("Evening")));
+    harness.type_text("z");
+    assert!(
+        trimmed(&harness).contains(&"  \u{f0594} Evening".to_owned()),
+        "one step to undo"
+    );
+}
+
+// FR-VIEW-13, FR-STORE-07
+#[test]
+fn the_evening_is_kept_in_the_file_for_the_day_and_only_today_takes_me() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    std::fs::write(&path, "Inbox:\n\t- Call mom @start(2026-10-05)\n").expect("written");
+    let mut harness = Harness::open(path.clone(), 60, 12);
+    harness.type_text("me");
+    harness.ctrl('p');
+    harness.type_text("evening");
+    assert_eq!(
+        trimmed(&harness)[6],
+        "│ No matches                                               │",
+        "Toggle Evening is offered only in Today"
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("gt");
+    harness.ctrl('p');
+    harness.type_text("evening");
+    assert_eq!(
+        trimmed(&harness)[6],
+        "│ \u{f07b7} Toggle Evening                                      me │"
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("me");
+    harness.wait(1000);
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("saved"),
+        "Inbox:\n\t- Call mom @start(2026-10-05) @evening(2026-10-05)\n",
+        "the day it was put in the Evening, and nothing from me in the Inbox"
+    );
+}

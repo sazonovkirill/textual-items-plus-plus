@@ -101,9 +101,9 @@ mod tests {
             .iter()
             .filter(|entry| entry.context != Context::Conflict)
             .map(|entry| entry.command)
-            .filter(|&command| command != Command::Palette)
+            .filter(|&command| command != Command::Palette && command != Command::ToggleEvening)
             .collect();
-        assert_eq!(listed(&state), expected);
+        assert_eq!(listed(&state), expected, "Toggle Evening only in Today");
         let first = state
             .palette()
             .and_then(|view| view.entries.iter().next().map(|entry| entry.text.clone()));

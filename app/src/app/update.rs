@@ -229,6 +229,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::SetDate(kind) => state.open_date_prompt(kind, today),
         Command::StartToday => state.start_today(today),
         Command::ToggleLater => state.toggle_later(),
+        Command::ToggleEvening => state.toggle_evening(),
         Command::DayEarlier(kind) => state.nudge_date(kind, -1, today),
         Command::DayLater(kind) => state.nudge_date(kind, 1, today),
         Command::Delete => state.delete(today),
@@ -767,6 +768,23 @@ mod tests {
         give(&mut state, Command::Focus(Focus::Last));
         give(&mut state, Command::TogglePinned);
         assert!(pinned(&state), "the project's row in the pane");
+        Ok(())
+    }
+
+    // FR-VIEW-13
+    #[test]
+    fn evening_is_toggled_only_in_today() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let mut task = Item::new(ItemKind::Task, "t");
+        task.start = Some(TODAY);
+        let task = document.push(Some(document.inbox()), Node::Item(task))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        let evening = |state: &State| state.document().node(task).and_then(Node::item)?.evening;
+        give(&mut state, Command::ToggleEvening);
+        assert_eq!(evening(&state), None, "not in the Inbox");
+        give(&mut state, Command::Go(Go::View(View::Today)));
+        give(&mut state, Command::ToggleEvening);
+        assert_eq!(evening(&state), Some(TODAY));
         Ok(())
     }
 

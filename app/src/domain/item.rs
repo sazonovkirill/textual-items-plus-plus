@@ -136,6 +136,9 @@ pub struct Item {
     /// Whether it is a project the sidebar and the Navigator also list among the pinned ones
     /// (FR-VIEW-12).
     pub pinned: bool,
+    /// The day it was put in the Evening part of Today, which it is in only on that day
+    /// (FR-VIEW-13). What the app goes by is [`in_evening`](Item::in_evening).
+    pub evening: Option<Date>,
     /// The user's tags, and any other tag the model does not interpret, in their order.
     pub tags: Vec<Tag>,
 }
@@ -156,6 +159,7 @@ impl Item {
             deleted: None,
             later: false,
             pinned: false,
+            evening: None,
             tags: Vec::new(),
         }
     }
@@ -194,6 +198,13 @@ impl Item {
         self.later && self.kind.goes_later()
     }
 
+    /// Whether Today lists it in its Evening part on `today`: it was put there that day
+    /// (FR-VIEW-13).
+    #[must_use]
+    pub fn in_evening(&self, today: Date) -> bool {
+        self.evening == Some(today)
+    }
+
     /// Whether it is overdue on `today`: due before it and not completed (FR-DATE-04).
     #[must_use]
     pub fn overdue(&self, today: Date) -> bool {
@@ -222,8 +233,8 @@ pub struct Tag {
 /// The tag names the app writes itself, and those TaskPaper reads as plain text, which no tag of
 /// the user's takes (FR-STORE-10, OQ-11).
 const RESERVED: &[&str] = &[
-    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "pinned", "id",
-    "text", "type",
+    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "pinned", "evening",
+    "id", "text", "type",
 ];
 
 impl Tag {

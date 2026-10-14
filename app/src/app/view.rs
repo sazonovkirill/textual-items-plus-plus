@@ -128,6 +128,8 @@ pub enum Heading {
     Period(Period),
     /// The day they were completed, `None` for none recorded.
     Completed(Option<Date>),
+    /// Today's Evening, which they were put in (FR-VIEW-13).
+    Evening,
 }
 
 /// The groups `view` shows of `document` on `today`, completed items among them only when

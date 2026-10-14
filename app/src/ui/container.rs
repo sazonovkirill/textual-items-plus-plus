@@ -833,8 +833,8 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// The line naming what a view's group is listed under: an area or project as its title
-    /// line without chips, or a period of days or the day of completion in bold; none for an item
-    /// that is not one.
+    /// line without chips, a period of days or the day of completion in bold, or Today's Evening
+    /// in bold after its moon; none for an item that is not one.
     fn heading(&self, heading: Heading) -> Option<Piece<'a>> {
         match heading {
             Heading::Item(id) => self.item(id).map(|item| Piece {
@@ -857,6 +857,16 @@ impl<'a> ContainerPane<'a> {
                 fit: self.fit(),
                 ..Piece::blank()
             }),
+            Heading::Evening => {
+                let icon = Icon::Evening.glyph(self.icons);
+                Some(Piece {
+                    x: u16::try_from(Span::raw(icon).width() + 1).unwrap_or(u16::MAX),
+                    text: Text::styled("Evening", Modifier::BOLD),
+                    fit: self.fit(),
+                    left: Line::styled(icon, Modifier::BOLD),
+                    ..Piece::blank()
+                })
+            }
         }
     }
 

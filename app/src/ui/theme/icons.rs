@@ -29,6 +29,8 @@ pub enum Icon {
     Logbook,
     /// The Trash view.
     Trash,
+    /// Today's Evening heading (FR-VIEW-13).
+    Evening,
     /// A start date chip.
     Start,
     /// A due date chip that is not overdue.
@@ -99,6 +101,8 @@ impl Icon {
             Self::Logbook => ("\u{f14f3}", "▤"),
             // nf-md-trash_can_outline
             Self::Trash => ("\u{f0a7a}", "✕"),
+            // nf-md-weather_night, as Things 3 marks This Evening with a moon
+            Self::Evening => ("\u{f0594}", "☾"),
             // nf-md-calendar_start
             Self::Start => ("\u{f166d}", "↦"),
             // nf-md-calendar_end
@@ -135,7 +139,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 26] = [
+    const ICONS: [Icon; 27] = [
         Icon::Area,
         Icon::Project,
         Icon::Section,
@@ -147,6 +151,7 @@ mod tests {
         Icon::All,
         Icon::Logbook,
         Icon::Trash,
+        Icon::Evening,
         Icon::Start,
         Icon::Due,
         Icon::Overdue,

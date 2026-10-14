@@ -3,7 +3,10 @@
 //! FR-KEY-03). Every command belongs to a group, so a command a later step registers is listed
 //! with the rest.
 
-use super::{Command, Context, Entry, REGISTRY, State, attachments, state};
+use super::{
+    Command, Context, Entry, REGISTRY, State, attachments, state,
+    view::{Shown, View},
+};
 
 /// A heading the shortcuts panel lists commands under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,6 +87,7 @@ impl KeyGroup {
             | Command::SetDate(_)
             | Command::StartToday
             | Command::ToggleLater
+            | Command::ToggleEvening
             | Command::DayEarlier(_)
             | Command::DayLater(_)
             | Command::Tags
@@ -137,7 +141,7 @@ impl State {
     /// it is edited, the commands it acts on (FR-CHK-03), while a picker, the command palette, Go
     /// to Symbol, the date prompt, Quick Add or the settings window is open, in edit mode or
     /// while the words to search for are typed only global ones, while the sidebar has the keys
-    /// those it takes, and otherwise any.
+    /// those it takes, and otherwise any but Toggle Evening outside Today (FR-VIEW-13).
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -164,6 +168,7 @@ impl State {
         } else {
             context != Some(Context::Conflict)
                 && (!self.sidebar_has_keys() || state::sidebar_takes(command))
+                && (command != Command::ToggleEvening || self.shown() == Shown::View(View::Today))
         }
     }
 
@@ -258,8 +263,13 @@ mod tests {
         let navigate = REGISTRY
             .iter()
             .filter(|entry| entry.context != Context::Conflict)
+            .filter(|entry| entry.command != Command::ToggleEvening)
             .count();
-        assert_eq!(listed.len(), navigate, "every command but the conflict's");
+        assert_eq!(
+            listed.len(),
+            navigate,
+            "every command but the conflict's and, outside Today, Toggle Evening"
+        );
         assert_eq!(
             groups
                 .first()
