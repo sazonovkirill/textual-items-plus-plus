@@ -684,9 +684,22 @@ impl State {
         }
     }
 
-    /// Starts editing the focused row's or the heading's title, picking nothing. Nothing happens
-    /// when nothing is focused.
+    /// Shows the area or project the focused row is in the pane, or else starts editing the
+    /// focused row's or the heading's title, picking nothing (D-80). Nothing happens when nothing
+    /// is focused.
     pub(super) fn edit_title(&mut self) {
+        let focused = self.pane().selection.focused();
+        let opens = focused
+            .filter(|&id| Some(id) != self.container())
+            .filter(|&id| {
+                let item = self.document.node(id).and_then(Node::item);
+                item.is_some_and(|item| matches!(item.kind, ItemKind::Area | ItemKind::Project))
+                    && container::opens(&self.document, id)
+            });
+        if let Some(id) = opens {
+            self.open(id, None);
+            return;
+        }
         let selection = &self.pane().selection;
         let editing = selection
             .focused()
@@ -977,11 +990,11 @@ impl State {
     /// took it. It acts on its focused entry: moving the focus, renaming, editing its description
     /// in the pane, adding an area or a project, collapsing it, deleting, moving, converting and
     /// setting its dates, each one step to
-    /// undo, opening Move to for it or the attachments panel on it, and opening the entry in the
-    /// pane, `Enter` giving the pane the keys, or in a new pane, which gets them; a view's entry is
-    /// only opened. Quitting, undo and redo, the Navigator, Go to Symbol, searching, the sidebar's
-    /// own commands, focusing a pane, going home, back and forward and the conflict prompt's
-    /// commands pass to the app; every other command does nothing.
+    /// undo, opening Move to for it or the attachments panel on it, and showing the entry in the
+    /// first pane, the sidebar keeping the keys, or in a new pane, which gets them; a view's entry
+    /// is only shown. Quitting, undo and redo, the Navigator, Go to Symbol, searching, the
+    /// sidebar's own commands, focusing a pane, going to the Inbox, a view, back and forward and
+    /// the conflict prompt's commands pass to the app; every other command does nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
         let passes = matches!(
             command,
@@ -1000,7 +1013,7 @@ impl State {
                 | Command::Browse(_)
                 | Command::Shortcuts
                 | Command::ScrollShortcuts(_)
-                | Command::Go(Go::Home | Go::Back | Go::Forward | Go::View(_))
+                | Command::Go(_)
                 | Command::KeepMine
                 | Command::TakeTheirs
                 | Command::ShowDiff
@@ -1031,10 +1044,7 @@ impl State {
                     self.sidebar_add(area, ItemKind::Project, end);
                 }
             }
-            (Command::EditTitle, Some(shown)) => {
-                self.show(shown, None);
-                self.sidebar.focus(false);
-            }
+            (Command::EditTitle, Some(shown)) => self.show_in_first_pane(shown),
             // The sidebar shows no descriptions, so the first pane, which the sidebar leads,
             // opens the project to edit its own under its title (owner, D-68, D-79).
             (Command::EditDescription(_), Some(shown @ Shown::Container(id)))
@@ -1045,7 +1055,6 @@ impl State {
                 self.pane_mut().selection.focus(Some(id));
                 self.edit_description(Whose::Shown);
             }
-            (Command::Go(Go::Into), Some(shown)) => self.show(shown, None),
             (Command::OpenInNewPane, Some(shown)) => {
                 self.open_pane(Visit {
                     shown,
@@ -1179,21 +1188,7 @@ impl State {
     pub(super) fn go(&mut self, to: Go) {
         let document = &self.document;
         match to {
-            Go::Into => {
-                if let Some(visit) = self.inside_focused() {
-                    if self.focuses_completed(visit) {
-                        self.pane.show_completed = true;
-                    }
-                    self.show(visit.shown, visit.focused);
-                }
-            }
-            Go::Up => {
-                let path = self.path();
-                if let [.., parent, shown] = path.as_slice() {
-                    self.open(*parent, Some(*shown));
-                }
-            }
-            Go::Home => self.open(document.inbox(), None),
+            Go::Inbox => self.open(document.inbox(), None),
             Go::View(shown) => self.show(Shown::View(shown), None),
             Go::Back => {
                 let today = self.today;
@@ -1206,8 +1201,8 @@ impl State {
         }
     }
 
-    /// Where going into the focused row leads: the section or project it is, when that opens, or
-    /// in a view the container listing its task, focused on it.
+    /// Where the focused row leads: the area or project it is, when that opens, or for a section
+    /// its container focused on it, or in a view the container listing its task, focused on it.
     fn inside_focused(&self) -> Option<Visit> {
         let document = &self.document;
         let focused = self.pane().selection.focused();
@@ -1217,9 +1212,9 @@ impl State {
             .find(|row| Some(row.id()) == focused)?;
         match row {
             Row::Section(id) | Row::Project(id) => {
-                container::opens(document, id).then_some(Visit {
-                    shown: Shown::Container(id),
-                    focused: None,
+                container::place(document, id).map(|(shown, focused)| Visit {
+                    shown: Shown::Container(shown),
+                    focused,
                 })
             }
             Row::Task { id, .. } if self.container().is_none() => container::listing(document, id)
@@ -1354,9 +1349,15 @@ impl State {
         self.sidebar
             .move_focus(&self.sidebar.visible(&self.document), motion);
         if let Some(shown) = self.sidebar.focused() {
-            let first = self.left.first_mut().unwrap_or(&mut self.pane);
-            first.show(&self.document, self.today, shown, None);
+            self.show_in_first_pane(shown);
         }
+    }
+
+    /// Shows `shown` in the first pane, which the sidebar leads, the keys staying where they are
+    /// (FR-VIEW-10).
+    fn show_in_first_pane(&mut self, shown: Shown) {
+        let first = self.left.first_mut().unwrap_or(&mut self.pane);
+        first.show(&self.document, self.today, shown, None);
     }
 
     /// Gives the keys to the pane on the left, if there is one.
@@ -1534,10 +1535,9 @@ mod tests {
         (state.container(), state.selection().focused())
     }
 
-    // FR-NAV-02
+    // FR-NAV-02, FR-EDIT-01, D-68, D-80
     #[test]
-    fn opening_a_section_or_project_shows_it_and_going_up_comes_back_to_it()
-    -> Result<(), PlacementError> {
+    fn enter_opens_a_project_row_and_edits_any_other_title() -> Result<(), PlacementError> {
         let Fixture {
             mut state,
             work,
@@ -1551,34 +1551,35 @@ mod tests {
         navigate(&mut state, "Work");
         assert_eq!(at(&state), (Some(work), Some(loose)));
         assert_eq!(state.path(), [work]);
-        state.go(Go::Into);
-        assert_eq!(
-            at(&state),
-            (Some(work), Some(loose)),
-            "a task does not open"
-        );
+        let edited = |state: &State| state.editing().map(|(id, ..)| id);
+        state.edit_title();
+        assert_eq!(edited(&state), Some(loose), "a task is edited");
+        state.edit_input(EditInput::Done);
         state.move_focus(Focus::NextSection);
-        state.go(Go::Into);
-        assert_eq!(at(&state), (Some(section), Some(in_section)));
-        assert_eq!(state.path(), [work, section]);
-        state.go(Go::Up);
-        assert_eq!(at(&state), (Some(work), Some(section)));
-        state.move_focus(Focus::Last);
-        state.go(Go::Into);
-        assert_eq!(at(&state), (Some(site), Some(in_site)));
-        state.go(Go::Up);
-        state.go(Go::Up);
+        state.edit_title();
+        assert_eq!(edited(&state), Some(section), "so is a section");
+        state.edit_input(EditInput::Done);
+        state.open_in_new_pane();
         assert_eq!(
             at(&state),
-            (Some(work), Some(site)),
-            "nothing is above an area"
+            (Some(work), Some(section)),
+            "a section opens in its area, focused on it"
         );
+        state.close_pane();
+        state.move_focus(Focus::Last);
+        state.edit_title();
+        assert_eq!(edited(&state), None);
+        assert_eq!(at(&state), (Some(site), Some(in_site)), "a project opens");
+        state.move_focus(Focus::First);
+        state.edit_title();
+        assert_eq!(edited(&state), Some(site), "its title is renamed");
+        assert_ne!(state.container(), Some(in_section));
         Ok(())
     }
 
     // FR-NAV-02
     #[test]
-    fn home_is_the_inbox() -> Result<(), PlacementError> {
+    fn go_to_inbox_shows_the_inbox() -> Result<(), PlacementError> {
         let Fixture {
             mut state,
             inbox_task,
@@ -1588,10 +1589,8 @@ mod tests {
         let inbox = state.document().inbox();
         navigate(&mut state, "Work");
         assert_eq!(state.container(), Some(work));
-        state.go(Go::Home);
+        state.go(Go::Inbox);
         assert_eq!(at(&state), (Some(inbox), Some(inbox_task)));
-        state.go(Go::Up);
-        assert_eq!(state.container(), Some(inbox), "nothing is above the Inbox");
         Ok(())
     }
 
@@ -1603,14 +1602,14 @@ mod tests {
             inbox_task,
             work,
             section,
-            in_section,
             site,
+            in_site,
             ..
         } = fixture()?;
         let inbox = state.document().inbox();
         navigate(&mut state, "Work");
         state.move_focus(Focus::NextSection);
-        state.go(Go::Into);
+        navigate(&mut state, "Site");
         state.go(Go::Back);
         assert_eq!(at(&state), (Some(work), Some(section)));
         state.go(Go::Back);
@@ -1619,21 +1618,16 @@ mod tests {
         assert_eq!(state.container(), Some(inbox), "nothing is further back");
         state.go(Go::Forward);
         state.go(Go::Forward);
-        assert_eq!(at(&state), (Some(section), Some(in_section)));
+        assert_eq!(at(&state), (Some(site), Some(in_site)));
         state.go(Go::Forward);
-        assert_eq!(state.container(), Some(section), "nothing is further ahead");
-        // A place gone to the Trash is passed over, and its focus, when gone, falls to the first
-        // row.
-        state.go(Go::Home);
-        navigate(&mut state, "Site");
-        state.go(Go::Home);
-        let mut trashed = Item::new(ItemKind::Section, "S");
+        assert_eq!(state.container(), Some(site), "nothing is further ahead");
+        // A place gone to the Trash is passed over.
+        state.go(Go::Inbox);
+        let mut trashed = Item::new(ItemKind::Project, "Site");
         trashed.deleted = Some(jiff::civil::date(2026, 10, 1));
-        state.document.set(section, trashed)?;
+        state.document.set(site, trashed)?;
         state.go(Go::Back);
-        assert_eq!(state.container(), Some(site));
-        state.go(Go::Back);
-        assert_eq!(state.container(), Some(inbox));
+        assert_eq!(state.container(), Some(work));
         Ok(())
     }
 
@@ -1705,7 +1699,7 @@ mod tests {
         type_text(&mut state, "ection");
         state.edit_input(EditInput::Done);
         assert_eq!(title(&state, section), Some("Section"));
-        state.go(Go::Home);
+        state.go(Go::Inbox);
         let mut document = state.document().clone();
         document.push(None, Node::Item(Item::new(ItemKind::Project, "Empty")))?;
         state = State::new(document, Opened::Demo, TODAY);
@@ -1950,25 +1944,25 @@ mod tests {
             mut state,
             work,
             loose,
-            section,
-            in_section,
+            site,
+            in_site,
             ..
         } = fixture()?;
         navigate(&mut state, "Work");
-        state.move_focus(Focus::NextSection);
+        state.move_focus(Focus::Last);
         state.delete(TODAY);
         state.undo();
-        state.go(Go::Into);
-        assert_eq!(at(&state), (Some(section), Some(in_section)));
+        state.show(Shown::Container(site), None);
+        assert_eq!(at(&state), (Some(site), Some(in_site)));
         state.redo();
         assert_eq!(
             at(&state),
             (Some(work), Some(loose)),
-            "the section is gone, so its area opens on its first row"
+            "the project is gone, so its area opens on its first row"
         );
         // With everything above gone too, home is left.
         state.undo();
-        state.go(Go::Into);
+        state.show(Shown::Container(site), None);
         let mut gone = Item::new(ItemKind::Area, "Work");
         gone.deleted = Some(TODAY);
         state.document.set(work, gone)?;
@@ -2579,7 +2573,7 @@ mod tests {
 
     // FR-VIEW-06, FR-NAV-02
     #[test]
-    fn going_into_a_row_of_today_shows_where_it_lives() -> Result<(), PlacementError> {
+    fn a_row_of_today_opens_where_it_lives() -> Result<(), PlacementError> {
         let Dated {
             mut state,
             site,
@@ -2592,34 +2586,28 @@ mod tests {
         } = dated()?;
         state.go(Go::View(View::Today));
         state.pane_mut().selection.focus(Some(in_launch));
-        state.go(Go::Into);
+        state.open_in_new_pane();
         assert_eq!(
             at(&state),
             (Some(site), Some(in_launch)),
             "a section's task shows in its project, under the section's heading"
         );
-        state.go(Go::Back);
+        state.close_pane();
         state.pane_mut().selection.focus(Some(overdue));
-        state.go(Go::Into);
+        state.open_in_new_pane();
         assert_eq!(at(&state), (Some(work), Some(overdue)));
-        state.go(Go::Back);
-        state.pane_mut().selection.focus(Some(site));
-        state.go(Go::Into);
-        assert_eq!(state.container(), Some(site), "a project opens");
-        state.go(Go::Into);
-        assert_eq!(
-            state.container(),
-            Some(site),
-            "in a container a task does not open"
-        );
-        state.go(Go::View(View::Today));
+        state.close_pane();
         state.pane_mut().selection.focus(Some(inbox_task));
-        state.go(Go::Into);
+        state.open_in_new_pane();
         assert_eq!(
             state.shown(),
             Shown::View(View::Today),
-            "the Inbox view does not list a scheduled task, so it stays in Today"
+            "the Inbox view does not list a scheduled task, so it opens Today again"
         );
+        state.close_pane();
+        state.pane_mut().selection.focus(Some(site));
+        state.edit_title();
+        assert_eq!(state.container(), Some(site), "Enter opens a project");
         assert_eq!(container::listing(state.document(), launch), None);
         assert_eq!(container::listing(state.document(), ItemId::new(99)), None);
         Ok(())
@@ -2696,7 +2684,6 @@ mod tests {
         state.move_item(Direction::Down);
         state.group(ItemKind::Section);
         state.delete_container(TODAY);
-        state.go(Go::Up);
         assert_eq!(state.document(), &before);
         state.rename_container();
         state.edit_description(Whose::Shown);
@@ -2770,7 +2757,7 @@ mod tests {
         assert_eq!(state.rows(), []);
         state.empty_trash(false);
         assert_eq!(state.notice(), None, "nothing to ask about");
-        state.go(Go::Home);
+        state.go(Go::Inbox);
         state.delete(TODAY);
         navigate(&mut state, "Work");
         state.move_focus(Focus::Last);
@@ -2787,7 +2774,7 @@ mod tests {
             ]
         );
         state.move_focus(Focus::Last);
-        state.go(Go::Into);
+        state.open_in_new_pane();
         assert_eq!(
             state.shown(),
             Shown::View(View::Trash),
@@ -2950,14 +2937,15 @@ mod tests {
     #[test]
     fn a_view_shown_or_a_task_in_it_opens_in_a_new_pane() -> Result<(), PlacementError> {
         let Dated {
-            mut state, overdue, ..
+            mut state,
+            overdue,
+            work,
+            ..
         } = dated()?;
         state.go(Go::View(View::Today));
         state.pane_mut().selection.focus(Some(overdue));
-        let mut into = state.clone();
-        into.go(Go::Into);
         state.open_in_new_pane();
-        assert_eq!(at(&state), at(&into));
+        assert_eq!(at(&state), (Some(work), Some(overdue)));
         state.go(Go::View(View::Logbook));
         state.open_in_new_pane();
         assert_eq!(

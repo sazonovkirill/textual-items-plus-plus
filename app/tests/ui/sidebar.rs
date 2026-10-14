@@ -172,7 +172,6 @@ fn move_a_project_into_an_area_and_back_to_the_top_level() {
 #[test]
 fn delete_the_project_shown_from_the_sidebar() {
     let mut harness = sidebar();
-    harness.type_text(".");
     assert!(
         harness.rows()[0].contains("Learn Rust"),
         "opened in the pane"

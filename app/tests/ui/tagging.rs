@@ -185,7 +185,7 @@ fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_projects() 
     harness.type_text("work");
     harness.key(KeyCode::Enter);
     choose(&mut harness, "mg", "web");
-    harness.key(KeyCode::Char('.'));
+    harness.key(KeyCode::Enter);
     choose(&mut harness, "mg", "launch");
     harness.ctrl('b');
     choose(&mut harness, "mg", "home");

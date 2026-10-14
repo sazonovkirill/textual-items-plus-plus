@@ -43,7 +43,6 @@ fn add_an_area_with_a_project_and_a_section() {
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
-    harness.ctrl('b');
     assert_eq!(title(&harness), "󰆧 Home");
     harness.type_text("pGarden");
     harness.key(KeyCode::Esc);
@@ -91,9 +90,10 @@ fn new_containers_are_saved_with_their_kind_tags() {
     harness.type_text("aHome");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
+    harness.key(KeyCode::Tab);
     harness.type_text("pGarden");
     harness.key(KeyCode::Esc);
-    harness.key(KeyCode::Char('.'));
+    harness.key(KeyCode::Enter);
     harness.type_text("sSpring");
     harness.key(KeyCode::Esc);
     harness.wait(1000);

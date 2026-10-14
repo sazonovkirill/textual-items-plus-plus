@@ -166,12 +166,8 @@ pub enum Command {
 /// Where a [`Command::Go`] takes the pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Go {
-    /// Into the focused section or project, which then shows its contents (FR-NAV-02).
-    Into,
-    /// Up to the container holding the one shown, focused on it (FR-NAV-02).
-    Up,
-    /// Home, to the Inbox (FR-NAV-02).
-    Home,
+    /// To the Inbox (FR-NAV-02).
+    Inbox,
     /// Back to where the pane was before (FR-NAV-04).
     Back,
     /// Forward again to where Back left (FR-NAV-04).
@@ -301,21 +297,6 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::Go(Go::Into),
-        title: "Open Focused Item",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::Go(Go::Up),
-        title: "Go Up",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::Go(Go::Home),
-        title: "Go Home",
-        context: Context::Navigate,
-    },
-    Entry {
         command: Command::Go(Go::Back),
         title: "Go Back",
         context: Context::Navigate,
@@ -333,6 +314,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Browse(Direction::Up),
         title: "Previous Sidebar Entry",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Go(Go::Inbox),
+        title: "Go to Inbox",
         context: Context::Navigate,
     },
     Entry {
@@ -802,9 +788,7 @@ mod tests {
                 .map(|entry| entry.context)
         };
         for to in [
-            Go::Into,
-            Go::Up,
-            Go::Home,
+            Go::Inbox,
             Go::Back,
             Go::Forward,
             Go::View(View::Today),

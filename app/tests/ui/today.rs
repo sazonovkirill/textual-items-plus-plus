@@ -46,17 +46,19 @@ fn open_today() {
 
 // FR-VIEW-06, FR-NAV-02, FR-NAV-04
 #[test]
-fn going_into_a_task_in_today_shows_it_where_it_lives_and_back_returns() {
+fn a_task_in_today_opens_where_it_lives_in_a_new_pane() {
     let mut harness = Harness::new(60, 16);
-    harness.type_text("gtjj.");
+    harness.type_text("gtjj");
+    harness.ctrl('\\');
     let rows = trimmed(&harness);
-    assert_eq!(rows[0], "  \u{f01a7} Work");
+    assert!(rows[0].starts_with("  \u{f01a7} Work"), "{rows:#?}");
     assert!(
         rows.iter()
             .any(|row| row.starts_with("▌ ☐ Review two portfolios")),
         "{rows:#?}"
     );
-    harness.type_text("H");
+    harness.ctrl('w');
+    harness.type_text("c");
     let rows = trimmed(&harness);
     assert_eq!(rows[0], "  \u{f0599} Today");
     assert!(
@@ -99,8 +101,11 @@ fn open_today_from_the_sidebar() {
         rows[1].starts_with("                         │"),
         "{rows:#?}"
     );
-    assert!(rows[2].starts_with(" 󰖙 Today"), "{rows:#?}");
-    assert!(rows[0].contains("│  󰖙 Today"), "Enter opens it: {rows:#?}");
+    assert!(
+        rows[2].starts_with("▌󰖙 Today"),
+        "the sidebar keeps the keys: {rows:#?}"
+    );
+    assert!(rows[0].contains("│  󰖙 Today"), "Enter shows it: {rows:#?}");
     assert!(
         rows[4].starts_with(" 󰉹 All")
             && rows[5].starts_with(" 󱓳 Logbook")

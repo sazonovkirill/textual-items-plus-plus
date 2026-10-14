@@ -129,19 +129,11 @@ fn open_work_website_from_the_navigator_and_come_back() {
 fn the_navigator_opens_on_where_the_pane_is_and_its_key_or_escape_closes_it() {
     let mut harness = Harness::new(80, 24);
     open_website(&mut harness);
-    harness.type_text("jj#");
-    assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
-    harness.type_text(".");
-    assert_eq!(title(&harness), "/ Launch");
     harness.ctrl('g');
     let entries = navigator(&harness);
     assert!(entries.iter().any(|entry| entry.contains("Website")));
     harness.key(KeyCode::Enter);
-    assert_eq!(
-        title(&harness),
-        "# Website",
-        "a section opens the Navigator on its project"
-    );
+    assert_eq!(title(&harness), "# Website");
     harness.ctrl('g');
     harness.type_text("j");
     assert_eq!(navigator(&harness).first().map(String::as_str), Some("› j"));
@@ -169,37 +161,43 @@ fn the_navigator_keeps_the_keys_but_ctrl_q_still_quits() {
     assert!(harness.tui.should_quit());
 }
 
-// FR-NAV-02
+// FR-NAV-02, FR-EDIT-01, D-80
 #[test]
-fn opening_going_up_and_home_with_the_keys() {
+fn enter_opens_a_project_row_and_gi_goes_to_the_inbox() {
     let mut harness = Harness::new(80, 24);
-    open_website(&mut harness);
+    harness.ctrl('g');
+    harness.type_text("work");
+    harness.key(KeyCode::Enter);
+    assert_eq!(title(&harness), "󰆧 Work");
+    harness.type_text("G");
+    assert!(
+        focused(&harness).is_some_and(|row| row.starts_with("# Blog")),
+        "{:?}",
+        focused(&harness)
+    );
+    harness.key(KeyCode::Enter);
+    assert_eq!(title(&harness), "# Blog", "Enter opens the project");
+    harness.press(KeyCode::Left, KeyModifiers::ALT);
+    harness.type_text(">gu");
+    assert_eq!(title(&harness), "# Blog", "nothing goes up any more");
+    harness.ctrl('g');
+    harness.type_text("website");
+    harness.key(KeyCode::Enter);
     harness.type_text("jj#");
     assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
-    harness.press(KeyCode::Right, KeyModifiers::ALT);
-    assert_eq!(title(&harness), "/ Launch");
-    harness.type_text(">");
-    assert_eq!(title(&harness), "# Website");
+    harness.key(KeyCode::Enter);
+    harness.key(KeyCode::Esc);
     assert_eq!(
-        focused(&harness).as_deref(),
-        Some("/ Launch"),
-        "going up focuses where the pane was"
+        title(&harness),
+        "# Website",
+        "a section only has its title edited"
     );
-    harness.type_text("gu");
-    assert_eq!(title(&harness), "󰆧 Work");
-    assert!(focused(&harness).is_some_and(|row| row.starts_with("# Website ")));
-    harness.type_text("gu");
-    assert_eq!(title(&harness), "󰆧 Work", "the top level has nothing above");
-    harness.type_text("gz");
-    assert_eq!(title(&harness), "# Website");
-    harness.type_text("gg.");
-    assert_eq!(title(&harness), "# Website", "a task does not open");
     harness.type_text("gh");
+    assert_eq!(title(&harness), "# Website", "there is no home");
+    harness.type_text("gi");
     assert_eq!(title(&harness), "󰚇 Inbox");
     harness.press(KeyCode::Left, KeyModifiers::ALT | KeyModifiers::SHIFT);
     assert_eq!(title(&harness), "# Website");
-    harness.type_text("gi");
-    assert_eq!(title(&harness), "󰚇 Inbox");
 }
 
 // FR-NAV-04
@@ -207,8 +205,11 @@ fn opening_going_up_and_home_with_the_keys() {
 fn back_and_forward_return_with_the_focus_where_it_was() {
     let mut harness = Harness::new(80, 24);
     open_website(&mut harness);
-    harness.type_text("jj#.");
-    assert_eq!(title(&harness), "/ Launch");
+    harness.type_text("jj#");
+    harness.ctrl('g');
+    harness.type_text("blog");
+    harness.key(KeyCode::Enter);
+    assert_eq!(title(&harness), "# Blog");
     harness.type_text("H");
     assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.type_text("H");
@@ -217,9 +218,9 @@ fn back_and_forward_return_with_the_focus_where_it_was() {
     assert_eq!(title(&harness), "󰚇 Inbox", "nothing is further back");
     harness.press(KeyCode::Right, KeyModifiers::ALT | KeyModifiers::SHIFT);
     harness.type_text("L");
-    assert_eq!(title(&harness), "/ Launch");
+    assert_eq!(title(&harness), "# Blog");
     harness.type_text("L");
-    assert_eq!(title(&harness), "/ Launch", "nothing is further ahead");
+    assert_eq!(title(&harness), "# Blog", "nothing is further ahead");
 }
 
 // FR-VIEW-07

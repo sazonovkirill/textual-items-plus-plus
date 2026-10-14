@@ -141,18 +141,19 @@ impl KeptVisit {
     }
 
     /// The visit this is in `document`, `None` when its container is not found exactly or does
-    /// not open; its focus where found exactly.
+    /// not open, a section reopening on its container (D-80); its focus where found exactly,
+    /// else on such a section.
     fn find(&self, document: &Document) -> Option<Visit> {
-        let shown = match &self.shown {
-            Place::Container(path) => Shown::Container(
-                path.exact(document)
-                    .filter(|&id| container::opens(document, id))?,
-            ),
-            Place::View(view) => Shown::View(*view),
+        let (shown, at) = match &self.shown {
+            Place::Container(path) => {
+                let (id, at) = container::place(document, path.exact(document)?)?;
+                (Shown::Container(id), at)
+            }
+            Place::View(view) => (Shown::View(*view), None),
         };
         Some(Visit {
             shown,
-            focused: self.focused(document),
+            focused: self.focused(document).or(at),
         })
     }
 
@@ -162,21 +163,22 @@ impl KeptVisit {
     }
 
     /// Where a pane kept at this visit lands in `document`: its container where found exactly,
-    /// else the nearest one above it found, while that opens, else the Inbox; its focus where
-    /// found exactly.
+    /// else the nearest one above it found, while that opens, a section reopening on its container
+    /// (D-80), else the Inbox; its focus where found exactly, else on such a section.
     fn land(&self, document: &Document) -> Visit {
-        let shown = match &self.shown {
-            Place::Container(path) => Shown::Container(
-                path.find(document)
-                    .map(|(id, _)| id)
-                    .filter(|&id| container::opens(document, id))
-                    .unwrap_or_else(|| document.inbox()),
-            ),
-            Place::View(view) => Shown::View(*view),
+        let (shown, at) = match &self.shown {
+            Place::Container(path) => {
+                let (id, at) = path
+                    .find(document)
+                    .and_then(|(id, _)| container::place(document, id))
+                    .unwrap_or((document.inbox(), None));
+                (Shown::Container(id), at)
+            }
+            Place::View(view) => (Shown::View(*view), None),
         };
         Visit {
             shown,
-            focused: self.focused(document),
+            focused: self.focused(document).or(at),
         }
     }
 }
@@ -295,7 +297,7 @@ mod tests {
         let (document, _) = document()?;
         let mut state = State::new(document.clone(), Opened::Demo, TODAY);
         state.go(Go::View(View::Upcoming));
-        state.go(Go::Home);
+        state.go(Go::Inbox);
         let mut restored = State::new(document, Opened::Demo, TODAY).with_layout(&state.layout());
         restored.go(Go::Back);
         assert_eq!(restored.shown(), Shown::View(View::Upcoming));

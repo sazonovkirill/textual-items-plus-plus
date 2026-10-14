@@ -28,7 +28,7 @@ fn results(harness: &Harness) -> Vec<String> {
 
 // FR-SRCH-01, FR-SRCH-02, FR-ATT-04, FR-KEY-01
 #[test]
-fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives() {
+fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives_in_a_new_pane() {
     let mut harness = Harness::new(80, 20);
     harness.ctrl('f');
     harness.type_text("Screenshots");
@@ -50,19 +50,16 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives() {
     );
     harness.key(KeyCode::Enter);
     assert_eq!(harness.tui.cursor(Rect::new(0, 0, 80, 20)), None);
-    harness.type_text(".");
-    let rows = trimmed(&harness);
-    assert!(rows[0].starts_with("  # Website "), "{rows:#?}");
-    assert!(
-        rows.iter()
-            .any(|row| row.starts_with("▌ ☐ Write the announcement")),
-        "{rows:#?}"
-    );
-    harness.type_text("H");
+    harness.ctrl('\\');
+    let screen = harness.screen();
+    assert!(screen.contains("# Website"), "{screen}");
+    assert!(screen.contains("│▌ ☐ Write the"), "{screen}");
+    harness.ctrl('w');
+    harness.type_text("c");
     assert_eq!(
         trimmed(&harness)[0],
         "  \u{f0349} Search  Screenshots",
-        "the results stay in the pane's history with their words"
+        "the results stay in their pane with their words"
     );
 }
 

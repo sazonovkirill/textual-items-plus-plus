@@ -613,7 +613,7 @@ mod tests {
             state.pane_view().query().map(TextField::text),
             Some("plan b")
         );
-        state.go(Go::Home);
+        state.go(Go::Inbox);
         assert_eq!(
             state.pane_view().query(),
             None,
@@ -659,7 +659,7 @@ mod tests {
 
     // FR-SRCH-02, FR-SRCH-03, FR-VIEW-11
     #[test]
-    fn a_completed_result_opens_where_it_lives_with_completed_items_shown() {
+    fn a_completed_result_opens_where_it_lives_in_a_new_pane_with_completed_items_shown() {
         let searched = || {
             let (mut state, [.., done]) = state();
             state.open_search();
@@ -668,10 +668,6 @@ mod tests {
             assert!(!state.shows_completed());
             (state, done)
         };
-        let (mut state, done) = searched();
-        state.go(Go::Into);
-        assert_eq!(state.selection().focused(), Some(done));
-        assert!(state.shows_completed());
         let (mut state, done) = searched();
         state.open_in_new_pane();
         assert_eq!(state.panes().count(), 2);

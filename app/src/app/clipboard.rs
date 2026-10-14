@@ -182,7 +182,7 @@ mod tests {
     use jiff::civil::{Date, date};
 
     use super::*;
-    use crate::app::{Command, Effect, Focus, Go, Message, Opened, State, update};
+    use crate::app::{Command, Effect, Focus, Message, Opened, State, update};
     use crate::domain::{Item, Node, PlacementError};
     use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
@@ -284,14 +284,14 @@ mod tests {
         let Fixture { mut state, s, .. } = fixture()?;
         open(&mut state, "Work");
         give(&mut state, Command::Focus(Focus::NextSection));
-        give(&mut state, Command::Go(Go::Into));
+        give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(give(&mut state, Command::Duplicate), []);
-        assert_eq!(titles(&state), ["s", "s"]);
+        assert_eq!(titles(&state), ["loose", "Soon", "s", "s", "Site"]);
         let copy = state.selection().focused().filter(|&id| id != s);
         let copy = copy.expect("the copy is focused");
         assert_eq!(state.document().branch(copy), state.document().branch(s));
         give(&mut state, Command::Undo);
-        assert_eq!(titles(&state), ["s"]);
+        assert_eq!(titles(&state), ["loose", "Soon", "s", "Site"]);
         assert_eq!(state.selection().focused(), Some(s));
         Ok(())
     }

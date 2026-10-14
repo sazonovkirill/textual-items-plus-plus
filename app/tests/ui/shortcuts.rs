@@ -41,7 +41,7 @@ fn question_mark_shows_the_keys_of_every_command_grouped_at_the_right() {
         ]
     );
     for line in [
-        "│  Go Home               Ctrl+', gh, gi",
+        "│  Go to Inbox                       gi",
         "│  Next Sidebar Entry        gj, Ctrl+↓",
     ] {
         assert!(lines.contains(&line.to_owned()), "{line}: {lines:#?}");
@@ -75,7 +75,7 @@ fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
         lines.get(1..3).unwrap_or_default(),
         [
             "│ ↑ more                              (",
-            "│  Go to Today                       gt"
+            "│  Go to All                         ga"
         ]
     );
     harness.type_text("))))))))");

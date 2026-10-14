@@ -40,17 +40,14 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::TogglePicked, &["v"]),
     (Command::SelectAll, &["ctrl+a"]),
     (Command::ClearSelection, &["esc"]),
-    // taskpaper-terminal's keys; a legacy terminal sends `Ctrl+Shift+Z` as `Ctrl+Z`, which
-    // undoes (D-35).
-    (Command::ToggleCompleted, &["x", "ctrl+enter"]),
+    // taskpaper-terminal's keys, and the owner's `.` (D-80); a legacy terminal sends
+    // `Ctrl+Shift+Z` as `Ctrl+Z`, which undoes (D-35).
+    (Command::ToggleCompleted, &["x", ".", "ctrl+enter"]),
     (Command::ShowCompleted, &["ctrl+o"]),
     (Command::Undo, &["z", "ctrl+z"]),
     (Command::Redo, &["Z", "ctrl+shift+z", "ctrl+y"]),
-    // taskpaper-terminal's zoom, home and history keys; home is the Inbox, so its Go to Inbox key
-    // goes home too (D-36).
-    (Command::Go(Go::Into), &[".", "alt+l", "alt+right", "g z"]),
-    (Command::Go(Go::Up), &[">", "alt+h", "alt+left", "g u"]),
-    (Command::Go(Go::Home), &["ctrl+'", "g h", "g i"]),
+    // taskpaper-terminal's Go to Inbox and history keys, without its zoom and home (D-36, D-80).
+    (Command::Go(Go::Inbox), &["g i"]),
     (Command::Go(Go::Back), &["H", "alt+shift+left"]),
     (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
     // FR-KEY-06's go-to keys for the views (D-23).
@@ -468,20 +465,7 @@ mod tests {
         let alt_shift = KeyModifiers::ALT | KeyModifiers::SHIFT;
         let go = |to| Some(Command::Go(to));
         for (events, command) in [
-            (vec![char('.')], go(Go::Into)),
-            (vec![press(KeyCode::Char('l'), alt)], go(Go::Into)),
-            (vec![press(KeyCode::Right, alt)], go(Go::Into)),
-            (vec![char('g'), char('z')], go(Go::Into)),
-            (vec![char('>')], go(Go::Up)),
-            (vec![press(KeyCode::Char('h'), alt)], go(Go::Up)),
-            (vec![press(KeyCode::Left, alt)], go(Go::Up)),
-            (vec![char('g'), char('u')], go(Go::Up)),
-            (
-                vec![press(KeyCode::Char('\''), KeyModifiers::CONTROL)],
-                go(Go::Home),
-            ),
-            (vec![char('g'), char('h')], go(Go::Home)),
-            (vec![char('g'), char('i')], go(Go::Home)),
+            (vec![char('g'), char('i')], go(Go::Inbox)),
             (vec![char('H')], go(Go::Back)),
             (vec![press(KeyCode::Left, alt_shift)], go(Go::Back)),
             (vec![char('L')], go(Go::Forward)),
@@ -496,6 +480,16 @@ mod tests {
                 Some(Command::Navigator),
             ),
             (vec![press(KeyCode::Right, none)], None),
+            (vec![char('>')], None),
+            (vec![press(KeyCode::Char('l'), alt)], None),
+            (vec![press(KeyCode::Left, alt)], None),
+            (
+                vec![press(KeyCode::Char('\''), KeyModifiers::CONTROL)],
+                None,
+            ),
+            (vec![char('g'), char('h')], None),
+            (vec![char('g'), char('z')], None),
+            (vec![char('g'), char('u')], None),
         ] {
             let mut given = None;
             for event in &events {
@@ -643,6 +637,7 @@ mod tests {
         let ctrl = KeyModifiers::CONTROL;
         for (event, command) in [
             (char('x'), Command::ToggleCompleted),
+            (char('.'), Command::ToggleCompleted),
             (press(KeyCode::Enter, ctrl), Command::ToggleCompleted),
             (press(KeyCode::Char('o'), ctrl), Command::ShowCompleted),
             (char('z'), Command::Undo),
@@ -901,7 +896,8 @@ mod tests {
             assert_eq!(label(keys).as_deref(), Some(expected), "{keys}");
         }
         let keymap = Keymap::default();
-        assert_eq!(keymap.labels(Command::Go(Go::Home)), "Ctrl+', gh, gi");
+        assert_eq!(keymap.labels(Command::Go(Go::Inbox)), "gi");
+        assert_eq!(keymap.labels(Command::ToggleCompleted), "x, ., Ctrl+Enter");
         assert_eq!(keymap.labels(Command::Redo), "Z, Ctrl+Shift+Z, Ctrl+Y");
         assert_eq!(keymap.labels(Command::PreviousPane), "Shift+Tab, gp");
     }

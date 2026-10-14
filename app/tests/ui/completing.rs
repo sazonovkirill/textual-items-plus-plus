@@ -60,3 +60,25 @@ fn x_on_a_shown_completed_task_uncompletes_it_in_place() {
     harness.key(KeyCode::Char('x'));
     assert_eq!(items(&harness), [star(CALL), COFFEE.into(), READ.into()]);
 }
+
+// FR-TASK-02, FR-ORG-09, D-80
+#[test]
+fn dot_completes_a_task_a_section_and_a_project_as_x_does() {
+    let mut harness = Harness::new(60, 24);
+    harness.key(KeyCode::Char('.'));
+    assert_eq!(items(&harness), [star(COFFEE), READ.into()]);
+    harness.ctrl('g');
+    harness.type_text("work");
+    harness.key(KeyCode::Enter);
+    harness.type_text("G.");
+    assert!(!harness.screen().contains("# Blog"), "{}", harness.screen());
+    harness.type_text("gg}.");
+    assert!(
+        !harness.screen().contains("Review two portfolios"),
+        "{}",
+        harness.screen()
+    );
+    harness.type_text("zz");
+    let screen = harness.screen();
+    assert!(screen.contains("# Blog") && screen.contains("Review two portfolios"));
+}

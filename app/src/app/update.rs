@@ -598,26 +598,24 @@ mod tests {
             Command::AddSection(End::Bottom),
             Command::ShowCompleted,
             Command::ToggleCompleted,
-            Command::Go(Go::Up),
         ] {
             give(&mut state, command);
         }
         assert_eq!(state.document(), &before, "other commands do nothing");
         assert!(!state.shows_completed());
-        give(&mut state, Command::Go(Go::Into));
-        assert_eq!(state.container(), Some(work), "opened in the pane");
-        assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
-        give(&mut state, Command::Go(Go::Home));
+        give(&mut state, Command::Go(Go::Inbox));
         assert_eq!(
             state.container(),
             Some(state.document().inbox()),
-            "going home passes"
+            "going to the Inbox passes"
         );
         give(&mut state, Command::EditTitle);
-        assert_eq!(state.container(), Some(work), "Enter opens it");
+        assert_eq!(state.container(), Some(work), "Enter shows it in the pane");
+        assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
+        give(&mut state, Command::NextPane);
         assert!(
             !state.sidebar_has_keys() && state.sidebar().is_some(),
-            "Enter gives the keys to the pane"
+            "Tab gives the keys to the pane"
         );
         give(&mut state, Command::FocusLeft);
         give(&mut state, Command::Navigator);
@@ -740,7 +738,7 @@ mod tests {
             "`o` beside an area adds an area"
         );
         edit(&mut state, EditInput::Done);
-        give(&mut state, Command::Go(Go::Into));
+        give(&mut state, Command::EditTitle);
         give(&mut state, Command::Delete);
         assert_eq!(sidebar(&state), (Some("Home".into()), vec!["Home".into()]));
         assert_eq!(
@@ -790,7 +788,7 @@ mod tests {
             Command::Convert,
             Command::MoveTo,
             Command::StartToday,
-            Command::Go(Go::Into),
+            Command::EditTitle,
             Command::Tags,
             Command::Focus(Focus::Next),
         ] {
@@ -803,15 +801,19 @@ mod tests {
         edit(&mut state, EditInput::Done);
         assert_eq!(sidebar(&state), (Some("P".into()), vec!["P".into()]));
         let inbox = state.document().inbox();
-        give(&mut state, Command::Go(Go::Into));
+        give(&mut state, Command::EditTitle);
         assert_ne!(state.container(), Some(inbox));
         give(&mut state, Command::Focus(Focus::First));
-        give(&mut state, Command::Go(Go::Into));
-        assert_eq!(state.container(), Some(inbox), "Go Into opens the Inbox");
+        assert_eq!(
+            state.container(),
+            Some(inbox),
+            "moving to it shows the Inbox"
+        );
         give(&mut state, Command::Go(Go::Back));
+        assert_ne!(state.container(), Some(inbox));
         give(&mut state, Command::EditTitle);
         assert_eq!(state.container(), Some(inbox), "and so does Enter");
-        assert!(!state.sidebar_has_keys(), "Enter gives the pane the keys");
+        assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
     }
 
     /// The dates of the Inbox task titled `title`, which the Inbox view leaves out once it has a
@@ -981,15 +983,17 @@ mod tests {
             give(&mut state, command);
         }
         assert_eq!(state, before, "a view is only opened");
-        give(&mut state, Command::Go(Go::Into));
+        give(&mut state, Command::EditTitle);
         assert_eq!(state.shown(), Shown::View(View::Today));
         assert!(state.sidebar_has_keys(), "the keys stay in the sidebar");
-        give(&mut state, Command::Go(Go::Home));
+        give(&mut state, Command::Go(Go::Inbox));
         give(&mut state, Command::EditTitle);
         assert_eq!(state.shown(), Shown::View(View::Today));
         assert_eq!(focused(&state), Some("due"));
-        assert!(!state.sidebar_has_keys(), "Enter gives the pane the keys");
-        give(&mut state, Command::Sidebar);
+        assert!(
+            state.sidebar_has_keys(),
+            "Enter leaves the keys in the sidebar"
+        );
         give(&mut state, Command::NewLike(Side::Below));
         type_into(&mut state, "P");
         edit(&mut state, EditInput::Done);
@@ -1016,7 +1020,7 @@ mod tests {
             assert_eq!(update(&mut state, message, TODAY), []);
         }
         assert_eq!(state.container(), Some(area));
-        let effects = update(&mut state, Message::Command(Command::Go(Go::Home)), TODAY);
+        let effects = update(&mut state, Message::Command(Command::Go(Go::Inbox)), TODAY);
         assert_eq!(effects, []);
         assert_eq!(state.container(), Some(state.document().inbox()));
         Ok(())
@@ -1057,7 +1061,7 @@ mod tests {
         give(&mut state, Command::Sidebar);
         past_the_views(&mut state);
         for command in [
-            Command::Go(Go::Into),
+            Command::EditTitle,
             Command::FocusRight,
             Command::Extend(Direction::Down),
             Command::GroupIntoSection,

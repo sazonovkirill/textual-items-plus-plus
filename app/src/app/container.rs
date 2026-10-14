@@ -135,15 +135,16 @@ pub(super) fn outermost_rows(
         .collect()
 }
 
-/// Whether `id` is a container that can be opened: the Inbox, an area, a project or a section,
-/// neither it nor anything above it in the Trash, and not inside a completed item, whose contents
-/// are shown nowhere (FR-ORG-09). A completed container itself opens, as its row does.
+/// Whether `id` is a container that can be opened: the Inbox, an area or a project, not a
+/// section, which shows only in its container (D-80), neither it nor anything above it in the
+/// Trash, and not inside a completed item, whose contents are shown nowhere (FR-ORG-09). A
+/// completed container itself opens, as its row does.
 pub(super) fn opens(document: &Document, id: ItemId) -> bool {
     let item = |id| document.node(id).and_then(Node::item);
     item(id).is_some_and(|item| {
         matches!(
             item.kind,
-            ItemKind::Inbox | ItemKind::Area | ItemKind::Project | ItemKind::Section
+            ItemKind::Inbox | ItemKind::Area | ItemKind::Project
         )
     }) && path(document, id)
         .into_iter()
@@ -152,6 +153,19 @@ pub(super) fn opens(document: &Document, id: ItemId) -> bool {
             .position(id)
             .and_then(|(parent, _)| parent)
             .is_none_or(|parent| !document.conceals(parent))
+}
+
+/// Where a pane shows `id`, as the container shown and the item focused there: a container that
+/// opens itself, and a section the container holding it, when that opens, focused on the
+/// section's heading, since a section opens in no view of its own (D-80); none for anything else.
+pub(super) fn place(document: &Document, id: ItemId) -> Option<(ItemId, Option<ItemId>)> {
+    if opens(document, id) {
+        return Some((id, None));
+    }
+    let item = document.node(id).and_then(Node::item)?;
+    let (parent, _) = document.position(id)?;
+    let parent = parent.filter(|&parent| opens(document, parent))?;
+    (item.kind == ItemKind::Section).then_some((parent, Some(id)))
 }
 
 /// Whether `item`, a child of `parent`, is an Inbox task with a start date, which the Inbox view
@@ -473,9 +487,9 @@ mod tests {
         Ok(())
     }
 
-    // FR-NAV-02, OQ-19
+    // FR-NAV-02, OQ-19, D-80
     #[test]
-    fn only_containers_outside_the_trash_open() -> Result<(), PlacementError> {
+    fn only_containers_but_sections_outside_the_trash_open() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let inbox = document.inbox();
         let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
@@ -483,17 +497,30 @@ mod tests {
         let section = add(&mut document, project, Section);
         let task = add(&mut document, section, Task);
         let line = document.push(None, Node::Kept("text".to_owned()))?;
-        for id in [inbox, area, project, section] {
+        for id in [inbox, area, project] {
             assert!(opens(&document, id), "{id:?}");
+            assert_eq!(place(&document, id), Some((id, None)));
         }
+        assert!(!opens(&document, section));
+        assert_eq!(
+            place(&document, section),
+            Some((project, Some(section))),
+            "a section shows in its project"
+        );
         assert!(!opens(&document, task));
+        assert_eq!(place(&document, task), None);
+        assert_eq!(place(&document, ItemId::new(99)), None);
         assert!(!opens(&document, line));
         assert!(!opens(&document, ItemId::new(99)));
         let mut trashed = Item::new(Project, "x");
         trashed.deleted = Some(date(2026, 10, 1));
         document.set(project, trashed)?;
         assert!(!opens(&document, project));
-        assert!(!opens(&document, section), "inside the trashed project");
+        assert_eq!(
+            place(&document, section),
+            None,
+            "inside the trashed project"
+        );
         assert!(opens(&document, area));
         let mut completed = Item::new(Project, "x");
         completed.completed = Some(Completion::Undated);
