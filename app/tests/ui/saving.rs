@@ -639,6 +639,66 @@ fn terminating_after_a_failed_save_keeps_the_document_in_a_recovery_file() {
     assert!(matches!(harness.tui.take_recovered(), Some(Err(_))));
 }
 
+/// Ends the session on `path` in `harness` after a change whose save fails because the folder
+/// `real` is gone, brings `real` back with the file as it was before the change, and returns
+/// what the next launch on `path` offers beside the recovery file written.
+fn recovered_once_back(
+    mut harness: Harness,
+    real: &Path,
+    path: &Path,
+) -> (PathBuf, Option<PathBuf>) {
+    fs::remove_dir_all(real).expect("removed");
+    harness.type_text("x");
+    harness.wait(1000);
+    harness.terminate();
+    let recovered = harness
+        .tui
+        .take_recovered()
+        .expect("kept")
+        .expect("written")
+        .expect("there were changes");
+    fs::create_dir(real).expect("made again");
+    let file = real.join("todo.taskpaper");
+    fs::write(&file, TEXT).expect("written again");
+    fs::File::options()
+        .append(true)
+        .open(&file)
+        .and_then(|file| file.set_modified(std::time::SystemTime::UNIX_EPOCH))
+        .expect("dated before the crash");
+    let offered = Recovery::new(Some(harness.recovery()))
+        .find(path)
+        .expect("looked");
+    (recovered, offered)
+}
+
+// N-REL-01, D-119
+#[test]
+fn a_recovery_file_written_with_the_folder_gone_is_offered_through_a_symlink_or_dot_dot() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let real = dir.path().join("real");
+    fs::create_dir_all(dir.path().join("work")).expect("made");
+    std::os::unix::fs::symlink(&real, dir.path().join("link")).expect("linked");
+    for path in [
+        dir.path().join("link/todo.taskpaper"),
+        dir.path().join("work/../real/todo.taskpaper"),
+    ] {
+        fs::create_dir_all(&real).expect("made");
+        fs::write(real.join("todo.taskpaper"), TEXT).expect("the fixture is written");
+        let harness = Harness::open(path.clone(), 70, 20);
+        let (recovered, offered) = recovered_once_back(harness, &real, &path);
+        assert_eq!(offered, Some(recovered), "{}", path.display());
+        fs::remove_dir_all(&real).expect("removed");
+    }
+    let (_dir, _path, mut harness) = on_file(TEXT);
+    let path = dir.path().join("link/todo.taskpaper");
+    fs::create_dir_all(&real).expect("made");
+    harness.ctrl('s');
+    harness.type_text(&path.display().to_string());
+    harness.key(KeyCode::Enter);
+    let (recovered, offered) = recovered_once_back(harness, &real, &path);
+    assert_eq!(offered, Some(recovered), "the file Save As wrote");
+}
+
 // F-FILE-06
 #[test]
 fn a_conflict_copy_that_fails_leaves_the_prompt_open() {

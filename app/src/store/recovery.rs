@@ -101,6 +101,15 @@ impl Recovery {
 }
 
 impl Recovery {
+    /// The path the recovery files of `file` are named from: its canonical path, or its folder's
+    /// joined with its name while the file does not exist; `None` while its folder cannot be
+    /// resolved or the path names no file. A session resolves its file while it is reachable,
+    /// since a path with `..` or a symlink in it names another once the folder is gone (D-119).
+    #[must_use]
+    pub fn resolve(file: &Path) -> Option<PathBuf> {
+        resolved(file).ok().flatten()
+    }
+
     /// The newest recovery file of `file` that is no older than `file`, or the newest of any when
     /// `file` does not exist. Equal times count, because the clock that dates files can be too
     /// coarse to tell apart a save and a crash right after it; of two recovery files written at
@@ -169,24 +178,33 @@ impl Recovery {
     }
 }
 
-/// What the recovery files of `file` are named after: its backup folder's name, from its
-/// canonical path, or from its folder's canonical path while the file does not exist yet, or
-/// from its absolute path while the folder cannot be resolved either, as when it was removed or
-/// unmounted, so that the document can still be kept (D-119).
+/// What the recovery files of `file` are named after: its backup folder's name, from the path
+/// [`Recovery::resolve`] gives, or from its absolute path while its folder cannot be resolved, as
+/// when it was removed or unmounted, so that the document can still be kept (D-119). A path
+/// `resolve` gave earlier names the same file once its folder is gone.
 fn name(file: &Path) -> io::Result<OsString> {
-    let source = fs::canonicalize(file).or_else(|error| {
-        let absolute = std::path::absolute(file)?;
-        match (absolute.parent(), absolute.file_name()) {
-            (Some(folder), Some(name)) if error.kind() == io::ErrorKind::NotFound => {
-                Ok(match fs::canonicalize(folder) {
-                    Ok(folder) => folder.join(name),
-                    Err(_) => absolute.clone(),
-                })
-            }
-            _ => Err(error),
-        }
-    })?;
+    let source = match resolved(file)? {
+        Some(resolved) => resolved,
+        None => std::path::absolute(file)?,
+    };
     Ok(backup::folder_name(&source))
+}
+
+/// [`Recovery::resolve`], or the error that says `file` cannot name a file at all, as when a
+/// file stands where its path needs a folder.
+fn resolved(file: &Path) -> io::Result<Option<PathBuf>> {
+    let error = match fs::canonicalize(file) {
+        Ok(canonical) => return Ok(Some(canonical)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => error,
+        Err(error) => return Err(error),
+    };
+    let absolute = std::path::absolute(file)?;
+    let (Some(folder), Some(name)) = (absolute.parent(), absolute.file_name()) else {
+        return Err(error);
+    };
+    Ok(fs::canonicalize(folder)
+        .ok()
+        .map(|folder| folder.join(name)))
 }
 
 fn file_name(name: &OsStr, time: DateTime) -> OsString {
@@ -466,6 +484,8 @@ mod tests {
         fs::write(dir.path().join("todo.taskpaper"), "-")?;
         let inside_a_file = dir.path().join("todo.taskpaper/x");
         assert!(recovery(dir.path()).find(&inside_a_file).is_err());
+        let up_from_nothing = dir.path().join("missing/..");
+        assert!(recovery(dir.path()).find(&up_from_nothing).is_err());
         Ok(())
     }
 
@@ -486,6 +506,42 @@ mod tests {
         );
         assert_eq!(fs::read_to_string(&written)?, "- unsaved\n");
         assert_eq!(recovery.find(&file)?, Some(written));
+        Ok(())
+    }
+
+    // N-REL-01, D-119
+    #[test]
+    fn a_path_resolved_while_its_folder_was_there_names_the_file_found_once_it_is_back()
+    -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let real = dir.path().join("real");
+        fs::create_dir_all(dir.path().join("work"))?;
+        std::os::unix::fs::symlink(&real, dir.path().join("link"))?;
+        let recovery = recovery(dir.path());
+        for file in [
+            dir.path().join("link/todo.taskpaper"),
+            dir.path().join("work/../real/todo.taskpaper"),
+        ] {
+            fs::create_dir_all(&real)?;
+            fs::write(real.join("todo.taskpaper"), "- a\n")?;
+            let resolved = Recovery::resolve(&file).expect("resolved");
+            assert_eq!(resolved, fs::canonicalize(&file)?);
+            fs::remove_dir_all(&real)?;
+            assert_eq!(Recovery::resolve(&file), None, "the folder is gone");
+            let written = recovery.write(Some(&resolved), "- unsaved\n", CRASH)?;
+            fs::create_dir(&real)?;
+            fs::write(real.join("todo.taskpaper"), "- a\n")?;
+            touch(&real.join("todo.taskpaper"), 1000)?;
+            assert_eq!(recovery.find(&file)?, Some(written.clone()));
+            fs::remove_dir_all(&real)?;
+            fs::remove_file(written)?;
+        }
+        let new = dir.path().join("work/../work/new.taskpaper");
+        assert_eq!(
+            Recovery::resolve(&new),
+            Some(fs::canonicalize(dir.path().join("work"))?.join("new.taskpaper")),
+            "a file not written yet"
+        );
         Ok(())
     }
 

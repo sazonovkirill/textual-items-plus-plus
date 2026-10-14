@@ -52,6 +52,9 @@ pub struct Edge {
 #[derive(Debug)]
 pub(super) struct File {
     path: PathBuf,
+    /// The path recovery files are named from, resolved while the file was reachable, so that one
+    /// written while its folder is gone is found once it is back; `None` when it never was (D-119).
+    resolved: Option<PathBuf>,
     /// The outline the document is written back with, shared with the saves under way.
     source: Arc<Source>,
     /// The version of the file the app last read or wrote, `None` while there is none.
@@ -165,6 +168,7 @@ impl File {
         });
         Self {
             watcher: watch(&path, &edge.inputs),
+            resolved: Recovery::resolve(&path),
             path,
             source: Arc::new(source),
             known: version,
@@ -264,7 +268,7 @@ impl File {
             .map_err(|error| error.to_string())
             .or_else(|copy| {
                 self.recovery
-                    .write(Some(&self.path), &text, now)
+                    .write(Some(self.named()), &text, now)
                     .map_err(|error| format!("{copy}; nor a recovery file: {error}"))
             });
         Some(Message::Disk(match kept {
@@ -320,6 +324,7 @@ impl File {
         match written {
             Written::Saved(version) => {
                 self.watcher = watch(&path, &self.inputs);
+                self.resolved = Recovery::resolve(&path);
                 self.path.clone_from(&path);
                 self.known = Some(version);
                 self.theirs = None;
@@ -380,7 +385,13 @@ impl File {
     pub(super) fn recover(&self, document: &Document) -> Result<Option<PathBuf>, RecoveryError> {
         self.disk.flush();
         self.recovery
-            .keep(&self.path, &self.text(document), (self.clock)())
+            .keep(self.named(), &self.text(document), (self.clock)())
+    }
+
+    /// The file as its recovery files are named: by the path resolved while it was reachable,
+    /// else by its path.
+    fn named(&self) -> &Path {
+        self.resolved.as_deref().unwrap_or(&self.path)
     }
 }
 
