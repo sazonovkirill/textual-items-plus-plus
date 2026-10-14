@@ -62,7 +62,7 @@ impl KeyGroup {
             | Command::TogglePicked
             | Command::SelectAll
             | Command::ClearSelection => Self::Selection,
-            Command::Go(_) | Command::Navigator => Self::Going,
+            Command::Go(_) | Command::Navigator | Command::GoToSymbol => Self::Going,
             Command::EditTitle
             | Command::NewLike(_)
             | Command::AddTask(_)
@@ -120,9 +120,9 @@ impl KeyGroup {
 impl State {
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
     /// commands and quitting, while the attachments panel is open quitting and, while nothing in
-    /// it is edited, the commands it acts on (FR-CHK-03), while a picker, the command palette,
-    /// the date prompt or the settings window is open or in edit mode only global ones, and
-    /// otherwise any.
+    /// it is edited, the commands it acts on (FR-CHK-03), while a picker, the command palette, Go
+    /// to Symbol, the date prompt or the settings window is open or in edit mode only global
+    /// ones, and otherwise any.
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -136,6 +136,7 @@ impl State {
         } else if self.editing().is_some()
             || self.navigator.is_some()
             || self.palette.is_some()
+            || self.go_to_symbol.is_some()
             || self.move_to.is_some()
             || self.tags.is_some()
             || self.date_prompt.is_some()

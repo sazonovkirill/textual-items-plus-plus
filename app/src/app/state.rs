@@ -15,6 +15,7 @@ use super::{
     date_prompt::{self, DatePrompt},
     editing::{Editing, Refused},
     focus::{self, Focus},
+    go_to_symbol::Symbol,
     move_to::{Destination, MoveTo},
     moving,
     navigator::{self, Stop},
@@ -57,6 +58,8 @@ pub struct State {
     pub(super) navigator: Option<Picker<Stop>>,
     /// The command palette, while it is open (FR-NAV-06).
     pub(super) palette: Option<Picker<Command>>,
+    /// Go to Symbol, while it is open (FR-NAV-05).
+    pub(super) go_to_symbol: Option<Picker<Symbol>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
     /// The date prompt, while it is open (FR-DATE-02).
@@ -103,6 +106,7 @@ impl State {
             history: History::default(),
             navigator: None,
             palette: None,
+            go_to_symbol: None,
             move_to: None,
             date_prompt: None,
             tags: None,
@@ -945,9 +949,9 @@ impl State {
     /// deleting, moving, indenting, outdenting, converting and setting its dates, each one step to
     /// undo, opening Move to for it or the attachments panel on it, and opening the entry in the
     /// pane, `Enter` giving the pane the keys, or in a new pane, which gets them; a view's entry is
-    /// only opened. Quitting, undo and redo, the Navigator, the sidebar's own commands, focusing a
-    /// pane, going home, back and forward and the conflict prompt's commands pass to the app;
-    /// every other command does nothing.
+    /// only opened. Quitting, undo and redo, the Navigator, Go to Symbol, the sidebar's own
+    /// commands, focusing a pane, going home, back and forward and the conflict prompt's commands
+    /// pass to the app; every other command does nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
         let passes = matches!(
             command,
@@ -955,6 +959,7 @@ impl State {
                 | Command::Undo
                 | Command::Redo
                 | Command::Navigator
+                | Command::GoToSymbol
                 | Command::Sidebar
                 | Command::FocusLeft
                 | Command::FocusRight
@@ -1181,7 +1186,7 @@ impl State {
 
     /// Adds a pane showing what `visit` shows right of the one with the keys and gives it the
     /// keys. It shows completed items when that pane does, and has no history and no tag filter.
-    fn open_pane(&mut self, visit: Visit) {
+    pub(super) fn open_pane(&mut self, visit: Visit) {
         let pane = Pane::new(
             &self.document,
             self.today,
@@ -1266,10 +1271,11 @@ impl State {
         self.pane_mut().width = Some(width);
     }
 
-    /// Opens the Navigator on where the pane is, closing the command palette, Move to, the date
-    /// prompt, the tag picker and the settings window, or closes it when it is open.
+    /// Opens the Navigator on where the pane is, closing the command palette, Go to Symbol, Move
+    /// to, the date prompt, the tag picker and the settings window, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         self.palette = None;
+        self.go_to_symbol = None;
         self.settings_window = None;
         self.move_to = None;
         self.date_prompt = None;
@@ -1311,7 +1317,7 @@ impl State {
 
     /// Shows `shown`, focused on `focused` or its first row, so that Back returns to where the
     /// pane was. Showing what is shown changes nothing.
-    fn show(&mut self, shown: Shown, focused: Option<ItemId>) {
+    pub(super) fn show(&mut self, shown: Shown, focused: Option<ItemId>) {
         let (document, today) = (&self.document, self.today);
         self.pane.show(document, today, shown, focused);
     }

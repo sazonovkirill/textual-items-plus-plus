@@ -47,7 +47,7 @@ use crate::{
     app::{
         self, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput, Effect,
         Focus, Message, Opened, Part, PickerInput, Place, Selected, Settings, Side, State, Stop,
-        TagEntry, TagMark, TagsFor, TagsView, TextEdit,
+        Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
@@ -417,13 +417,15 @@ impl Tui {
         }
     }
 
-    /// What carries an input to the open picker, the Navigator, the command palette, Move to or
-    /// the tag picker, while one is open.
+    /// What carries an input to the open picker, the Navigator, the command palette, Go to
+    /// Symbol, Move to or the tag picker, while one is open.
     fn open_picker(&self) -> Option<fn(PickerInput) -> Message> {
         if self.state.navigator().is_some() {
             Some(Message::Navigator)
         } else if self.state.palette().is_some() {
             Some(Message::Palette)
+        } else if self.state.go_to_symbol().is_some() {
+            Some(Message::GoToSymbol)
         } else if self.state.move_to().is_some() {
             Some(Message::MoveTo)
         } else if self.state.tags().is_some() {
@@ -448,7 +450,7 @@ impl Tui {
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
     /// note being edited in the attachments panel while it is open, else at the caret of the
-    /// query of the Navigator, the command palette or Move to while one is open, at the caret of
+    /// query of the Navigator, the command palette, Go to Symbol or Move to while one is open, at the caret of
     /// the date prompt while it is open, at the caret of the text being edited in edit mode, in
     /// the pane or the sidebar, else hidden.
     #[must_use]
@@ -469,6 +471,9 @@ impl Tui {
         }
         if let Some(view) = self.state.palette() {
             return Some(palette_popup(&view, &self.theme, self.icons()).caret(panes));
+        }
+        if let Some(view) = self.state.go_to_symbol() {
+            return Some(go_to_symbol_popup(&view, &self.theme, self.icons()).caret(panes));
         }
         if let Some(view) = self.state.move_to() {
             return Some(move_to_popup(&view, &self.theme, self.icons()).caret(panes));
@@ -829,6 +834,22 @@ fn palette_popup<'a>(
     PickerPopup::new("Command Palette", view, &|_| Icon::Command, icons, theme)
 }
 
+/// Go to Symbol's window, each item after its kind's icon in its kind's color, the titles above
+/// it dimmed after it (FR-NAV-05).
+fn go_to_symbol_popup<'a>(
+    view: &'a app::PickerView<'a, Symbol>,
+    theme: &'a Theme,
+    icons: IconSet,
+) -> PickerPopup<'a, Symbol> {
+    let icon: &dyn Fn(&Symbol) -> Icon = &|symbol| match symbol.kind {
+        ItemKind::Project => Icon::Project,
+        ItemKind::Section => Icon::Section,
+        _ => Icon::Task,
+    };
+    PickerPopup::new("Go to Symbol", view, icon, icons, theme)
+        .color(|theme, symbol| theme.kind(symbol.kind))
+}
+
 /// The icon of `stop` in the Navigator and the sidebar: a place's kind's, or a view's own.
 fn stop_icon(stop: Stop) -> Icon {
     match stop {
@@ -912,7 +933,7 @@ impl Widget for &mut Tui {
     /// apart, each below its breadcrumbs and a rule, beside the sidebar while it shows and the
     /// shortcuts panel at the right while it shows, over the status line, scrolling each pane to
     /// keep its focus in view, the date prompt between them while it is open, and the Navigator,
-    /// the command palette, Move to, the tag picker, the settings window, the attachments panel or
+    /// the command palette, Go to Symbol, Move to, the tag picker, the settings window, the attachments panel or
     /// the conflict prompt over them while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
@@ -938,6 +959,9 @@ impl Widget for &mut Tui {
             palette_popup(&view, &self.theme, icons)
                 .badge(&keys)
                 .render(panes, buf);
+        }
+        if let Some(view) = self.state.go_to_symbol() {
+            go_to_symbol_popup(&view, &self.theme, icons).render(panes, buf);
         }
         if let Some(view) = self.state.move_to() {
             move_to_popup(&view, &self.theme, icons).render(panes, buf);

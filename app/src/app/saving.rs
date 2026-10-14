@@ -12,6 +12,7 @@ use jiff::civil::Date;
 use super::{
     Effect, Refusal, State,
     autosave::{Autosave, Ending, SaveState, Step},
+    go_to_symbol,
     move_to::MoveTo,
     navigator, text_path, view,
 };
@@ -380,9 +381,10 @@ impl State {
     /// Replaces the document with `document`, read again from the file, keeping the pane on the
     /// container it showed, its focus, what is picked and its history on the items they were on,
     /// as far as their text paths find them, the Navigator open on the places now listed with its
-    /// query, Move to open on the destinations now listed with its query while an item it moves
-    /// is found again, the date prompt open while an item it dates is, and the attachments panel
-    /// open while its item is, on what it selected as far as that is found again. The tag filter
+    /// query, Go to Symbol open on the items now listed with its query, Move to open on the
+    /// destinations now listed with its query while an item it moves is found again, the date
+    /// prompt open while an item it dates is, and the attachments panel open while its item is,
+    /// on what it selected as far as that is found again. The tag filter
     /// stays while the container shown is found again as it was. The undo history is cleared,
     /// since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
@@ -403,6 +405,10 @@ impl State {
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
             self.navigator = Some(navigator::reopen(new, self.shown(), &query));
+        }
+        if let Some(picker) = &self.go_to_symbol {
+            let query = picker.view().query.text().to_owned();
+            self.go_to_symbol = Some(go_to_symbol::reopen(new, &query));
         }
         if let Some(move_to) = &self.move_to {
             let query = move_to.view().query.text().to_owned();
@@ -896,6 +902,31 @@ mod tests {
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
         assert!(state.tags().is_none(), "a, which it tagged, is gone");
+        Ok(())
+    }
+
+    // F-FILE-06, FR-NAV-05
+    #[test]
+    fn a_reload_keeps_go_to_symbol_open_with_its_query_on_the_items_now_listed() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::GoToSymbol);
+        send(
+            &mut state,
+            Message::GoToSymbol(PickerInput::Edit(TextEdit::Insert('x'))),
+        );
+        assert_eq!(state.go_to_symbol().map(|view| view.entries.len()), Some(0));
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["x"])?)),
+        );
+        assert_eq!(
+            state
+                .go_to_symbol()
+                .map(|view| view.query.text().to_owned()),
+            Some("x".to_owned())
+        );
+        send(&mut state, Message::GoToSymbol(PickerInput::Choose));
+        assert_eq!(state.selection().focused(), titled(&state, "x"));
         Ok(())
     }
 

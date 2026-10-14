@@ -65,6 +65,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // taskpaper-terminal's palette key, and **g**o to a **c**ommand, which the owner moved from Show
     // Completed (D-63).
     (Command::Palette, &["ctrl+p", "g c"]),
+    // The owner's key, which taskpaper-terminal gives Go to Symbol until search exists (D-69).
+    (Command::GoToSymbol, &["/"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o` and `O` add
     // the focused row's kind, and the lower and upper case of a kind's letter add one at the
     // bottom and the top of the container shown (owner, D-40). In the sidebar `p` adds a
@@ -624,6 +626,13 @@ mod tests {
         assert_eq!(keymap.press(&ctrl_p), Some(Command::Palette));
         assert_eq!(keymap.press(&char('g')), None);
         assert_eq!(keymap.press(&char('c')), Some(Command::Palette));
+    }
+
+    // FR-NAV-05
+    #[test]
+    fn slash_opens_go_to_symbol() {
+        let mut keymap = Keymap::default();
+        assert_eq!(keymap.press(&char('/')), Some(Command::GoToSymbol));
     }
 
     // FR-ATT-02

@@ -36,6 +36,9 @@ pub enum Command {
     Navigator,
     /// Open the command palette, which runs the command chosen in it (FR-NAV-06).
     Palette,
+    /// Open Go to Symbol, which shows the project, section or task chosen in it where it is
+    /// (FR-NAV-05).
+    GoToSymbol,
     /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
     EditTitle,
     /// Add an item of the focused row's kind on this side of it, a task in a pane without rows,
@@ -635,6 +638,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Palette,
         title: "Command Palette",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::GoToSymbol,
+        title: "Go to Symbol",
         context: Context::Navigate,
     },
     Entry {

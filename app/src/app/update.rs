@@ -20,6 +20,8 @@ pub enum Message {
     Navigator(PickerInput),
     /// The user did something in the open command palette (FR-NAV-06).
     Palette(PickerInput),
+    /// The user did something in the open Go to Symbol (FR-NAV-05).
+    GoToSymbol(PickerInput),
     /// The user did something in the open Move to picker (FR-OPS-04).
     MoveTo(PickerInput),
     /// The user did something in the open tag picker (FR-TAG-02, FR-TAG-04).
@@ -138,6 +140,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::Go(to)) => state.go(to),
         Message::Command(Command::Navigator) => state.toggle_navigator(),
         Message::Command(Command::Palette) => state.open_palette(),
+        Message::Command(Command::GoToSymbol) => state.open_go_to_symbol(),
         Message::Command(Command::EditTitle) => state.edit_title(),
         Message::Command(Command::NewLike(side)) => state.new_like(side),
         Message::Command(Command::AddTask(end)) => state.add(ItemKind::Task, end),
@@ -191,6 +194,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
             return vec![Effect::ScrollShortcuts(direction)];
         }
         Message::Navigator(input) => state.navigator_input(input),
+        Message::GoToSymbol(input) => state.go_to_symbol_input(input),
         Message::Palette(input) => {
             if let Some(command) = state.palette_input(input) {
                 return dispatch(state, Message::Command(command), today);
@@ -567,6 +571,9 @@ mod tests {
         give(&mut state, Command::FocusLeft);
         give(&mut state, Command::Navigator);
         assert!(state.navigator().is_some(), "the Navigator passes");
+        give(&mut state, Command::Navigator);
+        give(&mut state, Command::GoToSymbol);
+        assert!(state.go_to_symbol().is_some(), "so does Go to Symbol");
         Ok(())
     }
 

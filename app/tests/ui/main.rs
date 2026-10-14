@@ -11,6 +11,7 @@ mod converting;
 mod dates;
 mod descriptions;
 mod editing;
+mod go_to_symbol;
 mod inbox;
 mod logbook;
 mod moving;
