@@ -52,7 +52,7 @@ fn open_website(harness: &mut Harness) {
 
 // FR-VIEW-07, FR-UI-09
 #[test]
-fn the_navigator_lists_the_inbox_areas_and_projects_as_a_tree_with_open_task_counts() {
+fn the_navigator_lists_the_inbox_views_areas_and_projects_as_a_tree_with_open_task_counts() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('g');
     assert_eq!(
@@ -60,6 +60,10 @@ fn the_navigator_lists_the_inbox_areas_and_projects_as_a_tree_with_open_task_cou
         [
             "›",
             " 󰚇 Inbox                                                                    3",
+            " 󰖙 Today",
+            " 󱄵 Upcoming",
+            " 󰉹 All",
+            " 󱓳 Logbook",
             " 󰆧 Work                                                                     7",
             "   󰉖 Website                                                                5",
             "     󰉖 Blog                                                                 1",
@@ -70,7 +74,7 @@ fn the_navigator_lists_the_inbox_areas_and_projects_as_a_tree_with_open_task_cou
     );
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
-        Some(Position::new(3, 8)),
+        Some(Position::new(3, 6)),
         "the cursor stands in the query"
     );
 }
@@ -256,6 +260,14 @@ fn a_place_without_open_tasks_shows_no_count() {
     harness.ctrl('g');
     assert_eq!(
         navigator(&harness),
-        ["›", " 󰚇 Inbox                            1", " 󰉖 Someday"]
+        [
+            "›",
+            " 󰚇 Inbox                            1",
+            " 󰖙 Today",
+            " 󱄵 Upcoming",
+            " 󰉹 All",
+            " 󱓳 Logbook",
+            " 󰉖 Someday"
+        ]
     );
 }

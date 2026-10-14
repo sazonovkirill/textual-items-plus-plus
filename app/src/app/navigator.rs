@@ -1,9 +1,21 @@
-//! The Navigator: the places a user can go, the Inbox and every area and project as a tree, in
-//! the fuzzy picker a key opens over the panes (FR-VIEW-07, OQ-10). Hides how the tree and its
-//! counts follow from the document; the views of the view registry join it as they arrive.
+//! The Navigator: the places a user can go, the Inbox, the views of the view registry and every
+//! area and project as a tree, in the fuzzy picker a key opens over the panes (FR-VIEW-07, OQ-10).
+//! Hides how the tree and its counts follow from the document.
 
-use super::{Candidate, Picker, PickerInput, TextEdit, container};
+use super::{
+    Candidate, Picker, PickerInput, TextEdit, container,
+    view::{self, Shown, View},
+};
 use crate::domain::{Document, Item, ItemId, ItemKind, Node};
+
+/// An entry of the Navigator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stop {
+    /// A container.
+    Place(Place),
+    /// A view.
+    View(View),
+}
 
 /// A place the Navigator lists, with what it shows of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,15 +30,21 @@ pub struct Place {
     pub open_tasks: usize,
 }
 
-/// The Navigator over `document`, focused on the entry of the container `shown`, else on that of
-/// the closest container above it that has one, such as a section's project, as an editor's file
-/// tree follows the open file; on its first entry while the pane shows a view.
-pub(super) fn open(document: &Document, shown: Option<ItemId>) -> Picker<Place> {
-    let mut picker = Picker::new(places(document));
-    let path = shown.map(|id| container::path(document, id));
-    for id in path.unwrap_or_default().into_iter().rev() {
-        if picker.focus_where(|place| place.id == id) {
-            break;
+/// The Navigator over `document`, focused on the entry of what the pane shows: a view's own, or
+/// that of the container shown, else of the closest container above it that has one, such as a
+/// section's project, as an editor's file tree follows the open file.
+pub(super) fn open(document: &Document, shown: Shown) -> Picker<Stop> {
+    let mut picker = Picker::new(stops(document));
+    match shown {
+        Shown::View(view) => {
+            picker.focus_where(|stop| *stop == Stop::View(view));
+        }
+        Shown::Container(id) => {
+            for id in container::path(document, id).into_iter().rev() {
+                if picker.focus_where(|stop| matches!(stop, Stop::Place(place) if place.id == id)) {
+                    break;
+                }
+            }
         }
     }
     picker
@@ -34,12 +52,33 @@ pub(super) fn open(document: &Document, shown: Option<ItemId>) -> Picker<Place> 
 
 /// The Navigator over `document` as [`open`] opens it, with `query` typed again, as after a
 /// reload, which lists the places anew.
-pub(super) fn reopen(document: &Document, shown: Option<ItemId>, query: &str) -> Picker<Place> {
+pub(super) fn reopen(document: &Document, shown: Shown, query: &str) -> Picker<Stop> {
     let mut picker = open(document, shown);
     for c in query.chars() {
         picker.input(PickerInput::Edit(TextEdit::Insert(c)));
     }
     picker
+}
+
+/// Every entry, in order: the Inbox, then the views as the view registry lists them, then the
+/// other [`places`].
+fn stops(document: &Document) -> Vec<Candidate<Stop>> {
+    let mut places = places(document).into_iter().map(|place| Candidate {
+        value: Stop::Place(place.value),
+        text: place.text,
+        detail: place.detail,
+    });
+    let views = view::REGISTRY.iter().map(|entry| Candidate {
+        value: Stop::View(entry.view),
+        text: entry.title.to_owned(),
+        detail: String::new(),
+    });
+    places
+        .next()
+        .into_iter()
+        .chain(views)
+        .chain(places)
+        .collect()
 }
 
 /// Every place, in the order of the tree: the Inbox, then each area and project at the top level
@@ -222,30 +261,64 @@ mod tests {
 
     // FR-VIEW-07
     #[test]
-    fn opens_on_the_shown_container_or_the_closest_one_above_it_listed()
+    fn opens_on_the_shown_container_or_the_closest_one_above_it_listed_or_on_the_view_shown()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
         let work = add(&mut document, None, Area, "Work")?;
         let site = add(&mut document, Some(work), Project, "Site")?;
         let section = add(&mut document, Some(site), Section, "Launch")?;
         let chosen = |shown| {
-            let mut picker = open(&document, Some(shown));
+            let mut picker = open(&document, shown);
             picker.input(PickerInput::Choose)
         };
         let place = |id| {
             places(&document)
                 .into_iter()
                 .find(|candidate| candidate.value.id == id)
-                .map(|candidate| Picked::Chosen(candidate.value))
+                .map(|candidate| Picked::Chosen(Stop::Place(candidate.value)))
         };
-        assert_eq!(chosen(site), place(site));
-        assert_eq!(chosen(section), place(site));
-        assert_eq!(chosen(document.inbox()), place(document.inbox()));
+        let container = Shown::Container;
+        assert_eq!(chosen(container(site)), place(site));
+        assert_eq!(chosen(container(section)), place(site));
+        assert_eq!(chosen(container(document.inbox())), place(document.inbox()));
         assert_eq!(
-            chosen(ItemId::new(99)),
+            chosen(container(ItemId::new(99))),
             place(document.inbox()),
             "with no entry it opens on the first"
         );
+        assert_eq!(
+            chosen(Shown::View(View::Logbook)),
+            Some(Picked::Chosen(Stop::View(View::Logbook)))
+        );
+        Ok(())
+    }
+
+    // FR-VIEW-07
+    #[test]
+    fn lists_the_views_after_the_inbox() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = add(&mut document, None, Area, "Work")?;
+        let listed: Vec<(String, Stop)> = stops(&document)
+            .into_iter()
+            .map(|candidate| (candidate.text, candidate.value))
+            .collect();
+        let place = |id, kind| {
+            Stop::Place(Place {
+                id,
+                kind,
+                depth: 0,
+                open_tasks: 0,
+            })
+        };
+        let mut expected = vec![("Inbox".to_owned(), place(document.inbox(), ItemKind::Inbox))];
+        expected.extend(
+            view::REGISTRY
+                .iter()
+                .map(|entry| (entry.title.to_owned(), Stop::View(entry.view))),
+        );
+        expected.push(("Work".to_owned(), place(work, Area)));
+        assert_eq!(listed, expected);
+        assert!(listed.contains(&("Logbook".to_owned(), Stop::View(View::Logbook))));
         Ok(())
     }
 }

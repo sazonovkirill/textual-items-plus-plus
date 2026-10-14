@@ -6,7 +6,7 @@ use jiff::civil::Date;
 use super::{
     all,
     container::{self, Row},
-    today,
+    logbook, today,
     upcoming::{self, Period},
 };
 use crate::domain::{Document, ItemId};
@@ -20,6 +20,8 @@ pub enum View {
     Upcoming,
     /// Every task in every list, grouped by where it lives (FR-VIEW-08).
     All,
+    /// Every completed item, by the day it was completed (FR-VIEW-03).
+    Logbook,
 }
 
 /// A view with what the Navigator shows of it.
@@ -45,6 +47,10 @@ pub const REGISTRY: &[Entry] = &[
         view: View::All,
         title: View::All.title(),
     },
+    Entry {
+        view: View::Logbook,
+        title: View::Logbook.title(),
+    },
 ];
 
 impl View {
@@ -55,7 +61,15 @@ impl View {
             Self::Today => "Today",
             Self::Upcoming => "Upcoming",
             Self::All => "All",
+            Self::Logbook => "Logbook",
         }
+    }
+
+    /// Whether each row says where its item is, as the Logbook's rows from every list do
+    /// (FR-VIEW-03).
+    #[must_use]
+    pub const fn locates(self) -> bool {
+        matches!(self, Self::Logbook)
     }
 }
 
@@ -85,6 +99,8 @@ pub enum Heading {
     Item(ItemId),
     /// The days they are dated in.
     Period(Period),
+    /// The day they were completed, `None` for none recorded.
+    Completed(Option<Date>),
 }
 
 /// The groups `view` shows of `document` on `today`, completed items among them only when
@@ -100,7 +116,17 @@ pub(super) fn groups(
         View::Today => today::groups(document, today, show_completed),
         View::Upcoming => upcoming::groups(document, today, show_completed),
         View::All => all::groups(document, show_completed),
+        View::Logbook => logbook::groups(document),
     }
+}
+
+/// The containers holding `id`, from the top level down: where a view's row says its item is
+/// (FR-VIEW-03).
+#[must_use]
+pub fn location(document: &Document, id: ItemId) -> Vec<ItemId> {
+    let mut path = container::path(document, id);
+    path.pop();
+    path
 }
 
 /// Whether `shown` can be shown: a view always, a container when it [opens](container::opens).

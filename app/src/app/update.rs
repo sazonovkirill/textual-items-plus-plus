@@ -339,7 +339,7 @@ mod tests {
         let mut state = State::new(document, Opened::Demo, TODAY);
         for message in [
             Message::Command(Command::Navigator),
-            Message::Navigator(PickerInput::Next),
+            Message::Navigator(PickerInput::Edit(TextEdit::Insert('W'))),
             Message::Navigator(PickerInput::Choose),
             Message::Command(Command::Focus(Focus::Last)),
             Message::Command(Command::Indent),
@@ -749,7 +749,7 @@ mod tests {
         state = State::new(document, Opened::Demo, TODAY);
         for message in [
             Message::Command(Command::Navigator),
-            Message::Navigator(PickerInput::Next),
+            Message::Navigator(PickerInput::Edit(TextEdit::Insert('W'))),
             Message::Navigator(PickerInput::Choose),
         ] {
             assert_eq!(update(&mut state, message, TODAY), []);

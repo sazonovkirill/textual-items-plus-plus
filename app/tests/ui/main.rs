@@ -10,6 +10,7 @@ mod dates;
 mod descriptions;
 mod editing;
 mod inbox;
+mod logbook;
 mod moving;
 mod navigation;
 mod quitting;

@@ -39,7 +39,8 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, Command, Context, DateInput, Destination, EditInput, Effect, Message, Opened, Part,
-        PickerInput, Place, REGISTRY, Side, State, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
+        PickerInput, Place, REGISTRY, Side, State, Stop, TagEntry, TagMark, TagsFor, TagsView,
+        TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
@@ -469,24 +470,33 @@ fn pane_layout(pane: Rect) -> [Rect; 3] {
     .areas(pane)
 }
 
-/// The Navigator's window, each place after its kind's icon, in a tree with its open tasks
-/// counted at the right (FR-VIEW-07).
+/// The Navigator's window, each place after its kind's icon and each view after its own, in a
+/// tree with its open tasks counted at the right (FR-VIEW-07).
 fn navigator_popup<'a>(
-    view: &'a app::PickerView<'a, Place>,
+    view: &'a app::PickerView<'a, Stop>,
     theme: &'a Theme,
     icons: IconSet,
-) -> PickerPopup<'a, Place> {
-    let icon: &dyn Fn(&Place) -> Icon = &|place| match place.kind {
-        ItemKind::Inbox => Icon::Inbox,
-        ItemKind::Area => Icon::Area,
-        _ => Icon::Project,
+) -> PickerPopup<'a, Stop> {
+    let icon: &dyn Fn(&Stop) -> Icon = &|stop| match stop {
+        Stop::Place(place) => match place.kind {
+            ItemKind::Inbox => Icon::Inbox,
+            ItemKind::Area => Icon::Area,
+            _ => Icon::Project,
+        },
+        Stop::View(view) => view_icon(*view),
     };
     PickerPopup::new("Navigator", view, icon, icons, theme)
-        .tree(&|place| place.depth)
-        .color(|theme, place| theme.kind(place.kind))
-        .badge(&|place| match place.open_tasks {
-            0 => String::new(),
-            count => count.to_string(),
+        .tree(&|stop| match stop {
+            Stop::Place(place) => place.depth,
+            Stop::View(_) => 0,
+        })
+        .color(|theme, stop| match stop {
+            Stop::Place(place) => theme.kind(place.kind),
+            Stop::View(_) => theme.primary,
+        })
+        .badge(&|stop| match stop {
+            Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
+            Stop::Place(place) => place.open_tasks.to_string(),
         })
 }
 
@@ -496,6 +506,7 @@ fn view_icon(view: View) -> Icon {
         View::Today => Icon::Today,
         View::Upcoming => Icon::Upcoming,
         View::All => Icon::All,
+        View::Logbook => Icon::Logbook,
     }
 }
 

@@ -282,6 +282,11 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::Go(Go::View(View::Logbook)),
+        title: "Go to Logbook",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::EditTitle,
         title: "Edit Title",
         context: Context::Navigate,
@@ -561,6 +566,7 @@ mod tests {
             Go::View(View::Today),
             Go::View(View::Upcoming),
             Go::View(View::All),
+            Go::View(View::Logbook),
         ] {
             assert_eq!(context(Command::Go(to)), Some(Context::Navigate), "{to:?}");
         }

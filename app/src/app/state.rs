@@ -15,7 +15,7 @@ use super::{
     focus::{self, Focus},
     move_to::{Destination, MoveTo},
     moving,
-    navigator::{self, Place},
+    navigator::{self, Place, Stop},
     saving::Saving,
     sidebar::{self, Sidebar},
     tags::{self, Choice, TagPicker, TagsView},
@@ -47,7 +47,7 @@ pub struct State {
     /// Whether the pane shows completed items (FR-VIEW-11); per pane once there are several.
     show_completed: bool,
     pub(super) visits: Visits,
-    pub(super) navigator: Option<Picker<Place>>,
+    pub(super) navigator: Option<Picker<Stop>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
     /// The date prompt, while it is open (FR-DATE-02).
@@ -185,7 +185,7 @@ impl State {
 
     /// The Navigator, while it is open.
     #[must_use]
-    pub fn navigator(&self) -> Option<PickerView<'_, Place>> {
+    pub fn navigator(&self) -> Option<PickerView<'_, Stop>> {
         self.navigator.as_ref().map(Picker::view)
     }
 
@@ -994,7 +994,7 @@ impl State {
         self.tags = None;
         self.navigator = match self.navigator {
             Some(_) => None,
-            None => Some(navigator::open(&self.document, self.container())),
+            None => Some(navigator::open(&self.document, self.shown)),
         };
     }
 
@@ -1009,8 +1009,10 @@ impl State {
             return;
         };
         self.navigator = None;
-        if let Picked::Chosen(place) = picked {
-            self.open(place.id, None);
+        match picked {
+            Picked::Chosen(Stop::Place(place)) => self.open(place.id, None),
+            Picked::Chosen(Stop::View(view)) => self.go(Go::View(view)),
+            Picked::Dismissed => {}
         }
     }
 
@@ -1607,6 +1609,37 @@ mod tests {
         Ok(())
     }
 
+    // FR-VIEW-03, FR-TASK-02, FR-EDIT-06
+    #[test]
+    fn uncompleting_in_the_logbook_leaves_the_item_where_it_is_and_moves_the_focus_on()
+    -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let mut done = |title: &str, day| {
+            let mut item = Item::new(ItemKind::Task, title);
+            item.completed = Some(crate::domain::Completion::On(day));
+            document.push(Some(inbox), Node::Item(item))
+        };
+        let older = done("older", date(2026, 10, 1))?;
+        let newer = done("newer", date(2026, 10, 2))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        state.go(Go::View(View::Logbook));
+        let ids = |state: &State| state.rows().into_iter().map(Row::id).collect::<Vec<_>>();
+        assert_eq!(ids(&state), [newer, older]);
+        assert_eq!(state.selection().focused(), Some(newer));
+        state.toggle_completed(TODAY);
+        assert_eq!(ids(&state), [older]);
+        assert_eq!(state.selection().focused(), Some(older));
+        assert_eq!(
+            state.document().children(inbox),
+            [older, newer],
+            "nothing moves"
+        );
+        state.undo();
+        assert_eq!(ids(&state), [newer, older]);
+        Ok(())
+    }
+
     // FR-VIEW-07
     #[test]
     fn the_navigator_opens_closes_and_goes_where_it_is_told() -> Result<(), PlacementError> {
@@ -1625,7 +1658,7 @@ mod tests {
         assert!(
             state
                 .navigator()
-                .is_some_and(|view| view.entries.len() == 3)
+                .is_some_and(|view| view.entries.len() == 3 + view::REGISTRY.len())
         );
         state.navigator_input(PickerInput::Next);
         assert!(state.navigator().is_some_and(|view| view.focused == 1));
@@ -2068,10 +2101,12 @@ mod tests {
         state.toggle_navigator();
         state.navigator_input(PickerInput::Choose);
         assert_eq!(
-            at(&state),
-            (Some(inbox), None),
-            "the Navigator opens on its first entry"
+            state.shown(),
+            Shown::View(View::Today),
+            "the Navigator opens on the view shown"
         );
+        navigate(&mut state, "Inbox");
+        assert_eq!(at(&state), (Some(inbox), None));
         Ok(())
     }
 

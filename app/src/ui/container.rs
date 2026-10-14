@@ -20,7 +20,7 @@ use super::{Icon, IconSet, Theme};
 use crate::{
     app::{
         Part, Row, Selection, State, TextField,
-        view::{Group, Heading, Shown, View},
+        view::{self, Group, Heading, Shown, View},
     },
     domain::{Document, Item, ItemId, ItemKind, Node, dates},
 };
@@ -334,6 +334,24 @@ impl<'a> ContainerPane<'a> {
         pieces
     }
 
+    /// Where item `id` is, dimmed after ` · `, when the view shown says so of its rows
+    /// (FR-VIEW-03): the containers holding it from the top level down; nothing otherwise.
+    fn location(&self, id: ItemId) -> Option<Span<'a>> {
+        let Shown::View(view) = self.shown else {
+            return None;
+        };
+        let titles: Vec<&str> = view::location(self.document, id)
+            .into_iter()
+            .filter_map(|id| Some(self.item(id)?.title.as_str()))
+            .collect();
+        (view.locates() && !titles.is_empty()).then(|| {
+            Span::styled(
+                format!(" · {}", titles.join(" › ")),
+                self.description_style(),
+            )
+        })
+    }
+
     /// The item numbered `id`, if it is one.
     fn item(&self, id: ItemId) -> Option<&'a Item> {
         self.document.node(id).and_then(Node::item)
@@ -362,7 +380,7 @@ impl<'a> ContainerPane<'a> {
     ) {
         pieces.push(match self.edited(row.id(), Part::Title) {
             Some(field) => self.field(shown, field, Some(index)),
-            None => self.title(shown, Some(index)),
+            None => self.title_then(shown, Some(index), self.location(row.id())),
         });
         let x = self.title_column(shown);
         if let Some(field) = self.edited(row.id(), Part::Description) {
@@ -395,7 +413,8 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// The line naming what a view's group is listed under: an area or project as its title
-    /// line without chips, or a period of days in bold; none for an item that is not one.
+    /// line without chips, or a period of days or the day of completion in bold; none for an item
+    /// that is not one.
     fn heading(&self, heading: Heading) -> Option<Piece<'a>> {
         match heading {
             Heading::Item(id) => self.item(id).map(|item| Piece {
@@ -406,12 +425,28 @@ impl<'a> ContainerPane<'a> {
                 text: wrapped(Text::styled(period.heading(self.today), Modifier::BOLD)),
                 ..Piece::blank()
             }),
+            Heading::Completed(day) => Some(Piece {
+                text: wrapped(Text::styled(
+                    day.map_or_else(
+                        || "No date".to_owned(),
+                        |day| dates::day_heading(day, self.today),
+                    ),
+                    Modifier::BOLD,
+                )),
+                ..Piece::blank()
+            }),
         }
     }
 
     /// The line naming `item`: its marker or icon, then its title and its tags wrapping under
     /// the title's start, with its attachment icons and date chips at the right.
     fn title(&self, item: &'a Item, row: Option<usize>) -> Piece<'a> {
+        self.title_then(item, row, None)
+    }
+
+    /// The line naming `item` as [`title`](Self::title) draws it, with `after` following its
+    /// tags.
+    fn title_then(&self, item: &'a Item, row: Option<usize>, after: Option<Span<'a>>) -> Piece<'a> {
         let mut spans = vec![Span::styled(item.title.as_str(), self.title_style(item))];
         for tag in &item.tags {
             let text = match &tag.value {
@@ -420,6 +455,7 @@ impl<'a> ContainerPane<'a> {
             };
             spans.push(Span::styled(text, self.tag_style(item)));
         }
+        spans.extend(after);
         Piece {
             x: self.title_column(item),
             text: wrapped(Text::from(Line::from(spans))),

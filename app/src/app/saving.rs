@@ -410,7 +410,7 @@ impl State {
         self.visits.rematch(|id| nearest(id).and_then(opens), exact);
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
-            self.navigator = Some(navigator::reopen(new, self.container(), &query));
+            self.navigator = Some(navigator::reopen(new, self.shown, &query));
         }
         if let Some(move_to) = &self.move_to {
             let query = move_to.view().query.text().to_owned();
