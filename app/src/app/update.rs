@@ -646,6 +646,25 @@ mod tests {
         Ok(())
     }
 
+    // FR-NAV-06, FR-SET-02, FR-VIEW-10
+    #[test]
+    fn the_sidebar_passes_the_palette_settings_and_the_weather_on() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Palette);
+        assert!(state.palette().is_some(), "the palette opens");
+        update(&mut state, Message::Palette(PickerInput::Dismiss), TODAY);
+        give(&mut state, Command::Settings);
+        assert!(
+            state.settings_window().is_some(),
+            "so does the settings window"
+        );
+        let effects = update(&mut state, Message::Command(Command::StartWeather), TODAY);
+        assert_eq!(effects, [Effect::StartWeather]);
+        assert!(state.sidebar_has_keys());
+        Ok(())
+    }
+
     // FR-TAG-01, FR-TAG-02, FR-VIEW-10
     #[test]
     fn the_sidebar_tags_its_focused_entry_but_no_area() -> Result<(), PlacementError> {

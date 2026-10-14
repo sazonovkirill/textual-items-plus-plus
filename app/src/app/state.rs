@@ -1034,33 +1034,10 @@ impl State {
     /// setting its dates, each one step to
     /// undo, opening Move to for it or the attachments panel on it, and showing the entry in the
     /// first pane, the sidebar keeping the keys, or in a new pane, which gets them; a view's entry
-    /// is only shown. Quitting, undo and redo, the Navigator, Go to Symbol, searching, the
-    /// sidebar's own commands, focusing a pane, going to the Inbox, a view, back and forward and
-    /// the conflict prompt's commands pass to the app; every other command does nothing.
+    /// is only shown. The commands [`sidebar_passes`] names pass to the app; every other command
+    /// does nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
-        let passes = matches!(
-            command,
-            Command::Quit
-                | Command::Undo
-                | Command::Redo
-                | Command::Navigator
-                | Command::GoToSymbol
-                | Command::Search
-                | Command::Sidebar
-                | Command::FocusLeft
-                | Command::FocusRight
-                | Command::FocusPane(_)
-                | Command::NextPane
-                | Command::PreviousPane
-                | Command::Browse(_)
-                | Command::Shortcuts
-                | Command::ScrollShortcuts(_)
-                | Command::Go(_)
-                | Command::KeepMine
-                | Command::TakeTheirs
-                | Command::ShowDiff
-        );
-        if passes || !self.sidebar.has_keys() {
+        if sidebar_passes(command) || !self.sidebar.has_keys() {
             return false;
         }
         let entries = self.sidebar.visible(&self.document);
@@ -1479,6 +1456,68 @@ impl State {
         let (document, today) = (&self.document, self.today);
         self.pane.show(document, today, shown, focused);
     }
+}
+
+/// Whether the sidebar passes `command` to the app while it has the keys: quitting, undo and
+/// redo, the Navigator, Go to Symbol, the command palette, searching, the sidebar's own commands,
+/// focusing a pane, going to the Inbox, a view, back and forward, the shortcuts panel, the
+/// settings window, the weather and the conflict prompt's commands (D-86).
+fn sidebar_passes(command: Command) -> bool {
+    matches!(
+        command,
+        Command::Quit
+            | Command::Undo
+            | Command::Redo
+            | Command::Navigator
+            | Command::GoToSymbol
+            | Command::Palette
+            | Command::Search
+            | Command::Sidebar
+            | Command::FocusLeft
+            | Command::FocusRight
+            | Command::FocusPane(_)
+            | Command::NextPane
+            | Command::PreviousPane
+            | Command::Browse(_)
+            | Command::Shortcuts
+            | Command::ScrollShortcuts(_)
+            | Command::Settings
+            | Command::StartWeather
+            | Command::Go(_)
+            | Command::KeepMine
+            | Command::TakeTheirs
+            | Command::ShowDiff
+    )
+}
+
+/// Whether the sidebar takes `command` while it has the keys: it passes it to the app, or acts
+/// with it on some kind of entry, as [`State::sidebar_command`] does (D-86).
+pub(super) fn sidebar_takes(command: Command) -> bool {
+    matches!(
+        command,
+        Command::Focus(_)
+            | Command::Collapse
+            | Command::NewLike(_)
+            | Command::AddTask(_)
+            | Command::AddProject(_)
+            | Command::AddProjectInArea(_)
+            | Command::EditTitle
+            | Command::EditDescription(_)
+            | Command::OpenInNewPane
+            | Command::RenameContainer
+            | Command::Delete
+            | Command::Move(_)
+            | Command::Convert
+            | Command::MoveTo
+            | Command::SetDate(_)
+            | Command::StartToday
+            | Command::DayEarlier(_)
+            | Command::DayLater(_)
+            | Command::Tags
+            | Command::OpenNote(_)
+            | Command::OpenComments(_)
+            | Command::OpenChecklist
+    ) || sidebar_passes(command)
 }
 
 #[cfg(test)]

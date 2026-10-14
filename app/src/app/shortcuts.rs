@@ -3,7 +3,7 @@
 //! FR-KEY-03). Every command belongs to a group, so a command a later step registers is listed
 //! with the rest.
 
-use super::{Command, Context, Entry, REGISTRY, State, attachments};
+use super::{Command, Context, Entry, REGISTRY, State, attachments, state};
 
 /// A heading the shortcuts panel lists commands under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,7 +132,8 @@ impl State {
     /// commands and quitting, while the attachments panel is open quitting and, while nothing in
     /// it is edited, the commands it acts on (FR-CHK-03), while a picker, the command palette, Go
     /// to Symbol, the date prompt or the settings window is open, in edit mode or while the words
-    /// to search for are typed only global ones, and otherwise any.
+    /// to search for are typed only global ones, while the sidebar has the keys those it takes,
+    /// and otherwise any.
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -156,6 +157,7 @@ impl State {
             context == Some(Context::Global)
         } else {
             context != Some(Context::Conflict)
+                && (!self.sidebar_has_keys() || state::sidebar_takes(command))
         }
     }
 
@@ -306,6 +308,33 @@ mod tests {
             Some(vec![("View and Panels", 1)]),
             "only quitting while an item is edited"
         );
+        Ok(())
+    }
+
+    // FR-KEY-03, FR-VIEW-10
+    #[test]
+    fn the_sidebar_leaves_the_commands_it_takes_and_those_it_passes_on()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::Sidebar);
+        for (command, taken) in [
+            (Command::RenameContainer, true),
+            (Command::Focus(super::super::Focus::Next), true),
+            (Command::Palette, true),
+            (Command::Settings, true),
+            (Command::Shortcuts, true),
+            (Command::ToggleCompleted, false),
+            (Command::AddSection(super::super::End::Bottom), false),
+            (Command::Narrow, false),
+            (Command::KeepMine, false),
+        ] {
+            assert_eq!(state.takes(command), taken, "{command:?}");
+        }
+        for entry in REGISTRY.iter().filter(|entry| !state.takes(entry.command)) {
+            let mut given = state.clone();
+            give(&mut given, entry.command);
+            assert_eq!(given, state, "{:?} does nothing", entry.command);
+        }
         Ok(())
     }
 

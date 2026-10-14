@@ -163,6 +163,42 @@ mod tests {
         Ok(())
     }
 
+    // FR-NAV-06, FR-VIEW-10
+    #[test]
+    fn from_the_sidebar_the_palette_lists_what_it_takes_and_gives_it_the_choice()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        let mut document = state.document().clone();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Message::Command(Command::Sidebar));
+        give(
+            &mut state,
+            Message::Command(Command::Focus(crate::app::Focus::Last)),
+        );
+        give(&mut state, Message::Command(Command::Palette));
+        let listed = listed(&state);
+        for command in [
+            Command::RenameContainer,
+            Command::Navigator,
+            Command::Settings,
+        ] {
+            assert!(listed.contains(&command), "{command:?} is listed");
+        }
+        for command in [
+            Command::ToggleCompleted,
+            Command::Narrow,
+            Command::ClosePane,
+        ] {
+            assert!(!listed.contains(&command), "{command:?} is not");
+        }
+        typed(&mut state, "rename container");
+        give(&mut state, Message::Palette(PickerInput::Choose));
+        assert_eq!(state.editing().map(|(id, ..)| id), Some(work));
+        assert!(state.sidebar_has_keys(), "the sidebar renames its entry");
+        Ok(())
+    }
+
     // FR-NAV-06, FR-VIEW-07
     #[test]
     fn the_palette_and_the_navigator_take_each_others_place() -> Result<(), PlacementError> {
