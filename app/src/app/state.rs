@@ -606,8 +606,8 @@ impl State {
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
     /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting,
-    /// outdenting, converting and setting its dates, each one step to undo, and opening the entry
-    /// in the pane.
+    /// outdenting, converting and setting its dates, each one step to undo, opening Move to for
+    /// it, and opening the entry in the pane, `Enter` giving the pane the keys.
     /// Quitting, undo and redo, the Navigator, the sidebar's own commands, going home, back and
     /// forward and the conflict prompt's commands pass to the app; every other command does
     /// nothing.
@@ -660,6 +660,10 @@ impl State {
             }
             (Command::Outdent, Some(id)) => apply(self, sidebar::outdent(&self.document, id)),
             (Command::Go(Go::Into), Some(id)) => self.open(id, None),
+            (Command::MoveTo, Some(id)) if id != self.document.inbox() => {
+                self.navigator = None;
+                self.move_to = MoveTo::open(&self.document, [id]);
+            }
             (Command::SetDate(kind), Some(id)) => {
                 self.date_prompt = DatePrompt::open(&self.document, [id], kind, today, Some(id));
             }

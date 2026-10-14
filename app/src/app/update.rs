@@ -350,7 +350,8 @@ mod tests {
         Ok(())
     }
 
-    /// The title of the sidebar's focused entry, and of every entry, indented by depth.
+    /// The title of the sidebar's focused entry, and of every entry after the Inbox, which every
+    /// sidebar lists first, indented by depth.
     fn sidebar(state: &State) -> (Option<String>, Vec<String>) {
         let view = state.sidebar().expect("the sidebar shows");
         let title = |id| {
@@ -367,6 +368,7 @@ mod tests {
         let entries = view
             .entries
             .iter()
+            .skip(1)
             .map(|place| format!("{}{}", "  ".repeat(place.depth), title(place.id)))
             .collect();
         (focused, entries)
@@ -395,6 +397,7 @@ mod tests {
         assert_eq!(state.sidebar(), None);
         give(&mut state, Command::Sidebar);
         assert!(state.sidebar_has_keys());
+        give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(
             sidebar(&state),
             (
@@ -429,7 +432,14 @@ mod tests {
         );
         give(&mut state, Command::Outdent);
         assert_eq!(sidebar(&state).1, ["Work", "  A", "  B"]);
+        give(&mut state, Command::MoveTo);
+        assert!(
+            state.move_to().is_some(),
+            "Move to opens for the focused entry"
+        );
+        update(&mut state, Message::MoveTo(PickerInput::Dismiss), TODAY);
         give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::Focus(Focus::Next));
         give(&mut state, Command::Outdent);
         assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
         let before = state.document().clone();
@@ -474,6 +484,7 @@ mod tests {
         state = State::new(document, Opened::Demo);
         let pane = state.selection().clone();
         give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Next));
         give(&mut state, Command::RenameContainer);
         type_into(&mut state, "s");
         edit(&mut state, EditInput::Next);
@@ -534,27 +545,41 @@ mod tests {
 
     // FR-VIEW-10, FR-EDIT-05
     #[test]
-    fn an_empty_sidebar_adds_at_the_top_level_and_acts_on_nothing() {
+    fn the_sidebar_lists_the_inbox_first_and_only_opens_it() {
         let mut state = State::new(Document::new(), Opened::Demo);
         give(&mut state, Command::Sidebar);
-        let before = state.clone();
+        assert_eq!(sidebar(&state), (Some("Inbox".into()), vec![]));
+        let before = state.document().clone();
         for command in [
-            Command::EditTitle,
             Command::RenameContainer,
             Command::Delete,
             Command::Move(Direction::Up),
             Command::Indent,
             Command::Outdent,
+            Command::Convert,
+            Command::MoveTo,
+            Command::StartToday,
             Command::Go(Go::Into),
             Command::Focus(Focus::Next),
         ] {
             give(&mut state, command);
         }
-        assert_eq!(state, before);
+        assert_eq!(state.document(), &before, "the Inbox stays as it is");
+        assert!(state.editing().is_none() && state.move_to().is_none());
         give(&mut state, Command::NewProject(Side::Above));
         type_into(&mut state, "P");
         edit(&mut state, EditInput::Done);
         assert_eq!(sidebar(&state), (Some("P".into()), vec!["P".into()]));
+        let inbox = state.document().inbox();
+        give(&mut state, Command::Go(Go::Into));
+        assert_ne!(state.container(), inbox);
+        give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::Go(Go::Into));
+        assert_eq!(state.container(), inbox, "Go Into opens the Inbox");
+        give(&mut state, Command::Go(Go::Back));
+        give(&mut state, Command::EditTitle);
+        assert_eq!(state.container(), inbox, "and so does Enter");
+        assert!(!state.sidebar_has_keys(), "Enter gives the pane the keys");
     }
 
     /// The dates of the Inbox task titled `title`, which the Inbox view leaves out once it has a
@@ -668,6 +693,7 @@ mod tests {
             item.map(|item| (item.start, item.due))
         };
         give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Next));
         give(&mut state, Command::StartToday);
         assert_eq!(dated(&state), Some((Some(TODAY), None)));
         give(&mut state, Command::SetDate(DateKind::Due));
@@ -738,6 +764,7 @@ mod tests {
         let mut state = State::new(document, Opened::Demo);
         for command in [
             Command::Sidebar,
+            Command::Focus(Focus::Next),
             Command::Go(Go::Into),
             Command::FocusPane,
             Command::Extend(Direction::Down),

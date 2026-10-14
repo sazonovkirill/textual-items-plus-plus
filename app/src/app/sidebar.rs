@@ -1,4 +1,4 @@
-//! The sidebar: the areas and projects as a tree beside the pane, where they are created,
+//! The sidebar: the Inbox, and the areas and projects as a tree beside the pane, where they are created,
 //! renamed, deleted, reordered, indented and outdented with keys (FR-VIEW-10, OQ-10). Hides which
 //! entry it keeps focused as the tree changes and where its changes put items in the document.
 
@@ -134,30 +134,45 @@ impl Sidebar {
     }
 }
 
-/// The areas and projects of `document` as the sidebar lists them: the Navigator's tree without
-/// the Inbox, which is not created, renamed, moved or deleted.
+/// The places of `document` as the sidebar lists them: the Navigator's tree with the Inbox
+/// first, then the projects in no area and then the areas, each followed by what it holds, as
+/// Things 3's sidebar groups them. Within each group they keep the order of the file.
 pub(super) fn entries(document: &Document) -> Vec<Place> {
-    navigator::places(document)
+    let (mut inbox, mut projects, mut areas) = (Vec::new(), Vec::new(), Vec::new());
+    let mut group = ItemKind::Inbox;
+    for place in navigator::places(document)
         .into_iter()
         .map(|candidate| candidate.value)
-        .filter(|place| place.kind != ItemKind::Inbox)
-        .collect()
+    {
+        if place.depth == 0 {
+            group = place.kind;
+        }
+        match group {
+            ItemKind::Inbox => inbox.push(place),
+            ItemKind::Area => areas.push(place),
+            _ => projects.push(place),
+        }
+    }
+    [inbox, projects, areas].concat()
 }
 
 /// The transaction that moves `id` one step `direction` among its siblings in the tree, past the
-/// next area or project listed beside it; an empty one when it is already at that end.
+/// next entry of its kind listed beside it, since the sidebar lists the projects in no area apart
+/// from the areas; an empty one when it is already at that end.
 pub(super) fn shift(document: &Document, id: ItemId, direction: Direction) -> Transaction {
     let Some((siblings, index)) = siblings(document, id) else {
         return Transaction::default();
     };
+    let alike =
+        |other: ItemId| listed(document, other) && kind(document, other) == kind(document, id);
     let destination = match direction {
         Direction::Up => siblings
             .get(..index)
-            .and_then(|earlier| earlier.iter().rfind(|&&other| listed(document, other)))
+            .and_then(|earlier| earlier.iter().rfind(|&&other| alike(other)))
             .map(|&other| Destination::Before(other)),
         Direction::Down => siblings
             .get(index + 1..)
-            .and_then(|later| later.iter().find(|&&other| listed(document, other)))
+            .and_then(|later| later.iter().find(|&&other| alike(other)))
             .map(|&other| Destination::After(other)),
     };
     destination.map_or_else(Transaction::default, |to| {
@@ -167,8 +182,9 @@ pub(super) fn shift(document: &Document, id: ItemId, direction: Direction) -> Tr
     })
 }
 
-/// The transaction that indents the project `id` into the nearest area or project listed above
-/// it among its siblings, as its last child (FR-OPS-03).
+/// The transaction that indents the project `id` into the nearest project listed above it among
+/// its siblings, as its last child (FR-OPS-03); the areas are listed below the projects in no
+/// area, so none is above one.
 ///
 /// # Errors
 ///
@@ -178,7 +194,11 @@ pub(super) fn indent(document: &Document, id: ItemId) -> Result<Transaction, Ref
     let (siblings, index) = siblings(document, id).ok_or(Refusal::NothingAbove)?;
     let into = siblings
         .get(..index)
-        .and_then(|earlier| earlier.iter().rfind(|&&other| listed(document, other)))
+        .and_then(|earlier| {
+            earlier.iter().rfind(|&&other| {
+                listed(document, other) && kind(document, other) == Some(ItemKind::Project)
+            })
+        })
         .ok_or(Refusal::NothingAbove)?;
     Ok(document
         .move_to(id, Destination::Last(Some(*into)))
@@ -203,11 +223,12 @@ pub(super) fn outdent(document: &Document, id: ItemId) -> Result<Transaction, Re
 }
 
 /// Where a new item of `kind` goes from the entry `focused` among `entries`, on `side` of it, as
-/// its parent, `None` for the top level, and its index there. An area goes beside the area or
-/// top-level project holding the focus. A project goes above the focused entry, or below it, as
-/// the first of the entries it holds when it is an area or holds any, as a new task below a
-/// section heading is its first. With nothing focused either goes last at the top level, and
-/// any other kind goes nowhere.
+/// its parent, `None` for the top level, and its index there. An area goes beside the area
+/// holding the focus, or first among the areas from the Inbox or a project in no area. A project
+/// goes above the focused entry, or below it, as the first of the entries it holds when it is an
+/// area, on either side, or holds any, as a new task below a section heading is its first, and from the Inbox
+/// first among the projects in no area. With nothing focused either goes last at the top level,
+/// and any other kind goes nowhere.
 pub(super) fn place(
     document: &Document,
     entries: &[Place],
@@ -219,10 +240,18 @@ pub(super) fn place(
     let Some(focused) = focused else {
         return matches!(kind, ItemKind::Area | ItemKind::Project).then_some(end);
     };
+    // The top level lists projects apart from areas, each kind in the order of the file, so the
+    // first place there is the first of either kind.
+    if focused == document.inbox() {
+        return matches!(kind, ItemKind::Area | ItemKind::Project).then_some((None, 0));
+    }
     let below = usize::from(side == Side::Below);
     match kind {
         ItemKind::Area => {
             let top = super::container::path(document, focused).first().copied()?;
+            if self::kind(document, top) != Some(ItemKind::Area) {
+                return Some((None, 0));
+            }
             let (_, index) = document.position(top)?;
             Some((None, index + below))
         }
@@ -236,7 +265,9 @@ pub(super) fn place(
                 .node(focused)
                 .and_then(Node::item)
                 .is_some_and(|item| item.kind == ItemKind::Area);
-            if side == Side::Above {
+            // Above an area the sidebar lists another area's projects or those in no area, so a
+            // project added there goes into it as from below.
+            if side == Side::Above && !area {
                 return Some((parent, index));
             }
             match (holds, area) {
@@ -260,6 +291,11 @@ fn siblings(document: &Document, id: ItemId) -> Option<(&[ItemId], usize)> {
 fn listed(document: &Document, id: ItemId) -> bool {
     navigator::shown(document, id)
         .is_some_and(|item| matches!(item.kind, ItemKind::Area | ItemKind::Project))
+}
+
+/// The kind of the item `id`, if it is one.
+fn kind(document: &Document, id: ItemId) -> Option<ItemKind> {
+    document.node(id).and_then(Node::item).map(|item| item.kind)
 }
 
 /// Refuses `id` unless it is a project, the only entry that nests.
@@ -351,22 +387,27 @@ mod tests {
 
     // FR-VIEW-10
     #[test]
-    fn lists_the_areas_and_projects_as_a_tree_without_the_inbox_or_the_trash() {
+    fn lists_the_inbox_then_the_projects_in_no_area_then_the_areas_without_the_trash() {
         assert_eq!(
             tree(&document()),
-            ["Work", "  Site", "    Blog", "  Docs", "Solo", "Home"]
+            [
+                "Inbox", "Solo", "Work", "  Site", "    Blog", "  Docs", "Home"
+            ]
         );
     }
 
     // FR-VIEW-10, FR-ORG-06
     #[test]
-    fn an_entry_changes_places_with_the_entry_beside_it() -> Result<(), PlacementError> {
+    fn an_entry_changes_places_with_the_entry_of_its_kind_beside_it() -> Result<(), PlacementError>
+    {
         let mut document = document();
         let docs = find(&document, "Docs");
         apply(&mut document, |d| Ok(shift(d, docs, Direction::Up)))?;
         assert_eq!(
             tree(&document),
-            ["Work", "  Docs", "  Site", "    Blog", "Solo", "Home"]
+            [
+                "Inbox", "Solo", "Work", "  Docs", "  Site", "    Blog", "Home"
+            ]
         );
         let up = shift(&document, docs, Direction::Up);
         assert!(
@@ -374,40 +415,45 @@ mod tests {
             "the task and section above are no entries"
         );
         let solo = find(&document, "Solo");
-        apply(&mut document, |d| Ok(shift(d, solo, Direction::Up)))?;
-        assert_eq!(
-            tree(&document),
-            ["Solo", "Work", "  Docs", "  Site", "    Blog", "Home"],
-            "past the project in the Trash"
-        );
-        apply(&mut document, |d| Ok(shift(d, solo, Direction::Down)))?;
+        for direction in [Direction::Up, Direction::Down] {
+            assert_eq!(
+                shift(&document, solo, direction).ops(),
+                [],
+                "past the project in the Trash, only areas are beside it, listed apart"
+            );
+        }
         let work = find(&document, "Work");
         apply(&mut document, |d| Ok(shift(d, work, Direction::Down)))?;
         assert_eq!(
             tree(&document),
-            ["Solo", "Work", "  Docs", "  Site", "    Blog", "Home"]
+            [
+                "Inbox", "Solo", "Home", "Work", "  Docs", "  Site", "    Blog"
+            ],
+            "past the project in no area, after the next area"
         );
         let home = find(&document, "Home");
-        assert_eq!(shift(&document, home, Direction::Down).ops(), []);
+        assert_eq!(shift(&document, home, Direction::Up).ops(), []);
         assert_eq!(shift(&document, document.inbox(), Direction::Up).ops(), []);
         Ok(())
     }
 
     // FR-VIEW-10, FR-OPS-03
     #[test]
-    fn a_project_indents_into_the_area_or_project_above_it() -> Result<(), PlacementError> {
+    fn a_project_indents_into_the_project_above_it() -> Result<(), PlacementError> {
         let mut document = document();
-        let solo = find(&document, "Solo");
-        apply(&mut document, |d| indent(d, solo))?;
+        let docs = find(&document, "Docs");
+        apply(&mut document, |d| indent(d, docs))?;
         assert_eq!(
             tree(&document),
-            ["Work", "  Site", "    Blog", "  Docs", "  Solo", "Home"],
-            "into the area above, past the project in the Trash"
+            [
+                "Inbox", "Solo", "Work", "  Site", "    Blog", "    Docs", "Home"
+            ]
         );
-        apply(&mut document, |d| indent(d, solo))?;
+        let solo = find(&document, "Solo");
         assert_eq!(
-            tree(&document),
-            ["Work", "  Site", "    Blog", "  Docs", "    Solo", "Home"]
+            indent(&document, solo),
+            Err(Refusal::NothingAbove),
+            "the area above it in the file is listed below it, and the project above is in the Trash"
         );
         let site = find(&document, "Site");
         assert_eq!(indent(&document, site), Err(Refusal::NothingAbove));
@@ -428,12 +474,14 @@ mod tests {
         apply(&mut document, |d| outdent(d, blog))?;
         assert_eq!(
             tree(&document),
-            ["Work", "  Site", "  Blog", "  Docs", "Solo", "Home"]
+            [
+                "Inbox", "Solo", "Work", "  Site", "  Blog", "  Docs", "Home"
+            ]
         );
         apply(&mut document, |d| outdent(d, blog))?;
         assert_eq!(
             tree(&document),
-            ["Work", "  Site", "  Docs", "Blog", "Solo", "Home"]
+            ["Inbox", "Blog", "Solo", "Work", "  Site", "  Docs", "Home"]
         );
         assert_eq!(outdent(&document, blog), Err(Refusal::NotNested));
         let home = find(&document, "Home");
@@ -489,7 +537,11 @@ mod tests {
             Some(at("Home", "")),
             "into the empty area"
         );
-        assert_eq!(new("Home", Side::Above), Some(at("", "Home")));
+        assert_eq!(
+            new("Home", Side::Above),
+            Some(at("Home", "")),
+            "into the area from above too"
+        );
         assert_eq!(new("Solo", Side::Below), Some(at("", "Home")));
         assert_eq!(
             placed(&document, None, Project, Side::Above),
@@ -514,6 +566,24 @@ mod tests {
         assert_eq!(new(Some("Blog"), Side::Above), Some(at("", "Work")));
         assert_eq!(new(Some("Home"), Side::Below), Some(at("", "")));
         assert_eq!(new(None, Side::Below), Some(at("", "")));
+        assert_eq!(
+            new(Some("Solo"), Side::Above),
+            Some(at("", "Work")),
+            "first among the areas from a project in no area"
+        );
+        let entries = entries(&document);
+        let inbox = Some(document.inbox());
+        for (kind, side) in [(Area, Side::Above), (Project, Side::Below)] {
+            assert_eq!(
+                place(&document, &entries, inbox, kind, side),
+                Some((None, 0)),
+                "first of its kind from the Inbox"
+            );
+        }
+        assert_eq!(
+            place(&document, &entries, inbox, Section, Side::Below),
+            None
+        );
         for kind in [Section, Task] {
             assert_eq!(placed(&document, Some("Work"), kind, Side::Below), None);
             assert_eq!(placed(&document, None, kind, Side::Below), None);
@@ -540,7 +610,9 @@ mod tests {
         sidebar.toggle(None);
         assert!(sidebar.has_keys());
         let mut go = |motion| moved(&document, &mut sidebar, motion);
-        assert_eq!(go(Focus::Previous).as_deref(), Some("Work"));
+        assert_eq!(go(Focus::Previous).as_deref(), Some("Inbox"));
+        assert_eq!(go(Focus::Next).as_deref(), Some("Solo"));
+        assert_eq!(go(Focus::Next).as_deref(), Some("Work"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Site"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Blog"));
         assert_eq!(go(Focus::Parent).as_deref(), Some("Site"));
@@ -550,20 +622,24 @@ mod tests {
             Some("Work"),
             "nothing holds it"
         );
-        assert_eq!(go(Focus::NextSection).as_deref(), Some("Solo"));
+        assert_eq!(go(Focus::NextSection).as_deref(), Some("Home"));
         assert_eq!(go(Focus::Last).as_deref(), Some("Home"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Home"));
         assert_eq!(go(Focus::NextSection).as_deref(), Some("Home"));
-        assert_eq!(go(Focus::PreviousSection).as_deref(), Some("Solo"));
-        assert_eq!(go(Focus::First).as_deref(), Some("Work"));
+        assert_eq!(go(Focus::PreviousSection).as_deref(), Some("Work"));
+        assert_eq!(go(Focus::First).as_deref(), Some("Inbox"));
         let view = sidebar.view(entries(&document));
         assert_eq!(
             view.map(|view| (view.focused, view.keys, view.entries.len())),
-            Some((Some(0), true, 6))
+            Some((Some(0), true, 7))
         );
         let mut empty = Sidebar::default();
         empty.toggle(None);
-        assert_eq!(moved(&Document::new(), &mut empty, Focus::Next), None);
+        assert_eq!(
+            moved(&Document::new(), &mut empty, Focus::Next).as_deref(),
+            Some("Inbox"),
+            "a new document lists its Inbox"
+        );
     }
 
     // FR-VIEW-10
@@ -602,11 +678,12 @@ mod tests {
         gone.deleted = Some(date(2026, 10, 2));
         document.set(docs, gone)?;
         sidebar.settle(&entries(&document));
-        assert_eq!(sidebar.focused(), Some(find(&document, "Solo")));
+        assert_eq!(sidebar.focused(), Some(find(&document, "Home")));
         let mut hidden = Sidebar::default();
         hidden.settle(&entries(&document));
         assert_eq!(hidden.focused(), None, "a hidden sidebar is left alone");
         sidebar.settle(&[]);
+        sidebar.move_focus(&[], Focus::Next);
         assert_eq!(sidebar.focused(), None);
         Ok(())
     }
