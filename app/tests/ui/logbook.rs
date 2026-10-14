@@ -13,14 +13,12 @@ fn trimmed(harness: &Harness) -> Vec<String> {
         .collect()
 }
 
-// FR-VIEW-03, FR-KEY-06, FR-TASK-02, FR-NAV-03
+// FR-VIEW-03, FR-KEY-06, FR-TASK-02
 #[test]
 fn uncomplete_a_task_from_the_logbook() {
     let mut harness = Harness::new(60, 30);
     harness.type_text("gL");
     let mut logbook = vec![
-        "  \u{f14f3} Logbook",
-        "────────────────────────────────────────────────────────────",
         "  \u{f14f3} Logbook",
         "",
         "  2 days ago · Sat 3 Oct",
@@ -38,7 +36,7 @@ fn uncomplete_a_task_from_the_logbook() {
     harness.ctrl('o');
     harness.type_text("x");
     let rows = trimmed(&harness);
-    assert_eq!(rows[2..5], ["  \u{f14f3} Logbook", "", ""], "{rows:#?}");
+    assert_eq!(rows[..3], ["  \u{f14f3} Logbook", "", ""], "{rows:#?}");
     harness.ctrl('g');
     harness.type_text("website");
     harness.key(crossterm::event::KeyCode::Enter);
@@ -70,7 +68,7 @@ Work:
     let mut harness = Harness::open(path.clone(), 50, 20);
     harness.type_text("gL");
     assert_eq!(
-        trimmed(&harness)[2..18],
+        trimmed(&harness)[..16],
         [
             "  \u{f14f3} Logbook",
             "",

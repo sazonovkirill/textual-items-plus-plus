@@ -6,7 +6,6 @@ mod attachments;
 mod clipboard;
 mod conflict;
 mod container;
-mod crumbs;
 mod cut;
 mod date_prompt;
 mod edit_keys;
@@ -36,7 +35,6 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Style},
-    text::Line,
     widgets::{StatefulWidget, Widget},
 };
 
@@ -50,9 +48,9 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput,
-        Effect, Focus, Message, Opened, Part, PickerInput, Place, SearchInput, Selected, Settings,
-        Side, State, Stop, Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
-        view::{Shown, View},
+        Effect, Focus, Message, Opened, PaneView, Part, PickerInput, Place, SearchInput, Selected,
+        Settings, Side, State, Stop, Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
+        view::View,
     },
     domain::ItemKind,
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
@@ -62,7 +60,6 @@ use attachments::{AttachmentsPanel, PanelKey, Scroll, Scrolled};
 use clipboard::Clipboard;
 use conflict::ConflictPrompt;
 use container::{ContainerPane, Top};
-use crumbs::Crumbs;
 use date_prompt::DatePromptPanel;
 use file::File;
 use settings::SettingsWindow;
@@ -589,8 +586,7 @@ impl Tui {
             .get(self.state.current_pane())
             .copied()
             .unwrap_or_default();
-        self.current_pane()
-            .caret(pane_layout(self.current_area(room))[2], top)
+        self.current_pane().caret(self.current_area(room), top)
     }
 
     /// The columns the description being edited wraps in, as last drawn.
@@ -598,21 +594,30 @@ impl Tui {
         let [panes, _, _] = self.layout(self.area);
         let [_, room] = split(self.strip(panes), self.state.sidebar().is_some());
         self.current_pane()
-            .description_columns(pane_layout(self.current_area(room))[2])
+            .description_columns(self.current_area(room))
             .unwrap_or(usize::MAX)
     }
 
     /// The pane with the keys, to draw.
     fn current_pane(&self) -> ContainerPane<'_> {
-        let pane = self.state.pane_view();
-        ContainerPane::new(
+        self.pane(self.state.pane_view(), self.state.current_pane())
+    }
+
+    /// `pane`, at position `index` among the panes, to draw, numbered while there are several.
+    fn pane<'a>(&'a self, pane: PaneView<'a>, index: usize) -> ContainerPane<'a> {
+        let drawn = ContainerPane::new(
             &self.state,
             pane,
-            true,
+            index == self.state.current_pane(),
             self.today,
             &self.theme,
             self.icons(),
-        )
+        );
+        if self.state.panes().nth(1).is_some() {
+            drawn.numbered(index + 1)
+        } else {
+            drawn
+        }
     }
 
     /// Where each pane on screen is drawn over `room`, the panes' room beside the sidebar, with
@@ -773,55 +778,32 @@ impl Tui {
         Some(window.into_iter().chain(commands).collect())
     }
 
-    /// Draws the panes placed in `room`, each below its breadcrumbs and a rule, a dim rule apart,
-    /// scrolling each to keep its focus in view.
+    /// Draws the panes placed in `room`, a dim rule apart, scrolling each to keep its focus in
+    /// view.
     fn render_panes(&mut self, room: Rect, buf: &mut Buffer) {
-        let icons = self.icons();
         let placed = self.pane_areas(room);
         if let Some(&(first, _)) = placed.first() {
             self.first = first;
         }
-        let views: Vec<_> = self.state.panes().collect();
         let current = self.state.current_pane();
-        for (index, (&pane, top)) in views.iter().zip(&mut self.tops).enumerate() {
+        for (index, pane) in self.state.panes().enumerate() {
             let Some(&(_, area)) = placed.iter().find(|&&(placed, _)| placed == index) else {
                 continue;
             };
-            let [crumbs, rule, rows] = pane_layout(area);
-            let path = pane.path();
-            let view = match pane.shown() {
-                Shown::View(view) => Some(view),
-                Shown::Container(_) => None,
-            };
-            let mut header = Crumbs::new(self.state.document(), &path, view, &self.theme, icons)
-                .filter(pane.tag_filter());
-            if views.len() > 1 {
-                header = header.number(index + 1);
+            let mut top = self.tops.get(index).copied().unwrap_or_default();
+            let drawn = self.pane(pane, index).draw(area, buf, &mut top);
+            if let Some(kept) = self.tops.get_mut(index) {
+                *kept = top;
             }
-            if index != current {
-                header = header.dimmed();
-            }
-            header.render(crumbs, buf);
-            Line::styled(
-                "─".repeat(usize::from(rule.width)),
-                Style::new().fg(self.theme.rule),
-            )
-            .render(rule, buf);
-            let drawn = ContainerPane::new(
-                &self.state,
-                pane,
-                index == current,
-                self.today,
-                &self.theme,
-                icons,
-            )
-            .draw(rows, buf, top);
             self.animator.drawn(DrawnPane {
                 index,
                 focused: index == current && !self.state.sidebar_has_keys(),
                 focus: pane.selection().focused(),
-                body: rows,
-                crumbs,
+                body: area,
+                title: (top == Top::default()).then(|| Rect {
+                    height: area.height.min(1),
+                    ..area
+                }),
                 rows: drawn,
             });
             if area.right() < room.right() {
@@ -910,18 +892,6 @@ fn split(panes: Rect, sidebar: bool) -> [Rect; 2] {
     Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(panes)
 }
 
-/// The parts of a pane: its breadcrumbs, the rule under them and its rows. A terminal too small
-/// for the crumbs, the rule and a row keeps the row.
-fn pane_layout(pane: Rect) -> [Rect; 3] {
-    let header = u16::from(pane.height > 2);
-    Layout::vertical([
-        Constraint::Length(header),
-        Constraint::Length(header),
-        Constraint::Fill(1),
-    ])
-    .areas(pane)
-}
-
 /// The Navigator's window, each place after its kind's icon and each view after its own, in a
 /// tree with its open tasks counted at the right (FR-VIEW-07).
 fn navigator_popup<'a>(
@@ -988,7 +958,7 @@ fn stop_color(theme: &Theme, stop: Stop) -> Color {
     }
 }
 
-/// The icon standing for `view` in its pane's heading and crumbs.
+/// The icon standing for `view` in its pane's heading.
 fn view_icon(view: View) -> Icon {
     match view {
         View::Today => Icon::Today,
@@ -1050,7 +1020,7 @@ fn tags_popup<'a>(
 
 impl Widget for &mut Tui {
     /// Draws, on the theme's background in its text color, the panes side by side, a dim rule
-    /// apart, each below its breadcrumbs and a rule, beside the sidebar while it shows and the
+    /// apart, beside the sidebar while it shows and the
     /// shortcuts panel at the right while it shows, over the status line, scrolling each pane to
     /// keep its focus in view, the date prompt between them while it is open, and the Navigator,
     /// the command palette, Go to Symbol, Move to, the tag picker, the settings window, the attachments panel or

@@ -21,7 +21,7 @@ fn results(harness: &Harness) -> Vec<String> {
     let status = rows.len() - 1;
     rows.into_iter()
         .take(status)
-        .skip(3)
+        .skip(1)
         .filter(|row| !row.is_empty())
         .collect()
 }
@@ -33,8 +33,7 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives() {
     harness.ctrl('f');
     harness.type_text("Screenshots");
     let rows = trimmed(&harness);
-    assert_eq!(rows[0], "  \u{f0349} Search");
-    assert_eq!(rows[2], "  \u{f0349} Search  Screenshots");
+    assert_eq!(rows[0], "  \u{f0349} Search  Screenshots");
     assert_eq!(
         results(&harness),
         [
@@ -46,14 +45,14 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives() {
     );
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 20)),
-        Some(Position::new(23, 2)),
+        Some(Position::new(23, 0)),
         "the caret is after the words typed"
     );
     harness.key(KeyCode::Enter);
     assert_eq!(harness.tui.cursor(Rect::new(0, 0, 80, 20)), None);
     harness.type_text(".");
     let rows = trimmed(&harness);
-    assert_eq!(rows[0], "  \u{f02dc} Work › Website");
+    assert!(rows[0].starts_with("  # Website "), "{rows:#?}");
     assert!(
         rows.iter()
             .any(|row| row.starts_with("▌ - Write the announcement")),
@@ -61,7 +60,7 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives() {
     );
     harness.type_text("H");
     assert_eq!(
-        trimmed(&harness)[2],
+        trimmed(&harness)[0],
         "  \u{f0349} Search  Screenshots",
         "the results stay in the pane's history with their words"
     );
@@ -96,7 +95,7 @@ fn a_result_opens_in_a_new_pane() {
     harness.ctrl('\\');
     let rows = trimmed(&harness);
     assert!(
-        rows[0].starts_with("  \u{f0349} Search ") && rows[0].contains("│  \u{f02dc} Work "),
+        rows[0].starts_with("  \u{f0349} Search ") && rows[0].contains("│  \u{f01a7} Work "),
         "{rows:#?}"
     );
     assert!(
@@ -138,7 +137,7 @@ fn text_pasted_goes_into_the_words_typed() {
     let mut harness = Harness::new(80, 16);
     harness.type_text("gs");
     harness.send(&Event::Paste("coffee\nbeans".to_owned()));
-    assert_eq!(trimmed(&harness)[2], "  \u{f0349} Search  coffee beans");
+    assert_eq!(trimmed(&harness)[0], "  \u{f0349} Search  coffee beans");
     assert_eq!(results(&harness), ["▌ - Buy coffee beans @errands · Inbox"]);
 }
 
@@ -157,7 +156,7 @@ fn the_shortcuts_panel_lists_the_keys_of_the_words_typed_and_the_palette_searche
     harness.key(KeyCode::Enter);
     harness.type_text("bank");
     assert_eq!(
-        trimmed(&harness)[2].trim_end_matches(|c: char| c != 'k'),
+        trimmed(&harness)[0].trim_end_matches(|c: char| c != 'k'),
         "  \u{f0349} Search  bank"
     );
 }

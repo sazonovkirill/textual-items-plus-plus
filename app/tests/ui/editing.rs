@@ -13,7 +13,7 @@ fn items(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(5)
+        .skip(3)
         .filter_map(|row| {
             let (focus, rest) = row.split_at(row.char_indices().nth(2)?.0);
             let title = without_chips(rest.split_once(' ')?.1);
@@ -60,7 +60,7 @@ fn add_and_rename_a_task() {
     );
     assert_eq!(
         harness.tui.cursor(SCREEN),
-        Some(Position::new(12, 6)),
+        Some(Position::new(12, 4)),
         "the cursor stands after the text typed"
     );
     harness.key(KeyCode::Enter);

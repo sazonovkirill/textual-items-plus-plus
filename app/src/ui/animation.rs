@@ -71,8 +71,8 @@ enum Kind {
     Settle,
     /// The body of a pane that opened or shows another place fading in.
     Root,
-    /// The breadcrumbs of such a pane.
-    Crumbs,
+    /// The title line of such a pane.
+    Title,
     /// The screen passing from how it was drawn, as a window opens or closes or the theme
     /// changes.
     Swap,
@@ -208,8 +208,8 @@ pub(super) struct DrawnPane {
     pub focus: Option<ItemId>,
     /// Where its rows are on screen.
     pub body: Rect,
-    /// Where its breadcrumbs are.
-    pub crumbs: Rect,
+    /// Where its title line is, when it is on screen.
+    pub title: Option<Rect>,
     /// The screen lines of each row on screen, in order.
     pub rows: Vec<(ItemId, Rect)>,
 }
@@ -459,10 +459,12 @@ impl Animator {
         }
         if fades && pending.rooted.contains(&pane.index) {
             started.push((Kind::Root, fade_in(pane.body, theme)));
-            started.push((
-                Kind::Crumbs,
-                flash(vec![pane.crumbs], theme.accent, theme, FLASH, true),
-            ));
+            if let Some(title) = pane.title {
+                started.push((
+                    Kind::Title,
+                    flash(vec![title], theme.accent, theme, FLASH, true),
+                ));
+            }
         }
         for (kind, effect) in started {
             self.manager

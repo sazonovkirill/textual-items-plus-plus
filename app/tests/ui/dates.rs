@@ -115,7 +115,7 @@ fn the_prompt_takes_the_keys_until_enter_or_esc() {
     harness.key(KeyCode::Esc);
     assert_eq!(rows(&harness, 19..23), ["", "", "", ""]);
     assert_eq!(
-        rows(&harness, 5..8),
+        rows(&harness, 3..6),
         [
             row("▌ - Call the bank about the card", "󱙬 Wed"),
             "  - Buy coffee beans @errands".to_owned(),
@@ -150,7 +150,7 @@ fn mt_starts_the_selection_today_and_both_are_saved() {
          \t- Book flights @start(2026-10-05)\n"
     );
     assert_eq!(
-        rows(&harness, 4..6),
+        rows(&harness, 2..4),
         [
             row("▌ - Renew the passport", "󱙭 today 󱙬 in 27 days"),
             row("▌ - Book flights", "󱙭 today"),
@@ -189,14 +189,14 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
     let (_dir, _path, mut harness) = on_file(text);
     harness.ctrl('o');
     assert_eq!(
-        rows(&harness, 4..6),
+        rows(&harness, 2..4),
         [
             row("▌ - Late", "󰨱 yesterday"),
             row("  ✔ Done late", "󱙬 4 days ago"),
         ]
     );
     let buffer = harness.terminal.backend().buffer();
-    let overdue = &buffer[(68, 4)];
+    let overdue = &buffer[(68, 2)];
     assert_eq!(overdue.symbol(), "󰨱");
     assert_eq!(overdue.fg, Color::LightRed);
     assert!(
@@ -204,14 +204,14 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
             .modifier
             .contains(Modifier::BOLD | Modifier::REVERSED)
     );
-    let done = &buffer[(67, 5)];
+    let done = &buffer[(67, 3)];
     assert_eq!(done.symbol(), "󱙬");
     assert_eq!(done.fg, Color::Red);
     assert!(done.modifier.contains(Modifier::DIM));
     assert!(!done.modifier.contains(Modifier::REVERSED));
     harness.ctrl('b');
     harness.type_text("jjjjj.");
-    let heading = harness.rows()[2].trim_end().to_owned();
+    let heading = harness.rows()[0].trim_end().to_owned();
     assert!(heading.contains("│  # Work "), "{heading}");
     assert!(heading.ends_with(" 󱙭 tomorrow 󱙬 next Mon"), "{heading}");
 }

@@ -18,8 +18,6 @@ fn open_upcoming() {
     harness.type_text("gU");
     let upcoming = [
         "  \u{f1135} Upcoming",
-        "────────────────────────────────────────────────────────────",
-        "  \u{f1135} Upcoming",
         "",
         "  Tomorrow · Tue 6 Oct",
         "▌ - Write a small CLI @rust                      \u{f166d} tomorrow",
@@ -41,6 +39,8 @@ fn open_upcoming() {
         "  # Website                              \u{f11d7} \u{f0189} 2 \u{f166c} in 20 days",
         "    The new marketing site, built with the design team.",
         "",
+        "",
+        "",
         " \u{f01bf} NAVIGATE · Demo data · not saved",
     ];
     assert_eq!(
@@ -57,16 +57,16 @@ fn completing_a_task_in_upcoming_takes_it_out_until_completed_items_are_shown() 
     harness.type_text("gU");
     harness.type_text("x");
     let rows = trimmed(&harness);
-    assert_eq!(rows[4], "  Wed 7 Oct", "{rows:#?}");
+    assert_eq!(rows[2], "  Wed 7 Oct", "{rows:#?}");
     assert!(
-        rows[5].starts_with("▌ - Call the bank about the card"),
+        rows[3].starts_with("▌ - Call the bank about the card"),
         "the focus moves on: {rows:#?}"
     );
     harness.ctrl('o');
     let rows = trimmed(&harness);
-    assert_eq!(rows[4], "  Tomorrow · Tue 6 Oct", "{rows:#?}");
+    assert_eq!(rows[2], "  Tomorrow · Tue 6 Oct", "{rows:#?}");
     assert!(
-        rows[5].contains("Write a small CLI"),
+        rows[3].contains("Write a small CLI"),
         "shown again, completed: {rows:#?}"
     );
 }

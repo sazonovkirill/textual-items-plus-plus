@@ -71,7 +71,7 @@ fn slash_lists_areas_projects_and_sections_then_tasks_where_they_are_and_typing_
     );
     harness.key(KeyCode::Enter);
     assert_eq!(window(&harness), Vec::<String>::new(), "choosing closes it");
-    assert!(harness.rows()[0].contains("Work › Website"));
+    assert!(harness.rows()[0].contains("# Website"));
     assert!(
         focused(&harness)
             .first()

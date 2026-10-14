@@ -374,13 +374,6 @@ impl<'a> PaneView<'a> {
         self.pane.shown
     }
 
-    /// The containers from the top level down to the one shown, which the breadcrumbs show
-    /// (FR-NAV-03); none for a view.
-    #[must_use]
-    pub fn path(&self) -> Vec<ItemId> {
-        self.pane.path(self.document)
-    }
-
     /// The rows the pane lists, in order, those the tag filter keeps.
     #[must_use]
     pub fn rows(&self) -> Vec<Row> {

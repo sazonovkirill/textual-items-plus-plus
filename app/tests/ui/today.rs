@@ -14,14 +14,12 @@ fn trimmed(harness: &Harness) -> Vec<String> {
         .collect()
 }
 
-// FR-VIEW-06, FR-KEY-06, FR-DATE-04, FR-NAV-03, D-51
+// FR-VIEW-06, FR-KEY-06, FR-DATE-04, D-51
 #[test]
 fn open_today() {
     let mut harness = Harness::new(60, 16);
     harness.type_text("gt");
     let today = [
-        "  \u{f0599} Today",
-        "────────────────────────────────────────────────────────────",
         "  \u{f0599} Today",
         "",
         "▌ - Answer the recruiter's email                \u{f0a31} yesterday",
@@ -32,6 +30,8 @@ fn open_today() {
         "    Work › Hiring",
         "  - Water the plants                            \u{f166d} yesterday",
         "    Home",
+        "",
+        "",
         "",
         "",
         "",
@@ -50,7 +50,7 @@ fn going_into_a_task_in_today_shows_it_where_it_lives_and_back_returns() {
     let mut harness = Harness::new(60, 16);
     harness.type_text("gtjj.");
     let rows = trimmed(&harness);
-    assert_eq!(rows[0], "  \u{f02dc} Work");
+    assert_eq!(rows[0], "  \u{f01a7} Work");
     assert!(
         rows.iter()
             .any(|row| row.starts_with("▌ - Review two portfolios")),
@@ -60,7 +60,7 @@ fn going_into_a_task_in_today_shows_it_where_it_lives_and_back_returns() {
     let rows = trimmed(&harness);
     assert_eq!(rows[0], "  \u{f0599} Today");
     assert!(
-        rows[8].starts_with("▌ - Review two portfolios"),
+        rows[6].starts_with("▌ - Review two portfolios"),
         "{rows:#?}"
     );
 }
@@ -74,8 +74,6 @@ fn filter_today_by_a_tag() {
     harness.key(KeyCode::Enter);
     let mut filtered = vec![
         "  \u{f0599} Today                                        \u{f04fc} @writing",
-        "────────────────────────────────────────────────────────────",
-        "  \u{f0599} Today",
         "",
         "▌ - Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
         "▌   Work / Website › Launch",
@@ -85,7 +83,7 @@ fn filter_today_by_a_tag() {
     assert_eq!(
         trimmed(&harness),
         filtered,
-        "the crumbs name the view and the filter, and only the tagged row is left"
+        "the title line names the view and the filter, and only the tagged row is left"
     );
 }
 

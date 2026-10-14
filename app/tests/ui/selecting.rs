@@ -10,7 +10,7 @@ fn items(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(5)
+        .skip(3)
         .filter_map(|row| {
             let (marker, rest) = row.split_at(row.char_indices().nth(2)?.0);
             let title = without_chips(rest.split_once(' ')?.1);

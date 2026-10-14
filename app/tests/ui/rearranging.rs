@@ -7,13 +7,12 @@ use tempfile::TempDir;
 
 use crate::support::{Harness, without_chips};
 
-/// The rows below the breadcrumbs that show a title, trimmed and without date chips, the focused
+/// The rows that show a title, trimmed and without date chips, the focused
 /// ones starred.
 fn listed(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(2)
         .filter_map(|row| {
             let focused = row.starts_with('▌');
             let text = without_chips(row.trim_start_matches('▌').trim());

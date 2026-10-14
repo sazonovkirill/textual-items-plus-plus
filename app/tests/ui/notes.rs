@@ -80,7 +80,7 @@ fn write_a_note_on_a_project() {
     );
     assert_eq!(harness.tui.cursor(SCREEN), None);
     harness.key(KeyCode::Esc);
-    assert_eq!(panel(&harness)[0], "", "Esc closes the panel");
+    assert!(!harness.screen().contains("┌ Blog"), "Esc closes the panel");
     harness.type_text("z");
     harness.press(KeyCode::Char('n'), KeyModifiers::ALT);
     assert_eq!(

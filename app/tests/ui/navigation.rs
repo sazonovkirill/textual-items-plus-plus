@@ -1,5 +1,5 @@
-//! Getting around: the Navigator, opening containers, going up and home, the breadcrumbs, and
-//! going back and forward.
+//! Getting around: the Navigator, opening containers, going up and home, and going back and
+//! forward.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Position, Rect};
@@ -8,12 +8,15 @@ use std::fs;
 
 use crate::support::Harness;
 
-/// The breadcrumb line, without trailing spaces.
-fn crumbs(harness: &Harness) -> String {
+/// The title line at the top of the pane, without the focus marker or what it has at the right.
+fn title(harness: &Harness) -> String {
     harness
         .rows()
         .first()
-        .map(|row| row.trim_end().to_owned())
+        .and_then(|row| {
+            let row = row.trim_start_matches('▌').trim();
+            row.split("  ").next().map(str::to_owned)
+        })
         .unwrap_or_default()
 }
 
@@ -80,11 +83,11 @@ fn the_navigator_lists_the_inbox_views_areas_and_projects_as_a_tree_with_open_ta
     );
 }
 
-// FR-VIEW-07, FR-UI-09, FR-NAV-02, FR-NAV-03, FR-NAV-04
+// FR-VIEW-07, FR-UI-09, FR-NAV-02, FR-NAV-04
 #[test]
 fn open_work_website_from_the_navigator_and_come_back() {
     let mut harness = Harness::new(80, 24);
-    assert_eq!(crumbs(&harness), "  󰋜 Inbox");
+    assert_eq!(title(&harness), "󰚇 Inbox");
     harness.ctrl('g');
     harness.type_text("web");
     assert_eq!(
@@ -101,9 +104,9 @@ fn open_work_website_from_the_navigator_and_come_back() {
         Vec::<String>::new(),
         "choosing closes it"
     );
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
+    assert_eq!(title(&harness), "# Website");
     assert_eq!(
-        harness.rows()[2].trim_end(),
+        harness.rows()[0].trim_end(),
         "  # Website                                                  󱇗 󰆉 2 󱙬 in 20 days"
     );
     assert_eq!(
@@ -111,13 +114,13 @@ fn open_work_website_from_the_navigator_and_come_back() {
         Some("- Collect logos from partners")
     );
     harness.type_text("H");
-    assert_eq!(crumbs(&harness), "  󰋜 Inbox");
+    assert_eq!(title(&harness), "󰚇 Inbox");
     assert_eq!(
         focused(&harness).as_deref(),
         Some("- Call the bank about the card                                          󱙬 Wed")
     );
     harness.type_text("L");
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
+    assert_eq!(title(&harness), "# Website");
     assert_eq!(harness.tui.cursor(Rect::new(0, 0, 80, 24)), None);
 }
 
@@ -129,14 +132,14 @@ fn the_navigator_opens_on_where_the_pane_is_and_its_key_or_escape_closes_it() {
     harness.type_text("jj#");
     assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.type_text(".");
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Launch");
+    assert_eq!(title(&harness), "/ Launch");
     harness.ctrl('g');
     let entries = navigator(&harness);
     assert!(entries.iter().any(|entry| entry.contains("Website")));
     harness.key(KeyCode::Enter);
     assert_eq!(
-        crumbs(&harness),
-        "  󰋜 Work › Website",
+        title(&harness),
+        "# Website",
         "a section opens the Navigator on its project"
     );
     harness.ctrl('g');
@@ -147,11 +150,7 @@ fn the_navigator_opens_on_where_the_pane_is_and_its_key_or_escape_closes_it() {
     harness.ctrl('g');
     harness.ctrl('g');
     assert_eq!(navigator(&harness), Vec::<String>::new());
-    assert_eq!(
-        crumbs(&harness),
-        "  󰋜 Work › Website",
-        "closing goes nowhere"
-    );
+    assert_eq!(title(&harness), "# Website", "closing goes nowhere");
 }
 
 // FR-VIEW-07
@@ -165,12 +164,12 @@ fn the_navigator_keeps_the_keys_but_ctrl_q_still_quits() {
         Some("› gh")
     );
     harness.press(KeyCode::Left, KeyModifiers::ALT);
-    assert_eq!(crumbs(&harness), "  󰋜 Inbox");
+    assert_eq!(title(&harness), "󰚇 Inbox");
     harness.ctrl('q');
     assert!(harness.tui.should_quit());
 }
 
-// FR-NAV-02, FR-NAV-03
+// FR-NAV-02
 #[test]
 fn opening_going_up_and_home_with_the_keys() {
     let mut harness = Harness::new(80, 24);
@@ -178,37 +177,29 @@ fn opening_going_up_and_home_with_the_keys() {
     harness.type_text("jj#");
     assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.press(KeyCode::Right, KeyModifiers::ALT);
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Launch");
+    assert_eq!(title(&harness), "/ Launch");
     harness.type_text(">");
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
+    assert_eq!(title(&harness), "# Website");
     assert_eq!(
         focused(&harness).as_deref(),
         Some("/ Launch"),
         "going up focuses where the pane was"
     );
     harness.type_text("gu");
-    assert_eq!(crumbs(&harness), "  󰋜 Work");
+    assert_eq!(title(&harness), "󰆧 Work");
     assert!(focused(&harness).is_some_and(|row| row.starts_with("# Website ")));
     harness.type_text("gu");
-    assert_eq!(
-        crumbs(&harness),
-        "  󰋜 Work",
-        "the top level has nothing above"
-    );
+    assert_eq!(title(&harness), "󰆧 Work", "the top level has nothing above");
     harness.type_text("gz");
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
+    assert_eq!(title(&harness), "# Website");
     harness.type_text("gg.");
-    assert_eq!(
-        crumbs(&harness),
-        "  󰋜 Work › Website",
-        "a task does not open"
-    );
+    assert_eq!(title(&harness), "# Website", "a task does not open");
     harness.type_text("gh");
-    assert_eq!(crumbs(&harness), "  󰋜 Inbox");
+    assert_eq!(title(&harness), "󰚇 Inbox");
     harness.press(KeyCode::Left, KeyModifiers::ALT | KeyModifiers::SHIFT);
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
+    assert_eq!(title(&harness), "# Website");
     harness.type_text("gi");
-    assert_eq!(crumbs(&harness), "  󰋜 Inbox");
+    assert_eq!(title(&harness), "󰚇 Inbox");
 }
 
 // FR-NAV-04
@@ -217,38 +208,18 @@ fn back_and_forward_return_with_the_focus_where_it_was() {
     let mut harness = Harness::new(80, 24);
     open_website(&mut harness);
     harness.type_text("jj#.");
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Launch");
+    assert_eq!(title(&harness), "/ Launch");
     harness.type_text("H");
     assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.type_text("H");
-    assert_eq!(crumbs(&harness), "  󰋜 Inbox");
+    assert_eq!(title(&harness), "󰚇 Inbox");
     harness.type_text("H");
-    assert_eq!(crumbs(&harness), "  󰋜 Inbox", "nothing is further back");
+    assert_eq!(title(&harness), "󰚇 Inbox", "nothing is further back");
     harness.press(KeyCode::Right, KeyModifiers::ALT | KeyModifiers::SHIFT);
     harness.type_text("L");
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Launch");
+    assert_eq!(title(&harness), "/ Launch");
     harness.type_text("L");
-    assert_eq!(
-        crumbs(&harness),
-        "  󰋜 Work › Website › Launch",
-        "nothing is further ahead"
-    );
-}
-
-// FR-NAV-03
-#[test]
-fn breadcrumbs_too_wide_give_way_from_the_start() {
-    let mut harness = Harness::new(24, 12);
-    open_website(&mut harness);
-    harness.type_text("jj#.");
-    assert_eq!(crumbs(&harness), "  󰋜 … › Website › Launch");
-    let mut harness = Harness::new(14, 12);
-    open_website(&mut harness);
-    harness.type_text("jj#.");
-    assert_eq!(crumbs(&harness), "  󰋜 … › Launch");
-    let mut harness = Harness::new(9, 12);
-    open_website(&mut harness);
-    assert_eq!(crumbs(&harness), "  󰋜 … › W");
+    assert_eq!(title(&harness), "/ Launch", "nothing is further ahead");
 }
 
 // FR-VIEW-07

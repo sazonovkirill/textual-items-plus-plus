@@ -7,7 +7,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::support::{Harness, without_chips};
 
-/// The rows below the breadcrumbs that show a task, trimmed and without date chips.
+/// The rows that show a task, trimmed and without date chips.
 fn tasks(harness: &Harness) -> Vec<String> {
     harness
         .rows()

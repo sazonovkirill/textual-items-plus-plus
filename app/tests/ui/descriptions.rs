@@ -9,12 +9,11 @@ use crate::support::Harness;
 
 const SCREEN: Rect = Rect::new(0, 0, 40, 14);
 
-/// The rows of the pane, below the breadcrumbs and their rule, without trailing spaces.
+/// The rows of the pane, without trailing spaces.
 fn pane(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(2)
         .map(|row| row.trim_end().to_owned())
         .collect()
 }
@@ -49,7 +48,7 @@ fn describe_a_task_in_place_and_undo_it() {
         ],
         "the whole description shows while it is edited"
     );
-    assert_eq!(harness.tui.cursor(SCREEN), Some(Position::new(19, 8)));
+    assert_eq!(harness.tui.cursor(SCREEN), Some(Position::new(19, 6)));
     harness.key(KeyCode::Esc);
     assert_eq!(mode(&harness), "NAVIGATE");
     assert_eq!(
@@ -82,9 +81,9 @@ fn up_and_down_follow_the_lines_on_screen() {
     harness.key(KeyCode::Enter);
     harness.type_text("call");
     harness.key(KeyCode::Up);
-    assert_eq!(harness.tui.cursor(SCREEN), Some(Position::new(8, 7)));
+    assert_eq!(harness.tui.cursor(SCREEN), Some(Position::new(8, 5)));
     harness.key(KeyCode::Up);
-    assert_eq!(harness.tui.cursor(SCREEN), Some(Position::new(8, 6)));
+    assert_eq!(harness.tui.cursor(SCREEN), Some(Position::new(8, 4)));
     harness.type_text("X");
     harness.key(KeyCode::Down);
     harness.key(KeyCode::Down);

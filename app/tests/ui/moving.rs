@@ -23,12 +23,11 @@ fn window(harness: &Harness, title: &str) -> Vec<String> {
         .collect()
 }
 
-/// The rows of the pane below its breadcrumbs, without trailing spaces or blank rows.
+/// The rows of the pane, without trailing spaces or blank rows.
 fn pane(harness: &Harness) -> Vec<String> {
     harness
         .rows()
         .iter()
-        .skip(2)
         .map(|row| row.trim_end().to_owned())
         .filter(|row| !row.is_empty() && !row.contains("NAVIGATE"))
         .collect()

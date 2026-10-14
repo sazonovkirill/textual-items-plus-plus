@@ -14,16 +14,12 @@ fn trimmed(harness: &Harness) -> Vec<String> {
 /// The screen of the Trash listing `rows` in a 60 by 12 terminal, with `status` at the end of
 /// the status line.
 fn trash(rows: &[&str], status: &str) -> Vec<String> {
-    let mut screen: Vec<String> = [
-        "  \u{f0a7a} Trash",
-        "────────────────────────────────────────────────────────────",
-        "  \u{f0a7a} Trash",
-    ]
-    .into_iter()
-    .chain((!rows.is_empty()).then_some(""))
-    .chain(rows.iter().copied())
-    .map(str::to_owned)
-    .collect();
+    let mut screen: Vec<String> = ["  \u{f0a7a} Trash"]
+        .into_iter()
+        .chain((!rows.is_empty()).then_some(""))
+        .chain(rows.iter().copied())
+        .map(str::to_owned)
+        .collect();
     screen.resize(11, String::new());
     screen.push(format!(" \u{f01bf} NAVIGATE · {status}"));
     screen

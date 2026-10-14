@@ -7,12 +7,11 @@ use ratatui::layout::{Position, Rect};
 
 use crate::support::{Harness, without_chips};
 
-/// The task rows below the breadcrumbs, without their date chips, the focused ones starred.
+/// The task rows, without their date chips, the focused ones starred.
 fn tasks(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(2)
         .filter_map(|row| {
             let focused = row.starts_with('▌');
             let title = without_chips(row.trim_start_matches('▌').trim()).strip_prefix("- ")?;
@@ -25,8 +24,8 @@ fn tasks(harness: &Harness) -> Vec<String> {
         .collect()
 }
 
-/// The breadcrumb line, without trailing spaces.
-fn crumbs(harness: &Harness) -> String {
+/// The title line at the top of the pane, without trailing spaces.
+fn title(harness: &Harness) -> String {
     harness
         .rows()
         .first()
@@ -81,9 +80,9 @@ fn tag_two_tasks_and_filter_by_the_tag() {
     harness.key(KeyCode::Esc);
     choose(&mut harness, "gf", "deep");
     assert!(
-        crumbs(&harness).ends_with("@deep-work"),
+        title(&harness).ends_with("@deep-work"),
         "{}",
-        crumbs(&harness)
+        title(&harness)
     );
     assert_eq!(
         tasks(&harness),
@@ -93,16 +92,16 @@ fn tag_two_tasks_and_filter_by_the_tag() {
         ]
     );
     choose(&mut harness, "gf", "err");
-    assert!(crumbs(&harness).ends_with("@deep-work @errands"));
+    assert!(title(&harness).ends_with("@deep-work @errands"));
     assert_eq!(tasks(&harness), ["*Buy coffee beans @errands @deep-work"]);
     choose(&mut harness, "gf", "deep");
     assert!(
-        crumbs(&harness).ends_with(" @errands"),
+        title(&harness).ends_with(" @errands"),
         "chosen again, it goes"
     );
     harness.type_text("gF");
     assert_eq!(tasks(&harness).len(), 3, "the filter is off");
-    assert!(!crumbs(&harness).contains('@'));
+    assert!(!title(&harness).contains('@'));
 }
 
 // FR-TAG-02, FR-OPS-06, FR-EDIT-06
@@ -153,7 +152,7 @@ fn the_filter_goes_when_the_pane_shows_another_place() {
     harness.ctrl('g');
     harness.type_text("website");
     harness.key(KeyCode::Enter);
-    assert!(!crumbs(&harness).contains('@'));
+    assert!(!title(&harness).contains('@'));
     harness.key(KeyCode::Char('H'));
     assert_eq!(tasks(&harness).len(), 3);
 }
@@ -209,7 +208,7 @@ fn an_area_takes_no_tags_or_dates_and_keeps_those_its_file_gives_it() {
     harness.type_text("work");
     harness.key(KeyCode::Enter);
     harness.type_text("k");
-    let heading = harness.rows()[2].trim_end().to_owned();
+    let heading = harness.rows()[0].trim_end().to_owned();
     assert_eq!(heading, "▌ 󰆧 Work", "the file's tag and date are not shown");
     for (keys, why) in [
         ("mg", "an area has no tags"),

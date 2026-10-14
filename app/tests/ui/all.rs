@@ -13,14 +13,12 @@ fn trimmed(harness: &Harness) -> Vec<String> {
         .collect()
 }
 
-// FR-VIEW-08, FR-VIEW-01, FR-KEY-06, FR-NAV-03
+// FR-VIEW-08, FR-VIEW-01, FR-KEY-06
 #[test]
 fn open_all() {
     let mut harness = Harness::new(60, 38);
     harness.type_text("ga");
     let all = [
-        "  \u{f0279} All",
-        "────────────────────────────────────────────────────────────",
         "  \u{f0279} All",
         "",
         "▌ - Call the bank about the card                      \u{f166c} Wed",
@@ -54,6 +52,8 @@ fn open_all() {
         "  # Learn Rust",
         "  - Finish the ownership chapter @rust",
         "  - Write a small CLI @rust                      \u{f166d} tomorrow",
+        "",
+        "",
         "",
         "",
         " \u{f01bf} NAVIGATE · Demo data · not saved",

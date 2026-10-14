@@ -41,7 +41,7 @@ pub enum Icon {
     Comments,
     /// A task's checklist, beside its progress.
     Checklist,
-    /// The breadcrumbs' first crumb, the home container.
+    /// Move to's top level.
     Home,
     /// A Navigator entry whose children are shown.
     Expanded,

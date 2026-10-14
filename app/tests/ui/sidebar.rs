@@ -94,7 +94,7 @@ fn reorder_areas_in_the_sidebar() {
     );
     harness.ctrl('b');
     assert!(
-        harness.rows()[0].starts_with("  󰋜 Inbox"),
+        harness.rows()[0].starts_with("  󰚇 Inbox"),
         "hidden, the pane takes the screen: {:?}",
         harness.rows()[0]
     );
@@ -120,7 +120,7 @@ fn add_rename_and_open_entries_in_the_sidebar() {
         "{added:?}"
     );
     assert!(
-        harness.rows()[0].contains("󰋜 Inbox"),
+        harness.rows()[0].contains("󰚇 Inbox"),
         "the pane stays on the Inbox"
     );
     harness.type_text("R");
@@ -139,8 +139,8 @@ fn add_rename_and_open_entries_in_the_sidebar() {
         "first of the areas"
     );
     harness.key(KeyCode::Enter);
-    let crumbs: String = harness.rows()[0].chars().skip(28).collect();
-    assert!(crumbs.contains("Errands"), "Enter opens it: {crumbs:?}");
+    let title: String = harness.rows()[0].chars().skip(28).collect();
+    assert!(title.contains("Errands"), "Enter opens it: {title:?}");
 }
 
 // FR-VIEW-10, FR-OPS-03, FR-OPS-04, D-75
@@ -182,7 +182,7 @@ fn delete_the_project_shown_from_the_sidebar() {
             .iter()
             .any(|entry| entry.contains("Learn Rust"))
     );
-    assert!(harness.rows()[0].contains("󰋜 Inbox"), "the pane goes home");
+    assert!(harness.rows()[0].contains("󰚇 Inbox"), "the pane goes home");
     harness.type_text("z");
     assert!(
         entries(&harness)

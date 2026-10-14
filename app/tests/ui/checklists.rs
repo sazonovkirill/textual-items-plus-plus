@@ -93,13 +93,13 @@ fn build_a_nested_checklist() {
     );
     harness.key(KeyCode::Esc);
     assert!(
-        harness.rows()[5].ends_with("\u{f0756} 1/5 \u{f166c} Wed "),
+        harness.rows()[3].ends_with("\u{f0756} 1/5 \u{f166c} Wed "),
         "the row shows how much of its checklist is done: {}",
-        harness.rows()[5]
+        harness.rows()[3]
     );
     harness.type_text("z");
     assert!(
-        harness.rows()[5].contains("\u{f0756} 1/6"),
+        harness.rows()[3].contains("\u{f0756} 1/6"),
         "deleting the item was one step to undo"
     );
 }

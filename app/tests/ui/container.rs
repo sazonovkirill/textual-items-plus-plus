@@ -39,8 +39,6 @@ fn on_file(text: &str, width: u16, height: u16) -> (tempfile::TempDir, Harness) 
 fn without_a_file_the_app_shows_the_demo_inbox_at_80_by_24() {
     let harness = Harness::new(80, 24);
     let mut expected = vec![
-        "  󰋜 Inbox".to_owned(),
-        "─".repeat(80),
         "  󰚇 Inbox".to_owned(),
         "  Everything not sorted yet lands here.".to_owned(),
         String::new(),
@@ -153,12 +151,12 @@ fn a_file_opens_on_its_inbox_saved() {
             .map(|row| row.trim_end())
             .collect::<Vec<_>>(),
         [
-            "  󰋜 Inbox",
-            "─".repeat(60).as_str(),
             "  󰚇 Inbox",
             "",
             "▌ - Renew the passport                         󱙬 in 27 days",
             "  - Book flights @travel",
+            "",
+            "",
             "",
             format!(" 󰆿 NAVIGATE · {} · saved", path.display()).as_str(),
         ]
@@ -175,7 +173,7 @@ fn a_missing_file_opens_empty_and_is_not_created_until_a_change() {
     let path = dir.path().join("new.taskpaper");
     let mut harness = Harness::open(path.clone(), 40, 4);
     harness.type_text("jkG");
-    assert_eq!(harness.rows()[2].trim_end(), "  󰚇 Inbox");
+    assert_eq!(harness.rows()[0].trim_end(), "  󰚇 Inbox");
     assert_eq!(focused(&harness), None);
     assert!(!path.exists());
 }
@@ -203,9 +201,9 @@ fn moving_past_the_bottom_scrolls_the_focus_into_view() {
     harness.type_text("G");
     let rows = harness.rows();
     assert_eq!(rows[8].trim_end(), "▌ - Task 30");
-    assert_eq!(rows[2].trim_end(), "  - Task 24");
+    assert_eq!(rows[0].trim_end(), "  - Task 22");
     harness.type_text("gg");
-    assert_eq!(harness.rows()[2].trim_end(), "  󰚇 Inbox");
+    assert_eq!(harness.rows()[0].trim_end(), "  󰚇 Inbox");
 }
 
 // FR-UI-06
@@ -219,8 +217,8 @@ fn a_small_terminal_shows_what_fits_and_keeps_working() {
             .map(|row| row.trim_end())
             .collect::<Vec<_>>(),
         [
-            "  󰋜 Inbox",
-            "─".repeat(24).as_str(),
+            "  yet lands here.",
+            "",
             "▌ - Call the bank 󱙬 Wed",
             "▌   about the",
             "▌   card",

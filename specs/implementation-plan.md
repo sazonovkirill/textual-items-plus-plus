@@ -113,7 +113,7 @@ Find anything fast and make the app yours.
 | 6.1 | **Animations.** Port the animation layer: focus, opening and closing, panels, panes and palettes, completing and deleting, refusals; never delaying input; its setting. | FR-UI-07 | M5 | Complete a task and watch it fade |
 | 6.2 | **Weather.** Port the idle weather animation, its settings and its palette command. | FR-UI-08, N-PERF-03 | M5 | Leave the app idle |
 | 6.3 | **Performance and portability.** The 50,000-item benchmark, keystroke budget, idle CPU and terminal checks. | N-PERF-01–03, N-PORT-01–04 | M5 | `validate.sh bench` |
-| 6.4 | **Mouse.** Mouse capture with its terminal setup and teardown; clicking focuses an item, toggles its completion, opens a crumb or a Navigator entry; the wheel scrolls panes, panels and pickers. Clicks become the same messages keys send, so the core stays free of mouse events. Moved up from Later by the owner (2026-10-14). | FR-KEY-05 | M5 | Click a task's checkbox |
+| 6.4 | **Mouse.** Mouse capture with its terminal setup and teardown; clicking focuses an item, toggles its completion, opens a Navigator entry; the wheel scrolls panes, panels and pickers. Clicks become the same messages keys send, so the core stays free of mouse events. Moved up from Later by the owner (2026-10-14). | FR-KEY-05 | M5 | Click a task's checkbox |
 
 **Parallel:** all four run at once.
 

@@ -2,10 +2,12 @@
 //! closing, narrowing and widening them, and scrolling sideways when they do not fit.
 
 use crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::layout::{Position, Rect};
+use textual_items_plus_plus::ui::BuiltIn;
 
 use crate::support::Harness;
 
-/// The column of each rule between panes, read from the rule under the breadcrumbs.
+/// The column of each rule between panes, read from the second row.
 fn rules(harness: &Harness) -> Vec<usize> {
     let rows = harness.rows();
     rows.get(1)
@@ -51,15 +53,12 @@ fn today_beside_website() -> Harness {
     harness
 }
 
-// FR-PANE-01, FR-PANE-02, FR-NAV-03
+// FR-PANE-01, FR-PANE-02
 #[test]
 fn open_today_beside_a_project() {
     let mut harness = today_beside_website();
     let (left, right) = sides(&harness, 0);
-    assert!(
-        left.contains("Work › Website") && left.ends_with(" 1"),
-        "{left}"
-    );
+    assert!(left.contains("# Website") && left.ends_with(" 1"), "{left}");
     assert!(right.contains("Today") && right.ends_with(" 2"), "{right}");
     assert_eq!(rules(&harness), [49]);
     assert_eq!(marked(&harness), (false, true), "the new pane has the keys");
@@ -90,10 +89,7 @@ fn open_the_focused_item_in_a_new_pane() {
     harness.ctrl('\\');
     let (left, right) = sides(&harness, 0);
     assert!(left.contains("Work") && left.ends_with(" 1"), "{left}");
-    assert!(
-        right.contains("Work › ") && right.ends_with(" 2"),
-        "{right}"
-    );
+    assert!(right.contains("# Blog") && right.ends_with(" 2"), "{right}");
     harness.ctrl('w');
     harness.type_text("c");
     assert_eq!(rules(&harness), Vec::<usize>::new());
@@ -188,7 +184,7 @@ fn the_panes_and_what_they_show_come_back_on_the_next_launch() {
     let mut harness = harness.relaunch(path);
     assert_eq!(harness.screen(), before);
     let (left, right) = sides(&harness, 0);
-    assert!(left.contains("Work › Website"), "{left}");
+    assert!(left.contains("# Website"), "{left}");
     assert!(right.contains("Today"), "{right}");
     assert_eq!(
         marked(&harness),
@@ -198,4 +194,75 @@ fn the_panes_and_what_they_show_come_back_on_the_next_launch() {
     harness.type_text("H");
     let (left, _) = sides(&harness, 0);
     assert!(left.contains("Inbox"), "its history came back too: {left}");
+}
+
+/// The app on a file whose project's title is too long for half of a 70-column screen, with the
+/// project open in two panes side by side, the second with the keys, and word wrap on or off as
+/// `wrap` says.
+fn long_title_in_two_panes(wrap: bool) -> Harness {
+    let folders = tempfile::tempdir().expect("a temporary folder");
+    let path = folders.path().join("todo.taskpaper");
+    std::fs::write(
+        &path,
+        "Inbox:\nA project whose title runs on and on:\n\t- One\n",
+    )
+    .expect("the fixture is written");
+    std::fs::write(
+        folders.path().join("config.toml"),
+        format!("word_wrap = {wrap}\n"),
+    )
+    .expect("the settings are written");
+    let mut harness =
+        Harness::in_folders(folders, Some(path), None, 70, 12).expect("the test's file opens");
+    harness.ctrl('g');
+    harness.type_text("runs");
+    harness.key(KeyCode::Enter);
+    harness.ctrl('\\');
+    harness
+}
+
+// FR-PANE-02, FR-UI-05
+#[test]
+fn each_title_line_ends_in_its_pane_number_and_a_long_title_gives_way_to_it() {
+    let mut harness = long_title_in_two_panes(true);
+    let top: Vec<String> = harness.rows()[..2]
+        .iter()
+        .map(|row| row.trim_end().to_owned())
+        .collect();
+    assert_eq!(
+        top,
+        [
+            "  # A project whose title runs  1 │  # A project whose title runs   2",
+            "    on and on                     │    on and on",
+        ],
+        "the title wraps before the number"
+    );
+    let number = &harness.terminal.backend().buffer()[(32, 0)];
+    assert_eq!(number.symbol(), "1");
+    assert_eq!(number.fg, BuiltIn::default().colors().dim_text);
+    harness.type_text("R and on");
+    let edited = harness.rows()[0].clone();
+    assert!(
+        edited
+            .trim_end()
+            .ends_with("# title runs on and on and on  2"),
+        "the title edited scrolls sideways before the number: {edited}"
+    );
+    assert_eq!(
+        harness.tui.cursor(Rect::new(0, 0, 70, 12)),
+        Some(Position::new(66, 0)),
+        "the caret stands after the text typed, short of the number"
+    );
+    let harness = long_title_in_two_panes(false);
+    assert_eq!(
+        harness.rows()[..2]
+            .iter()
+            .map(|row| row.trim_end())
+            .collect::<Vec<_>>(),
+        [
+            "  # A project whose title runs… 1 │  # A project whose title runs … 2",
+            "                                  │",
+        ],
+        "with word wrap off the title is cut before it"
+    );
 }

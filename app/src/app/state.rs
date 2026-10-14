@@ -188,8 +188,7 @@ impl State {
         self.pane().container()
     }
 
-    /// The containers from the top level down to the one shown, which the breadcrumbs show
-    /// (FR-NAV-03); none for a view.
+    /// The containers from the top level down to the one shown; none for a view.
     #[must_use]
     pub fn path(&self) -> Vec<ItemId> {
         self.pane().path(&self.document)
@@ -1485,7 +1484,7 @@ mod tests {
         (state.container(), state.selection().focused())
     }
 
-    // FR-NAV-02, FR-NAV-03
+    // FR-NAV-02
     #[test]
     fn opening_a_section_or_project_shows_it_and_going_up_comes_back_to_it()
     -> Result<(), PlacementError> {

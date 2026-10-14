@@ -57,6 +57,10 @@ pub(super) struct ContainerPane<'a> {
     icons: IconSet,
     /// Whether long text wraps, as the settings say (FR-UI-05).
     wrap: bool,
+    /// The tags the pane is filtered by (FR-TAG-04).
+    filter: &'a [String],
+    /// The pane's number, while there are several (FR-PANE-02).
+    number: Option<usize>,
 }
 
 impl<'a> ContainerPane<'a> {
@@ -88,7 +92,15 @@ impl<'a> ContainerPane<'a> {
             theme,
             icons,
             wrap: state.settings().word_wrap,
+            filter: pane.tag_filter(),
+            number: None,
         }
+    }
+
+    /// The pane numbered `number`, which its title line ends in (FR-PANE-02).
+    pub(super) fn numbered(mut self, number: usize) -> Self {
+        self.number = Some(number);
+        self
     }
 
     /// How the text of a title or a description line fits its columns: wrapping, or with word
@@ -624,10 +636,10 @@ impl<'a> ContainerPane<'a> {
             (Block::Heading, Shown::Container(id)) => {
                 if let Some(container) = self.item(id) {
                     let row = self.heading.map(|_| HEADING);
-                    pieces.push(match self.edited(id, Part::Title) {
+                    pieces.push(self.ended(match self.edited(id, Part::Title) {
                         Some(field) => self.field(container, field, row),
                         None => self.title(container, row),
-                    });
+                    }));
                     if let Some(field) = self.edited(id, Part::Description) {
                         pieces.push(self.description_field(field, 0, width, row));
                     } else if !container.description.is_empty() {
@@ -646,7 +658,7 @@ impl<'a> ContainerPane<'a> {
                     }
                 }
             }
-            (Block::Heading, Shown::View(view)) => pieces.push(self.view_title(view)),
+            (Block::Heading, Shown::View(view)) => pieces.push(self.ended(self.view_title(view))),
             (Block::Gap(heading), _) => {
                 pieces.push(Piece::blank());
                 pieces.extend(heading.and_then(|heading| self.heading(heading)));
@@ -772,6 +784,25 @@ impl<'a> ContainerPane<'a> {
                 caret: None,
             });
         }
+    }
+
+    /// `title`, the pane's title line, with the tags the pane is filtered by after its icon in the
+    /// tag color and the pane's number dimmed at the right end, after what it has there.
+    fn ended(&self, mut title: Piece<'a>) -> Piece<'a> {
+        if !self.filter.is_empty() {
+            let tags: Vec<String> = self.filter.iter().map(|name| format!("@{name}")).collect();
+            title.right.spans.push(Span::styled(
+                format!("{} {} ", Icon::Tag.glyph(self.icons), tags.join(" ")),
+                Style::new().fg(self.theme.tag),
+            ));
+        }
+        if let Some(number) = self.number {
+            title.right.spans.push(Span::styled(
+                format!("{number} "),
+                Style::new().fg(self.theme.dim_text),
+            ));
+        }
+        title
     }
 
     /// The line naming `view` at the top of the pane: its icon, then its name, in the Inbox's
@@ -1183,6 +1214,8 @@ mod tests {
             theme: &theme,
             icons: IconSet::Plain,
             wrap,
+            filter: &[],
+            number: None,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         pane.render(buf.area, &mut buf, top);
@@ -1221,6 +1254,8 @@ mod tests {
             theme: &theme,
             icons: IconSet::Plain,
             wrap: true,
+            filter: &[],
+            number: None,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, 10));
         let caret = pane.caret(buf.area, top);
@@ -1250,6 +1285,8 @@ mod tests {
             theme: &theme,
             icons: IconSet::Plain,
             wrap: true,
+            filter: &[],
+            number: None,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
         pane.render(buf.area, &mut buf, &mut Top::default());
@@ -1286,6 +1323,8 @@ mod tests {
             theme: &theme,
             icons: IconSet::Plain,
             wrap: true,
+            filter: &[],
+            number: None,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         let area = buf.area;
@@ -2045,6 +2084,8 @@ mod tests {
             theme: &theme,
             icons: IconSet::Plain,
             wrap: true,
+            filter: &[],
+            number: None,
         };
         let mut layout = Layout::new(&pane, 40);
         let mut at = |line| layout.settled(Top { part: 0, line });

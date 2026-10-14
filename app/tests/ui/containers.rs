@@ -7,14 +7,13 @@ use ratatui::layout::{Position, Rect};
 
 use crate::support::Harness;
 
-/// The screen's rows below the breadcrumbs and above the status line, without trailing spaces,
+/// The screen's rows above the status line, without trailing spaces,
 /// up to the last that is not blank.
 fn pane(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     let mut pane: Vec<String> = rows
         .iter()
         .take(rows.len() - 1)
-        .skip(2)
         .map(|row| row.trim_end().to_owned())
         .collect();
     while pane.last().is_some_and(String::is_empty) {
@@ -23,12 +22,15 @@ fn pane(harness: &Harness) -> Vec<String> {
     pane
 }
 
-/// The breadcrumb line, without trailing spaces.
-fn crumbs(harness: &Harness) -> String {
+/// The title line at the top of the pane, without the focus marker or what it has at the right.
+fn title(harness: &Harness) -> String {
     harness
         .rows()
         .first()
-        .map(|row| row.trim_end().to_owned())
+        .and_then(|row| {
+            let row = row.trim_start_matches('▌').trim();
+            row.split("  ").next().map(str::to_owned)
+        })
         .unwrap_or_default()
 }
 
@@ -42,7 +44,7 @@ fn add_an_area_with_a_project_and_a_section() {
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
     harness.ctrl('b');
-    assert_eq!(crumbs(&harness), "  󰋜 Home");
+    assert_eq!(title(&harness), "󰆧 Home");
     harness.type_text("pGarden");
     harness.key(KeyCode::Esc);
     harness.type_text("SChores");
@@ -63,16 +65,16 @@ fn the_container_shown_is_renamed_in_its_heading_and_deleted() {
     harness.type_text("website");
     harness.key(KeyCode::Enter);
     harness.type_text("R site");
-    assert!(harness.rows()[2].starts_with("  # Website site "));
+    assert!(harness.rows()[0].starts_with("  # Website site "));
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 60, 16)),
-        Some(Position::new(16, 2)),
+        Some(Position::new(16, 0)),
         "the cursor stands after the text typed"
     );
     harness.key(KeyCode::Esc);
-    assert_eq!(crumbs(&harness), "  󰋜 Work › Website site");
+    assert_eq!(title(&harness), "# Website site");
     harness.type_text("dc");
-    assert_eq!(crumbs(&harness), "  󰋜 Work");
+    assert_eq!(title(&harness), "󰆧 Work");
     assert!(!harness.screen().contains("Website"));
     harness.type_text("z");
     assert!(harness.screen().contains("Website site"));

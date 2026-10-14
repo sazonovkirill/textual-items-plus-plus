@@ -70,8 +70,8 @@ pub fn rows(document: &Document, container: ItemId, show_completed: bool) -> Vec
     }
 }
 
-/// The containers from the top level down to `container`, itself last: the path its breadcrumbs
-/// show (FR-NAV-03). The Inbox's is itself alone; no node at all has none.
+/// The containers from the top level down to `container`, itself last. The Inbox's is itself
+/// alone; no node at all has none.
 #[must_use]
 pub(super) fn path(document: &Document, container: ItemId) -> Vec<ItemId> {
     if document.node(container).is_none() {
@@ -459,7 +459,7 @@ mod tests {
         }
     }
 
-    // FR-NAV-03
+    // FR-VIEW-07
     #[test]
     fn a_path_runs_from_the_top_level_down_to_the_container() -> Result<(), PlacementError> {
         let mut document = Document::new();
