@@ -59,10 +59,10 @@ fn reorder_areas_in_the_sidebar() {
             " 󰩺 Trash",
             "*󰉖 Learn Rust           2",
             " 󰆧 Work                 7",
-            "   󰉖 Website            5",
-            "     󰉖 Blog             1",
+            " 󰉖 Website              5",
+            " 󰉖 Blog                 1",
             " 󰆧 Home                 5",
-            "   󰉖 Move to the new fl 4",
+            " 󰉖 Move to the new flat 4",
         ]
     );
     let rows = harness.rows();
@@ -89,7 +89,7 @@ fn reorder_areas_in_the_sidebar() {
         Some(
             &[
                 "*󰆧 Home                 5".to_owned(),
-                "   󰉖 Move to the new fl 4".to_owned(),
+                " 󰉖 Move to the new flat 4".to_owned(),
                 " 󰆧 Work                 7".to_owned(),
             ][..]
         ),
@@ -156,14 +156,14 @@ fn add_rename_and_open_entries_in_the_sidebar() {
 fn move_a_project_into_an_area_and_outdent_it_again() {
     let mut harness = sidebar();
     harness.type_text("]");
-    assert!(status(&harness).contains("nothing above to indent into"));
+    assert!(status(&harness).contains("only checklist items nest"));
     harness.type_text("gm");
     harness.type_text("Home");
     harness.key(KeyCode::Enter);
     let moved = entries(&harness);
     assert_eq!(
         moved.last().map(String::as_str),
-        Some("*  󰉖 Learn Rust         2"),
+        Some("*󰉖 Learn Rust           2"),
         "{moved:?}"
     );
     harness.type_text("[");
@@ -172,7 +172,7 @@ fn move_a_project_into_an_area_and_outdent_it_again() {
         Some("*󰉖 Learn Rust           2")
     );
     harness.type_text("gg]");
-    assert!(status(&harness).contains("only projects and checklist items nest"));
+    assert!(status(&harness).contains("only checklist items nest"));
 }
 
 // FR-VIEW-10, FR-OPS-05, FR-EDIT-06

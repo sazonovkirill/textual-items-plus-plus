@@ -111,7 +111,8 @@ impl<'a> SidebarPane<'a> {
     /// keep the caret in view while it is edited.
     fn title(&self, stop: Stop, content: Rect) -> Title {
         let column = |columns: usize| u16::try_from(columns).unwrap_or(u16::MAX);
-        let icon_x = content.x.saturating_add(column(stop.depth() * 2 + 1));
+        // v1 nests no project in another (D-57), so the groups' blank lines show the tree.
+        let icon_x = content.x.saturating_add(1);
         let glyph = Span::raw(super::stop_icon(stop).glyph(self.icons)).width() + 1;
         let x = icon_x.saturating_add(column(glyph));
         let shift = match self.editing {
@@ -357,8 +358,8 @@ mod tests {
                 " ○ Learn Rust      │",
                 "                   │",
                 " ◆ Work           3│",
-                "▌  ○ Website      3│",
-                "     ○ Blog        │",
+                "▌○ Website        3│",
+                " ○ Blog            │",
                 "                   │",
             ]
         );
@@ -378,13 +379,13 @@ mod tests {
         );
         assert_eq!(buf[(3, today)].fg, theme.primary, "a view");
         assert_eq!(buf[(3, work)].fg, theme.headers, "an area");
-        assert_eq!(buf[(7, website)].fg, theme.primary, "a project");
+        assert_eq!(buf[(3, website)].fg, theme.primary, "a project");
         assert_eq!(buf[(17, work)].fg, theme.dim_text, "a count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusPane);
         let (rows, buf, _) = draw(&state, 20, 13);
         assert!(
-            rows[usize::from(website)].starts_with("   ○ Website"),
+            rows[usize::from(website)].starts_with(" ○ Website"),
             "no marker: {rows:?}"
         );
         assert_ne!(buf[(5, website)].bg, theme.current_line);
@@ -409,7 +410,7 @@ mod tests {
         let mut state = state()?;
         give(&mut state, Command::Focus(crate::app::Focus::Last));
         let (rows, _, _) = draw(&state, 20, 2);
-        assert_eq!(rows, ["   ○ Website      3│", "▌    ○ Blog        │"]);
+        assert_eq!(rows, [" ○ Website        3│", "▌○ Blog            │"]);
         give(
             &mut state,
             Command::Focus(crate::app::Focus::PreviousSection),
@@ -433,8 +434,8 @@ mod tests {
         }
         give(&mut state, Command::RenameContainer);
         let (rows, _, caret) = draw(&state, 20, 3);
-        assert_eq!(rows[2], "▌  ○ Website       │", "no count while edited");
-        assert_eq!(caret, Some(Position::new(12, 2)));
+        assert_eq!(rows[2], "▌○ Website         │", "no count while edited");
+        assert_eq!(caret, Some(Position::new(10, 2)));
         let word = Message::Edit(crate::app::EditInput::Text(TextEdit::Move {
             motion: Motion::WordLeft,
             select: true,
@@ -442,18 +443,18 @@ mod tests {
         update(&mut state, word, jiff::civil::date(2026, 10, 14));
         let (_, buf, caret) = draw(&state, 20, 3);
         let theme = BuiltIn::default().colors();
-        assert_eq!(buf[(6, 2)].bg, theme.selection, "the selected word");
-        assert_eq!(caret, Some(Position::new(5, 2)));
-        for c in " and its blog".chars() {
+        assert_eq!(buf[(4, 2)].bg, theme.selection, "the selected word");
+        assert_eq!(caret, Some(Position::new(3, 2)));
+        for c in " and its blog posts".chars() {
             let typed = Message::Edit(crate::app::EditInput::Text(TextEdit::Insert(c)));
             update(&mut state, typed, jiff::civil::date(2026, 10, 14));
         }
         let (rows, _, caret) = draw(&state, 20, 3);
-        assert_eq!(rows[2], "▌  ○  and its blog │", "scrolled sideways");
+        assert_eq!(rows[2], "▌○  its blog posts │", "scrolled sideways");
         assert_eq!(caret, Some(Position::new(18, 2)));
         let (_, _, caret) = draw(&state, 20, 1);
         assert_eq!(caret, Some(Position::new(18, 0)), "scrolled into view");
-        let (_, _, caret) = draw(&state, 5, 3);
+        let (_, _, caret) = draw(&state, 3, 3);
         assert_eq!(caret, None, "too narrow");
         Ok(())
     }

@@ -58,6 +58,15 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
+    /// Whether an item of this kind goes in an item of kind `parent`, or at the top level for
+    /// `None`, when the app adds, moves, converts or pastes it: where it [fits](Self::fits_in),
+    /// except that v1 nests no project in another, which a file may still hold and the app keeps
+    /// (D-57).
+    #[must_use]
+    pub fn goes_in(self, parent: Option<Self>) -> bool {
+        self.fits_in(parent) && !(self == Self::Project && parent == Some(Self::Project))
+    }
+
     /// Whether an item of this kind may sit in an item of kind `parent`, or at the top level when
     /// `parent` is `None`. The Inbox sits nowhere: a document has exactly one, of its own.
     #[must_use]

@@ -108,21 +108,7 @@ fn kept(state: &State) -> String {
             keymap::written(Command::EmptyTrash).unwrap_or_default(),
             if *count == 1 { "item" } else { "items" }
         ),
-        Notice::Refused(Refusal::DoesNotNest) => {
-            "only projects and checklist items nest".to_owned()
-        }
-        Notice::Refused(Refusal::NothingAbove) => "nothing above to indent into".to_owned(),
-        Notice::Refused(Refusal::NotNested) => "nothing to outdent from".to_owned(),
-        Notice::Refused(Refusal::NoRoomForSection) => {
-            "a section goes only in an area or a project".to_owned()
-        }
-        Notice::Refused(Refusal::NoRoomForProject) => {
-            "a project can't go in a section or the Inbox".to_owned()
-        }
-        Notice::Refused(Refusal::SectionHoldsTasks) => "a section holds only tasks".to_owned(),
-        Notice::Refused(Refusal::ReadsAsTask) => {
-            "only a task's title can start with \"- \"".to_owned()
-        }
+        Notice::Refused(refusal) => why(*refusal).to_owned(),
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()
@@ -139,6 +125,19 @@ fn kept(state: &State) -> String {
         (Opened::File(_), _) if state.gone_from_disk() => "not on disk".to_owned(),
         (Opened::File(_), SaveState::Unsaved) => "unsaved".to_owned(),
         (Opened::File(_), SaveState::Saved) => "saved".to_owned(),
+    }
+}
+
+/// Why the hierarchy refused a move or a change of kind.
+const fn why(refusal: Refusal) -> &'static str {
+    match refusal {
+        Refusal::DoesNotNest => "only checklist items nest",
+        Refusal::NothingAbove => "nothing above to indent into",
+        Refusal::NotNested => "nothing to outdent from",
+        Refusal::NoRoomForSection => "a section goes only in an area or a project",
+        Refusal::NoRoomForProject => "a project goes only in an area or at the top level",
+        Refusal::SectionHoldsTasks => "a section holds only tasks",
+        Refusal::ReadsAsTask => "only a task's title can start with \"- \"",
     }
 }
 
@@ -251,6 +250,33 @@ mod tests {
         );
         let long = Opened::File(PathBuf::from("notes/work/todo.taskpaper"));
         check(&long, "g", 31, " ↕ NAVIGATE · …paper · saved g ");
+    }
+
+    // FR-OPS-03, FR-OPS-07, FR-TASK-06, D-57
+    #[test]
+    fn each_refusal_says_why() {
+        let reasons = [
+            Refusal::DoesNotNest,
+            Refusal::NothingAbove,
+            Refusal::NotNested,
+            Refusal::NoRoomForSection,
+            Refusal::NoRoomForProject,
+            Refusal::SectionHoldsTasks,
+            Refusal::ReadsAsTask,
+        ]
+        .map(why);
+        assert_eq!(
+            reasons,
+            [
+                "only checklist items nest",
+                "nothing above to indent into",
+                "nothing to outdent from",
+                "a section goes only in an area or a project",
+                "a project goes only in an area or at the top level",
+                "a section holds only tasks",
+                "only a task's title can start with \"- \"",
+            ]
+        );
     }
 
     #[test]

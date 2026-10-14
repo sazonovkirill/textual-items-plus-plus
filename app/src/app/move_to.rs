@@ -155,7 +155,7 @@ fn destinations(document: &Document, items: &[ItemId]) -> Vec<Candidate<Destinat
     let takes = |container: Option<ItemKind>, id: Option<ItemId>| {
         items
             .iter()
-            .all(|&item| kind(document, item).is_some_and(|moved| moved.fits_in(container)))
+            .all(|&item| kind(document, item).is_some_and(|moved| moved.goes_in(container)))
             && !items
                 .iter()
                 .all(|&item| document.position(item).map(|(parent, _)| parent) == Some(id))
@@ -329,12 +329,12 @@ mod tests {
         );
         assert_eq!(
             listed(&document, &[site]),
-            Some(["Home", "Solo"].map(String::from).into()),
-            "a project goes to the top level, an area or a project, but not into itself"
+            Some(["Home"].map(String::from).into()),
+            "a project goes to the top level or an area, since v1 nests no project in another"
         );
         assert_eq!(
             listed(&document, &[solo]),
-            Some(["Work", "Site", "Blog"].map(String::from).into()),
+            Some(["Work"].map(String::from).into()),
             "a project at the top level is not offered the top level"
         );
         Ok(())

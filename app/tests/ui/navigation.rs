@@ -66,10 +66,10 @@ fn the_navigator_lists_the_inbox_views_areas_and_projects_as_a_tree_with_open_ta
             " 󱓳 Logbook",
             " 󰩺 Trash",
             " 󰆧 Work                                                                     7",
-            "   󰉖 Website                                                                5",
-            "     󰉖 Blog                                                                 1",
+            " 󰉖 Website                                                                  5",
+            " 󰉖 Blog                                                                     1",
             " 󰆧 Home                                                                     5",
-            "   󰉖 Move to the new flat                                                   4",
+            " 󰉖 Move to the new flat                                                     4",
             " 󰉖 Learn Rust                                                               2",
         ]
     );

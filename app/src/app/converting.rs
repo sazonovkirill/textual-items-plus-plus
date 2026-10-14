@@ -92,7 +92,7 @@ fn no_room(kind: ItemKind) -> Refusal {
 /// Whether an item of `kind` may go beside `id`, among the children of its parent.
 fn fits(document: &Document, id: ItemId, kind: ItemKind) -> bool {
     let parent = document.position(id).and_then(|(parent, _)| parent);
-    kind.fits_in(parent.and_then(|parent| self::kind(document, parent)))
+    kind.goes_in(parent.and_then(|parent| self::kind(document, parent)))
 }
 
 /// The kind of the item `id`, or `None` when it is no item.

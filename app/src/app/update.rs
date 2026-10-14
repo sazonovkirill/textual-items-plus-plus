@@ -356,14 +356,8 @@ mod tests {
         ] {
             assert_eq!(update(&mut state, message, TODAY), []);
         }
-        assert_eq!(titles(&state), ["A"]);
-        assert_eq!(focused(&state), Some("A"), "the project it went into");
-        give(&mut state, Command::Go(Go::Into));
-        assert_eq!(focused(&state), Some("B"));
-        give(&mut state, Command::Outdent);
-        assert_eq!(titles(&state), Vec::<&str>::new());
-        give(&mut state, Command::Go(Go::Up));
-        assert_eq!(titles(&state), ["A", "B"]);
+        assert_eq!(titles(&state), ["A", "B"], "v1 nests no project in another");
+        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
         Ok(())
     }
 
@@ -449,19 +443,12 @@ mod tests {
         give(&mut state, Command::Indent);
         assert_eq!(
             state.notice(),
-            Some(&Notice::Refused(Refusal::NothingAbove))
-        );
-        give(&mut state, Command::Focus(Focus::Next));
-        give(&mut state, Command::Indent);
-        assert_eq!(
-            sidebar(&state),
-            (
-                Some("B".into()),
-                vec!["Work".into(), "  A".into(), "    B".into()]
-            )
+            Some(&Notice::Refused(Refusal::DoesNotNest)),
+            "v1 nests no project in another"
         );
         give(&mut state, Command::Outdent);
-        assert_eq!(sidebar(&state).1, ["Work", "  A", "  B"]);
+        assert_eq!(sidebar(&state).1, ["A", "Work", "  B"], "out of its area");
+        give(&mut state, Command::Undo);
         give(&mut state, Command::MoveTo);
         assert!(
             state.move_to().is_some(),

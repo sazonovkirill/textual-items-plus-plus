@@ -515,7 +515,8 @@ fn navigator_popup<'a>(
 ) -> PickerPopup<'a, Stop> {
     let icon: &dyn Fn(&Stop) -> Icon = &|&stop| stop_icon(stop);
     PickerPopup::new("Navigator", view, icon, icons, theme)
-        .tree(&|stop| stop.depth())
+        // v1 nests no project in another (D-57), so no entry is indented.
+        .tree(&|_| 0)
         .color(|theme, &stop| stop_color(theme, stop))
         .badge(&|stop| match stop {
             Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
