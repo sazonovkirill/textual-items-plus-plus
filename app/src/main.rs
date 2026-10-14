@@ -25,7 +25,7 @@ use signal_hook::{
 };
 use textual_items_plus_plus::{
     store::{self, Recovery},
-    ui::{Edge, Input, SystemClipboard, Tui},
+    ui::{self, Edge, Input, SystemClipboard, Tui},
 };
 
 fn main() -> anyhow::Result<()> {
@@ -41,6 +41,7 @@ fn main() -> anyhow::Result<()> {
         layouts: store::layouts_file(env::var_os("XDG_STATE_HOME"), home.clone()),
         config: store::config_file(env::var_os("XDG_CONFIG_HOME"), home),
         clock: || jiff::Zoned::now().datetime(),
+        animations: ui::animations_default(env::var_os("SSH_CONNECTION"), env::var_os("SSH_TTY")),
     };
     let recovered = match &path {
         Some(path) => Recovery::new(edge.recovery.clone())

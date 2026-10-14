@@ -12,7 +12,7 @@ use jiff::civil::{Date, DateTime};
 
 use super::Input;
 use crate::{
-    app::{ConflictSide, Layout, Message, OnDisk, Opened, Report, State},
+    app::{Animations, ConflictSide, Layout, Message, OnDisk, Opened, Report, State},
     domain::Document,
     store::{
         self, Backups, Disk, Job, Layouts, OpenError, OpenFile, Outcome, Recovery, RecoveryError,
@@ -21,8 +21,8 @@ use crate::{
     },
 };
 
-/// Where the app keeps its own files, the local clock, and where the disk worker and the watcher
-/// report to the event loop.
+/// Where the app keeps its own files, the local clock, how much it animates unless its settings
+/// say, and where the disk worker and the watcher report to the event loop.
 #[derive(Debug, Clone)]
 pub struct Edge {
     /// Where each report goes.
@@ -37,6 +37,8 @@ pub struct Edge {
     pub config: Option<PathBuf>,
     /// The local time now.
     pub clock: fn() -> DateTime,
+    /// How much the app animates when the settings file does not say (FR-UI-07).
+    pub animations: Animations,
 }
 
 /// The file a session opened, as it is known on disk.

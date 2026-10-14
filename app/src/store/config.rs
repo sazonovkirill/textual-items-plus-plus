@@ -98,33 +98,33 @@ impl ConfigFile {
         self.file.as_deref()
     }
 
-    /// The settings the file sets, the default for each it does not set or sets to a value the
-    /// settings cannot take, with what it sets that the app ignored. A missing file, or none
-    /// anywhere, gives the defaults without problems; a file that cannot be read or is not TOML
-    /// gives the defaults with that problem (FR-SET-01, FR-SET-04). `T` takes its defaults for
-    /// what a file leaves out, as `#[serde(default)]` has it, since each key is read on its own.
+    /// The settings the file sets, the one of `defaults` for each it does not set or sets to a
+    /// value the settings cannot take, with what it sets that the app ignored. A missing file,
+    /// or none anywhere, gives the defaults without problems; a file that cannot be read or is
+    /// not TOML gives the defaults with that problem (FR-SET-01, FR-SET-04). Each key is read on
+    /// its own over `defaults`.
     #[must_use]
-    pub fn load<T: Serialize + DeserializeOwned + Default>(&self) -> (T, Vec<ConfigProblem>) {
+    pub fn load<T: Serialize + DeserializeOwned>(&self, defaults: T) -> (T, Vec<ConfigProblem>) {
         let Some(file) = &self.file else {
-            return (T::default(), Vec::new());
+            return (defaults, Vec::new());
         };
         let text = match fs::read_to_string(file) {
             Ok(text) => text,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return (T::default(), Vec::new());
+                return (defaults, Vec::new());
             }
             Err(error) => {
                 let reason = error.to_string();
-                return (T::default(), vec![ConfigProblem::Unreadable { reason }]);
+                return (defaults, vec![ConfigProblem::Unreadable { reason }]);
             }
         };
         match text.parse::<DocumentMut>() {
-            Ok(document) => read(&document),
+            Ok(document) => read(&document, defaults),
             Err(error) => {
                 let at = error.span().map_or(0, |span| span.start);
                 let line = text.get(..at).unwrap_or(&text).matches('\n').count() + 1;
                 let message = error.message().to_owned();
-                (T::default(), vec![ConfigProblem::Syntax { line, message }])
+                (defaults, vec![ConfigProblem::Syntax { line, message }])
             }
         }
     }
@@ -179,11 +179,12 @@ impl ConfigFile {
 
 /// The settings `document` sets, each of its keys taken on its own: one the settings do not have
 /// is reported, and one whose value they cannot take is reported and keeps its default.
-fn read<T: Serialize + DeserializeOwned + Default>(
+fn read<T: Serialize + DeserializeOwned>(
     document: &DocumentMut,
+    defaults: T,
 ) -> (T, Vec<ConfigProblem>) {
-    let known = toml_edit::ser::to_document(&T::default()).unwrap_or_default();
-    let mut taken = DocumentMut::new();
+    let known = toml_edit::ser::to_document(&defaults).unwrap_or_default();
+    let mut taken = known.clone();
     let mut problems = Vec::new();
     for (key, item) in document.iter() {
         if !known.contains_key(key) {
@@ -202,7 +203,7 @@ fn read<T: Serialize + DeserializeOwned + Default>(
             }),
         }
     }
-    let settings = toml_edit::de::from_document(taken).unwrap_or_default();
+    let settings = toml_edit::de::from_document(taken).unwrap_or(defaults);
     (settings, problems)
 }
 
@@ -249,15 +250,21 @@ mod tests {
         let path = config.path().map(Path::to_path_buf).unwrap_or_default();
         fs::create_dir_all(dir.join("settings"))?;
         fs::write(path, text)?;
-        Ok(config.load())
+        Ok(config.load(Settings::default()))
     }
 
     // FR-SET-01
     #[test]
     fn a_missing_file_or_none_anywhere_gives_the_defaults_without_problems() -> TestResult {
         let dir = tempfile::tempdir()?;
-        assert_eq!(config(dir.path()).load(), (Settings::default(), vec![]));
-        assert_eq!(ConfigFile::new(None).load(), (Settings::default(), vec![]));
+        assert_eq!(
+            config(dir.path()).load(Settings::default()),
+            (Settings::default(), vec![])
+        );
+        assert_eq!(
+            ConfigFile::new(None).load(Settings::default()),
+            (Settings::default(), vec![])
+        );
         assert_eq!(ConfigFile::new(None).path(), None);
         Ok(())
     }
@@ -316,6 +323,35 @@ mod tests {
         Ok(())
     }
 
+    // FR-SET-01, FR-UI-07
+    #[test]
+    fn what_the_file_leaves_out_or_cannot_set_keeps_the_defaults_given() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let config = config(dir.path());
+        let ours = Settings {
+            theme: Theme::FlexokiLight,
+            wrap: false,
+        };
+        assert_eq!(config.load(ours.clone()), (ours.clone(), vec![]), "no file");
+        let (settings, problems) = load(
+            dir.path(),
+            "wrap = true
+theme = \"nord\"\n",
+        )?;
+        assert_eq!(problems.len(), 1);
+        assert_eq!(settings, Settings::default(), "over the usual defaults");
+        let (settings, _) = config.load(ours);
+        assert_eq!(
+            settings,
+            Settings {
+                theme: Theme::FlexokiLight,
+                wrap: true,
+            },
+            "each key it sets over those given"
+        );
+        Ok(())
+    }
+
     // FR-SET-04
     #[test]
     fn a_file_that_cannot_be_read_or_is_not_toml_gives_the_defaults_and_says_why() -> TestResult {
@@ -327,7 +363,8 @@ mod tests {
             "{problems:?}"
         );
         assert!(problems[0].to_string().starts_with("line 2: "));
-        let (_, problems) = ConfigFile::new(Some(dir.path().to_path_buf())).load::<Settings>();
+        let (_, problems) =
+            ConfigFile::new(Some(dir.path().to_path_buf())).load(Settings::default());
         assert!(
             matches!(&problems[..], [ConfigProblem::Unreadable { .. }]),
             "a folder: {problems:?}"
@@ -355,7 +392,11 @@ mod tests {
             fs::read_to_string(&path)?,
             "theme = \"flexoki-light\"\nwrap = false\n"
         );
-        assert_eq!(config.load(), (settings, vec![]), "it reads back");
+        assert_eq!(
+            config.load(Settings::default()),
+            (settings, vec![]),
+            "it reads back"
+        );
         Ok(())
     }
 

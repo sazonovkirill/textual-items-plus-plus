@@ -11,7 +11,10 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use jiff::civil::{Date, DateTime, date};
 use ratatui::{Terminal, backend::TestBackend};
 use tempfile::TempDir;
-use textual_items_plus_plus::ui::{Edge, Input, Tui};
+use textual_items_plus_plus::{
+    app::Animations,
+    ui::{Edge, Input, Tui},
+};
 
 /// The local date the tests run on.
 pub const TODAY: Date = date(2026, 10, 5);
@@ -74,6 +77,7 @@ impl Harness {
             layouts: Some(folders.path().join("layouts.json")),
             config: Some(folders.path().join("config.toml")),
             clock: || NOW,
+            animations: Animations::Off,
         };
         let tui = Tui::open(path, recovered, TODAY, &edge)?;
         let mut harness = Self {

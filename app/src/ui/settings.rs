@@ -184,10 +184,10 @@ mod tests {
     use super::*;
     use crate::{app::IconSet, ui::BuiltIn};
 
-    /// The window's rows drawn over a `width` by 20 area with `file`, trimmed.
+    /// The window's rows drawn over a `width` by 22 area with `file`, trimmed.
     fn drawn(settings: Settings, file: Option<&Path>, width: u16) -> Vec<String> {
         let theme = BuiltIn::default().colors();
-        let area = Rect::new(0, 0, width, 20);
+        let area = Rect::new(0, 0, width, 22);
         let mut buf = Buffer::empty(area);
         SettingsWindow::new(settings, Setting::Icons, file, &theme).render(area, &mut buf);
         (0..area.height)
@@ -219,6 +219,8 @@ mod tests {
                 "│   Nerd Font icons, o…│",
                 "│   Word wrap       On │",
                 "│   Long titles wrap; …│",
+                "│   Animations    Full │",
+                "│   Full, reduced to f…│",
                 "│ Weather              │",
                 "│   Weather animat… On │",
                 "│   The season's weath…│",
@@ -232,7 +234,7 @@ mod tests {
             ]
         );
         let theme = BuiltIn::default().colors();
-        let area = Rect::new(0, 0, 24, 20);
+        let area = Rect::new(0, 0, 24, 22);
         let mut buf = Buffer::empty(area);
         SettingsWindow::new(settings, Setting::Icons, Some(path), &theme).render(area, &mut buf);
         assert_eq!(buf[(4, 6)].bg, theme.selection, "the highlighted setting");

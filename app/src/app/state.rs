@@ -232,6 +232,13 @@ impl State {
         &self.pane().selection
     }
 
+    /// The items the message just handled changed, put in or took out, with everything inside
+    /// those put in or taken out, which a frontend shows (FR-UI-07).
+    #[must_use]
+    pub fn changed(&self) -> &[ItemId] {
+        self.history.changed()
+    }
+
     /// The Navigator, while it is open.
     #[must_use]
     pub fn navigator(&self) -> Option<PickerView<'_, Stop>> {

@@ -175,7 +175,11 @@ impl Tui {
         edge: &Edge,
     ) -> Result<Self, OpenError> {
         let config = ConfigFile::new(edge.config.clone());
-        let (settings, problems) = config.load::<Settings>();
+        let defaults = Settings {
+            animations: edge.animations,
+            ..Settings::default()
+        };
+        let (settings, problems) = config.load(defaults);
         let mut tui = match path {
             None => Self::new(
                 State::new(store::demo::document(today), Opened::Demo, today)

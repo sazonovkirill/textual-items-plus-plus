@@ -154,6 +154,22 @@ impl Transaction {
         &self.ops
     }
 
+    /// The items its operations change, put in or take out, with everything inside those put
+    /// in or taken out, in the order of the operations; an item may come more than once.
+    #[must_use]
+    pub fn items(&self) -> Vec<ItemId> {
+        let mut items = Vec::new();
+        for op in &self.ops {
+            match op {
+                Op::Set { id, .. } => items.push(*id),
+                Op::Insert { subtree, .. } | Op::Remove { subtree, .. } => {
+                    items.extend(subtree.entries().map(|&(id, _)| id));
+                }
+            }
+        }
+        items
+    }
+
     /// The transaction that undoes this one: the inverse operations in reverse order.
     #[must_use]
     pub fn inverse(self) -> Self {
@@ -420,6 +436,32 @@ mod tests {
             original.revision(),
             "undoing is a change"
         );
+        Ok(())
+    }
+
+    // FR-UI-07
+    #[test]
+    fn a_transaction_names_the_items_it_changes_with_everything_inside_those_it_moves()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            document,
+            area,
+            section,
+            task,
+            project,
+            ..
+        } = fixture()?;
+        let kept = document
+            .children(section)
+            .get(1)
+            .copied()
+            .ok_or(PlacementError::NoSuchNode(section))?;
+        let transaction = Transaction::new(vec![
+            renamed(&document, project, "Away")?,
+            removal(&document, section).ok_or(PlacementError::NoSuchNode(section))?,
+        ]);
+        assert_eq!(transaction.items(), [project, section, task, kept]);
+        assert!(!transaction.items().contains(&area));
         Ok(())
     }
 

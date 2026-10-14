@@ -74,6 +74,25 @@ pub enum IconSet {
     Plain,
 }
 
+/// How much the frontend animates (FR-UI-07), kept as `full`, `reduced` or `off`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Animations {
+    /// Every effect, the default.
+    #[default]
+    Full,
+    /// Only the flashes that tell where focus landed, what changed and what was refused, each
+    /// in one step, without fades.
+    Reduced,
+    /// No effects.
+    Off,
+}
+
+impl Animations {
+    /// Every value, in the order the settings window turns through them.
+    const ALL: [Self; 3] = [Self::Full, Self::Reduced, Self::Off];
+}
+
 /// The settings the app runs with, each kept under its [`Setting::key`] (FR-SET-01, FR-SET-03).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -85,6 +104,8 @@ pub struct Settings {
     /// Whether long text wraps; without wrapping, a row's title takes one line and its
     /// description's first line one more, cut short (FR-UI-05).
     pub word_wrap: bool,
+    /// How much the frontend animates (FR-UI-07).
+    pub animations: Animations,
     /// Whether the weather starts once the app has had no input for
     /// [`weather_idle_minutes`](Self::weather_idle_minutes) (FR-UI-08).
     pub weather: bool,
@@ -100,6 +121,7 @@ impl Default for Settings {
             theme: BuiltIn::default(),
             icons: IconSet::default(),
             word_wrap: true,
+            animations: Animations::default(),
             weather: true,
             weather_idle_minutes: NonZeroU32::new(3).expect("three is not zero"),
         }
@@ -115,6 +137,8 @@ pub enum Setting {
     Icons,
     /// Word wrap.
     WordWrap,
+    /// Animations.
+    Animations,
     /// Whether the weather plays once the app sits idle.
     Weather,
     /// How long the app sits idle before the weather starts.
@@ -123,10 +147,11 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, in the order the window lists them.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Theme,
         Self::Icons,
         Self::WordWrap,
+        Self::Animations,
         Self::Weather,
         Self::WeatherIdle,
     ];
@@ -138,6 +163,7 @@ impl Setting {
             Self::Theme => "theme",
             Self::Icons => "icons",
             Self::WordWrap => "word_wrap",
+            Self::Animations => "animations",
             Self::Weather => "weather",
             Self::WeatherIdle => "weather_idle_minutes",
         }
@@ -150,6 +176,7 @@ impl Setting {
             Self::Theme => "Theme",
             Self::Icons => "Icons",
             Self::WordWrap => "Word wrap",
+            Self::Animations => "Animations",
             Self::Weather => "Weather animation",
             Self::WeatherIdle => "Weather after idle",
         }
@@ -159,7 +186,7 @@ impl Setting {
     #[must_use]
     pub fn group(self) -> &'static str {
         match self {
-            Self::Theme | Self::Icons | Self::WordWrap => "Appearance",
+            Self::Theme | Self::Icons | Self::WordWrap | Self::Animations => "Appearance",
             Self::Weather | Self::WeatherIdle => "Weather",
         }
     }
@@ -171,6 +198,7 @@ impl Setting {
             Self::Theme => "The colors the app draws in",
             Self::Icons => "Nerd Font icons, or plain markers without the font",
             Self::WordWrap => "Long titles wrap; off, each takes one line, cut short",
+            Self::Animations => "Full, reduced to flashes without fades, or off",
             Self::Weather => "The season's weather falls over the app while it sits idle",
             Self::WeatherIdle => "How long the app sits idle before the weather starts",
         }
@@ -194,6 +222,12 @@ impl Settings {
                 1 => "1 minute".to_owned(),
                 minutes => format!("{minutes} minutes"),
             },
+            Setting::Animations => match self.animations {
+                Animations::Full => "Full",
+                Animations::Reduced => "Reduced",
+                Animations::Off => "Off",
+            }
+            .to_owned(),
         }
     }
 
@@ -205,30 +239,18 @@ impl Settings {
             Setting::Theme => self.theme == default.theme,
             Setting::Icons => self.icons == default.icons,
             Setting::WordWrap => self.word_wrap == default.word_wrap,
+            Setting::Animations => self.animations == default.animations,
             Setting::Weather => self.weather == default.weather,
             Setting::WeatherIdle => self.weather_idle_minutes == default.weather_idle_minutes,
         }
     }
 
     /// Gives `setting` its next value, toward `Down`, or its previous one: going round, the next
-    /// theme of [`BuiltIn::ALL`], the other icons, wrapping or the weather turned over; a minute
-    /// more or less of idle time, no less than one.
+    /// theme of [`BuiltIn::ALL`], the other icons, wrapping or the weather turned over, the next
+    /// of full, reduced and no animations; a minute more or less of idle time, no less than one.
     fn turn(&mut self, setting: Setting, direction: Direction) {
         match setting {
-            Setting::Theme => {
-                let count = BuiltIn::ALL.len();
-                let at = BuiltIn::ALL
-                    .iter()
-                    .position(|&theme| theme == self.theme)
-                    .unwrap_or_default();
-                let next = match direction {
-                    Direction::Down => at + 1,
-                    Direction::Up => at + count - 1,
-                } % count;
-                if let Some(&theme) = BuiltIn::ALL.get(next) {
-                    self.theme = theme;
-                }
-            }
+            Setting::Theme => self.theme = turned(&BuiltIn::ALL, self.theme, direction),
             Setting::Icons => {
                 self.icons = match self.icons {
                     IconSet::Nerd => IconSet::Plain,
@@ -236,6 +258,9 @@ impl Settings {
                 };
             }
             Setting::WordWrap => self.word_wrap = !self.word_wrap,
+            Setting::Animations => {
+                self.animations = turned(&Animations::ALL, self.animations, direction);
+            }
             Setting::Weather => self.weather = !self.weather,
             Setting::WeatherIdle => {
                 let minutes = self.weather_idle_minutes;
@@ -254,10 +279,25 @@ impl Settings {
             Setting::Theme => self.theme = default.theme,
             Setting::Icons => self.icons = default.icons,
             Setting::WordWrap => self.word_wrap = default.word_wrap,
+            Setting::Animations => self.animations = default.animations,
             Setting::Weather => self.weather = default.weather,
             Setting::WeatherIdle => self.weather_idle_minutes = default.weather_idle_minutes,
         }
     }
+}
+
+/// The value after `value` among `all` toward `Down`, or the one before it, going round.
+fn turned<T: Copy + PartialEq>(all: &[T], value: T, direction: Direction) -> T {
+    let count = all.len();
+    let at = all
+        .iter()
+        .position(|&each| each == value)
+        .unwrap_or_default();
+    let next = match direction {
+        Direction::Down => at + 1,
+        Direction::Up => at + count - 1,
+    } % count;
+    all.get(next).copied().unwrap_or(value)
 }
 
 /// What the user does in the open settings window (FR-SET-02).
@@ -424,11 +464,41 @@ mod tests {
         input(&mut state, SettingsInput::Reset);
         assert!(state.settings().word_wrap);
         input(&mut state, SettingsInput::Turn(Direction::Up));
+        for _ in 0..4 {
+            input(&mut state, SettingsInput::Focus(Direction::Down));
+        }
+        assert_eq!(state.settings_window(), Some(Setting::WeatherIdle));
         input(&mut state, SettingsInput::Close);
         assert_eq!(state.settings_window(), None);
         assert!(!state.settings().word_wrap, "closing keeps the changes");
         assert_eq!(input(&mut state, SettingsInput::Reset), [], "closed");
         assert!(!state.settings().word_wrap);
+    }
+
+    // FR-UI-07, FR-SET-02
+    #[test]
+    fn animations_turn_from_full_to_reduced_to_off_and_round() -> Result<(), serde_json::Error> {
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY);
+        give(&mut state, Message::Command(Command::Settings));
+        for _ in 0..3 {
+            input(&mut state, SettingsInput::Focus(Direction::Down));
+        }
+        assert_eq!(state.settings_window(), Some(Setting::Animations));
+        assert_eq!(state.settings().value(Setting::Animations), "Full");
+        let turned: Vec<_> = (0..3)
+            .map(|_| {
+                input(&mut state, SettingsInput::Turn(Direction::Down));
+                state.settings().value(Setting::Animations)
+            })
+            .collect();
+        assert_eq!(turned, ["Reduced", "Off", "Full"]);
+        input(&mut state, SettingsInput::Turn(Direction::Up));
+        assert_eq!(state.settings().animations, Animations::Off);
+        assert!(!state.settings().is_default(Setting::Animations));
+        input(&mut state, SettingsInput::Reset);
+        assert!(state.settings().is_default(Setting::Animations));
+        assert_eq!(serde_json::to_value(Animations::Reduced)?, "reduced");
+        Ok(())
     }
 
     // FR-SET-02
@@ -486,6 +556,7 @@ mod tests {
                 "Appearance",
                 "Appearance",
                 "Appearance",
+                "Appearance",
                 "Weather",
                 "Weather"
             ]
@@ -497,6 +568,7 @@ mod tests {
                 "theme",
                 "icons",
                 "word_wrap",
+                "animations",
                 "weather",
                 "weather_idle_minutes"
             ]
@@ -508,6 +580,7 @@ mod tests {
                 "Theme",
                 "Icons",
                 "Word wrap",
+                "Animations",
                 "Weather animation",
                 "Weather after idle"
             ]
@@ -526,7 +599,7 @@ mod tests {
     fn the_weather_turns_over_and_its_idle_time_goes_by_minutes_no_less_than_one() {
         let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut state, Message::Command(Command::Settings));
-        for _ in 0..3 {
+        for _ in 0..4 {
             input(&mut state, SettingsInput::Focus(Direction::Down));
         }
         assert_eq!(state.settings_window(), Some(Setting::Weather));
