@@ -109,6 +109,8 @@ pub enum Command {
     ClearTagFilter,
     /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
     Sidebar,
+    /// Hide the projects inside the project the sidebar focuses, or show them again (FR-VIEW-10).
+    Collapse,
     /// Give the keys to the pane on the left, or from the first pane to the sidebar while it
     /// shows (FR-PANE-02, FR-VIEW-10).
     FocusLeft,
@@ -546,6 +548,11 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::Collapse,
+        title: "Collapse or Expand Project",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::FocusLeft,
         title: "Focus Pane Left",
         context: Context::Navigate,
@@ -758,6 +765,7 @@ mod tests {
     fn the_sidebar_and_pane_commands_are_navigate_commands() {
         for command in [
             Command::Sidebar,
+            Command::Collapse,
             Command::FocusLeft,
             Command::FocusRight,
             Command::FocusPane(1),

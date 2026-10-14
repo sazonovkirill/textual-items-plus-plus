@@ -267,3 +267,53 @@ fn up_and_down_in_a_description_follow_its_lines_beside_the_sidebar() {
         "the start of the second line on screen"
     );
 }
+
+// FR-VIEW-10, D-67
+#[test]
+fn collapse_a_project_and_expand_it_again() {
+    let mut harness = sidebar();
+    harness.type_text("gg");
+    harness.type_text("jjjjj");
+    harness.type_text("'");
+    assert_eq!(
+        entries(&harness).get(5..8),
+        Some(
+            &[
+                "*# Work               ▸ 7".to_owned(),
+                " # Home                 5".to_owned(),
+                "   # Move to the new fl 4".to_owned(),
+            ][..]
+        ),
+        "the projects inside it hide"
+    );
+    harness.type_text("j'");
+    assert_eq!(
+        entries(&harness).get(6).map(String::as_str),
+        Some("*# Home               ▸ 5")
+    );
+    harness.type_text("k'");
+    assert_eq!(
+        entries(&harness).get(6).map(String::as_str),
+        Some("   # Website            5")
+    );
+    harness.type_text("Gk");
+    harness.type_text("iBoxes");
+    harness.key(KeyCode::Enter);
+    let added = entries(&harness);
+    assert_eq!(
+        added.get(8..11),
+        Some(
+            &[
+                " # Home                 5".to_owned(),
+                "   # Move to the new fl 4".to_owned(),
+                "*  # Boxes".to_owned(),
+            ][..]
+        ),
+        "a project added in a collapsed one shows it again"
+    );
+    harness.ctrl('w');
+    harness.type_text("l");
+    let before = harness.rows();
+    harness.type_text("'");
+    assert_eq!(harness.rows(), before, "the pane has nothing to collapse");
+}

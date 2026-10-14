@@ -1,10 +1,12 @@
 //! The sidebar: the Inbox, the views, and the projects as a tree beside the pane, where they are
-//! created, renamed, deleted, reordered, indented and outdented with keys (FR-VIEW-10, OQ-10).
-//! Hides which entry it keeps focused as the tree changes and where its changes put items in the
-//! document.
+//! created, renamed, deleted, reordered, indented and outdented with keys, and collapsed
+//! (FR-VIEW-10, OQ-10). Hides which entry it keeps focused as the tree changes, which projects
+//! it collapses and where its changes put items in the document.
+
+use std::collections::BTreeSet;
 
 use super::{
-    Direction, Focus, Refusal, Side,
+    Direction, Focus, Refusal, Side, container,
     navigator::{self, Stop},
     view::{Shown, View},
 };
@@ -20,6 +22,8 @@ pub(super) struct Sidebar {
     index: usize,
     /// The entry focused before a new one was added, to go back to when it is left empty.
     left: Option<Shown>,
+    /// The projects whose projects are hidden, for as long as the app runs (D-67).
+    collapsed: BTreeSet<ItemId>,
 }
 
 /// What a frontend draws of the sidebar.
@@ -31,6 +35,8 @@ pub struct SidebarView {
     pub focused: Option<usize>,
     /// Whether the sidebar has the keys, rather than the pane.
     pub keys: bool,
+    /// The projects among the entries whose projects are hidden.
+    pub collapsed: Vec<ItemId>,
 }
 
 impl Sidebar {
@@ -117,13 +123,67 @@ impl Sidebar {
             .map(|stop| stop.shown());
     }
 
-    /// What a frontend draws of the sidebar with `entries`, while it shows.
-    pub(super) fn view(&self, entries: Vec<Stop>) -> Option<SidebarView> {
-        self.shown.then(|| SidebarView {
-            focused: self.at(&entries),
-            keys: self.keys,
-            entries,
+    /// What a frontend draws of the sidebar of `document`, while it shows.
+    pub(super) fn view(&self, document: &Document) -> Option<SidebarView> {
+        self.shown.then(|| {
+            let entries = self.visible(document);
+            SidebarView {
+                focused: self.at(&entries),
+                keys: self.keys,
+                collapsed: entries
+                    .iter()
+                    .filter_map(|stop| match stop {
+                        Stop::Place(place) => Some(place.id),
+                        Stop::View(_) => None,
+                    })
+                    .filter(|&id| self.collapsed.contains(&id) && holds_projects(document, id))
+                    .collect(),
+                entries,
+            }
         })
+    }
+
+    /// The entries the sidebar lists of `document`: [`entries`] less those inside a collapsed
+    /// project.
+    pub(super) fn visible(&self, document: &Document) -> Vec<Stop> {
+        let mut hidden_below = None;
+        entries(document)
+            .into_iter()
+            .filter(|&stop| {
+                let depth = stop.depth();
+                if hidden_below.is_some_and(|top| depth > top) {
+                    return false;
+                }
+                hidden_below = match stop {
+                    Stop::Place(place) if self.collapsed.contains(&place.id) => Some(depth),
+                    _ => None,
+                };
+                true
+            })
+            .collect()
+    }
+
+    /// Collapses the focused project when it holds projects the sidebar lists, or expands it
+    /// when it is collapsed (owner, D-67).
+    pub(super) fn toggle_collapsed(&mut self, document: &Document) {
+        let Some(Shown::Container(id)) = self.focused else {
+            return;
+        };
+        if !self.collapsed.remove(&id) && holds_projects(document, id) {
+            self.collapsed.insert(id);
+        }
+    }
+
+    /// Expands the projects holding the focused entry, so that a project added, indented or
+    /// moved into a collapsed one shows where it went.
+    pub(super) fn reveal(&mut self, document: &Document) {
+        if let Some(Shown::Container(id)) = self.focused {
+            for above in container::path(document, id) {
+                if above != id {
+                    self.collapsed.remove(&above);
+                }
+            }
+        }
     }
 
     /// The index of the focused entry among `entries`, or of the one now where it was.
@@ -228,6 +288,14 @@ fn siblings(document: &Document, id: ItemId) -> Option<(&[ItemId], usize)> {
     let (parent, index) = document.position(id)?;
     let siblings = parent.map_or(document.top_level(), |parent| document.children(parent));
     Some((siblings, index))
+}
+
+/// Whether the project `id` holds a project the sidebar lists.
+fn holds_projects(document: &Document, id: ItemId) -> bool {
+    document
+        .children(id)
+        .iter()
+        .any(|&child| listed(document, child))
 }
 
 /// Whether `id` is a project the sidebar lists, given that its parent is listed.
@@ -480,7 +548,7 @@ mod tests {
     fn the_focus_moves_through_the_tree() {
         let document = document();
         let mut sidebar = Sidebar::default();
-        assert_eq!(sidebar.view(entries(&document)), None, "hidden at first");
+        assert_eq!(sidebar.view(&document), None, "hidden at first");
         sidebar.focus(true);
         assert!(!sidebar.has_keys(), "a hidden sidebar takes no keys");
         sidebar.toggle(None);
@@ -513,7 +581,7 @@ mod tests {
         assert_eq!(go(Focus::NextSection).as_deref(), Some("Home"));
         assert_eq!(go(Focus::PreviousSection).as_deref(), Some("Solo"));
         assert_eq!(go(Focus::First).as_deref(), Some("Inbox"));
-        let view = sidebar.view(entries(&document));
+        let view = sidebar.view(&document);
         assert_eq!(
             view.map(|view| (view.focused, view.keys, view.entries.len())),
             Some((Some(0), true, 7 + views.len()))
@@ -536,18 +604,74 @@ mod tests {
         sidebar.toggle(Some(blog));
         assert_eq!((sidebar.has_keys(), sidebar.focused()), (true, Some(blog)));
         sidebar.focus(false);
-        let view = sidebar.view(entries(&document));
+        let view = sidebar.view(&document);
         assert_eq!(view.map(|view| view.keys), Some(false), "still shown");
         sidebar.toggle(None);
         assert!(sidebar.has_keys(), "the key gives a shown sidebar the keys");
         sidebar.toggle(None);
-        assert_eq!(sidebar.view(entries(&document)), None);
+        assert_eq!(sidebar.view(&document), None);
         assert!(!sidebar.has_keys());
         sidebar.toggle(None);
         assert_eq!(
             sidebar.focused(),
             Some(blog),
             "showing again keeps the focus"
+        );
+    }
+
+    // FR-VIEW-10, D-67
+    #[test]
+    fn a_project_collapses_hiding_the_projects_inside_it_until_it_expands() {
+        let document = document();
+        let (work, site, blog) = (
+            find(&document, "Work"),
+            find(&document, "Site"),
+            find(&document, "Blog"),
+        );
+        let titles = |sidebar: &Sidebar| -> Vec<String> {
+            sidebar
+                .visible(&document)
+                .into_iter()
+                .filter_map(|stop| match stop {
+                    Stop::Place(place) => {
+                        document.node(place.id)?.item().map(|it| it.title.clone())
+                    }
+                    Stop::View(_) => None,
+                })
+                .collect()
+        };
+        let mut sidebar = Sidebar::default();
+        sidebar.toggle(Some(Shown::View(View::Today)));
+        sidebar.toggle_collapsed(&document);
+        assert!(sidebar.collapsed.is_empty(), "a view does not collapse");
+        sidebar.focus_new(work);
+        sidebar.toggle_collapsed(&document);
+        assert_eq!(titles(&sidebar), ["Inbox", "Work", "Solo", "Home"]);
+        assert_eq!(
+            sidebar.view(&document).map(|view| view.collapsed),
+            Some(vec![work])
+        );
+        sidebar.toggle_collapsed(&document);
+        assert_eq!(
+            titles(&sidebar),
+            ["Inbox", "Work", "Site", "Blog", "Docs", "Solo", "Home"]
+        );
+        let mut leaf = Sidebar::default();
+        leaf.toggle(Some(Shown::Container(blog)));
+        leaf.toggle_collapsed(&document);
+        assert_eq!(
+            leaf.view(&document).map(|view| view.collapsed),
+            Some(vec![])
+        );
+        for project in [work, site] {
+            leaf.focus_new(project);
+            leaf.toggle_collapsed(&document);
+        }
+        leaf.focus_new(blog);
+        leaf.reveal(&document);
+        assert!(
+            titles(&leaf).contains(&"Blog".to_owned()),
+            "the projects holding the focus expand"
         );
     }
 

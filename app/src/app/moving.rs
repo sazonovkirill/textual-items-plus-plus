@@ -309,7 +309,7 @@ mod tests {
         item
     }
 
-    /// An top holding tasks `a`, `b` and a completed `x` outside sections, a section `S`
+    /// A project `top` holding tasks `a`, `b` and a completed `x` outside sections, a section `S`
     /// holding `c` and `d`, an empty section `T`, a section `U` holding `e`, and child projects
     /// `P` and `Q`.
     fn area() -> (Document, ItemId) {
@@ -552,8 +552,8 @@ mod tests {
         Ok(())
     }
 
-    /// Projects `A`, a completed `B`, a deleted `C`, then `D` holding `E`, in an top, and a
-    /// task holding checklist items `1` and `2`, `2` holding `3`.
+    /// Projects `A`, a completed `B`, a deleted `C`, then `D` holding `E`, in a project `top`,
+    /// and a task holding checklist items `1` and `2`, `2` holding `3`.
     fn nested() -> Document {
         let mut document = Document::new();
         let top = add(&mut document, None, Item::new(Project, "top"));
@@ -705,7 +705,7 @@ mod tests {
         Ok(())
     }
 
-    /// An top holding projects `P`, `Q` and `R`, `R` holding `S` and `T`, and a task `t`.
+    /// A project `top` holding projects `P`, `Q` and `R`, `R` holding `S` and `T`, and a task `t`.
     fn projects() -> Document {
         let mut document = Document::new();
         let top = add(&mut document, None, Item::new(Project, "top"));

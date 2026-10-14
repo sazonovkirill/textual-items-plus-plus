@@ -176,6 +176,8 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::FilterTags) => state.open_tag_filter(),
         Message::Command(Command::ClearTagFilter) => state.clear_tag_filter(),
         Message::Command(Command::Sidebar) => state.toggle_sidebar(),
+        // The pane shows a child project as one row, with nothing to fold; the sidebar takes it.
+        Message::Command(Command::Collapse) => {}
         Message::Command(Command::FocusLeft) => state.focus_left(),
         Message::Command(Command::FocusRight) => state.focus_right(),
         Message::Command(Command::FocusPane(number)) => state.focus_pane(number),
@@ -588,6 +590,16 @@ mod tests {
             .and_then(Node::item)
             .map(|area| area.tags.clone());
         assert_eq!(tags, Some(vec![crate::domain::Tag::plain("x")]));
+        Ok(())
+    }
+
+    // FR-VIEW-10, D-67
+    #[test]
+    fn collapsing_in_the_pane_does_nothing() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        let before = state.clone();
+        give(&mut state, Command::Collapse);
+        assert_eq!(state, before);
         Ok(())
     }
 

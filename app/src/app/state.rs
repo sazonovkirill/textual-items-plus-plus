@@ -252,7 +252,7 @@ impl State {
     /// The sidebar, while it shows (FR-VIEW-10).
     #[must_use]
     pub fn sidebar(&self) -> Option<SidebarView> {
-        self.sidebar.view(sidebar::entries(&self.document))
+        self.sidebar.view(&self.document)
     }
 
     /// Whether the sidebar has the keys, so that commands and the title edited are its own.
@@ -895,7 +895,7 @@ impl State {
     /// Shows the sidebar with the keys, focused on the entry of what the pane shows or of the
     /// closest container above it, or hides it when it has the keys, or gives it the keys.
     pub(super) fn toggle_sidebar(&mut self) {
-        let entries = sidebar::entries(&self.document);
+        let entries = self.sidebar.visible(&self.document);
         let near = std::iter::once(self.pane().shown)
             .chain(self.path().into_iter().rev().map(Shown::Container))
             .find(|&shown| entries.iter().any(|stop| stop.shown() == shown));
@@ -904,12 +904,13 @@ impl State {
 
     /// Keeps the sidebar's focus on an entry once a message may have changed the tree.
     pub(super) fn settle_sidebar(&mut self) {
-        self.sidebar.settle(&sidebar::entries(&self.document));
+        self.sidebar.reveal(&self.document);
+        self.sidebar.settle(&self.sidebar.visible(&self.document));
     }
 
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
-    /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting,
+    /// `o` and `O` do since it lists no tasks, collapsing it, deleting, moving, indenting,
     /// outdenting, converting and setting its dates, each one step to undo, opening Move to for
     /// it or the attachments panel on it, and opening the entry in the pane, `Enter` giving the
     /// pane the keys, or in a new pane, which gets them; a view's entry is only opened. Quitting,
@@ -937,7 +938,7 @@ impl State {
         if passes || !self.sidebar.has_keys() {
             return false;
         }
-        let entries = sidebar::entries(&self.document);
+        let entries = self.sidebar.visible(&self.document);
         let focused = self.sidebar.focused();
         let apply = |state: &mut Self, result: Result<Transaction, moving::Refusal>| match result {
             Ok(transaction) => state.change(transaction),
@@ -945,6 +946,7 @@ impl State {
         };
         match (command, focused) {
             (Command::Focus(motion), _) => self.sidebar.move_focus(&entries, motion),
+            (Command::Collapse, _) => self.sidebar.toggle_collapsed(&self.document),
             // The sidebar lists only projects, so its adding keys add projects: beside the focused
             // one, at either end of the top level, or in the focused one (owner, D-45).
             (Command::NewLike(side), _) => {

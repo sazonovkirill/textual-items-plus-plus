@@ -100,6 +100,7 @@ impl KeyGroup {
             | Command::FilterTags
             | Command::ClearTagFilter
             | Command::Sidebar
+            | Command::Collapse
             | Command::FocusLeft
             | Command::FocusRight
             | Command::FocusPane(_)

@@ -130,6 +130,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Tags, &["m g"]),
     (Command::FilterTags, &["g f"]),
     (Command::ClearTagFilter, &["g F"]),
+    // The owner's key to fold a project in the sidebar (D-67).
+    (Command::Collapse, &["'"]),
     // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends
     // `Ctrl+\` as `Ctrl+4`, and `g` with a digit reaches a pane where `Alt` with it is taken
     // (D-60).

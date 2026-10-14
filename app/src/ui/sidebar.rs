@@ -1,7 +1,8 @@
 //! The sidebar left of the pane: the Inbox, the views, the projects as a tree, each after its icon
-//! with a container's open tasks counted at the right, as the Navigator lists them, the entry of what the
-//! pane shows on the selection background, the focused one marked while the sidebar has the
-//! keys and the title being edited there as a text field in its row (FR-VIEW-10).
+//! with a container's open tasks counted at the right, as the Navigator lists them, after a marker
+//! on a collapsed project, the entry of what the pane shows on the selection background, the
+//! focused one marked while the sidebar has the keys and the title being edited there as a text
+//! field in its row (FR-VIEW-10).
 
 use ratatui::{
     buffer::Buffer,
@@ -11,7 +12,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use super::{IconSet, Theme};
+use super::{Icon, IconSet, Theme};
 use crate::{
     app::{Part, SidebarView, State, Stop, TextField, view::Shown},
     domain::{Document, ItemId, ItemKind, Node},
@@ -196,13 +197,22 @@ impl Widget for SidebarPane<'_> {
                 buf.set_string(row.x, row.y, FOCUS_MARKER, Style::new().fg(theme.focus));
             }
             let title = self.title(stop, content);
-            let count = match stop {
-                Stop::Place(place) if place.open_tasks > 0 => Span::styled(
-                    format!(" {}", place.open_tasks),
-                    Style::new().fg(theme.dim_text),
+            // A collapsed project's marker stands before its count, as Todoist's does (D-67).
+            let (marker, tasks) = match stop {
+                Stop::Place(place) => (
+                    self.view
+                        .collapsed
+                        .contains(&place.id)
+                        .then(|| Icon::Collapsed.glyph(self.icons).to_owned()),
+                    (place.open_tasks > 0).then(|| place.open_tasks.to_string()),
                 ),
-                _ => Span::raw(""),
+                Stop::View(_) => (None, None),
             };
+            let count = marker
+                .into_iter()
+                .chain(tasks)
+                .fold(String::new(), |count, part| count + " " + &part);
+            let count = Span::styled(count, Style::new().fg(theme.dim_text));
             let count_width = u16::try_from(count.width()).unwrap_or(u16::MAX);
             let icon_area = Rect::new(title.icon, row.y, title.x.saturating_sub(title.icon), 1);
             Span::styled(
@@ -398,6 +408,34 @@ mod tests {
         give(&mut state, Command::Go(crate::app::Go::View(View::Today)));
         let (_, buf, _) = draw(&state, 20, 13);
         assert_eq!(buf[(5, today)].bg, theme.selection, "the view shown");
+        Ok(())
+    }
+
+    // FR-VIEW-10, D-67
+    #[test]
+    fn a_collapsed_project_shows_a_marker_before_its_count() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        for motion in [
+            crate::app::Focus::Last,
+            crate::app::Focus::Previous,
+            crate::app::Focus::Previous,
+        ] {
+            give(&mut state, Command::Focus(motion));
+        }
+        give(&mut state, Command::Collapse);
+        let (rows, buf, _) = draw(&state, 20, 10);
+        assert_eq!(
+            rows.get(7..10),
+            Some(
+                &[
+                    " # Work           3│".to_owned(),
+                    "▌  # Website    ▸ 3│".to_owned(),
+                    " # Learn Rust      │".to_owned(),
+                ][..]
+            )
+        );
+        let theme = BuiltIn::default().colors();
+        assert_eq!(buf[(15, 8)].fg, theme.dim_text);
         Ok(())
     }
 
