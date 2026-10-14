@@ -256,3 +256,30 @@ fn the_navigator_opens_over_the_dialog_closing_it() {
     assert_eq!(dialog(&harness), Vec::<String>::new());
     assert!(harness.screen().contains("│›"), "{}", harness.screen());
 }
+
+// FR-EDIT-08, FR-VIEW-07, D-117
+#[test]
+fn the_navigator_applies_the_dialogs_draft_as_one_step_to_undo() {
+    for key in ['k', 'g'] {
+        let mut harness = Harness::new(80, 24);
+        let before = harness.screen();
+        harness.type_text("e now");
+        harness.key(KeyCode::Tab);
+        harness.type_text("By post");
+        harness.ctrl(key);
+        assert!(harness.screen().contains("│›"), "{}", harness.screen());
+        harness.key(KeyCode::Esc);
+        harness.type_text("e");
+        assert_eq!(
+            dialog(&harness).get(1..3).unwrap_or_default(),
+            [
+                "│▌ Title        Call the bank about the card now                               │",
+                "│  Description  By post                                                        │",
+            ],
+            "Ctrl+{key} kept the draft"
+        );
+        harness.key(KeyCode::Esc);
+        harness.type_text("z");
+        assert_eq!(harness.screen(), before, "one step takes it all back");
+    }
+}

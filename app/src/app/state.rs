@@ -1573,7 +1573,8 @@ impl State {
 
     /// Opens the Navigator on where the pane is, closing the command palette, the context menu, Go
     /// to Symbol, Move to, the date prompt, Quick Add, the tag picker, the settings window and the
-    /// Save As prompt unless it is writing the file, or closes it when it is open.
+    /// Save As prompt unless it is writing the file, and the edit dialog, keeping its draft as
+    /// quitting does (D-117), or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         if !self.saving_as() {
             self.save_as = None;
@@ -1586,7 +1587,7 @@ impl State {
         self.date_prompt = None;
         self.quick_add = None;
         self.tags = None;
-        self.edit_dialog = None;
+        self.keep_edit_dialog();
         self.navigator = match self.navigator {
             Some(_) => None,
             None => Some(navigator::open(&self.document, self.pane().shown)),
