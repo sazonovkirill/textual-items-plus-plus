@@ -10,7 +10,9 @@ use std::{path::PathBuf, time::Duration};
 use super::{
     Effect, State,
     autosave::{Autosave, Ending, SaveState, Step},
-    container, navigator, text_path,
+    container,
+    move_to::MoveTo,
+    navigator, text_path,
 };
 use crate::domain::{Document, ItemId};
 
@@ -358,8 +360,9 @@ impl State {
 
     /// Replaces the document with `document`, read again from the file, keeping the pane on the
     /// container it showed, its focus and its history on the items they were on, as far as their
-    /// text paths find them, and the Navigator open on the places now listed with its query. The
-    /// undo history is cleared, since its steps fit only the document as it was.
+    /// text paths find them, the Navigator open on the places now listed with its query, and Move
+    /// to open on the destinations now listed with its query while an item it moves is found
+    /// again. The undo history is cleared, since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -383,6 +386,11 @@ impl State {
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
             self.navigator = Some(navigator::reopen(new, self.container, &query));
+        }
+        if let Some(move_to) = &self.move_to {
+            let query = move_to.view().query.text().to_owned();
+            let items = move_to.items().iter().filter_map(|&id| exact(id)).collect();
+            self.move_to = MoveTo::reopen(new, items, &query);
         }
         self.history = super::History::default();
         self.saving.autosave.reloaded(new.revision());
@@ -647,6 +655,34 @@ mod tests {
         );
         assert_eq!(state.container(), state.document().inbox(), "P is gone");
         assert_eq!(state.selection().focused(), None);
+        Ok(())
+    }
+
+    // F-FILE-06, FR-OPS-04
+    #[test]
+    fn a_reload_keeps_move_to_open_while_an_item_it_moves_is_found_again() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::MoveTo);
+        send(
+            &mut state,
+            Message::MoveTo(PickerInput::Edit(TextEdit::Insert('p'))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
+        );
+        assert_eq!(state.move_to().ok_or("open")?.query.text(), "p");
+        send(&mut state, Message::MoveTo(PickerInput::Choose));
+        let project = titled(&state, "P").ok_or("P")?;
+        let a = titled(&state, "a").ok_or("a")?;
+        assert_eq!(state.document().position(a), Some((Some(project), 2)));
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::MoveTo);
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
+        );
+        assert!(state.move_to().is_none(), "a, which it moved, is gone");
         Ok(())
     }
 

@@ -30,6 +30,8 @@ pub enum Command {
     NewTask(Side),
     /// Move the selected items to the Trash (FR-OPS-05, OQ-19).
     Delete,
+    /// Open the picker that moves the selected items to another container (FR-OPS-04).
+    MoveTo,
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
     KeepMine,
     /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
@@ -185,6 +187,11 @@ pub const REGISTRY: &[Entry] = &[
         title: "Delete",
         context: Context::Navigate,
     },
+    Entry {
+        command: Command::MoveTo,
+        title: "Move To",
+        context: Context::Navigate,
+    },
     // Global, so that its key closes the Navigator too.
     Entry {
         command: Command::Navigator,
@@ -262,7 +269,7 @@ mod tests {
         assert_eq!(context(Command::Navigator), Some(Context::Global));
     }
 
-    // FR-EDIT-01, FR-EDIT-05, FR-OPS-05
+    // FR-EDIT-01, FR-EDIT-05, FR-OPS-04, FR-OPS-05
     #[test]
     fn editing_adding_and_deleting_are_navigate_commands() {
         for command in [
@@ -270,6 +277,7 @@ mod tests {
             Command::NewTask(Side::Below),
             Command::NewTask(Side::Above),
             Command::Delete,
+            Command::MoveTo,
         ] {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);
             assert_eq!(

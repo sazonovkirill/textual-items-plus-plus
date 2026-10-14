@@ -33,7 +33,7 @@ pub use picker::{PickerPopup, picker_input};
 pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
-    app::{self, Command, Context, Effect, Message, Opened, Place, REGISTRY, State},
+    app::{self, Command, Context, Destination, Effect, Message, Opened, Place, REGISTRY, State},
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
 };
@@ -163,8 +163,9 @@ impl Tui {
     /// Handles one terminal event on `today`, the local date: the keys of a bound command give
     /// it to the core, and the core's effects are carried out. While the conflict prompt is open
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
-    /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); in
-    /// edit mode the title being edited takes them the same way (FR-EDIT-01).
+    /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
+    /// Move to picker (FR-OPS-04) and, in edit mode, the title being edited take them the same
+    /// way (FR-EDIT-01).
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
         let message = if self.state.conflict().is_some() {
@@ -184,6 +185,10 @@ impl Tui {
         } else if self.state.navigator().is_some() {
             picker_input(event)
                 .map(Message::Navigator)
+                .or_else(|| self.global(event))
+        } else if self.state.move_to().is_some() {
+            picker_input(event)
+                .map(Message::MoveTo)
                 .or_else(|| self.global(event))
         } else {
             self.keymap.press(event).map(Message::Command)
@@ -213,19 +218,22 @@ impl Tui {
     }
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
-    /// Navigator's query while it is open, at the caret of the title being edited in edit mode,
-    /// else hidden.
+    /// query of the Navigator or Move to while one is open, at the caret of the title being
+    /// edited in edit mode, else hidden.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
         if self.state.conflict().is_some() {
             return None;
         }
         let [panes, _] = layout(area);
-        match self.state.navigator() {
-            Some(view) => Some(navigator_popup(&view, &self.theme, self.icons).caret(panes)),
-            None => ContainerPane::new(&self.state, &self.theme, self.icons)
-                .caret(pane_layout(panes)[2], self.top),
+        if let Some(view) = self.state.navigator() {
+            return Some(navigator_popup(&view, &self.theme, self.icons).caret(panes));
         }
+        if let Some(view) = self.state.move_to() {
+            return Some(move_to_popup(&view, &self.theme, self.icons).caret(panes));
+        }
+        ContainerPane::new(&self.state, &self.theme, self.icons)
+            .caret(pane_layout(panes)[2], self.top)
     }
 
     /// Carries out one effect of the core.
@@ -322,10 +330,31 @@ fn navigator_popup<'a>(
         })
 }
 
+/// The Move to window, each destination after its kind's icon, in a tree (FR-OPS-04).
+fn move_to_popup<'a>(
+    view: &'a app::PickerView<'a, Destination>,
+    theme: &'a Theme,
+    icons: IconSet,
+) -> PickerPopup<'a, Destination> {
+    let icon: &dyn Fn(&Destination) -> Icon = &|destination| match destination {
+        Destination::Home => Icon::Home,
+        Destination::Container { kind, .. } => match kind {
+            ItemKind::Inbox => Icon::Inbox,
+            ItemKind::Area => Icon::Area,
+            ItemKind::Section => Icon::Section,
+            _ => Icon::Project,
+        },
+    };
+    PickerPopup::new("Move to", view, icon, icons, theme).tree(&|destination| match destination {
+        Destination::Home => 0,
+        Destination::Container { depth, .. } => *depth,
+    })
+}
+
 impl Widget for &mut Tui {
     /// Draws the pane, below its breadcrumbs and a rule, over the status line, scrolling the pane
-    /// to keep the focus in view, and the Navigator or the conflict prompt over the pane while
-    /// it is open.
+    /// to keep the focus in view, and the Navigator, Move to or the conflict prompt over the pane
+    /// while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         let [panes, status] = layout(area);
         let [crumbs, rule, pane] = pane_layout(panes);
@@ -339,6 +368,9 @@ impl Widget for &mut Tui {
         ContainerPane::new(&self.state, &self.theme, self.icons).render(pane, buf, &mut self.top);
         if let Some(view) = self.state.navigator() {
             navigator_popup(&view, &self.theme, self.icons).render(panes, buf);
+        }
+        if let Some(view) = self.state.move_to() {
+            move_to_popup(&view, &self.theme, self.icons).render(panes, buf);
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
             let (theirs, mine) = if view.diff {

@@ -46,6 +46,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::NewTask(Side::Below), &["o"]),
     (Command::NewTask(Side::Above), &["O"]),
     (Command::Delete, &["d d", "delete"]),
+    // taskpaper-terminal's Move to key.
+    (Command::MoveTo, &["g m"]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
     // while the user types (its D-115, D-38).
     (Command::KeepMine, &["ctrl+k"]),

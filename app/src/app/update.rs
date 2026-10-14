@@ -16,6 +16,8 @@ pub enum Message {
     Command(Command),
     /// The user did something in the open Navigator (FR-VIEW-07).
     Navigator(PickerInput),
+    /// The user did something in the open Move to picker (FR-OPS-04).
+    MoveTo(PickerInput),
     /// The user did something while editing a title (FR-EDIT-01).
     Edit(EditInput),
     /// The frontend's clock reads this, counted from any fixed moment, such as the start.
@@ -87,7 +89,9 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::EditTitle) => state.edit_title(),
         Message::Command(Command::NewTask(side)) => state.new_task(side),
         Message::Command(Command::Delete) => state.delete(today),
+        Message::Command(Command::MoveTo) => state.open_move_to(),
         Message::Navigator(input) => state.navigator_input(input),
+        Message::MoveTo(input) => state.move_to_input(input),
         Message::Edit(input) => state.edit_input(input),
     }
     Vec::new()

@@ -10,6 +10,7 @@ use super::{
     container::{self, Row},
     editing::Editing,
     focus::{self, Focus},
+    move_to::{Destination, MoveTo},
     navigator::{self, Place},
     saving::Saving,
     trash,
@@ -38,6 +39,8 @@ pub struct State {
     show_completed: bool,
     pub(super) visits: Visits,
     pub(super) navigator: Option<Picker<Place>>,
+    /// Move to, while its picker is open (FR-OPS-04).
+    pub(super) move_to: Option<MoveTo>,
     /// The task whose title is edited, in edit mode (FR-EDIT-01).
     editing: Option<Editing>,
     pub(super) saving: Saving,
@@ -59,6 +62,7 @@ impl State {
             show_completed: false,
             visits: Visits::default(),
             navigator: None,
+            move_to: None,
             editing: None,
             saving,
         };
@@ -115,6 +119,12 @@ impl State {
         self.navigator.as_ref().map(Picker::view)
     }
 
+    /// The Move to picker, while it is open.
+    #[must_use]
+    pub fn move_to(&self) -> Option<PickerView<'_, Destination>> {
+        self.move_to.as_ref().map(MoveTo::view)
+    }
+
     /// The task whose title is edited and the text edited, in edit mode.
     #[must_use]
     pub fn editing(&self) -> Option<(ItemId, &TextField)> {
@@ -141,6 +151,31 @@ impl State {
     pub(super) fn delete(&mut self, today: Date) {
         let transaction = trash::delete(&self.document, self.selection.items(), today);
         self.change(transaction);
+    }
+
+    /// Opens the Move to picker for the selected items, closing the Navigator. Nothing opens when
+    /// no project, section or task is selected.
+    pub(super) fn open_move_to(&mut self) {
+        self.navigator = None;
+        self.move_to = MoveTo::open(&self.document, self.selection.items());
+    }
+
+    /// Applies `input` to the open Move to picker: choosing a destination closes it and moves the
+    /// selected items there as one step to undo, the pane staying where it is and the focus
+    /// moving on from the rows that leave, as Things 3 does. Nothing happens while it is closed.
+    pub(super) fn move_to_input(&mut self, input: PickerInput) {
+        let Some(picked) = self
+            .move_to
+            .as_mut()
+            .and_then(|move_to| move_to.input(input))
+        else {
+            return;
+        };
+        let move_to = self.move_to.take();
+        if let (Picked::Chosen(destination), Some(move_to)) = (picked, move_to) {
+            let transaction = move_to.transaction(&self.document, destination);
+            self.change(transaction);
+        }
     }
 
     /// Starts editing the focused task's title. Nothing happens unless a task is focused.
@@ -338,8 +373,9 @@ impl State {
         }
     }
 
-    /// Opens the Navigator on where the pane is, or closes it when it is open.
+    /// Opens the Navigator on where the pane is, closing Move to, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
+        self.move_to = None;
         self.navigator = match self.navigator {
             Some(_) => None,
             None => Some(navigator::open(&self.document, self.container)),
@@ -781,6 +817,68 @@ mod tests {
         state.document.set(work, gone)?;
         state.redo();
         assert_eq!(state.container(), state.document().inbox());
+        Ok(())
+    }
+
+    /// Moves the selection through Move to to the destination `query` finds first.
+    fn move_to(state: &mut State, query: &str) {
+        state.open_move_to();
+        for c in query.chars() {
+            state.move_to_input(PickerInput::Edit(TextEdit::Insert(c)));
+        }
+        state.move_to_input(PickerInput::Choose);
+    }
+
+    // FR-OPS-04, FR-EDIT-06
+    #[test]
+    fn moving_a_task_away_keeps_the_pane_and_moves_the_focus_on() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            loose,
+            section,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        move_to(&mut state, "Site");
+        assert!(state.move_to().is_none(), "choosing closes it");
+        assert_eq!(state.document().children(site), [in_site, loose]);
+        assert_eq!(at(&state), (work, Some(section)));
+        state.undo();
+        assert_eq!(at(&state), (work, Some(loose)));
+        assert_eq!(state.document().position(loose), Some((Some(work), 0)));
+        // Into a section of the container shown, the task stays a row and keeps the focus.
+        move_to(&mut state, "S");
+        assert_eq!(state.document().position(loose), Some((Some(section), 1)));
+        assert_eq!(at(&state), (work, Some(loose)));
+        Ok(())
+    }
+
+    // FR-OPS-04, FR-VIEW-07
+    #[test]
+    fn move_to_closes_without_moving_and_gives_way_to_the_navigator() -> Result<(), PlacementError>
+    {
+        let Fixture { mut state, .. } = fixture()?;
+        let before = state.clone();
+        state.move_to_input(PickerInput::Choose);
+        assert_eq!(state, before, "a closed picker takes no input");
+        state.open_move_to();
+        assert!(state.move_to().is_some());
+        state.move_to_input(PickerInput::Next);
+        state.move_to_input(PickerInput::Dismiss);
+        assert!(state.move_to().is_none());
+        assert_eq!(
+            state.document(),
+            before.document(),
+            "dismissing moves nothing"
+        );
+        state.open_move_to();
+        state.toggle_navigator();
+        assert!(state.move_to().is_none() && state.navigator().is_some());
+        state.open_move_to();
+        assert!(state.move_to().is_some() && state.navigator().is_none());
         Ok(())
     }
 

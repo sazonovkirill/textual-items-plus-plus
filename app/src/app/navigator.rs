@@ -104,7 +104,7 @@ fn open_tasks(document: &Document, id: ItemId) -> usize {
 }
 
 /// The item `id`, unless it is not one, is in the Trash or is completed.
-fn shown(document: &Document, id: ItemId) -> Option<&Item> {
+pub(super) fn shown(document: &Document, id: ItemId) -> Option<&Item> {
     document
         .node(id)
         .and_then(Node::item)
