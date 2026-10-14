@@ -3,7 +3,7 @@
 //! on them (FR-DATE-01, FR-DATE-02, FR-OPS-06), as taskpaper-terminal's date prompt does
 //! ([ui.md §1](../../../specs/reference/taskpaper-terminal/specs/ui.md#1-layout)).
 
-use jiff::civil::Date;
+use jiff::{Span, civil::Date};
 
 use super::{TextEdit, TextField};
 use crate::domain::{
@@ -122,21 +122,53 @@ pub(super) fn set(
     kind: DateKind,
     date: Option<Date>,
 ) -> Transaction {
+    redate(document, items, kind, |_| date)
+}
+
+/// The transaction that moves the `kind` date of `items` `days` days later, or earlier when
+/// negative, an item without one counting from `today` (D-82). Only projects, sections and tasks
+/// take dates; anything else among `items`, and a date that would leave the calendar, is left
+/// alone.
+pub(super) fn nudge(
+    document: &Document,
+    items: impl IntoIterator<Item = ItemId>,
+    kind: DateKind,
+    days: i8,
+    today: Date,
+) -> Transaction {
+    redate(document, items, kind, |item| {
+        let from = item.date(kind).unwrap_or(today);
+        from.checked_add(Span::new().days(days))
+            .ok()
+            .or(item.date(kind))
+    })
+}
+
+/// The transaction that gives each of `items` that takes dates the `kind` date `date` makes of
+/// it, leaving alone those whose date that is already.
+fn redate(
+    document: &Document,
+    items: impl IntoIterator<Item = ItemId>,
+    kind: DateKind,
+    date: impl Fn(&Item) -> Option<Date>,
+) -> Transaction {
     let ops = items
         .into_iter()
         .filter_map(|id| Some((id, dated(document, id)?)))
-        .filter(|(_, item)| item.date(kind) != date)
-        .map(|(id, item)| {
-            let mut after = item.clone();
-            match kind {
-                DateKind::Start => after.start = date,
-                DateKind::Due => after.due = date,
-            }
-            Op::Set {
-                id,
-                before: item.clone(),
-                after,
-            }
+        .filter_map(|(id, item)| {
+            let date = date(item);
+            (item.date(kind) != date).then(|| {
+                let mut after = item.clone();
+                match kind {
+                    DateKind::Start => after.start = date,
+                    DateKind::Due => after.due = date,
+                }
+                Op::Set {
+                    id,
+                    before: item.clone(),
+                    after,
+                }
+            })
         })
         .collect();
     Transaction::new(ops)
@@ -212,6 +244,35 @@ mod tests {
         document.apply(&set(&document, [a], DateKind::Start, None))?;
         assert_eq!(item(&document, a).start, None);
         assert_eq!(item(&document, a).due, Some(TODAY));
+        Ok(())
+    }
+
+    // FR-DATE-06, FR-OPS-06
+    #[test]
+    fn nudging_moves_each_date_a_day_counting_a_missing_one_from_today()
+    -> Result<(), PlacementError> {
+        let (mut document, a, b, check) = document()?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "x")))?;
+        assert_eq!(
+            nudge(&document, [area, check], DateKind::Start, 1, TODAY),
+            Transaction::default(),
+            "an area and a checklist item take no dates"
+        );
+        document.apply(&nudge(&document, [a, b, area], DateKind::Start, 1, TODAY))?;
+        assert_eq!(item(&document, a).start, Some(date(2026, 10, 2)));
+        assert_eq!(item(&document, b).start, Some(date(2026, 10, 15)));
+        document.apply(&nudge(&document, [a, b], DateKind::Due, -1, TODAY))?;
+        assert_eq!(item(&document, a).due, Some(date(2026, 10, 13)));
+        assert_eq!(item(&document, b).due, Some(date(2026, 10, 13)));
+        assert_eq!(item(&document, a).start, Some(date(2026, 10, 2)), "kept");
+        let mut last = Item::new(ItemKind::Task, "last");
+        last.due = Some(Date::MAX);
+        let last = document.push(Some(document.inbox()), Node::Item(last))?;
+        assert_eq!(
+            nudge(&document, [last], DateKind::Due, 1, TODAY),
+            Transaction::default(),
+            "no day after the calendar's last"
+        );
         Ok(())
     }
 

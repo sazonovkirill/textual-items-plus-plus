@@ -1,4 +1,5 @@
-//! Start and due dates: the date prompt that `ms` and `md` open, `mt`, and the date chips on rows.
+//! Start and due dates: the date prompt that `ms` and `md` open, `mt`, the bracket keys that
+//! nudge them a day, and the date chips on rows.
 
 use std::{fs, path::PathBuf};
 
@@ -177,6 +178,68 @@ fn mt_starts_the_selection_today_and_both_are_saved() {
         "Inbox:\nTrip:\n\t- Renew the passport @start(2026-10-05)\n\
          \t- Book flights @start(2026-10-05)\n"
     );
+}
+
+// FR-DATE-06, FR-OPS-06, FR-KEY-02
+#[test]
+fn brackets_nudge_the_start_date_and_braces_the_due_date_a_day() {
+    let text = "Inbox:\nTrip:\n\t- Renew the passport @due(2026-11-01)\n\t- Book flights\n";
+    let (_dir, path, mut harness) = on_file(text);
+    harness.ctrl('g');
+    harness.type_text("trip");
+    harness.key(KeyCode::Enter);
+    harness.type_text("]]");
+    assert_eq!(
+        focused(&harness),
+        Some(row("▌ ☐ Renew the passport", "󱙭 Wed 󱙬 in 27 days")),
+        "no start date counts from today"
+    );
+    harness.type_text("[{");
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        "Inbox:\nTrip:\n\t- Renew the passport @start(2026-10-06) @due(2026-10-31)\n\
+         \t- Book flights\n"
+    );
+    harness.type_text("J}");
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        "Inbox:\nTrip:\n\t- Renew the passport @start(2026-10-06) @due(2026-11-01)\n\
+         \t- Book flights @due(2026-10-06)\n",
+        "every selected item, an undated one from today"
+    );
+    harness.type_text("z");
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        "Inbox:\nTrip:\n\t- Renew the passport @start(2026-10-06) @due(2026-10-31)\n\
+         \t- Book flights\n",
+        "one step to undo"
+    );
+}
+
+// FR-DATE-01, FR-DATE-06
+#[test]
+fn nudging_an_area_says_it_has_no_dates() {
+    let (_dir, path, mut harness) = on_file("Inbox:\nHome: @area\n");
+    harness.ctrl('g');
+    harness.type_text("home");
+    harness.key(KeyCode::Enter);
+    harness.type_text("k}");
+    let rows = harness.rows();
+    assert!(
+        rows.last()
+            .is_some_and(|row| row.contains("an area has no start or due date")),
+        "{rows:#?}"
+    );
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        "Inbox:\nHome: @area\n"
+    );
+}
+
+/// The file at `path` once a second has passed for the app to save it.
+fn saved_after_a_second(harness: &mut Harness, path: &std::path::Path) -> String {
+    harness.wait(1000);
+    fs::read_to_string(path).expect("the file is there")
 }
 
 // FR-DATE-02, FR-DATE-04, FR-DATE-05

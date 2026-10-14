@@ -24,19 +24,23 @@ use super::{
     markdown::{self, Format, NoteLine},
 };
 use crate::{
-    app::{AttachmentsInput, AttachmentsView, ChecklistLine, Focus, Selected},
+    app::{AttachmentsInput, AttachmentsView, ChecklistLine, Command, Focus, Selected},
     domain::comments,
 };
 
 /// The narrowest and widest the panel is drawn, screen width allowing.
 const WIDTH: (u16, u16) = (40, 72);
 
-/// What a key of the open panel does: something the core does, adding a comment, which takes the
-/// frontend's clock, or a motion, which only the frontend knows how far goes.
+/// What a key of the open panel does: something the core does, a command the panel acts on,
+/// adding a comment, which takes the frontend's clock, or a motion, which only the frontend knows
+/// how far goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PanelKey {
     /// Gives the core this input.
     Input(AttachmentsInput),
+    /// Gives the core this command, which the panel takes before the main keymap's: `]`/`[`
+    /// nest checklist items there, while elsewhere they nudge the start date (D-82).
+    Command(Command),
     /// Adds a comment stamped now.
     AddComment,
     /// Scrolls through what is selected, or selects another.
@@ -118,6 +122,14 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
         PanelKey::AddComment,
     ),
     (
+        (KeyModifiers::NONE, KeyCode::Char(']')),
+        PanelKey::Command(Command::Indent),
+    ),
+    (
+        (KeyModifiers::NONE, KeyCode::Char('[')),
+        PanelKey::Command(Command::Outdent),
+    ),
+    (
         (KeyModifiers::NONE, KeyCode::Char('j')),
         PanelKey::Scroll(Scroll::Lines(1)),
     ),
@@ -169,7 +181,8 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
 /// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
-/// `a` adds a comment, and the motion keys scroll or select. Only key presses count.
+/// `a` adds a comment, `]` and `[` indent and outdent the selected checklist item, and the motion
+/// keys scroll or select. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()
@@ -618,9 +631,9 @@ mod tests {
         Event::Key(KeyEvent::new(code, modifiers))
     }
 
-    // FR-ATT-02, FR-ATT-03, FR-ATT-04
+    // FR-ATT-02, FR-ATT-03, FR-ATT-04, FR-CHK-03
     #[test]
-    fn escape_closes_e_and_enter_edit_d_deletes_a_adds_and_the_motion_keys_scroll() {
+    fn escape_closes_e_and_enter_edit_d_deletes_a_adds_brackets_nest_and_the_motion_keys_scroll() {
         let none = KeyModifiers::NONE;
         for (code, modifiers, key) in [
             (KeyCode::Esc, none, PanelKey::Input(AttachmentsInput::Close)),
@@ -645,6 +658,12 @@ mod tests {
                 PanelKey::Input(AttachmentsInput::Delete),
             ),
             (KeyCode::Char('a'), none, PanelKey::AddComment),
+            (KeyCode::Char(']'), none, PanelKey::Command(Command::Indent)),
+            (
+                KeyCode::Char('['),
+                none,
+                PanelKey::Command(Command::Outdent),
+            ),
             (KeyCode::Char('j'), none, PanelKey::Scroll(Scroll::Lines(1))),
             (KeyCode::Up, none, PanelKey::Scroll(Scroll::Lines(-1))),
             (

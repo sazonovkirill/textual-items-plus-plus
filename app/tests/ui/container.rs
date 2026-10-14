@@ -123,17 +123,6 @@ fn a_key_after_g_that_continues_nothing_cancels_it() {
     );
 }
 
-// FR-NAV-01, FR-VIEW-05
-#[test]
-fn section_motions_move_between_headings_and_to_the_section_of_a_task() {
-    // The Inbox has no sections, so the motions that go to one leave the focus where it is.
-    let mut harness = Harness::new(80, 24);
-    harness.type_text("j");
-    let coffee = focused(&harness);
-    harness.type_text("#}{");
-    assert_eq!(focused(&harness), coffee);
-}
-
 // FR-STORE-01, FR-VIEW-05
 #[test]
 fn a_file_opens_on_its_inbox_saved() {

@@ -62,6 +62,31 @@ fn question_mark_shows_the_keys_of_every_command_grouped_at_the_right() {
     assert_eq!(harness.screen(), before, "hidden again");
 }
 
+// FR-KEY-03, FR-DATE-06
+#[test]
+fn the_brackets_and_braces_are_listed_as_date_nudges() {
+    let mut harness = Harness::new(160, 200);
+    harness.type_text("?");
+    let lines = panel(&harness, 40);
+    let at = |line: &str| lines.iter().position(|listed| listed == line);
+    let items = at("│ Completing, Dates and Tags").expect("the dates group");
+    for line in [
+        "│  Start a Day Earlier                [",
+        "│  Start a Day Later                  ]",
+        "│  Due a Day Earlier                  {",
+        "│  Due a Day Later                    }",
+    ] {
+        assert!(
+            at(line).is_some_and(|line| line > items),
+            "{line}: {lines:#?}"
+        );
+    }
+    assert!(
+        !lines.iter().any(|line| line.contains("dent")),
+        "nothing indents outside the attachments panel: {lines:#?}"
+    );
+}
+
 // FR-KEY-03
 #[test]
 fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
@@ -329,6 +354,16 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
     assert!(
         lines.contains(&"│  Page Down               Ctrl+D, PgDn".to_owned()),
         "{lines:#?}"
+    );
+    for line in [
+        "│  Indent                             ]",
+        "│  Outdent                            [",
+    ] {
+        assert!(lines.contains(&line.to_owned()), "{line}: {lines:#?}");
+    }
+    assert!(
+        !lines.iter().any(|line| line.contains("a Day")),
+        "the brackets nest checklist items here: {lines:#?}"
     );
     assert!(!lines.contains(&"│ Text".to_owned()), "{lines:#?}");
     let rows = harness.rows();

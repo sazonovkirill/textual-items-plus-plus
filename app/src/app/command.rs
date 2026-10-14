@@ -70,6 +70,12 @@ pub enum Command {
     SetDate(DateKind),
     /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
     StartToday,
+    /// Move the selected items' date a day earlier, a missing one to yesterday (FR-DATE-06,
+    /// FR-OPS-06).
+    DayEarlier(DateKind),
+    /// Move the selected items' date a day later, a missing one to tomorrow (FR-DATE-06,
+    /// FR-OPS-06).
+    DayLater(DateKind),
     /// Move the selected items to the Trash, or in the Trash delete them for good (FR-OPS-05,
     /// FR-VIEW-04, OQ-19).
     Delete,
@@ -527,6 +533,26 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::DayEarlier(DateKind::Start),
+        title: "Start a Day Earlier",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::DayLater(DateKind::Start),
+        title: "Start a Day Later",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::DayEarlier(DateKind::Due),
+        title: "Due a Day Earlier",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::DayLater(DateKind::Due),
+        title: "Due a Day Later",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::Tags,
         title: "Tags",
         context: Context::Navigate,
@@ -808,13 +834,17 @@ mod tests {
         }
     }
 
-    // FR-DATE-02, FR-KEY-06
+    // FR-DATE-02, FR-DATE-06, FR-KEY-06
     #[test]
     fn the_date_commands_are_navigate_commands() {
         let dating = [
             Command::SetDate(DateKind::Start),
             Command::SetDate(DateKind::Due),
             Command::StartToday,
+            Command::DayEarlier(DateKind::Start),
+            Command::DayLater(DateKind::Start),
+            Command::DayEarlier(DateKind::Due),
+            Command::DayLater(DateKind::Due),
         ];
         for command in dating {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);

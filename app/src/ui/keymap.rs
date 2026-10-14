@@ -94,12 +94,10 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // The container shown, which no row of its own shows (D-40).
     (Command::RenameContainer, &["R"]),
     (Command::DeleteContainer, &["d c"]),
-    // `Alt` with a motion moves, and `]`/`[` nest and unnest checklist items, leaving
-    // taskpaper-terminal's `Tab`/`Shift+Tab` to move between panes (D-24, D-42, D-75, D-79).
+    // `Alt` with a motion moves, leaving taskpaper-terminal's `Tab`/`Shift+Tab` to move between
+    // panes; the attachments panel's own keys nest checklist items (D-24, D-42, D-79, D-82).
     (Command::Move(Direction::Up), &["alt+k", "alt+up"]),
     (Command::Move(Direction::Down), &["alt+j", "alt+down"]),
-    (Command::Indent, &["]"]),
-    (Command::Outdent, &["["]),
     // taskpaper-terminal's convert type and group keys; `S` for a section beside its `G`, which
     // groups in a new parent as a new project does here (D-47).
     (Command::Convert, &["m y"]),
@@ -122,6 +120,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::SetDate(DateKind::Start), &["m s"]),
     (Command::SetDate(DateKind::Due), &["m d"]),
     (Command::StartToday, &["m t"]),
+    // The owner's brackets nudge a date a day, as taskpaper-terminal's `[`/`]` nudge the start
+    // date: the plain ones the start date, the curly ones the due date (D-82).
+    (Command::DayEarlier(DateKind::Start), &["["]),
+    (Command::DayLater(DateKind::Start), &["]"]),
+    (Command::DayEarlier(DateKind::Due), &["{"]),
+    (Command::DayLater(DateKind::Due), &["}"]),
     // `m` and ta**g**, since `mt` sets the start date today; `g` and **f**ilter goes to a narrower
     // view of the place shown, `F` taking the filter off again (D-50).
     (Command::Tags, &["m g"]),
@@ -509,9 +513,23 @@ mod tests {
         }
     }
 
-    // FR-OPS-02, FR-OPS-03, FR-KEY-02
+    // FR-DATE-06, FR-KEY-02
     #[test]
-    fn alt_with_a_motion_moves_and_brackets_indent() {
+    fn brackets_nudge_the_start_date_and_braces_the_due_date() {
+        let mut keymap = Keymap::default();
+        for (key, command) in [
+            ('[', Command::DayEarlier(DateKind::Start)),
+            (']', Command::DayLater(DateKind::Start)),
+            ('{', Command::DayEarlier(DateKind::Due)),
+            ('}', Command::DayLater(DateKind::Due)),
+        ] {
+            assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
+        }
+    }
+
+    // FR-OPS-02, FR-KEY-02
+    #[test]
+    fn alt_with_a_motion_moves() {
         let mut keymap = Keymap::default();
         let alt = KeyModifiers::ALT;
         let moved = |direction| Some(Command::Move(direction));
@@ -520,8 +538,6 @@ mod tests {
             (press(KeyCode::Up, alt), moved(Direction::Up)),
             (press(KeyCode::Char('j'), alt), moved(Direction::Down)),
             (press(KeyCode::Down, alt), moved(Direction::Down)),
-            (char(']'), Some(Command::Indent)),
-            (char('['), Some(Command::Outdent)),
         ] {
             assert_eq!(keymap.press(&event), command, "{event:?}");
         }

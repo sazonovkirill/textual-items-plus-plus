@@ -337,6 +337,7 @@ impl Tui {
         } else if self.state.attachments().is_some() {
             match attachments::panel_input(event) {
                 Some(PanelKey::Input(input)) => Some(Message::Attachments(input)),
+                Some(PanelKey::Command(command)) => Some(Message::Command(command)),
                 Some(PanelKey::AddComment) => {
                     Some(Message::Attachments(AttachmentsInput::AddComment((self
                         .clock)(

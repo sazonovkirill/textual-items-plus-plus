@@ -81,6 +81,8 @@ impl KeyGroup {
             Command::ToggleCompleted
             | Command::SetDate(_)
             | Command::StartToday
+            | Command::DayEarlier(_)
+            | Command::DayLater(_)
             | Command::Tags => Self::Items,
             Command::Undo
             | Command::Redo

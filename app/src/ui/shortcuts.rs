@@ -22,8 +22,8 @@ use super::{
     picker, search, settings, text_keys,
 };
 use crate::app::{
-    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, SearchInput,
-    SettingsInput, TextEdit,
+    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, REGISTRY,
+    SearchInput, SettingsInput, TextEdit,
 };
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
@@ -70,6 +70,13 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
                     PanelKey::Input(AttachmentsInput::Delete) => "Delete",
                     // Edit is the only other input a key gives as it is.
                     PanelKey::Input(_) => "Edit",
+                    PanelKey::Command(command) => {
+                        REGISTRY
+                            .iter()
+                            .find(|entry| entry.command == command)
+                            .expect("the panel's commands are registered")
+                            .title
+                    }
                     PanelKey::AddComment => "Add Comment",
                     PanelKey::Scroll(Scroll::Lines(lines)) if lines < 0 => "Scroll Up",
                     PanelKey::Scroll(Scroll::Lines(_)) => "Scroll Down",
@@ -462,7 +469,7 @@ mod tests {
             headings(Window::Editing(Part::Comment(0))),
             [("Editing Comment", 2), ("Text", 16)]
         );
-        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 10)]);
+        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 12)]);
         assert_eq!(headings(Window::Settings), [("Settings", 6)]);
         assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 16)]);
     }

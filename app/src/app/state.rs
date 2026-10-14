@@ -418,6 +418,22 @@ impl State {
         }
     }
 
+    /// Moves the `kind` date of the selected items `days` days later, or earlier when negative,
+    /// a missing one counting from `today`, as one step to undo (D-82).
+    pub(super) fn nudge_date(&mut self, kind: DateKind, days: i8, today: Date) {
+        let items = self.described();
+        self.nudge_date_for(items, kind, days, today);
+    }
+
+    /// Moves the `kind` date of `items` as [`nudge_date`](Self::nudge_date) says; on areas alone
+    /// the status line says they have none (D-75).
+    fn nudge_date_for(&mut self, items: Vec<ItemId>, kind: DateKind, days: i8, today: Date) {
+        if !self.refuses_areas(&items, Notice::AreaUndated) {
+            let transaction = date_prompt::nudge(&self.document, items, kind, days, today);
+            self.change(transaction);
+        }
+    }
+
     /// Whether `items` are all areas, which have no tags or dates and are not completed, saying so
     /// with `notice` when they are (D-75, D-81).
     fn refuses_areas(&mut self, items: &[ItemId], notice: Notice) -> bool {
@@ -1086,6 +1102,12 @@ impl State {
             }
             (Command::StartToday, Some(Shown::Container(id))) => {
                 self.start_today_for(vec![id], today);
+            }
+            (Command::DayEarlier(kind), Some(Shown::Container(id))) => {
+                self.nudge_date_for(vec![id], kind, -1, today);
+            }
+            (Command::DayLater(kind), Some(Shown::Container(id))) => {
+                self.nudge_date_for(vec![id], kind, 1, today);
             }
             (Command::Tags, Some(Shown::Container(id))) => self.open_tags_for(vec![id]),
             (Command::OpenNote(_), Some(Shown::Container(id))) => {

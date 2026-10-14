@@ -173,7 +173,7 @@ Plans: @area
     );
 }
 
-// FR-OPS-03, FR-ORG-02, FR-ORG-06, D-75
+// FR-OPS-03, FR-ORG-02, FR-ORG-06, FR-DATE-06, D-75, D-82
 #[test]
 fn a_project_does_not_indent_or_outdent() {
     let (_dir, path, mut harness) = plans();
@@ -181,7 +181,7 @@ fn a_project_does_not_indent_or_outdent() {
     harness.type_text("][");
     assert_eq!(
         saved(&mut harness, &path),
-        PLANS,
-        "Kitchen stays beside Garden"
+        PLANS.replace("\tKitchen:", "\tKitchen: @start(2026-10-05)"),
+        "Kitchen stays beside Garden, the brackets nudging its start date from today and back"
     );
 }

@@ -190,6 +190,8 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         }
         Command::SetDate(kind) => state.open_date_prompt(kind, today),
         Command::StartToday => state.start_today(today),
+        Command::DayEarlier(kind) => state.nudge_date(kind, -1, today),
+        Command::DayLater(kind) => state.nudge_date(kind, 1, today),
         Command::Delete => state.delete(today),
         Command::Restore => state.restore_selected(),
         Command::EmptyTrash => state.empty_trash(emptying),
@@ -916,7 +918,28 @@ mod tests {
         Ok(())
     }
 
-    // FR-DATE-01, FR-DATE-05, FR-VIEW-10
+    // FR-DATE-06, FR-OPS-06
+    #[test]
+    fn nudging_moves_the_selections_dates_a_day_as_one_step() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        let (yesterday, tomorrow) = (date(2026, 10, 13), date(2026, 10, 15));
+        give(&mut state, Command::DayLater(DateKind::Due));
+        assert_eq!(dates(&state, "a"), (None, Some(tomorrow)));
+        assert_eq!(dates(&state, "b"), (None, None));
+        give(&mut state, Command::SelectAll);
+        give(&mut state, Command::DayEarlier(DateKind::Due));
+        assert_eq!(dates(&state, "a"), (None, Some(TODAY)));
+        assert_eq!(dates(&state, "b"), (None, Some(yesterday)));
+        give(&mut state, Command::DayEarlier(DateKind::Start));
+        assert_eq!(dates(&state, "a"), (Some(yesterday), Some(TODAY)));
+        assert_eq!(dates(&state, "b"), (Some(yesterday), Some(yesterday)));
+        give(&mut state, Command::Undo);
+        assert_eq!(dates(&state, "a"), (None, Some(TODAY)));
+        assert_eq!(dates(&state, "b"), (None, Some(yesterday)));
+        Ok(())
+    }
+
+    // FR-DATE-01, FR-DATE-05, FR-DATE-06, FR-VIEW-10
     #[test]
     fn the_sidebar_dates_its_focused_entry_but_no_area() -> Result<(), PlacementError> {
         let mut document = Document::new();
@@ -929,9 +952,14 @@ mod tests {
         };
         give(&mut state, Command::Sidebar);
         give(&mut state, Command::Focus(Focus::Last));
-        for command in [Command::StartToday, Command::SetDate(DateKind::Due)] {
+        for command in [
+            Command::StartToday,
+            Command::SetDate(DateKind::Due),
+            Command::DayLater(DateKind::Start),
+            Command::DayEarlier(DateKind::Due),
+        ] {
             give(&mut state, command);
-            assert_eq!(state.notice(), Some(&Notice::AreaUndated));
+            assert_eq!(state.notice(), Some(&Notice::AreaUndated), "{command:?}");
         }
         assert_eq!(state.date_prompt(), None);
         assert_eq!(dated(&state, home), Some((None, None)));
@@ -944,6 +972,12 @@ mod tests {
         assert_eq!(
             dated(&state, work),
             Some((Some(TODAY), Some(date(2026, 10, 15))))
+        );
+        give(&mut state, Command::DayLater(DateKind::Start));
+        give(&mut state, Command::DayEarlier(DateKind::Due));
+        assert_eq!(
+            dated(&state, work),
+            Some((Some(date(2026, 10, 15)), Some(TODAY)))
         );
         let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut empty, Command::Sidebar);
