@@ -582,6 +582,7 @@ impl Tui {
     /// it as panes open and close, and opening each attachments panel at half and at its top.
     fn update(&mut self, message: Message) {
         let (panes, current) = (self.state.panes().count(), self.state.current_pane());
+        let opened = self.state.opened_panels();
         let intent = Intent::of(&message);
         let effects = app::update(&mut self.state, message, self.today);
         self.animator.observe(intent, &self.state);
@@ -601,6 +602,11 @@ impl Tui {
             if pane.attachments().is_none() {
                 drawn.panel = PanelDrawn::default();
             }
+        }
+        if self.state.opened_panels() != opened
+            && let Some(drawn) = self.drawn.get_mut(self.state.current_pane())
+        {
+            drawn.panel = PanelDrawn::default();
         }
         self.theme = self.state.settings().theme.colors();
     }

@@ -168,7 +168,15 @@ impl State {
         if attached {
             self.pane.panel = Some(Panel::new(id, selected));
             self.in_panel = true;
+            self.opened_panels += 1;
         }
+    }
+
+    /// How many times a pane's panel has been opened or moved to an item, always on the pane
+    /// with the keys, which a frontend draws anew once it counts one more (D-105).
+    #[must_use]
+    pub fn opened_panels(&self) -> u64 {
+        self.opened_panels
     }
 
     /// Opens the panel of the pane with the keys on the checklist of the focused task, its first
@@ -1450,6 +1458,32 @@ mod tests {
         give(&mut state, Command::Cut);
         assert_eq!(panels(&state), [None, None], "b, cut, is gone");
         assert!(item(&state, b).is_none());
+        Ok(())
+    }
+
+    // FR-ATT-01
+    #[test]
+    fn only_opening_or_moving_a_panel_counts_as_opening_it() -> Result<(), PlacementError> {
+        let (mut state, _, _) = two_tasks()?;
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        assert_eq!(state.opened_panels(), 1);
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::FocusRight);
+        assert_eq!(
+            state.opened_panels(),
+            1,
+            "the keys leaving it and coming back"
+        );
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        assert_eq!(
+            state.opened_panels(),
+            1,
+            "which takes no command to open it"
+        );
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Focus(Focus::Next));
+        give(&mut state, Command::OpenComments(Whose::Focused));
+        assert_eq!(state.opened_panels(), 2, "moved to b");
         Ok(())
     }
 

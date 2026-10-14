@@ -80,6 +80,8 @@ pub struct State {
     /// Whether the attachments panel of the pane with the keys has them, rather than its list,
     /// while it is open (FR-ATT-01).
     pub(super) in_panel: bool,
+    /// How many times a pane's panel has been opened or moved to an item (D-105).
+    pub(super) opened_panels: u64,
     pub(super) sidebar: Sidebar,
     /// Whether the shortcuts panel shows (FR-KEY-03).
     pub(super) shortcuts: bool,
@@ -132,6 +134,7 @@ impl State {
             edit_dialog: None,
             editing: None,
             in_panel: false,
+            opened_panels: 0,
             sidebar,
             shortcuts: false,
             settings: Settings::default(),

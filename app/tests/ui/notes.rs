@@ -331,3 +331,23 @@ fn backslash_widens_the_panel_over_its_pane_beside_the_sidebar_and_back() {
     harness.type_text("\\");
     assert_eq!(corner(&harness), Some(60), "it opens at half again");
 }
+
+// FR-ATT-01, FR-PANE-02
+#[test]
+fn moving_a_full_panel_to_another_item_opens_it_at_half() {
+    let mut harness = Harness::new(100, 12);
+    let corner = |harness: &Harness| harness.rows()[0].chars().position(|c| c == '┌');
+    harness.type_text("\\\\");
+    assert_eq!(corner(&harness), Some(0), "full");
+    harness.type_text("g1j\\");
+    assert_eq!(corner(&harness), Some(50), "on the next item, at half");
+    harness.type_text("\\g1j");
+    harness.ctrl('p');
+    harness.type_text("open comments");
+    harness.key(KeyCode::Enter);
+    assert_eq!(corner(&harness), Some(50), "from the palette too");
+    harness.type_text("\\g1");
+    assert_eq!(corner(&harness), Some(0), "the keys leaving keep it full");
+    harness.key(KeyCode::Tab);
+    assert_eq!(corner(&harness), Some(0), "and coming back");
+}
