@@ -82,6 +82,7 @@ impl KeyGroup {
             Command::ToggleCompleted
             | Command::SetDate(_)
             | Command::StartToday
+            | Command::ToggleLater
             | Command::DayEarlier(_)
             | Command::DayLater(_)
             | Command::Tags => Self::Items,

@@ -84,6 +84,13 @@ impl ItemKind {
         self != Self::Area
     }
 
+    /// Whether an item of this kind can be marked Later: a project or a task, not an area or a
+    /// section (D-89).
+    #[must_use]
+    pub fn goes_later(self) -> bool {
+        matches!(self, Self::Project | Self::Task)
+    }
+
     /// Whether an item of this kind may sit in an item of kind `parent`, or at the top level when
     /// `parent` is `None`. The Inbox sits nowhere: a document has exactly one, of its own.
     #[must_use]
@@ -123,6 +130,9 @@ pub struct Item {
     pub completed: Option<Completion>,
     /// The day it was moved to the Trash (OQ-19).
     pub deleted: Option<Date>,
+    /// Whether it is marked Later, as Things 3's Someday. What the app goes by is
+    /// [`is_later`](Item::is_later).
+    pub later: bool,
     /// The user's tags, and any other tag the model does not interpret, in their order.
     pub tags: Vec<Tag>,
 }
@@ -141,6 +151,7 @@ impl Item {
             due: None,
             completed: None,
             deleted: None,
+            later: false,
             tags: Vec::new(),
         }
     }
@@ -172,6 +183,13 @@ impl Item {
         self.completed.filter(|_| self.kind != ItemKind::Area)
     }
 
+    /// Whether the app takes it as Later: only a project or a task is, though a file may mark
+    /// another kind so (D-89).
+    #[must_use]
+    pub fn is_later(&self) -> bool {
+        self.later && self.kind.goes_later()
+    }
+
     /// Whether it is overdue on `today`: due before it and not completed (FR-DATE-04).
     #[must_use]
     pub fn overdue(&self, today: Date) -> bool {
@@ -200,7 +218,7 @@ pub struct Tag {
 /// The tag names the app writes itself, and those TaskPaper reads as plain text, which no tag of
 /// the user's takes (FR-STORE-10, OQ-11).
 const RESERVED: &[&str] = &[
-    "start", "due", "done", "deleted", "hidden", "area", "section", "id", "text", "type",
+    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "id", "text", "type",
 ];
 
 impl Tag {
@@ -429,8 +447,23 @@ mod tests {
         assert_eq!(tag_name("  deep   work "), Some("deep-work".to_owned()));
         assert_eq!(tag_name("Home"), Some("Home".to_owned()));
         assert_eq!(tag_name("été.2"), Some("été.2".to_owned()));
-        for refused in ["", "   ", "a/b", "a:b", "@home", "done", "area", "type"] {
+        for refused in [
+            "", "   ", "a/b", "a:b", "@home", "done", "area", "type", "later",
+        ] {
             assert_eq!(tag_name(refused), None, "{refused:?}");
+        }
+    }
+
+    // FR-ORG-11
+    #[test]
+    fn only_a_project_or_a_task_is_later() {
+        for kind in [Inbox, Area, Project, Section, Task, ChecklistItem] {
+            let mut item = Item::new(kind, "x");
+            assert!(!item.is_later());
+            item.later = true;
+            let goes = matches!(kind, Project | Task);
+            assert_eq!(kind.goes_later(), goes, "{kind:?}");
+            assert_eq!(item.is_later(), goes, "{kind:?}");
         }
     }
 

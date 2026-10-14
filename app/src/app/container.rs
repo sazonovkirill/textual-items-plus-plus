@@ -32,7 +32,8 @@ impl Row {
 /// The rows `container` shows, in order: its tasks outside any section, then each of its
 /// sections as a heading with the section's tasks below it, then its child projects, each group
 /// in file order whatever order the file mixes them in (FR-VIEW-05, FR-ORG-08). Within each group
-/// completed items come after the others, and are left out unless `show_completed` (FR-VIEW-11).
+/// Later items come after the open ones, and completed items after both, left out unless
+/// `show_completed` (FR-VIEW-11, D-89).
 /// The Inbox and a section hold only tasks, and the Inbox leaves out its scheduled ones
 /// (FR-VIEW-01). Content kept as read, items in the Trash and the
 /// contents of a completed item are not shown (FR-ORG-09); an item that is not a container, or
@@ -189,9 +190,10 @@ impl<'a> Group<'a> {
     }
 
     /// The children of `parent` of kind `kind` that are not in the Trash or scheduled out of the
-    /// Inbox, the uncompleted ones first and then, if shown, the completed ones, each in file order.
+    /// Inbox: the open ones, then the Later ones, then, if shown, the completed ones, each in file
+    /// order (D-89).
     fn shown(self, parent: ItemId, kind: ItemKind) -> impl Iterator<Item = ItemId> + 'a {
-        let children = |completed: bool| {
+        let children = move |stage: Stage| {
             self.document
                 .children(parent)
                 .iter()
@@ -203,13 +205,37 @@ impl<'a> Group<'a> {
                         .is_some_and(|item| {
                             item.kind == kind
                                 && item.deleted.is_none()
-                                && item.completion().is_some() == completed
+                                && Stage::of(item) == stage
                                 && !scheduled_out_of_inbox(self.document, parent, item)
                         })
                 })
         };
-        let completed = self.show_completed.then(|| children(true));
-        children(false).chain(completed.into_iter().flatten())
+        let completed = self.show_completed.then(|| children(Stage::Completed));
+        children(Stage::Open)
+            .chain(children(Stage::Later))
+            .chain(completed.into_iter().flatten())
+    }
+}
+
+/// Where an item comes among its siblings in a group: open, Later, or completed, in this order
+/// (FR-VIEW-11, D-89).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Stage {
+    Open,
+    Later,
+    Completed,
+}
+
+impl Stage {
+    /// The stage `item` is at; a completed item is completed whether or not it is Later.
+    pub(super) fn of(item: &Item) -> Self {
+        if item.completion().is_some() {
+            Self::Completed
+        } else if item.is_later() {
+            Self::Later
+        } else {
+            Self::Open
+        }
     }
 }
 
@@ -436,6 +462,59 @@ mod tests {
                 Row::Project(child),
                 Row::Project(done_project),
             ]
+        );
+        Ok(())
+    }
+
+    // FR-ORG-11, FR-VIEW-11
+    #[test]
+    fn later_items_come_after_the_open_ones_and_before_the_completed() -> Result<(), PlacementError>
+    {
+        let mut document = Document::new();
+        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let later_task = add(&mut document, area, Task);
+        let done_later = add(&mut document, area, Task);
+        let task = add(&mut document, area, Task);
+        let later_section = add(&mut document, area, Section);
+        let section = add(&mut document, area, Section);
+        let later_project = add(&mut document, area, Project);
+        let project = add(&mut document, area, Project);
+        let inbox = document.inbox();
+        let later_in_inbox = add(&mut document, inbox, Task);
+        let in_inbox = add(&mut document, inbox, Task);
+        for id in [
+            later_task,
+            done_later,
+            later_section,
+            later_project,
+            later_in_inbox,
+        ] {
+            let mut item = document
+                .node(id)
+                .and_then(Node::item)
+                .cloned()
+                .expect("an item");
+            item.later = true;
+            document.set(id, item)?;
+        }
+        complete(&mut document, done_later);
+        let loose = |id| Row::Task { id, section: None };
+        assert_eq!(
+            rows(&document, area, true),
+            [
+                loose(task),
+                loose(later_task),
+                loose(done_later),
+                Row::Section(later_section),
+                Row::Section(section),
+                Row::Project(project),
+                Row::Project(later_project),
+            ],
+            "a section is never Later, so it keeps its place"
+        );
+        assert_eq!(
+            rows(&document, inbox, false),
+            [loose(in_inbox), loose(later_in_inbox)]
         );
         Ok(())
     }

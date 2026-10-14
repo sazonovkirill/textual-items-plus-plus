@@ -17,6 +17,7 @@ mod editing;
 mod focus;
 mod go_to_symbol;
 mod history;
+mod later;
 mod layout;
 mod logbook;
 mod move_to;

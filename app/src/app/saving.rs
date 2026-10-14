@@ -100,6 +100,8 @@ pub enum Notice {
     AreaUntagged,
     /// Completing was asked for on an area, which is not completed (FR-ORG-09, D-81).
     AreaUncompleted,
+    /// Later was asked for on areas or sections, which are never Later (FR-ORG-11, D-89).
+    NotLater,
     /// Typing `@` at the start of a word of a title was refused: the word would read back as a
     /// tag, and tags go on from the tag picker (FR-TAG-02).
     TagInTitle,
@@ -121,6 +123,7 @@ impl Notice {
                 | Self::AreaUndated
                 | Self::AreaUntagged
                 | Self::AreaUncompleted
+                | Self::NotLater
         )
     }
 }

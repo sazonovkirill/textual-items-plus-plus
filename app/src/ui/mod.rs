@@ -965,9 +965,10 @@ fn stop_icon(stop: Stop) -> Icon {
 }
 
 /// The color of the icon of `stop` in the Navigator and the sidebar: the Inbox's and each view's
-/// own, or a place's kind's (D-78).
+/// own, or a place's kind's, dimmed for a Later project (D-78, D-89).
 fn stop_icon_color(theme: &Theme, stop: Stop) -> Color {
     match stop {
+        Stop::Place(place) if place.later => theme.dim_text,
         Stop::Place(place) if place.kind == ItemKind::Inbox => theme.inbox_icon,
         Stop::Place(place) => theme.kind(place.kind),
         Stop::View(View::Today) => theme.today_icon,
@@ -980,10 +981,12 @@ fn stop_icon_color(theme: &Theme, stop: Stop) -> Color {
 }
 
 /// The color of the title of `stop` in the Navigator and the sidebar: an area's kind's, which
-/// heads what it holds, and the text color for the rest (D-78).
+/// heads what it holds, dimmed for a Later project, and the text color for the rest (D-78,
+/// D-89).
 fn stop_title_color(theme: &Theme, stop: Stop) -> Color {
     match stop {
         Stop::Place(place) if place.kind == ItemKind::Area => theme.headers,
+        Stop::Place(place) if place.later => theme.dim_text,
         _ => theme.text,
     }
 }

@@ -117,6 +117,7 @@ fn kept(state: &State) -> String {
         Notice::AreaUndated => "an area has no start or due date".to_owned(),
         Notice::AreaUntagged => "an area has no tags".to_owned(),
         Notice::AreaUncompleted => "an area can't be completed".to_owned(),
+        Notice::NotLater => "only a task or a project can be Later".to_owned(),
         Notice::Settings(problem) => format!("config.toml: {problem}"),
         Notice::NoWeather => "no weather in summer".to_owned(),
         Notice::TagInTitle => format!(

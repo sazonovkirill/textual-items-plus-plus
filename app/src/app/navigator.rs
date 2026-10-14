@@ -48,6 +48,8 @@ pub struct Place {
     pub depth: usize,
     /// How many tasks not completed it holds, at any depth.
     pub open_tasks: usize,
+    /// Whether it is a project marked Later (D-89).
+    pub later: bool,
 }
 
 /// The Navigator over `document`, focused on the entry of what the pane shows: a view's own, or
@@ -102,12 +104,13 @@ pub(super) fn stops(document: &Document) -> Vec<Candidate<Stop>> {
 }
 
 /// Every place, in the order of the tree: the Inbox, then each area and project at the top level
-/// in file order, each followed by the projects inside it. Each matches by its title and is told
-/// apart by the titles above it. Items in the Trash and completed ones are left out with what
-/// they hold, as Things 3 takes completed projects out of its sidebar (FR-ORG-09).
+/// in file order, Later projects last, each followed by the projects inside it, Later ones last
+/// (D-89). Each matches by its title and is told apart by the titles above it. Items in the Trash
+/// and completed ones are left out with what they hold, as Things 3 takes completed projects out
+/// of its sidebar (FR-ORG-09).
 pub(super) fn places(document: &Document) -> Vec<Candidate<Place>> {
     let mut places = Vec::new();
-    let tops = std::iter::once(document.inbox()).chain(document.top_level().iter().copied());
+    let tops = std::iter::once(document.inbox()).chain(later_last(document, document.top_level()));
     for id in tops {
         // Only an area or a project sits at the top level beside the Inbox (FR-ORG-01).
         if let Some(item) = shown(document, id) {
@@ -134,13 +137,14 @@ fn list<'a>(
             kind: item.kind,
             depth: above.len(),
             open_tasks: 0,
+            later: item.is_later(),
         },
         text: item.title.clone(),
         detail: above.join(" › "),
     });
     above.push(&item.title);
     let mut open = 0;
-    for &child in document.children(id) {
+    for child in later_last(document, document.children(id)) {
         let held = match shown(document, child) {
             Some(inside) if inside.kind == ItemKind::Project => {
                 list(document, child, inside, above, places)
@@ -154,6 +158,18 @@ fn list<'a>(
         place.value.open_tasks = open;
     }
     open
+}
+
+/// `ids` in their order, but those marked Later after the others (D-89).
+fn later_last(document: &Document, ids: &[ItemId]) -> impl Iterator<Item = ItemId> + use<> {
+    let later = |id| {
+        document
+            .node(id)
+            .and_then(Node::item)
+            .is_some_and(Item::is_later)
+    };
+    let (open, later): (Vec<ItemId>, Vec<ItemId>) = ids.iter().partition(|&&id| !later(id));
+    open.into_iter().chain(later)
 }
 
 /// How many tasks not completed `child` of `parent` is or holds, at any depth, leaving out the
@@ -233,6 +249,7 @@ mod tests {
             kind,
             depth,
             open_tasks: 0,
+            later: false,
         };
         assert_eq!(
             listed(&document),
@@ -341,6 +358,7 @@ mod tests {
                 kind,
                 depth: 0,
                 open_tasks: 0,
+                later: false,
             })
         };
         let mut expected = vec![("Inbox".to_owned(), place(document.inbox(), ItemKind::Inbox))];

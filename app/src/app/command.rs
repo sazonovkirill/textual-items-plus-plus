@@ -73,6 +73,9 @@ pub enum Command {
     SetDate(DateKind),
     /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
     StartToday,
+    /// Mark the selected tasks and projects Later, or take them out of Later when all are
+    /// (FR-ORG-11, FR-OPS-06).
+    ToggleLater,
     /// Move the selected items' date a day earlier, a missing one to yesterday (FR-DATE-06,
     /// FR-OPS-06).
     DayEarlier(DateKind),
@@ -538,6 +541,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::StartToday,
         title: "Start Today",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ToggleLater,
+        title: "Toggle Later",
         context: Context::Navigate,
     },
     Entry {

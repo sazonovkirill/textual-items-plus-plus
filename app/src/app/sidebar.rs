@@ -10,7 +10,7 @@ use super::{
     navigator::{self, Stop},
     view::Shown,
 };
-use crate::domain::{Destination, Document, ItemId, ItemKind, Node, Transaction};
+use crate::domain::{Destination, Document, Item, ItemId, ItemKind, Node, Transaction};
 
 /// Whether the sidebar shows and has the keys, and the entry it focuses.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -246,13 +246,23 @@ pub(super) fn entries(document: &Document) -> Vec<Stop> {
 
 /// The transaction that moves `id` one step `direction` among its siblings in the tree, past the
 /// next entry of its kind listed beside it, since the sidebar lists the projects in no area apart
-/// from the areas; an empty one when it is already at that end.
+/// from the areas, and Later projects after the others (D-89); an empty one when it is already at
+/// that end.
 pub(super) fn shift(document: &Document, id: ItemId, direction: Direction) -> Transaction {
     let Some((siblings, index)) = siblings(document, id) else {
         return Transaction::default();
     };
-    let alike =
-        |other: ItemId| listed(document, other) && kind(document, other) == kind(document, id);
+    let later = |id| {
+        document
+            .node(id)
+            .and_then(Node::item)
+            .is_some_and(Item::is_later)
+    };
+    let alike = |other: ItemId| {
+        listed(document, other)
+            && kind(document, other) == kind(document, id)
+            && later(other) == later(id)
+    };
     let destination = match direction {
         Direction::Up => siblings
             .get(..index)
@@ -472,6 +482,25 @@ mod tests {
                 "Inbox", "Solo", "Work", "  Site", "    Blog", "  Docs", "Home"
             ]
         );
+    }
+
+    // FR-VIEW-10, FR-ORG-11
+    #[test]
+    fn later_projects_are_listed_and_moved_after_the_others() -> Result<(), PlacementError> {
+        let mut document = document();
+        let site = find(&document, "Site");
+        let later = document.node(site).and_then(Node::item).cloned();
+        let later = later.map(|it| Item { later: true, ..it });
+        document.set(site, later.ok_or(PlacementError::NoSuchNode(site))?)?;
+        let order = [
+            "Inbox", "Solo", "Work", "  Docs", "  Site", "    Blog", "Home",
+        ];
+        assert_eq!(tree(&document), order);
+        let docs = find(&document, "Docs");
+        apply(&mut document, |d| shift(d, docs, Direction::Up))?;
+        apply(&mut document, |d| shift(d, site, Direction::Down))?;
+        assert_eq!(tree(&document), order, "neither passes the other");
+        Ok(())
     }
 
     // FR-VIEW-10, FR-ORG-06

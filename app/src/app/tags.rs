@@ -387,7 +387,7 @@ mod tests {
         add(&mut document, Some(launch), Task, "ship", &["deep"])?;
         let done = Item {
             completed: Some(Completion::On(date(2026, 10, 1))),
-            tags: vec![Tag::plain("later")],
+            tags: vec![Tag::plain("soon")],
             ..Item::new(Task, "done")
         };
         document.push(Some(launch), Node::Item(done))?;
@@ -443,9 +443,9 @@ mod tests {
             [
                 entry("deep", TagMark::Off),
                 entry("home", TagMark::All),
-                entry("later", TagMark::Off),
                 entry("office", TagMark::Off),
                 entry("phone", TagMark::Off),
+                entry("soon", TagMark::Off),
                 entry("work", TagMark::Some),
             ]
         );
@@ -638,7 +638,7 @@ mod tests {
         );
         assert_eq!(shown(&["deep"]), ["site"], "a project holding a task kept");
         assert_eq!(
-            shown(&["later"]),
+            shown(&["soon"]),
             Vec::<String>::new(),
             "completed ones don't count"
         );

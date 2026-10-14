@@ -628,6 +628,7 @@ fn fields(read: &Line, kind: ItemKind) -> Item {
             ("done", Some(day)) => item.completed = Some(Completion::On(day)),
             ("done", None) if value.is_none() => item.completed = Some(Completion::Undated),
             ("deleted", Some(day)) => item.deleted = Some(day),
+            ("later", None) if value.is_none() => item.later = true,
             ("area", None) if value.is_none() && kind == ItemKind::Area => {}
             ("section", None) if value.is_none() && kind == ItemKind::Section => {}
             _ => item.tags.push(domain::Tag {
@@ -648,7 +649,7 @@ fn day(value: &str) -> Option<Date> {
 }
 
 /// The line of `item`: its title as a task or a project, then its kind tag, start and due dates,
-/// its other tags, and its completion and deletion (OQ-17, FR-STORE-07).
+/// its Later mark, its other tags, and its completion and deletion (OQ-17, FR-STORE-07, D-89).
 fn line_text(item: &Item) -> String {
     let mut text = match item.kind {
         ItemKind::Task | ItemKind::ChecklistItem => format!("- {}", item.title),
@@ -675,6 +676,9 @@ fn line_text(item: &Item) -> String {
     }
     if let Some(due) = item.due {
         add("due", Some(due.to_string()));
+    }
+    if item.later {
+        add("later", None);
     }
     for tag in &item.tags {
         add(&tag.name, tag.value.clone());
@@ -1397,13 +1401,13 @@ Secret @hidden
         );
     }
 
-    // FR-STORE-07, FR-STORE-10
+    // FR-STORE-07, FR-STORE-10, FR-ORG-11
     #[test]
     fn dates_and_states_are_read_from_their_tags_and_other_tags_are_kept() {
         let (document, _) = load(concat!(
             "Inbox:\n",
-            "\t- a @start(2026-10-01) @due(2026-10-02) @done(2026-10-03) @deleted(2026-10-04)\n",
-            "\t- b @done @start(next week) @due(2026-1-5) @deleted @home @area @section\n",
+            "\t- a @start(2026-10-01) @due(2026-10-02) @done(2026-10-03) @deleted(2026-10-04) @later\n",
+            "\t- b @done @start(next week) @due(2026-1-5) @deleted @home @area @section @later(x)\n",
             "A: @area(x)\n",
             "\tS: @section(y)\n",
             "\t- c @due(2026-10-01) @due(2026-10-09)\n",
@@ -1419,9 +1423,13 @@ Secret @hidden
                 Some(date(2026, 10, 4))
             )
         );
+        assert!(a.later);
         assert_eq!(a.tags, []);
         let b = item(&document, b);
-        assert_eq!((b.start, b.due, b.deleted), (None, None, None));
+        assert_eq!(
+            (b.start, b.due, b.deleted, b.later),
+            (None, None, None, false)
+        );
         assert_eq!(b.completed, Some(Completion::Undated));
         assert_eq!(
             b.tags,
@@ -1432,6 +1440,7 @@ Secret @hidden
                 tag("home", None),
                 tag("area", None),
                 tag("section", None),
+                tag("later", Some("x")),
             ]
         );
         let [project] = children(&document, None);
@@ -1607,18 +1616,19 @@ Secret @hidden
         );
     }
 
-    // FR-STORE-02, FR-STORE-07, FR-STORE-10
+    // FR-STORE-02, FR-STORE-07, FR-STORE-10, FR-ORG-11
     #[test]
     fn item_lines_carry_kind_dates_tags_and_states_in_order() {
         let mut item = Item::new(ItemKind::Section, "Launch");
         item.start = Some(date(2026, 10, 1));
         item.due = Some(date(2026, 10, 2));
+        item.later = true;
         item.tags = vec![tag("home", None), tag("note", Some("a (b) c"))];
         item.completed = Some(Completion::Undated);
         item.deleted = Some(date(2026, 10, 3));
         assert_eq!(
             line_text(&item),
-            r"Launch: @section @start(2026-10-01) @due(2026-10-02) @home @note(a \(b\) c) @done @deleted(2026-10-03)"
+            r"Launch: @section @start(2026-10-01) @due(2026-10-02) @later @home @note(a \(b\) c) @done @deleted(2026-10-03)"
         );
         item.kind = ItemKind::Area;
         item.completed = Some(Completion::On(date(2026, 10, 4)));

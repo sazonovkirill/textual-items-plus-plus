@@ -208,6 +208,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         }
         Command::SetDate(kind) => state.open_date_prompt(kind, today),
         Command::StartToday => state.start_today(today),
+        Command::ToggleLater => state.toggle_later(),
         Command::DayEarlier(kind) => state.nudge_date(kind, -1, today),
         Command::DayLater(kind) => state.nudge_date(kind, 1, today),
         Command::Delete => state.delete(today),
@@ -1038,6 +1039,34 @@ mod tests {
         give(&mut state, Command::Undo);
         assert_eq!(dates(&state, "a"), (None, Some(TODAY)));
         assert_eq!(dates(&state, "b"), (None, Some(yesterday)));
+        Ok(())
+    }
+
+    // FR-ORG-11, FR-VIEW-10
+    #[test]
+    fn toggle_later_marks_the_focused_project_or_task_but_no_area() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let task = document.push(Some(work), Node::Item(Item::new(ItemKind::Task, "t")))?;
+        let home = document.push(None, Node::Item(Item::new(ItemKind::Area, "Home")))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        let later = |state: &State, id| {
+            let item = state.document().node(id).and_then(Node::item);
+            item.is_some_and(|item| item.later)
+        };
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::ToggleLater);
+        assert_eq!(state.notice(), Some(&Notice::NotLater));
+        assert!(!later(&state, home));
+        give(&mut state, Command::Focus(Focus::Previous));
+        give(&mut state, Command::ToggleLater);
+        assert!(later(&state, work), "the sidebar marks its focused project");
+        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::NextPane);
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::ToggleLater);
+        assert!(later(&state, task), "the pane marks its focused task");
         Ok(())
     }
 

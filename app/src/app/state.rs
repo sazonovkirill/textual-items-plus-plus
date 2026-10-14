@@ -16,6 +16,7 @@ use super::{
     editing::{Editing, Refused},
     focus::{self, Focus},
     go_to_symbol::Symbol,
+    later,
     move_to::{Destination, MoveTo},
     moving,
     navigator::{self, Stop},
@@ -411,6 +412,23 @@ impl State {
                     self.change(transaction);
                 }
             }
+        }
+    }
+
+    /// Marks the selected tasks and projects Later, or takes them out of Later when all are, as
+    /// one step to undo (FR-ORG-11).
+    pub(super) fn toggle_later(&mut self) {
+        let items = self.described();
+        self.toggle_later_for(&items);
+    }
+
+    /// Toggles Later on `items` as [`toggle_later`](Self::toggle_later) says; when none of them
+    /// is a task or a project, the status line says only those are Later (D-89).
+    fn toggle_later_for(&mut self, items: &[ItemId]) {
+        if later::takes_any(&self.document, items) {
+            self.change(later::toggle(&self.document, items.iter().copied()));
+        } else if !items.is_empty() {
+            self.notify(Notice::NotLater);
         }
     }
 
@@ -1102,6 +1120,7 @@ impl State {
             (Command::StartToday, Some(Shown::Container(id))) => {
                 self.start_today_for(vec![id], today);
             }
+            (Command::ToggleLater, Some(Shown::Container(id))) => self.toggle_later_for(&[id]),
             (Command::DayEarlier(kind), Some(Shown::Container(id))) => {
                 self.nudge_date_for(vec![id], kind, -1, today);
             }
@@ -1511,6 +1530,7 @@ pub(super) fn sidebar_takes(command: Command) -> bool {
             | Command::MoveTo
             | Command::SetDate(_)
             | Command::StartToday
+            | Command::ToggleLater
             | Command::DayEarlier(_)
             | Command::DayLater(_)
             | Command::Tags

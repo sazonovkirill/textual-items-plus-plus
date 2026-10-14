@@ -2,7 +2,7 @@
 //! document (FR-OPS-02, FR-OPS-10). Hides how a place in the rows maps to a place in the
 //! document.
 
-use super::container::Row;
+use super::container::{Row, Stage};
 use crate::domain::{Destination, Document, Item, ItemId, ItemKind, Node, Transaction};
 
 /// Which way an item moves among its rows.
@@ -37,16 +37,15 @@ pub enum Refusal {
 /// The transaction that moves `id` one step `direction` among `rows`, the rows of the container
 /// shown; an empty one when it has nowhere to go. An item changes places with the next item
 /// shown in its own group, a task among the tasks listed under the same heading, a section among
-/// the sections and a child project among the child projects, completed and open ones apart
-/// (FR-VIEW-11). Only a task crosses the edge of its group: past the heading below it, it is the
+/// the sections and a child project among the child projects, open, Later and completed ones
+/// apart (FR-VIEW-11, D-89). Only a task crosses the edge of its group: past the heading below it, it is the
 /// first task of that section, and up from the top of a section it is the last task of the
 /// section above, or of those outside sections (FR-OPS-10).
 fn shift(document: &Document, rows: &[Row], id: ItemId, direction: Direction) -> Transaction {
     let Some((at, &row)) = rows.iter().enumerate().find(|(_, row)| row.id() == id) else {
         return Transaction::default();
     };
-    let completed =
-        |row: &Row| item(document, row.id()).is_some_and(|it| it.completion().is_some());
+    let stage = |row: &Row| item(document, row.id()).map(Stage::of);
     let peer = |other: &&Row| {
         let same_group = match (row, **other) {
             (
@@ -58,7 +57,7 @@ fn shift(document: &Document, rows: &[Row], id: ItemId, direction: Direction) ->
             (Row::Section(_), Row::Section(_)) | (Row::Project(_), Row::Project(_)) => true,
             _ => false,
         };
-        same_group && completed(other) == completed(&row)
+        same_group && stage(other) == stage(&row)
     };
     let (earlier, later) = rows.split_at(at);
     let later = later.get(1..).unwrap_or_default();
@@ -404,6 +403,39 @@ mod tests {
             shifted(&mut document, area, "x", Direction::Up, true)?,
             ["a", "x", "#S", "b", "c", "#U", "d", "e", "#T", "P", "Q"],
             "the completed task stays below the open ones"
+        );
+        Ok(())
+    }
+
+    // FR-OPS-10, FR-ORG-11
+    #[test]
+    fn later_and_open_items_move_apart() -> Result<(), PlacementError> {
+        let (mut document, area) = area();
+        for title in ["a", "P"] {
+            let id = find(&document, title);
+            let later = item(&document, id)
+                .cloned()
+                .map(|it| Item { later: true, ..it });
+            document.set(id, later.ok_or(PlacementError::NoSuchNode(id))?)?;
+        }
+        assert_eq!(
+            shown(&document, area, false),
+            ["b", "a", "#S", "c", "d", "#T", "#U", "e", "Q", "P"]
+        );
+        assert_eq!(
+            shifted(&mut document, area, "a", Direction::Up, false)?,
+            ["b", "a", "#S", "c", "d", "#T", "#U", "e", "Q", "P"],
+            "the Later task stays below the open ones"
+        );
+        assert_eq!(
+            shifted(&mut document, area, "Q", Direction::Down, false)?,
+            ["b", "a", "#S", "c", "d", "#T", "#U", "e", "Q", "P"],
+            "the open project stays above the Later one"
+        );
+        assert_eq!(
+            shifted(&mut document, area, "b", Direction::Down, false)?,
+            ["a", "#S", "b", "c", "d", "#T", "#U", "e", "Q", "P"],
+            "the open task passes the Later one into the section below"
         );
         Ok(())
     }

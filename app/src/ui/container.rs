@@ -1043,7 +1043,7 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// How `item`'s title is drawn: a task in the text color, struck through and faded once
-    /// completed; containers bold, each kind in its color (D-82).
+    /// completed; containers bold, each kind in its color (D-82); dimmed while Later (D-89).
     fn title_style(&self, item: &Item) -> Style {
         let theme = self.theme;
         let style = match item.kind {
@@ -1054,6 +1054,8 @@ impl<'a> ContainerPane<'a> {
         };
         if item.completion().is_some() {
             style.fg(theme.done).add_modifier(Modifier::CROSSED_OUT)
+        } else if item.is_later() {
+            style.fg(theme.dim_text)
         } else {
             style
         }

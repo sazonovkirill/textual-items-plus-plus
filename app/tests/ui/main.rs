@@ -14,6 +14,7 @@ mod descriptions;
 mod editing;
 mod go_to_symbol;
 mod inbox;
+mod later;
 mod logbook;
 mod moving;
 mod navigation;
