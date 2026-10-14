@@ -2,6 +2,8 @@
 //! [ui.md §7](../../../../specs/reference/taskpaper-terminal/specs/ui.md#7-icons-fr-ui-09-fr-ui-10)).
 //! Hides which glyph stands for what, so the two sets cannot drift.
 
+use crate::app::IconSet;
+
 /// Something the UI marks with an icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
@@ -55,16 +57,6 @@ pub enum Icon {
     Tag,
     /// A command, in the command palette.
     Command,
-}
-
-/// The glyphs the UI draws for its icons.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum IconSet {
-    /// Nerd Font glyphs, the default.
-    #[default]
-    Nerd,
-    /// Plain Unicode markers, for terminals without a Nerd Font.
-    Plain,
 }
 
 impl Icon {
@@ -182,12 +174,6 @@ mod tests {
                 assert_eq!(Span::raw(icon.glyph(set)).width(), 1, "{icon:?} {set:?}");
             }
         }
-    }
-
-    // FR-UI-04
-    #[test]
-    fn nerd_font_icons_are_the_default() {
-        assert_eq!(IconSet::default(), IconSet::Nerd);
     }
 
     // ui.md §7

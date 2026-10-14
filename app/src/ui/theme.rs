@@ -3,5 +3,7 @@
 mod colors;
 mod icons;
 
-pub use colors::{BuiltIn, Theme};
-pub use icons::{Icon, IconSet};
+pub use colors::Theme;
+pub use icons::Icon;
+
+pub use crate::app::{BuiltIn, IconSet};
