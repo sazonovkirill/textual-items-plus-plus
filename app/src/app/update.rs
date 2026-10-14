@@ -120,79 +120,12 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         return Vec::new();
     }
     match message {
-        Message::Command(Command::Quit) => return state.end(Ending::Quit),
-        Message::Command(Command::KeepMine) => return state.keep_mine(),
-        Message::Command(Command::TakeTheirs) => return state.take_theirs(),
-        Message::Command(Command::ShowDiff) => state.toggle_diff(),
         Message::Tick(now) => state.tick(now),
         Message::Terminate => return state.end(Ending::Terminate),
         Message::Disk(report) => return state.disk_report(report),
         Message::OnDisk(change) => return state.on_disk(change),
-        Message::Command(Command::Focus(motion)) => state.move_focus(motion),
-        Message::Command(Command::Extend(direction)) => state.extend_selection(direction),
-        Message::Command(Command::TogglePicked) => state.toggle_picked(),
-        Message::Command(Command::SelectAll) => state.select_all(),
-        Message::Command(Command::ClearSelection) => state.clear_selection(),
-        Message::Command(Command::ToggleCompleted) => state.toggle_completed(today),
-        Message::Command(Command::ShowCompleted) => state.toggle_show_completed(),
-        Message::Command(Command::Undo) => state.undo(),
-        Message::Command(Command::Redo) => state.redo(),
-        Message::Command(Command::Go(to)) => state.go(to),
-        Message::Command(Command::Navigator) => state.toggle_navigator(),
-        Message::Command(Command::Palette) => state.open_palette(),
-        Message::Command(Command::GoToSymbol) => state.open_go_to_symbol(),
-        Message::Command(Command::EditTitle) => state.edit_title(),
-        Message::Command(Command::NewLike(side)) => state.new_like(side),
-        Message::Command(Command::AddTask(end)) => state.add(ItemKind::Task, end),
-        Message::Command(Command::AddSection(end)) => state.add(ItemKind::Section, end),
-        Message::Command(Command::AddProject(end) | Command::AddSubproject(end)) => {
-            state.add(ItemKind::Project, end);
-        }
-        Message::Command(Command::SetDate(kind)) => state.open_date_prompt(kind, today),
-        Message::Command(Command::StartToday) => state.start_today(today),
-        Message::Command(Command::Delete) => state.delete(today),
-        Message::Command(Command::Restore) => state.restore_selected(),
-        Message::Command(Command::EmptyTrash) => state.empty_trash(emptying),
-        Message::Command(Command::MoveTo) => state.open_move_to(),
-        Message::Command(Command::Duplicate) => state.duplicate(),
-        Message::Command(Command::Copy) => return state.copy(),
-        Message::Command(Command::Cut) => return state.cut(),
-        Message::Command(Command::Paste(side)) => return vec![Effect::ReadClipboard(side)],
         Message::Paste(side, branches) => state.paste(side, &branches),
-        Message::Command(Command::RenameContainer) => state.rename_container(),
-        Message::Command(Command::DeleteContainer) => state.delete_container(today),
-        Message::Command(Command::Move(direction)) => state.move_item(direction),
-        Message::Command(Command::Indent) => state.indent(),
-        Message::Command(Command::Outdent) => state.outdent(),
-        Message::Command(Command::Convert) => state.convert(),
-        Message::Command(Command::GroupIntoSection) => state.group(ItemKind::Section),
-        Message::Command(Command::GroupIntoProject) => state.group(ItemKind::Project),
-        Message::Command(Command::EditDescription(whose)) => state.edit_description(whose),
-        Message::Command(Command::OpenNote(whose)) => {
-            state.open_attachments(whose, Selected::Note);
-        }
-        Message::Command(Command::OpenComments(whose)) => {
-            state.open_attachments(whose, Selected::Comment(0));
-        }
-        Message::Command(Command::OpenChecklist) => state.open_checklist(),
-        Message::Command(Command::Tags) => state.open_tags(),
-        Message::Command(Command::FilterTags) => state.open_tag_filter(),
-        Message::Command(Command::ClearTagFilter) => state.clear_tag_filter(),
-        Message::Command(Command::Sidebar) => state.toggle_sidebar(),
-        // The pane shows a child project as one row, with nothing to fold; the sidebar takes it.
-        Message::Command(Command::Collapse) => {}
-        Message::Command(Command::FocusLeft) => state.focus_left(),
-        Message::Command(Command::FocusRight) => state.focus_right(),
-        Message::Command(Command::FocusPane(number)) => state.focus_pane(number),
-        Message::Command(Command::OpenInNewPane) => state.open_in_new_pane(),
-        Message::Command(Command::ClosePane) => state.close_pane(),
-        Message::Command(Command::Narrow) => return vec![Effect::NarrowPane],
-        Message::Command(Command::Widen) => return vec![Effect::WidenPane],
         Message::PaneWidth(width) => state.set_pane_width(width),
-        Message::Command(Command::Shortcuts) => state.toggle_shortcuts(),
-        Message::Command(Command::ScrollShortcuts(direction)) => {
-            return vec![Effect::ScrollShortcuts(direction)];
-        }
         Message::Navigator(input) => state.navigator_input(input),
         Message::GoToSymbol(input) => state.go_to_symbol_input(input),
         Message::Palette(input) => {
@@ -205,9 +138,85 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Edit(input) => state.edit_input(input),
         Message::DatePrompt(input) => state.date_prompt_input(input),
         Message::Attachments(input) => state.attachments_input(input),
-        Message::Command(Command::Settings) => state.open_settings(),
         Message::Settings(input) => return state.settings_input(input),
         Message::SettingsFailed(problem) => state.settings_failed(problem),
+        Message::Command(command) => return run(state, command, today, emptying),
+    }
+    Vec::new()
+}
+
+/// Carries out `command` on `today` by the module that owns it; `emptying` says whether the Trash
+/// was asked to be emptied by the command before.
+fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<Effect> {
+    match command {
+        Command::Quit => return state.end(Ending::Quit),
+        Command::KeepMine => return state.keep_mine(),
+        Command::TakeTheirs => return state.take_theirs(),
+        Command::ShowDiff => state.toggle_diff(),
+        Command::Focus(motion) => state.move_focus(motion),
+        Command::Extend(direction) => state.extend_selection(direction),
+        Command::TogglePicked => state.toggle_picked(),
+        Command::SelectAll => state.select_all(),
+        Command::ClearSelection => state.clear_selection(),
+        Command::ToggleCompleted => state.toggle_completed(today),
+        Command::ShowCompleted => state.toggle_show_completed(),
+        Command::Undo => state.undo(),
+        Command::Redo => state.redo(),
+        Command::Go(to) => state.go(to),
+        Command::Navigator => state.toggle_navigator(),
+        Command::Palette => state.open_palette(),
+        Command::GoToSymbol => state.open_go_to_symbol(),
+        Command::EditTitle => state.edit_title(),
+        Command::NewLike(side) => state.new_like(side),
+        Command::AddTask(end) => state.add(ItemKind::Task, end),
+        Command::AddSection(end) => state.add(ItemKind::Section, end),
+        Command::AddProject(end) | Command::AddSubproject(end) => {
+            state.add(ItemKind::Project, end);
+        }
+        Command::SetDate(kind) => state.open_date_prompt(kind, today),
+        Command::StartToday => state.start_today(today),
+        Command::Delete => state.delete(today),
+        Command::Restore => state.restore_selected(),
+        Command::EmptyTrash => state.empty_trash(emptying),
+        Command::MoveTo => state.open_move_to(),
+        Command::Duplicate => state.duplicate(),
+        Command::Copy => return state.copy(),
+        Command::Cut => return state.cut(),
+        Command::Paste(side) => return vec![Effect::ReadClipboard(side)],
+        Command::RenameContainer => state.rename_container(),
+        Command::DeleteContainer => state.delete_container(today),
+        Command::Move(direction) => state.move_item(direction),
+        Command::Indent => state.indent(),
+        Command::Outdent => state.outdent(),
+        Command::Convert => state.convert(),
+        Command::GroupIntoSection => state.group(ItemKind::Section),
+        Command::GroupIntoProject => state.group(ItemKind::Project),
+        Command::EditDescription(whose) => state.edit_description(whose),
+        Command::OpenNote(whose) => {
+            state.open_attachments(whose, Selected::Note);
+        }
+        Command::OpenComments(whose) => {
+            state.open_attachments(whose, Selected::Comment(0));
+        }
+        Command::OpenChecklist => state.open_checklist(),
+        Command::Tags => state.open_tags(),
+        Command::FilterTags => state.open_tag_filter(),
+        Command::ClearTagFilter => state.clear_tag_filter(),
+        Command::Sidebar => state.toggle_sidebar(),
+        // The pane shows a child project as one row, with nothing to fold; the sidebar takes it.
+        Command::Collapse => {}
+        Command::FocusLeft => state.focus_left(),
+        Command::FocusRight => state.focus_right(),
+        Command::FocusPane(number) => state.focus_pane(number),
+        Command::OpenInNewPane => state.open_in_new_pane(),
+        Command::ClosePane => state.close_pane(),
+        Command::Narrow => return vec![Effect::NarrowPane],
+        Command::Widen => return vec![Effect::WidenPane],
+        Command::Shortcuts => state.toggle_shortcuts(),
+        Command::ScrollShortcuts(direction) => {
+            return vec![Effect::ScrollShortcuts(direction)];
+        }
+        Command::Settings => state.open_settings(),
     }
     Vec::new()
 }
