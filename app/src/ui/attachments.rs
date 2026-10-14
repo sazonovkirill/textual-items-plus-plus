@@ -47,6 +47,8 @@ pub(super) enum PanelKey {
     Command(Command),
     /// Adds a comment stamped now.
     AddComment,
+    /// Widens the panel over the whole of the panes, or narrows it back to half the screen.
+    Widen,
     /// Scrolls through what is selected, or selects another.
     Scroll(Scroll),
 }
@@ -125,6 +127,7 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
         (KeyModifiers::NONE, KeyCode::Char('a')),
         PanelKey::AddComment,
     ),
+    ((KeyModifiers::NONE, KeyCode::Char('\\')), PanelKey::Widen),
     (
         (KeyModifiers::NONE, KeyCode::Char(']')),
         PanelKey::Command(Command::Indent),
@@ -185,8 +188,8 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
 /// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
-/// `a` adds a comment, `]` and `[` indent and outdent the selected checklist item, and the motion
-/// keys scroll or select. Only key presses count.
+/// `a` adds a comment, `\\` widens or narrows the panel, `]` and `[` indent and outdent the
+/// selected checklist item, and the motion keys scroll or select. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()
@@ -217,13 +220,15 @@ pub(super) struct Scrolled {
 }
 
 /// The open panel on `today`, the local date, which says how far back a comment's time is
-/// written. Its state is how it is scrolled, which it keeps within the content, on what is
-/// selected and on the caret while something is edited.
+/// written, over half the screen or, when `full`, the whole of the panes. Its state is how it is
+/// scrolled, which it keeps within the content, on what is selected and on the caret while
+/// something is edited.
 pub(super) struct AttachmentsPanel<'a> {
     view: AttachmentsView<'a>,
     theme: &'a Theme,
     icons: IconSet,
     today: Date,
+    full: bool,
 }
 
 impl<'a> AttachmentsPanel<'a> {
@@ -239,11 +244,17 @@ impl<'a> AttachmentsPanel<'a> {
             theme,
             icons,
             today,
+            full: false,
         }
     }
 
-    /// Where the panel goes over `screen`, the screen above the status line: at its right, half
-    /// as wide within 40 to 72 columns, its whole height.
+    /// The panel over the whole of the panes when `full`, as its hint then says.
+    pub(super) fn full(self, full: bool) -> Self {
+        Self { full, ..self }
+    }
+
+    /// Where the panel goes over `screen`, the screen above the status line, while it is not
+    /// full: at its right, half as wide within 40 to 72 columns, its whole height.
     pub(super) fn area(screen: Rect) -> Rect {
         let width = (screen.width / 2).clamp(WIDTH.0, WIDTH.1).min(screen.width);
         Rect::new(
@@ -592,20 +603,21 @@ impl<'a> AttachmentsPanel<'a> {
             (Some(_), Selected::Note) => &["Enter new line", "Esc done"],
             (Some(_), Selected::Checklist(_)) => &["Enter next item", "Esc done"],
             (Some(_), Selected::Comment(_)) => &["Enter done", "Esc cancel"],
-            (None, Selected::Note) => &["e edit", "a comment", "Esc close"],
-            (None, Selected::Checklist(Some(_))) => &[
-                "e edit",
-                "o add",
-                "x check",
-                "d del",
-                "a comment",
-                "Esc close",
-            ],
-            (None, Selected::Checklist(None)) => &["o add", "a comment", "Esc close"],
-            (None, Selected::Comment(_)) => &["e edit", "d del", "a comment", "Esc close"],
+            (None, Selected::Note) => &["e edit", "a comment"],
+            (None, Selected::Checklist(Some(_))) => {
+                &["e edit", "o add", "x check", "d del", "a comment"]
+            }
+            (None, Selected::Checklist(None)) => &["o add", "a comment"],
+            (None, Selected::Comment(_)) => &["e edit", "d del", "a comment"],
+        };
+        let width_key = if self.full { "\\ half" } else { "\\ full" };
+        let rest: &[&str] = if self.view.editing.is_some() {
+            &[]
+        } else {
+            &[width_key, "Esc close"]
         };
         let mut lines: Vec<String> = Vec::new();
-        for key in keys {
+        for key in keys.iter().chain(rest) {
             match lines.last_mut() {
                 Some(line) if line.width() + " · ".width() + key.width() <= usize::from(width) => {
                     line.push_str(" · ");
@@ -658,14 +670,13 @@ fn drawable(text: &str) -> String {
 impl StatefulWidget for AttachmentsPanel<'_> {
     type State = Scrolled;
 
-    /// Draws the panel over the right side of `area`, its content from line `scrolled.top`, which
+    /// Draws the panel over `area`, its content from line `scrolled.top`, which
     /// it keeps within the content and on what is selected, scrolling a newly selected one into
     /// view from its start when it is taller than the panel, and while something is edited on the
     /// caret's line.
     fn render(self, area: Rect, buf: &mut Buffer, scrolled: &mut Scrolled) {
         let newly = scrolled.drawn.replace(self.view.selected) != Some(self.view.selected);
         let top = &mut scrolled.top;
-        let area = Self::area(area);
         let theme = self.theme;
         Clear.render(area, buf);
         let accent = Style::new().fg(theme.accent);
@@ -878,7 +889,7 @@ mod tests {
             drawn: Some(selected),
         };
         AttachmentsPanel::new(view.clone(), &theme, IconSet::Plain, TODAY).render(
-            area,
+            AttachmentsPanel::area(area),
             &mut buf,
             &mut scrolled,
         );
@@ -912,10 +923,10 @@ mod tests {
     #[test]
     fn a_note_shows_rendered_as_markdown_under_its_heading() {
         let note = "# Plan\n## Steps\n- **buy** milk\n  * see [shop](https://a.b)\n1. one\n> said\n```\n  code\n```\n\tindented";
-        let (buf, top, caret) = draw(note, None, (80, 16), 0);
+        let (buf, top, caret) = draw(note, None, (80, 17), 0);
         assert_eq!((top, caret), (0, None));
         assert!(
-            (0..40).all(|x| (0..16).all(|y| buf[(x, y)].symbol() == " ")),
+            (0..40).all(|x| (0..17).all(|y| buf[(x, y)].symbol() == " ")),
             "only the right half is drawn"
         );
         let panel: Vec<String> = rows(&buf)
@@ -939,7 +950,8 @@ mod tests {
                 "│ ❞ Comments                           │",
                 "│ No comments                          │",
                 "│                                      │",
-                "│ e edit · a comment · Esc close       │",
+                "│ e edit · a comment · \\ full          │",
+                "│ Esc close                            │",
                 "└──────────────────────────────────────┘",
             ]
         );
@@ -970,7 +982,7 @@ mod tests {
     // FR-ATT-01
     #[test]
     fn no_note_shows_dimmed() {
-        let (buf, ..) = draw("", None, (40, 6), 0);
+        let (buf, ..) = draw("", None, (40, 7), 0);
         assert_eq!(rows(&buf)[2], "│▌No note                              │");
         let theme = BuiltIn::default().colors();
         assert_eq!(buf[(2, 2)].fg, theme.dim_text);
@@ -983,7 +995,7 @@ mod tests {
             .map(|n| format!("line {n}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let (buf, top, _) = draw(&note, None, (40, 8), usize::MAX);
+        let (buf, top, _) = draw(&note, None, (40, 9), usize::MAX);
         assert_eq!(top, 10, "fourteen lines, four in view");
         assert_eq!(
             rows(&buf)[1..5].to_vec(),
@@ -1095,7 +1107,7 @@ mod tests {
         let area = Rect::new(0, 0, 40, 12);
         let mut buf = Buffer::empty(area);
         AttachmentsPanel::new(view, &theme, IconSet::Plain, TODAY).render(
-            area,
+            AttachmentsPanel::area(area),
             &mut buf,
             &mut Scrolled::default(),
         );
@@ -1132,12 +1144,20 @@ mod tests {
         };
         assert_eq!(
             hint(68),
-            ["e edit · o add · x check · d del · a comment · Esc close"]
+            ["e edit · o add · x check · d del · a comment · \\ full · Esc close"]
         );
         assert_eq!(
             hint(36),
-            ["e edit · o add · x check · d del", "a comment · Esc close"],
+            [
+                "e edit · o add · x check · d del",
+                "a comment · \\ full · Esc close"
+            ],
             "whole keys go to the next line"
+        );
+        assert_eq!(
+            panel.full(true).hint(68)[0].to_string(),
+            "e edit · o add · x check · d del · a comment · \\ half · Esc close",
+            "over the whole of the panes it narrows"
         );
     }
 
@@ -1175,7 +1195,7 @@ mod tests {
                 "│▌plain by hand                        │",
                 "│ Dec 30 2025 18:02 Called             │",
                 "│                                      │",
-                "│ e edit · d del · a comment           │",
+                "│ e edit · d del · a comment · \\ full  │",
                 "│ Esc close                            │",
                 "└──────────────────────────────────────┘",
             ]
@@ -1226,10 +1246,9 @@ mod tests {
         let lines = (1..=10).map(|n| format!("c{n}")).collect::<Vec<_>>();
         let comments: Vec<&str> = lines.iter().map(String::as_str).collect();
         let item = commented("", &comments);
-        // The comment's hint takes two lines.
         let (_, top, _) = draw_item(&item, Selected::Comment(9), None, (40, 9), 0);
         assert_eq!(top, 10, "the last comment is the last line in view");
-        let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 8), 10);
+        let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 9), 10);
         assert_eq!(top, 0);
         let note = (1..=10)
             .map(|n| format!("n{n}"))
@@ -1244,14 +1263,14 @@ mod tests {
             checklist: None,
             editing: None,
         };
-        let area = Rect::new(0, 0, 40, 8);
+        let area = Rect::new(0, 0, 40, 9);
         let mut buf = Buffer::empty(area);
         let mut scrolled = Scrolled {
             top: 10,
             drawn: Some(Selected::Comment(0)),
         };
         AttachmentsPanel::new(view(Selected::Note), &theme, IconSet::Plain, TODAY).render(
-            area,
+            AttachmentsPanel::area(area),
             &mut buf,
             &mut scrolled,
         );
@@ -1261,12 +1280,12 @@ mod tests {
         );
         scrolled.top = 5;
         AttachmentsPanel::new(view(Selected::Note), &theme, IconSet::Plain, TODAY).render(
-            area,
+            AttachmentsPanel::area(area),
             &mut buf,
             &mut scrolled,
         );
         assert_eq!(scrolled.top, 5, "scrolling through it stays");
-        let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 8), 20);
+        let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 9), 20);
         assert_eq!(top, 10, "in view");
         let panel =
             AttachmentsPanel::new(view(Selected::Comment(0)), &theme, IconSet::Plain, TODAY);
@@ -1320,7 +1339,7 @@ mod tests {
             drawn: Some(selected),
         };
         AttachmentsPanel::new(view.clone(), &theme, IconSet::Plain, TODAY).render(
-            area,
+            AttachmentsPanel::area(area),
             &mut buf,
             &mut scrolled,
         );
@@ -1352,7 +1371,7 @@ mod tests {
                 "│                                      │",
                 "│                                      │",
                 "│ e edit · o add · x check · d del     │",
-                "│ a comment · Esc close                │",
+                "│ a comment · \\ full · Esc close       │",
                 "└──────────────────────────────────────┘",
             ]
         );
@@ -1388,7 +1407,6 @@ mod tests {
     #[test]
     fn the_first_item_scrolls_into_view_with_the_heading_above_it() {
         let selected = Selected::Checklist(Some(ItemId::new(2)));
-        // The item's hint takes two lines.
         let (buf, top, _) = draw_checklist(selected, None, 8, 0);
         assert_eq!(top, 2, "the heading above it in view");
         assert_eq!(rows(&buf)[2], "│ ☑ Checklist                          │");
@@ -1446,7 +1464,7 @@ mod tests {
         };
         let panel = AttachmentsPanel::new(view, &theme, IconSet::Plain, TODAY);
         let (caret, narrow) = (panel.caret(area, 0), panel.caret(Rect::new(0, 0, 5, 60), 0));
-        panel.render(area, &mut buf, &mut scrolled);
+        panel.render(AttachmentsPanel::area(area), &mut buf, &mut scrolled);
         assert_eq!(
             rows(&buf)[5..9],
             [
@@ -1473,10 +1491,10 @@ mod tests {
             checklist: Some(Vec::new()),
             editing: None,
         };
-        let area = Rect::new(0, 0, 40, 12);
+        let area = Rect::new(0, 0, 40, 13);
         let mut buf = Buffer::empty(area);
         AttachmentsPanel::new(view.clone(), &theme, IconSet::Plain, TODAY).render(
-            area,
+            AttachmentsPanel::area(area),
             &mut buf,
             &mut Scrolled::default(),
         );

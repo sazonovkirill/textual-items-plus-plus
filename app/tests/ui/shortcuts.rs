@@ -377,6 +377,10 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
         "{lines:#?}"
     );
     assert!(
+        lines.contains(&"│  Full or Half Width                 \\".to_owned()),
+        "{lines:#?}"
+    );
+    assert!(
         lines.contains(&"│  Page Down               Ctrl+D, PgDn".to_owned()),
         "{lines:#?}"
     );

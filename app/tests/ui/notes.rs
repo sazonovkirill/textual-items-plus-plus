@@ -62,8 +62,11 @@ fn a_long_list_item_in_a_note_wraps_under_its_text() {
         ]
     );
     assert_eq!(
-        panel(&harness)[9],
-        "│ e edit · a comment · Esc close       │"
+        panel(&harness)[8..10],
+        [
+            "│ e edit · a comment · \\ full          │",
+            "│ Esc close                            │"
+        ]
     );
 }
 
@@ -166,14 +169,18 @@ fn a_long_note_scrolls() {
     harness.ctrl('d');
     assert_eq!(
         panel(&harness)[1],
-        "│▌line 8                               │",
+        "│▌line 8                               │"
+    );
+    harness.ctrl('d');
+    assert_eq!(
+        panel(&harness)[1],
+        "│▌line 9                               │",
         "a page down stops at the note's end"
     );
     harness.ctrl('d');
     assert_eq!(
-        panel(&harness)[1..8],
+        panel(&harness)[1..7],
         [
-            "│ end                                  │",
             "│                                      │",
             "│ \u{f0756} Checklist                          │",
             "│▌No checklist                         │",
@@ -185,7 +192,7 @@ fn a_long_note_scrolls() {
     );
     harness.type_text("gG");
     assert_eq!(
-        panel(&harness)[4..8],
+        panel(&harness)[3..7],
         [
             "│▌No checklist                         │",
             "│                                      │",
@@ -285,4 +292,36 @@ fn a_note_is_saved_as_guarded_lines_and_reads_back() {
             "│▌Steps:                               │",
         ]
     );
+}
+
+// FR-ATT-01, FR-ATT-02
+#[test]
+fn backslash_widens_the_panel_over_the_panes_beside_the_sidebar_and_back() {
+    let mut harness = Harness::new(100, 12);
+    let corner = |harness: &Harness| harness.rows()[0].chars().position(|c| c == '┌');
+    harness.ctrl('b');
+    harness.type_text("\\");
+    assert_eq!(corner(&harness), Some(50), "it opens over half the screen");
+    harness.type_text("\\");
+    assert_eq!(
+        corner(&harness),
+        Some(28),
+        "over the panes, beside the sidebar"
+    );
+    let rows = harness.rows();
+    assert!(rows[2].starts_with(" 󰖙 Today"), "the sidebar stays");
+    assert!(rows[9].contains("│ e edit · a comment · \\ half · Esc close  "));
+    harness.type_text("eA note as wide as the panel is now, past half the screen");
+    assert_eq!(
+        harness.tui.cursor(Rect::new(0, 0, 100, 12)),
+        Some(Position::new(86, 2)),
+        "the note wraps in the panel's width"
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("\\");
+    assert_eq!(corner(&harness), Some(50), "and back to half");
+    harness.type_text("\\");
+    harness.key(KeyCode::Esc);
+    harness.type_text("\\");
+    assert_eq!(corner(&harness), Some(50), "it opens at half again");
 }

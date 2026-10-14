@@ -109,6 +109,9 @@ pub struct Tui {
     first: usize,
     /// How the attachments panel is scrolled.
     panel: Scrolled,
+    /// Whether the attachments panel covers the whole of the panes rather than half the screen,
+    /// as `\\` toggles it while it is open; it opens at half.
+    panel_full: bool,
     /// Where the app was last drawn.
     area: Rect,
     quit: bool,
@@ -149,6 +152,7 @@ impl Tui {
             config: ConfigFile::new(None),
             first: 0,
             panel: Scrolled::default(),
+            panel_full: false,
             area: Rect::default(),
             quit: false,
             file: None,
@@ -360,6 +364,10 @@ impl Tui {
                         .clock)(
                     ))))
                 }
+                Some(PanelKey::Widen) => {
+                    self.panel_full = !self.panel_full;
+                    None
+                }
                 Some(PanelKey::Scroll(scroll)) => self
                     .panel_scroll(scroll)
                     .map(|motion| Message::Attachments(AttachmentsInput::Select(motion))),
@@ -421,8 +429,9 @@ impl Tui {
     fn panel_scroll(&mut self, scroll: Scroll) -> Option<Focus> {
         let view = self.state.attachments()?;
         let [panes, ..] = self.layout(self.area);
-        let area = AttachmentsPanel::area(self.strip(panes));
-        let shown = AttachmentsPanel::new(view, &self.theme, self.icons(), self.today);
+        let area = self.panel_area(panes);
+        let shown = AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
+            .full(self.panel_full);
         let selected = shown.selected_lines(area);
         let (top, motion) = scroll.from(self.panel.top, shown.page(area), selected);
         self.panel.top = top;
@@ -496,9 +505,10 @@ impl Tui {
     }
 
     /// Gives `message` to the core and carries out its effects, keeping each pane's scroll with
-    /// it as panes open and close.
+    /// it as panes open and close, and opening the attachments panel at half.
     fn update(&mut self, message: Message) {
         let (panes, current) = (self.state.panes().count(), self.state.current_pane());
+        let panel_open = self.state.attachments().is_some();
         let intent = Intent::of(&message);
         let effects = app::update(&mut self.state, message, self.today);
         self.animator.observe(intent, &self.state);
@@ -506,6 +516,7 @@ impl Tui {
         for effect in effects {
             self.run(effect);
         }
+        self.panel_full &= panel_open;
         let after = self.state.panes().count();
         if after > panes {
             let opened = self.state.current_pane().min(self.tops.len());
@@ -585,7 +596,8 @@ impl Tui {
         let [panes, prompt, _] = self.layout(area);
         if let Some(view) = self.state.attachments() {
             return AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
-                .caret(AttachmentsPanel::area(self.strip(panes)), self.panel.top);
+                .full(self.panel_full)
+                .caret(self.panel_area(panes), self.panel.top);
         }
         if let Some(view) = self.state.date_prompt() {
             return DatePromptPanel::new(&view, &self.theme).caret(prompt);
@@ -671,7 +683,20 @@ impl Tui {
     /// The columns the note being edited wraps in, as last drawn.
     fn note_columns(&self) -> usize {
         let [panes, ..] = self.layout(self.area);
-        AttachmentsPanel::columns(AttachmentsPanel::area(self.strip(panes)))
+        AttachmentsPanel::columns(self.panel_area(panes))
+    }
+
+    /// Where the attachments panel goes of `panes`, the area they share with the shortcuts
+    /// panel: over half the screen at the right of the panes' strip, or while it is full over
+    /// the whole of the panes beside the sidebar.
+    fn panel_area(&self, panes: Rect) -> Rect {
+        let strip = self.strip(panes);
+        if self.panel_full {
+            let [_, room] = split(strip, self.state.sidebar().is_some());
+            room
+        } else {
+            AttachmentsPanel::area(strip)
+        }
     }
 
     /// Carries out one effect of the core.
@@ -1170,11 +1195,12 @@ impl Widget for &mut Tui {
                 .render(panes, buf);
         }
         match self.state.attachments() {
-            Some(view) => AttachmentsPanel::new(view, &self.theme, icons, self.today).render(
-                self.strip(panes),
-                buf,
-                &mut self.panel,
-            ),
+            Some(view) => {
+                let area = self.panel_area(panes);
+                AttachmentsPanel::new(view, &self.theme, icons, self.today)
+                    .full(self.panel_full)
+                    .render(area, buf, &mut self.panel);
+            }
             None => self.panel = Scrolled::default(),
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
