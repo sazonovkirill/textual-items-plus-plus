@@ -46,9 +46,12 @@ pub enum Command {
     /// Add a section at this end of the container shown and edit its title (FR-EDIT-05,
     /// FR-ORG-06, D-40).
     AddSection(End),
-    /// Add a project at this end of the container shown and edit its title (FR-EDIT-05,
-    /// FR-ORG-06, D-40).
+    /// Add a project at this end of the container shown, or of the top level from the sidebar,
+    /// and edit its title (FR-EDIT-05, FR-ORG-06, D-40, D-45).
     AddProject(End),
+    /// Add a subproject at this end of the project shown, or of the project the sidebar focuses,
+    /// and edit its title (FR-EDIT-05, FR-ORG-06, D-45).
+    AddSubproject(End),
     /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
     EditDescription(Whose),
     /// Open the attachments panel on an item's note (FR-ATT-01, FR-ATT-02).
@@ -370,6 +373,16 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::AddProject(End::Top),
         title: "New Project at Top",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::AddSubproject(End::Bottom),
+        title: "New Subproject at Bottom",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::AddSubproject(End::Top),
+        title: "New Subproject at Top",
         context: Context::Navigate,
     },
     Entry {
@@ -788,9 +801,14 @@ mod tests {
         let beside = [Command::NewLike, Command::Paste]
             .into_iter()
             .flat_map(|new| [new(Side::Below), new(Side::Above)]);
-        let at_ends = [Command::AddTask, Command::AddSection, Command::AddProject]
-            .into_iter()
-            .flat_map(|add| [add(End::Bottom), add(End::Top)]);
+        let at_ends = [
+            Command::AddTask,
+            Command::AddSection,
+            Command::AddProject,
+            Command::AddSubproject,
+        ]
+        .into_iter()
+        .flat_map(|add| [add(End::Bottom), add(End::Top)]);
         let added = beside.chain(at_ends);
         let others = [
             Command::EditTitle,

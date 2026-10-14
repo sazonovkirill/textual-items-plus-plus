@@ -341,13 +341,13 @@ mod tests {
 
     use super::*;
     use crate::domain::ItemKind;
-    use crate::domain::ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
+    use crate::domain::ItemKind::{ChecklistItem, Inbox, Project, Section, Task};
 
     fn item(kind: ItemKind, title: &str) -> Node {
         Node::Item(Item::new(kind, title))
     }
 
-    /// An area holding a section with a task and kept text, and a project; the Inbox holds a
+    /// A project holding a section with a task and kept text, and another; the Inbox holds a
     /// task with a checklist item.
     struct Fixture {
         document: Document,
@@ -360,7 +360,7 @@ mod tests {
 
     fn fixture() -> Result<Fixture, PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, item(Area, "Work"))?;
+        let area = document.push(None, item(Project, "Work"))?;
         let section = document.push(Some(area), item(Section, "Soon"))?;
         let task = document.push(Some(section), item(Task, "Write"))?;
         document.push(Some(section), Node::Kept("kept".to_owned()))?;

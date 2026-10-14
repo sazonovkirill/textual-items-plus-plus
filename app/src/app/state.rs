@@ -945,23 +945,15 @@ impl State {
         };
         match (command, focused) {
             (Command::Focus(motion), _) => self.sidebar.move_focus(&entries, motion),
-            // The sidebar lists no tasks or sections, so `o` beside a view or the Inbox adds a
-            // project, and the task key adds an area (D-45).
+            // The sidebar lists only projects, so its adding keys add projects: beside the focused
+            // one, at either end of the top level, or in the focused one (owner, D-45).
             (Command::NewLike(side), _) => {
-                let area = |id| {
-                    self.document
-                        .node(id)
-                        .and_then(Node::item)
-                        .is_some_and(|item| item.kind == ItemKind::Area)
-                };
-                let kind = match focused {
-                    Some(Shown::Container(id)) if area(id) => ItemKind::Area,
-                    _ => ItemKind::Project,
-                };
-                self.sidebar_new(&entries, kind, side);
+                self.sidebar_add_at(sidebar::beside(&self.document, focused, side));
             }
-            (Command::AddTask(end), _) => self.sidebar_add(ItemKind::Area, end),
-            (Command::AddProject(end), _) => self.sidebar_add(ItemKind::Project, end),
+            (Command::AddProject(end), _) => self.sidebar_add(self.document.inbox(), end),
+            (Command::AddSubproject(end), Some(Shown::Container(id))) => {
+                self.sidebar_add(id, end);
+            }
             (Command::EditTitle, Some(shown)) => {
                 self.show(shown, None);
                 self.sidebar.focus(false);
@@ -1016,33 +1008,20 @@ impl State {
         true
     }
 
-    /// Adds an empty item of `kind` from the sidebar's focused entry among `entries`, on `side`
-    /// of it, focuses it and starts editing its title in the sidebar.
-    fn sidebar_new(&mut self, entries: &[Stop], kind: ItemKind, side: Side) {
-        let focused = self.sidebar.focused();
-        let place = sidebar::place(&self.document, entries, focused, kind, side)
-            .expect("the sidebar focuses one of its entries, beside which a project or area goes");
-        self.sidebar_add_at(kind, place);
+    /// Adds an empty project from the sidebar at `end` of the projects in `container`, the top
+    /// level for the Inbox, focuses it and starts editing its title in the sidebar (D-45).
+    fn sidebar_add(&mut self, container: ItemId, end: End) {
+        let place = adding::end_place(&self.document, container, ItemKind::Project, end)
+            .expect("a project goes in a project or at the top level");
+        self.sidebar_add_at(place);
     }
 
-    /// Adds an empty project or area, as `kind` says, at `end` of its kind where the sidebar's
-    /// focused entry is: in the area it focuses or that holds the project it focuses, else at
-    /// the top level, focuses it and starts editing its title in the sidebar (D-45).
-    fn sidebar_add(&mut self, kind: ItemKind, end: End) {
-        let container = match self.sidebar.focused() {
-            Some(Shown::Container(id)) => id,
-            _ => self.document.inbox(),
-        };
-        let place = adding::end_place(&self.document, container, kind, end)
-            .expect("a project or an area goes at the top level when nowhere nearer");
-        self.sidebar_add_at(kind, place);
-    }
-
-    /// Adds an empty item of `kind` at `place` from the sidebar, focuses it and starts editing
-    /// its title there.
-    fn sidebar_add_at(&mut self, kind: ItemKind, place: (Option<ItemId>, usize)) {
+    /// Adds an empty project at `place` from the sidebar, focuses it and starts editing its title
+    /// there.
+    fn sidebar_add_at(&mut self, place: (Option<ItemId>, usize)) {
         let selection = self.pane().selection.clone();
-        let editing = Editing::new_item(&mut self.document, Item::new(kind, ""), place, selection);
+        let project = Item::new(ItemKind::Project, "");
+        let editing = Editing::new_item(&mut self.document, project, place, selection);
         self.sidebar.focus_new(editing.id());
         self.editing = Some(editing);
     }
@@ -1347,7 +1326,7 @@ mod tests {
         Ok(())
     }
 
-    /// A state on the Inbox, holding task `inbox_task`, beside area `work` holding task `loose`,
+    /// A state on the Inbox, holding task `inbox_task`, beside project `work` holding task `loose`,
     /// section `section` with task `in_section` and project `site` with task `in_site`.
     struct Fixture {
         state: State,
@@ -1367,7 +1346,7 @@ mod tests {
         };
         let inbox = document.inbox();
         let inbox_task = add(&mut document, inbox, ItemKind::Task, "i")?;
-        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
         let loose = add(&mut document, work, ItemKind::Task, "loose")?;
         let section = add(&mut document, work, ItemKind::Section, "S")?;
         let in_section = add(&mut document, section, ItemKind::Task, "s")?;
@@ -1435,7 +1414,7 @@ mod tests {
         assert_eq!(
             at(&state),
             (Some(work), Some(site)),
-            "nothing is above an area"
+            "nothing is above a top-level project"
         );
         Ok(())
     }
@@ -1759,12 +1738,12 @@ mod tests {
         assert_eq!(
             at(&state),
             (Some(work), Some(loose)),
-            "the section is gone, so its area opens on its first row"
+            "the section is gone, so its project opens on its first row"
         );
         // With everything above gone too, home is left.
         state.undo();
         state.go(Go::Into);
-        let mut gone = Item::new(ItemKind::Area, "Work");
+        let mut gone = Item::new(ItemKind::Project, "Work");
         gone.deleted = Some(TODAY);
         state.document.set(work, gone)?;
         state.redo();
@@ -1974,7 +1953,7 @@ mod tests {
             ..
         } = fixture()?;
         let inbox = state.document().inbox();
-        state.new_container(ItemKind::Area, Side::Below);
+        state.new_container(ItemKind::Project, Side::Below);
         let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(at(&state), (Some(area), None));
         assert_eq!(state.document().top_level(), [area, work]);
@@ -1986,9 +1965,9 @@ mod tests {
         assert_eq!(
             state.container(),
             Some(inbox),
-            "the area left empty is not there"
+            "the project left empty is not there"
         );
-        state.new_container(ItemKind::Area, Side::Above);
+        state.new_container(ItemKind::Project, Side::Above);
         type_text(&mut state, "Home");
         state.edit_input(EditInput::Done);
         let home = state.document().top_level()[0];
@@ -2009,17 +1988,14 @@ mod tests {
         state.new_container(ItemKind::Section, Side::Below);
         assert_eq!(state, before, "the Inbox holds no section");
         navigate(&mut state, "Work");
-        let mut done = Item::new(ItemKind::Area, "Work");
+        let mut done = Item::new(ItemKind::Project, "Work");
         done.completed = Some(crate::domain::Completion::Undated);
         state.document.set(work, done)?;
         let before = state.clone();
         for kind in [ItemKind::Section, ItemKind::Project] {
             state.new_container(kind, Side::Below);
-            assert_eq!(state, before, "{kind:?} in a completed area");
+            assert_eq!(state, before, "{kind:?} in a completed project");
         }
-        state.new_container(ItemKind::Area, Side::Below);
-        let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
-        assert_eq!(state.document().top_level(), [work, area]);
         Ok(())
     }
 
@@ -2281,9 +2257,11 @@ mod tests {
         state.extend_selection(Direction::Up);
         state.outdent();
         assert_eq!(
-            state.notice(),
-            Some(&Notice::Refused(moving::Refusal::NotNested))
+            state.document().position(site).map(|(parent, _)| parent),
+            Some(None),
+            "out of the project Work"
         );
+        state.undo();
         state.undo();
         assert_eq!(picked(&state), [two, three]);
         state.indent();
@@ -2295,7 +2273,7 @@ mod tests {
         Ok(())
     }
 
-    /// A state on the Inbox, holding `inbox_task @work` starting today, beside area `work`
+    /// A state on the Inbox, holding `inbox_task @work` starting today, beside project `work`
     /// holding `overdue @home`, due yesterday, and project `site` due today, holding
     /// `in_launch`, starting today in section `launch`, and `tomorrow`, starting tomorrow.
     struct Dated {
@@ -2323,7 +2301,7 @@ mod tests {
         };
         let (yesterday, tomorrow) = (date(2026, 10, 13), date(2026, 10, 15));
         let inbox_task = add(Some(inbox), ItemKind::Task, Some(TODAY), None, &["work"])?;
-        let work = add(None, ItemKind::Area, None, None, &[])?;
+        let work = add(None, ItemKind::Project, None, None, &[])?;
         let overdue = add(Some(work), ItemKind::Task, None, Some(yesterday), &["home"])?;
         let site = add(Some(work), ItemKind::Project, None, Some(TODAY), &[])?;
         let launch = add(Some(site), ItemKind::Section, None, None, &[])?;
@@ -2507,7 +2485,7 @@ mod tests {
         state.pane_mut().selection.focus(Some(inbox_task));
         let before = state.document().clone();
         state.new_task(Side::Below);
-        for kind in [ItemKind::Section, ItemKind::Project, ItemKind::Area] {
+        for kind in [ItemKind::Section, ItemKind::Project, ItemKind::Project] {
             state.new_container(kind, Side::Below);
         }
         let branch = Branch {

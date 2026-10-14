@@ -13,11 +13,11 @@ use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 fn trashable(item: &Item) -> bool {
     matches!(
         item.kind,
-        ItemKind::Area | ItemKind::Project | ItemKind::Section | ItemKind::Task
+        ItemKind::Project | ItemKind::Section | ItemKind::Task
     )
 }
 
-/// The transaction that moves `items` to the Trash on `today`. Only areas, projects, sections and
+/// The transaction that moves `items` to the Trash on `today`. Only projects, sections and
 /// tasks are deleted this way, and only those not in the Trash already; anything else among
 /// `items` is left alone.
 pub(super) fn delete(
@@ -41,7 +41,7 @@ pub(super) fn delete(
     Transaction::new(ops)
 }
 
-/// What the Trash lists: the areas, projects, sections and tasks deleted with nothing above them
+/// What the Trash lists: the projects, sections and tasks deleted with nothing above them
 /// deleted too, which they hold along with the rest of their contents, the latest deleted first
 /// and those deleted on the same day in outline order, the Inbox's first (FR-VIEW-04).
 pub(super) fn items(document: &Document) -> Vec<ItemId> {
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn deleting_tags_the_items_in_place_and_keeps_what_they_hold() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "a")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "a")))?;
         let project = document.push(Some(area), Node::Item(Item::new(ItemKind::Project, "p")))?;
         let section =
             document.push(Some(project), Node::Item(Item::new(ItemKind::Section, "s")))?;
@@ -174,7 +174,7 @@ mod tests {
             ..Item::new(ItemKind::ChecklistItem, "c")
         });
         let check = document.push(Some(kept), check)?;
-        let area = put(&mut document, None, ItemKind::Area, "area", None)?;
+        let area = put(&mut document, None, ItemKind::Project, "area", None)?;
         let project = put(&mut document, Some(area), ItemKind::Project, "p", late)?;
         put(&mut document, Some(project), ItemKind::Task, "inside", late)?;
         let section = put(&mut document, Some(area), ItemKind::Section, "s", early)?;

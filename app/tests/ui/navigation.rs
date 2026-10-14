@@ -65,12 +65,12 @@ fn the_navigator_lists_the_inbox_views_areas_and_projects_as_a_tree_with_open_ta
             " 󰉹 All",
             " 󱓳 Logbook",
             " 󰩺 Trash",
-            " 󰆧 Work                                                                     7",
-            "   󰉖 Website                                                                5",
-            "     󰉖 Blog                                                                 1",
-            " 󰆧 Home                                                                     5",
-            "   󰉖 Move to the new flat                                                   4",
-            " 󰉖 Learn Rust                                                               2",
+            " # Work                                                                     7",
+            "   # Website                                                                5",
+            "     # Blog                                                                 1",
+            " # Home                                                                     5",
+            "   # Move to the new flat                                                   4",
+            " # Learn Rust                                                               2",
         ]
     );
     assert_eq!(
@@ -91,7 +91,7 @@ fn open_work_website_from_the_navigator_and_come_back() {
         navigator(&harness),
         [
             "› web",
-            " 󰉖 Website  Work                                                            5"
+            " # Website  Work                                                            5"
         ],
         "a filtered entry names the places above it"
     );
@@ -104,7 +104,7 @@ fn open_work_website_from_the_navigator_and_come_back() {
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
     assert_eq!(
         harness.rows()[2].trim_end(),
-        "  󰉖 Website                                                  󱇗 󰆉 2 󱙬 in 20 days"
+        "  # Website                                                  󱇗 󰆉 2 󱙬 in 20 days"
     );
     assert_eq!(
         focused(&harness).as_deref(),
@@ -127,7 +127,7 @@ fn the_navigator_opens_on_where_the_pane_is_and_its_key_or_escape_closes_it() {
     let mut harness = Harness::new(80, 24);
     open_website(&mut harness);
     harness.type_text("jj#");
-    assert_eq!(focused(&harness).as_deref(), Some("󰚟 Launch"));
+    assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.type_text(".");
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Launch");
     harness.ctrl('g');
@@ -176,19 +176,19 @@ fn opening_going_up_and_home_with_the_keys() {
     let mut harness = Harness::new(80, 24);
     open_website(&mut harness);
     harness.type_text("G");
-    assert_eq!(focused(&harness).as_deref(), Some("󰉖 Blog"));
+    assert_eq!(focused(&harness).as_deref(), Some("# Blog"));
     harness.press(KeyCode::Right, KeyModifiers::ALT);
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Blog");
     harness.type_text(">");
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
     assert_eq!(
         focused(&harness).as_deref(),
-        Some("󰉖 Blog"),
+        Some("# Blog"),
         "going up focuses where the pane was"
     );
     harness.type_text("gu");
     assert_eq!(crumbs(&harness), "  󰋜 Work");
-    assert!(focused(&harness).is_some_and(|row| row.starts_with("󰉖 Website ")));
+    assert!(focused(&harness).is_some_and(|row| row.starts_with("# Website ")));
     harness.type_text("gu");
     assert_eq!(
         crumbs(&harness),
@@ -219,7 +219,7 @@ fn back_and_forward_return_with_the_focus_where_it_was() {
     harness.type_text("jj#.");
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website › Launch");
     harness.type_text("H");
-    assert_eq!(focused(&harness).as_deref(), Some("󰚟 Launch"));
+    assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.type_text("H");
     assert_eq!(crumbs(&harness), "  󰋜 Inbox");
     harness.type_text("H");
@@ -269,7 +269,7 @@ fn a_place_without_open_tasks_shows_no_count() {
             " 󰉹 All",
             " 󱓳 Logbook",
             " 󰩺 Trash",
-            " 󰉖 Someday"
+            " # Someday"
         ]
     );
 }

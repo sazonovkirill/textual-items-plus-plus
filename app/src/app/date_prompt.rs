@@ -46,7 +46,7 @@ pub(super) struct DatePrompt {
 }
 
 impl DatePrompt {
-    /// The prompt for the `kind` date of the areas, projects, sections and tasks among `items`,
+    /// The prompt for the `kind` date of the projects, sections and tasks among `items`,
     /// resolving what is typed against `today`, with the date of `focused`, or else of the first
     /// of them, typed and selected, so that typing replaces it and applying keeps it; `None`
     /// when none of them takes a date.
@@ -114,7 +114,7 @@ impl DatePrompt {
 }
 
 /// The transaction that sets the `kind` date of `items` to `date`, or removes it for `None`.
-/// Only areas, projects, sections and tasks take dates (FR-DATE-01); anything else among
+/// Only projects, sections and tasks take dates (FR-DATE-01); anything else among
 /// `items`, and an item whose date is that already, is left alone.
 pub(super) fn set(
     document: &Document,
@@ -147,7 +147,7 @@ fn dated(document: &Document, id: ItemId) -> Option<&Item> {
     document.node(id).and_then(Node::item).filter(|item| {
         matches!(
             item.kind,
-            ItemKind::Area | ItemKind::Project | ItemKind::Section | ItemKind::Task
+            ItemKind::Project | ItemKind::Section | ItemKind::Task
         )
     })
 }
@@ -189,7 +189,7 @@ mod tests {
     fn setting_a_date_changes_only_the_items_that_take_it_and_lack_it() -> Result<(), PlacementError>
     {
         let (mut document, a, b, check) = document()?;
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "x")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "x")))?;
         let section = document.push(Some(area), Node::Item(Item::new(ItemKind::Section, "s")))?;
         let project = document.push(Some(area), Node::Item(Item::new(ItemKind::Project, "p")))?;
         let line = document.push(None, Node::Kept("text".to_owned()))?;

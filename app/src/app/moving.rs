@@ -24,7 +24,7 @@ pub enum Refusal {
     NothingAbove,
     /// It is not inside an item of its own kind to come out of.
     NotNested,
-    /// A section would be where only an area or a project holds one.
+    /// A section would be where only a project holds one.
     NoRoomForSection,
     /// A project would be in a section or the Inbox, which hold none.
     NoRoomForProject,
@@ -295,7 +295,7 @@ mod tests {
         app::container::rows,
         domain::{Completion, PlacementError},
     };
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
     fn add(document: &mut Document, parent: Option<ItemId>, item: Item) -> ItemId {
         document
@@ -309,26 +309,26 @@ mod tests {
         item
     }
 
-    /// An area holding tasks `a`, `b` and a completed `x` outside sections, a section `S`
+    /// An top holding tasks `a`, `b` and a completed `x` outside sections, a section `S`
     /// holding `c` and `d`, an empty section `T`, a section `U` holding `e`, and child projects
     /// `P` and `Q`.
     fn area() -> (Document, ItemId) {
         let mut document = Document::new();
-        let area = add(&mut document, None, Item::new(Area, "A"));
+        let top = add(&mut document, None, Item::new(Project, "A"));
         for title in ["a", "b"] {
-            add(&mut document, Some(area), Item::new(Task, title));
+            add(&mut document, Some(top), Item::new(Task, title));
         }
-        add(&mut document, Some(area), done(Task, "x"));
+        add(&mut document, Some(top), done(Task, "x"));
         for (section, tasks) in [("S", &["c", "d"][..]), ("T", &[]), ("U", &["e"])] {
-            let section = add(&mut document, Some(area), Item::new(Section, section));
+            let section = add(&mut document, Some(top), Item::new(Section, section));
             for &task in tasks {
                 add(&mut document, Some(section), Item::new(Task, task));
             }
         }
         for title in ["P", "Q"] {
-            add(&mut document, Some(area), Item::new(Project, title));
+            add(&mut document, Some(top), Item::new(Project, title));
         }
-        (document, area)
+        (document, top)
     }
 
     fn find(document: &Document, title: &str) -> ItemId {
@@ -381,13 +381,13 @@ mod tests {
     // FR-OPS-02, FR-TASK-05
     #[test]
     fn a_task_changes_places_with_the_task_beside_it() -> Result<(), PlacementError> {
-        let (mut document, area) = area();
+        let (mut document, top) = area();
         assert_eq!(
-            shifted(&mut document, area, "a", Direction::Down, false)?,
+            shifted(&mut document, top, "a", Direction::Down, false)?,
             ["b", "a", "#S", "c", "d", "#T", "#U", "e", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "d", Direction::Up, false)?,
+            shifted(&mut document, top, "d", Direction::Up, false)?,
             ["b", "a", "#S", "d", "c", "#T", "#U", "e", "P", "Q"]
         );
         Ok(())
@@ -396,20 +396,20 @@ mod tests {
     // FR-OPS-10
     #[test]
     fn a_task_moving_down_past_a_heading_is_first_in_that_section() -> Result<(), PlacementError> {
-        let (mut document, area) = area();
+        let (mut document, top) = area();
         assert_eq!(
-            shifted(&mut document, area, "b", Direction::Down, false)?,
+            shifted(&mut document, top, "b", Direction::Down, false)?,
             ["a", "#S", "b", "c", "d", "#T", "#U", "e", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "d", Direction::Down, false)?,
+            shifted(&mut document, top, "d", Direction::Down, false)?,
             ["a", "#S", "b", "c", "#T", "d", "#U", "e", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "d", Direction::Down, false)?,
+            shifted(&mut document, top, "d", Direction::Down, false)?,
             ["a", "#S", "b", "c", "#T", "#U", "d", "e", "P", "Q"]
         );
-        let last = shifted(&mut document, area, "e", Direction::Down, false)?;
+        let last = shifted(&mut document, top, "e", Direction::Down, false)?;
         assert_eq!(
             last,
             ["a", "#S", "b", "c", "#T", "#U", "d", "e", "P", "Q"],
@@ -422,26 +422,26 @@ mod tests {
     #[test]
     fn a_task_moving_up_from_the_top_of_a_section_is_last_in_the_one_above()
     -> Result<(), PlacementError> {
-        let (mut document, area) = area();
+        let (mut document, top) = area();
         assert_eq!(
-            shifted(&mut document, area, "e", Direction::Up, false)?,
+            shifted(&mut document, top, "e", Direction::Up, false)?,
             ["a", "b", "#S", "c", "d", "#T", "e", "#U", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "e", Direction::Up, false)?,
+            shifted(&mut document, top, "e", Direction::Up, false)?,
             ["a", "b", "#S", "c", "d", "e", "#T", "#U", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "c", Direction::Up, false)?,
+            shifted(&mut document, top, "c", Direction::Up, false)?,
             ["a", "b", "c", "#S", "d", "e", "#T", "#U", "P", "Q"],
             "from the first section, last among the tasks outside sections"
         );
         assert_eq!(
-            shifted(&mut document, area, "c", Direction::Up, true)?,
+            shifted(&mut document, top, "c", Direction::Up, true)?,
             ["a", "c", "b", "x", "#S", "d", "e", "#T", "#U", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "a", Direction::Up, false)?,
+            shifted(&mut document, top, "a", Direction::Up, false)?,
             ["a", "c", "b", "#S", "d", "e", "#T", "#U", "P", "Q"],
             "the first task stays"
         );
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn completed_and_open_tasks_move_apart_and_hidden_sections_are_passed()
     -> Result<(), PlacementError> {
-        let (mut document, area) = area();
+        let (mut document, top) = area();
         let t = find(&document, "T");
         let section = item(&document, t).cloned().map(|it| Item {
             completed: done(Section, "T").completed,
@@ -476,17 +476,17 @@ mod tests {
         });
         document.set(t, section.ok_or(PlacementError::NoSuchNode(t))?)?;
         assert_eq!(
-            shifted(&mut document, area, "b", Direction::Down, true)?,
+            shifted(&mut document, top, "b", Direction::Down, true)?,
             ["a", "x", "#S", "b", "c", "d", "#U", "e", "#T", "P", "Q"],
             "the open task passes the completed one"
         );
         assert_eq!(
-            shifted(&mut document, area, "d", Direction::Down, true)?,
+            shifted(&mut document, top, "d", Direction::Down, true)?,
             ["a", "x", "#S", "b", "c", "#U", "d", "e", "#T", "P", "Q"],
             "the completed section is passed"
         );
         assert_eq!(
-            shifted(&mut document, area, "x", Direction::Up, true)?,
+            shifted(&mut document, top, "x", Direction::Up, true)?,
             ["a", "x", "#S", "b", "c", "#U", "d", "e", "#T", "P", "Q"],
             "the completed task stays below the open ones"
         );
@@ -496,31 +496,31 @@ mod tests {
     // FR-OPS-10, FR-ORG-06
     #[test]
     fn sections_move_among_sections_and_projects_among_projects() -> Result<(), PlacementError> {
-        let (mut document, area) = area();
+        let (mut document, top) = area();
         assert_eq!(
-            shifted(&mut document, area, "S", Direction::Up, false)?,
+            shifted(&mut document, top, "S", Direction::Up, false)?,
             ["a", "b", "#S", "c", "d", "#T", "#U", "e", "P", "Q"],
             "never above the tasks outside sections"
         );
         assert_eq!(
-            shifted(&mut document, area, "S", Direction::Down, false)?,
+            shifted(&mut document, top, "S", Direction::Down, false)?,
             ["a", "b", "#T", "#S", "c", "d", "#U", "e", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "U", Direction::Up, false)?,
+            shifted(&mut document, top, "U", Direction::Up, false)?,
             ["a", "b", "#T", "#U", "e", "#S", "c", "d", "P", "Q"]
         );
         assert_eq!(
-            shifted(&mut document, area, "S", Direction::Down, false)?,
+            shifted(&mut document, top, "S", Direction::Down, false)?,
             ["a", "b", "#T", "#U", "e", "#S", "c", "d", "P", "Q"],
             "the last section stays"
         );
         assert_eq!(
-            shifted(&mut document, area, "Q", Direction::Up, false)?,
+            shifted(&mut document, top, "Q", Direction::Up, false)?,
             ["a", "b", "#T", "#U", "e", "#S", "c", "d", "Q", "P"]
         );
         assert_eq!(
-            shifted(&mut document, area, "Q", Direction::Up, false)?,
+            shifted(&mut document, top, "Q", Direction::Up, false)?,
             ["a", "b", "#T", "#U", "e", "#S", "c", "d", "Q", "P"],
             "a project never moves among the sections"
         );
@@ -552,18 +552,18 @@ mod tests {
         Ok(())
     }
 
-    /// Projects `A`, a completed `B`, a deleted `C`, then `D` holding `E`, in an area, and a
+    /// Projects `A`, a completed `B`, a deleted `C`, then `D` holding `E`, in an top, and a
     /// task holding checklist items `1` and `2`, `2` holding `3`.
     fn nested() -> Document {
         let mut document = Document::new();
-        let area = add(&mut document, None, Item::new(Area, "area"));
-        add(&mut document, Some(area), Item::new(Project, "A"));
-        add(&mut document, Some(area), done(Project, "B"));
+        let top = add(&mut document, None, Item::new(Project, "top"));
+        add(&mut document, Some(top), Item::new(Project, "A"));
+        add(&mut document, Some(top), done(Project, "B"));
         let mut deleted = Item::new(Project, "C");
         deleted.deleted = Some(date(2026, 10, 1));
-        add(&mut document, Some(area), deleted);
-        add(&mut document, Some(area), Item::new(Task, "t"));
-        let d = add(&mut document, Some(area), Item::new(Project, "D"));
+        add(&mut document, Some(top), deleted);
+        add(&mut document, Some(top), Item::new(Task, "t"));
+        let d = add(&mut document, Some(top), Item::new(Project, "D"));
         add(&mut document, Some(d), Item::new(Project, "E"));
         let inbox = document.inbox();
         let task = add(&mut document, Some(inbox), Item::new(Task, "task"));
@@ -622,7 +622,8 @@ mod tests {
     #[test]
     fn a_move_the_hierarchy_does_not_allow_is_refused_with_why() {
         let document = nested();
-        let [a, e, t, one, area] = ["A", "E", "t", "1", "area"].map(|title| find(&document, title));
+        let [e, t, one, top] = ["E", "t", "1", "top"].map(|title| find(&document, title));
+        let a = find(&document, "A");
         assert_eq!(indent(&document, a).err(), Some(Refusal::NothingAbove));
         assert_eq!(indent(&document, one).err(), Some(Refusal::NothingAbove));
         assert_eq!(
@@ -632,9 +633,9 @@ mod tests {
             Some(a)
         );
         assert_eq!(indent(&document, e).err(), Some(Refusal::NothingAbove));
-        assert_eq!(outdent(&document, a).err(), Some(Refusal::NotNested));
+        assert_eq!(outdent(&document, top).err(), Some(Refusal::NotNested));
         assert_eq!(outdent(&document, one).err(), Some(Refusal::NotNested));
-        for id in [t, area, document.inbox(), ItemId::new(99)] {
+        for id in [t, document.inbox(), ItemId::new(99)] {
             assert_eq!(indent(&document, id).err(), Some(Refusal::DoesNotNest));
             assert_eq!(outdent(&document, id).err(), Some(Refusal::DoesNotNest));
         }
@@ -663,18 +664,18 @@ mod tests {
     // FR-OPS-01, FR-OPS-02, FR-OPS-10
     #[test]
     fn selected_tasks_move_together_keeping_their_order() -> Result<(), PlacementError> {
-        let (mut document, area) = area();
+        let (mut document, top) = area();
         assert_eq!(
-            shifted_all(&mut document, area, &["a", "b"], Direction::Down)?,
+            shifted_all(&mut document, top, &["a", "b"], Direction::Down)?,
             ["#S", "a", "b", "c", "d", "#T", "#U", "e", "P", "Q"]
         );
         assert_eq!(
-            shifted_all(&mut document, area, &["b", "d"], Direction::Up)?,
+            shifted_all(&mut document, top, &["b", "d"], Direction::Up)?,
             ["#S", "b", "a", "d", "c", "#T", "#U", "e", "P", "Q"],
             "apart, each moves on its own"
         );
         assert_eq!(
-            shifted_all(&mut document, area, &["d", "e"], Direction::Up)?,
+            shifted_all(&mut document, top, &["d", "e"], Direction::Up)?,
             ["#S", "b", "d", "a", "c", "#T", "e", "#U", "P", "Q"],
             "each crosses its own heading"
         );
@@ -685,37 +686,37 @@ mod tests {
     #[test]
     fn a_selected_item_that_would_pass_another_that_stays_stays_too() -> Result<(), PlacementError>
     {
-        let (mut document, area) = area();
-        let before = shown(&document, area, false);
+        let (mut document, top) = area();
+        let before = shown(&document, top, false);
         assert_eq!(
-            shifted_all(&mut document, area, &["a", "b"], Direction::Up)?,
+            shifted_all(&mut document, top, &["a", "b"], Direction::Up)?,
             before,
             "the first stays, and the second with it"
         );
         assert_eq!(
-            shifted_all(&mut document, area, &["P", "Q"], Direction::Down)?,
+            shifted_all(&mut document, top, &["P", "Q"], Direction::Down)?,
             before
         );
         assert_eq!(
-            shifted_all(&mut document, area, &["S", "c"], Direction::Up)?,
+            shifted_all(&mut document, top, &["S", "c"], Direction::Up)?,
             before,
             "the first section stays, and its task does not pass its heading"
         );
         Ok(())
     }
 
-    /// An area holding projects `P`, `Q` and `R`, `R` holding `S` and `T`, and a task `t`.
+    /// An top holding projects `P`, `Q` and `R`, `R` holding `S` and `T`, and a task `t`.
     fn projects() -> Document {
         let mut document = Document::new();
-        let area = add(&mut document, None, Item::new(Area, "area"));
+        let top = add(&mut document, None, Item::new(Project, "top"));
         for title in ["P", "Q", "R"] {
-            add(&mut document, Some(area), Item::new(Project, title));
+            add(&mut document, Some(top), Item::new(Project, title));
         }
         let r = find(&document, "R");
         for title in ["S", "T"] {
             add(&mut document, Some(r), Item::new(Project, title));
         }
-        add(&mut document, Some(area), Item::new(Task, "t"));
+        add(&mut document, Some(top), Item::new(Task, "t"));
         document
     }
 
@@ -754,13 +755,13 @@ mod tests {
     #[test]
     fn selected_projects_outdent_together_keeping_their_order() -> Result<(), PlacementError> {
         let mut document = projects();
-        let [area, q, r, s, t] = ["area", "Q", "R", "S", "T"].map(|title| find(&document, title));
+        let [top, q, r, s, t] = ["top", "Q", "R", "S", "T"].map(|title| find(&document, title));
         let transaction =
             outdent_all(&document, &[s, t]).map_err(|_| PlacementError::DoesNotFit)?;
         document.apply(&transaction)?;
-        assert_eq!(&document.children(area)[1..5], [q, r, s, t]);
+        assert_eq!(&document.children(top)[1..5], [q, r, s, t]);
         assert_eq!(
-            outdent_all(&document, &[q, r]).err(),
+            outdent_all(&document, &[top]).err(),
             Some(Refusal::NotNested)
         );
         Ok(())

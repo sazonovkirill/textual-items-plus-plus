@@ -163,7 +163,7 @@ fn place(
             let (parent, index) = adding::place(document, container, rows, focused, side);
             Some((Some(parent), index))
         }
-        Some(kind @ (ItemKind::Section | ItemKind::Project | ItemKind::Area)) => {
+        Some(kind @ (ItemKind::Section | ItemKind::Project)) => {
             adding::container_place(document, container, rows, focused, kind, side)
         }
         Some(ItemKind::Inbox | ItemKind::ChecklistItem) => None,
@@ -184,11 +184,11 @@ mod tests {
     use super::*;
     use crate::app::{Command, Effect, Focus, Go, Message, Opened, State, update};
     use crate::domain::{Item, Node, PlacementError};
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
     const TODAY: Date = date(2026, 10, 14);
 
-    /// The Inbox holds tasks `a` and `b`; area Work holds task `loose`, section `Soon` with task
+    /// The Inbox holds tasks `a` and `b`; project Work holds task `loose`, section `Soon` with task
     /// `s`, which has a description and a checklist item, and project `Site` with task `p`.
     struct Fixture {
         state: State,
@@ -205,7 +205,7 @@ mod tests {
         let inbox = Some(document.inbox());
         add(&mut document, inbox, Task, "a")?;
         add(&mut document, inbox, Task, "b")?;
-        let work = add(&mut document, None, Area, "Work")?;
+        let work = add(&mut document, None, Project, "Work")?;
         add(&mut document, Some(work), Task, "loose")?;
         let section = add(&mut document, Some(work), Section, "Soon")?;
         let mut item = Item::new(Task, "s");
@@ -436,7 +436,7 @@ mod tests {
         let Fixture { mut state, .. } = fixture()?;
         let pasted = vec![
             container(Project, "P2", Vec::new()),
-            container(Area, "A2", Vec::new()),
+            container(Project, "A2", Vec::new()),
         ];
         send(&mut state, Message::Paste(Side::Above, pasted));
         let top: Vec<&str> = state

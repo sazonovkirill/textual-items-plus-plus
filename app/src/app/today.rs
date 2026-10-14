@@ -8,7 +8,7 @@ use super::{container::Row, view::Group};
 use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 
 /// The one group Today shows of `document` on `today`, without a heading: the tasks, sections,
-/// projects and areas whose start or due date is `today` or earlier, the overdue ones, due before
+/// projects whose start or due date is `today` or earlier, the overdue ones, due before
 /// `today` (FR-DATE-04), first, then the others, each in file order, then, only when
 /// `show_completed`, the completed ones (FR-VIEW-11). A container's dates are its own (OQ-20).
 /// Items in the Trash and the contents of a completed item are not shown (FR-ORG-09); with
@@ -88,7 +88,7 @@ impl Walk {
         }
         match item.kind {
             ItemKind::Task => Some(Row::Task { id, section: None }),
-            ItemKind::Section | ItemKind::Project | ItemKind::Area => Some(Row::Project(id)),
+            ItemKind::Section | ItemKind::Project => Some(Row::Project(id)),
             ItemKind::Inbox | ItemKind::ChecklistItem => None,
         }
     }
@@ -100,7 +100,7 @@ mod tests {
 
     use super::*;
     use crate::domain::Completion;
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
     const TODAY: Date = date(2026, 10, 14);
 
@@ -144,7 +144,7 @@ mod tests {
         let in_inbox = add(&mut document, inbox, Task, Some(0), None);
         add(&mut document, inbox, Task, None, None);
         add(&mut document, inbox, Task, Some(1), Some(2));
-        let work = add(&mut document, None, Area, None, None);
+        let work = add(&mut document, None, Project, None, None);
         let started = add(&mut document, Some(work), Task, Some(-3), None);
         let site = add(&mut document, Some(work), Project, None, Some(0));
         let in_site = add(&mut document, Some(site), Task, None, Some(0));
@@ -153,7 +153,7 @@ mod tests {
         let overdue = add(&mut document, Some(work), Task, None, Some(-1));
         let later = add(&mut document, None, Project, Some(5), None);
         add(&mut document, Some(later), Task, None, None);
-        let dated_area = add(&mut document, None, Area, Some(0), None);
+        let dated_area = add(&mut document, None, Project, Some(0), None);
         assert_eq!(
             groups(&document, TODAY, false),
             [Group {

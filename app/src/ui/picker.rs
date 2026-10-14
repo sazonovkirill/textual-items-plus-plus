@@ -314,12 +314,12 @@ mod tests {
         }
     }
 
-    /// Projects for odd values, areas for even ones.
+    /// Projects for odd values, sections for even ones.
     const ICON: fn(&u8) -> Icon = |value| {
         if value % 2 == 1 {
             Icon::Project
         } else {
-            Icon::Area
+            Icon::Section
         }
     };
 
@@ -376,9 +376,9 @@ mod tests {
         let mut expected = Buffer::with_lines([
             "┌Pick────────────┐",
             "│›               │",
-            "│ ○ One          │",
-            "│ ◆ Two  Work    │",
-            "│ ○ Three        │",
+            "│ # One          │",
+            "│ / Two  Work    │",
+            "│ # Three        │",
             "└────────────────┘",
         ]);
         expected.set_style(
@@ -414,8 +414,8 @@ mod tests {
         }
         let buf = rendered(&picker, Rect::new(0, 0, 80, 20));
         let row = |y| (0..80).map(|x| buf[(x, y)].symbol()).collect::<String>();
-        assert!(row(2).starts_with("│ ○ 9 "), "{}", row(2));
-        assert!(row(18).starts_with("│ ○ 25 "), "{}", row(18));
+        assert!(row(2).starts_with("│ # 9 "), "{}", row(2));
+        assert!(row(18).starts_with("│ # 25 "), "{}", row(18));
         assert_eq!(buf[(1, 18)].bg, theme().selection);
     }
 
@@ -505,9 +505,9 @@ mod tests {
         assert_eq!(
             rows(&buf),
             [
-                "│   ◆ Work             2 │",
-                "│ ○ Site                 │",
-                "│     ○ Blog           3 │",
+                "│   / Work             2 │",
+                "│ # Site                 │",
+                "│     # Blog           3 │",
             ]
         );
         assert_eq!(
@@ -520,7 +520,7 @@ mod tests {
         typed(&mut picker, [TextEdit::Insert('o')]);
         assert_eq!(
             rows(&draw(&picker)),
-            ["│ ◆ Work               2 │", "│ ○ Blog  Work › Site  3 │",],
+            ["│ / Work               2 │", "│ # Blog  Work › Site  3 │",],
             "matches show their details and no tree"
         );
     }

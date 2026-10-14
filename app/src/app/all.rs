@@ -6,7 +6,7 @@ use super::{Row, container};
 use crate::domain::{Document, ItemId, ItemKind, Node};
 
 /// All's groups, as Things 3's Anytime groups them: the Inbox's tasks first under no heading,
-/// scheduled ones included (FR-VIEW-01), then one group for each area and project with tasks of
+/// scheduled ones included (FR-VIEW-01), then one group for each project with tasks of
 /// its own, in the order of the outline, its tasks listed as its view lists them (FR-VIEW-05), so
 /// its sections' tasks follow its other tasks, under no section heading. Completed tasks come after the open ones of their
 /// list and are left out unless `show_completed` (FR-VIEW-11); tasks in the Trash and inside a
@@ -47,16 +47,14 @@ fn inbox_tasks(document: &Document, show_completed: bool) -> Vec<Row> {
         .collect()
 }
 
-/// Adds the group of `id`, if it is an area or project with tasks shown, and those of the areas
-/// and projects inside it to `groups`. Items in the Trash and completed ones are passed over with
+/// Adds the group of `id`, if it is a project with tasks shown, and those of the projects
+/// inside it to `groups`. Items in the Trash and completed ones are passed over with
 /// what they hold.
 fn list(document: &Document, id: ItemId, show_completed: bool, groups: &mut Vec<Group>) {
     let Some(item) = document.node(id).and_then(Node::item) else {
         return;
     };
-    if !matches!(item.kind, ItemKind::Area | ItemKind::Project)
-        || item.deleted.is_some()
-        || item.completed.is_some()
+    if !matches!(item.kind, ItemKind::Project) || item.deleted.is_some() || item.completed.is_some()
     {
         return;
     }
@@ -85,7 +83,7 @@ mod tests {
 
     use super::*;
     use crate::domain::{Completion, Item, PlacementError};
-    use ItemKind::{Area, Project, Section, Task};
+    use ItemKind::{Project, Section, Task};
 
     fn add(
         document: &mut Document,
@@ -132,7 +130,7 @@ mod tests {
     fn tasks_group_under_their_direct_project_or_area_in_outline_order()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = add(&mut document, None, Area)?;
+        let area = add(&mut document, None, Project)?;
         let project = add(&mut document, Some(area), Project)?;
         let section = add(&mut document, Some(project), Section)?;
         let in_section = add(&mut document, Some(section), Task)?;

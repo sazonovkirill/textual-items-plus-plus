@@ -6,7 +6,7 @@ use jiff::civil::Date;
 use crate::domain::{Completion, Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 
 /// The transaction that uncompletes `items` when every one of them is completed, and otherwise
-/// completes those that are not, on `today`. Only areas, projects, sections and tasks are
+/// completes those that are not, on `today`. Only projects, sections and tasks are
 /// completed; anything else among `items` is left alone.
 pub(super) fn toggle(
     document: &Document,
@@ -19,7 +19,7 @@ pub(super) fn toggle(
         .filter(|(_, item)| {
             matches!(
                 item.kind,
-                ItemKind::Area | ItemKind::Project | ItemKind::Section | ItemKind::Task
+                ItemKind::Project | ItemKind::Section | ItemKind::Task
             )
         })
         .collect();
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn containers_complete_but_not_the_inbox_or_checklist_items() -> Result<(), PlacementError> {
         let (mut document, _, _, check) = document()?;
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "x")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "x")))?;
         let section = document.push(Some(area), Node::Item(Item::new(ItemKind::Section, "s")))?;
         let project = document.push(Some(area), Node::Item(Item::new(ItemKind::Project, "p")))?;
         let line = document.push(None, Node::Kept("text".to_owned()))?;

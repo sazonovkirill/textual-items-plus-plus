@@ -55,7 +55,7 @@ pub fn rows(document: &Document, container: ItemId, show_completed: bool) -> Vec
     };
     match kind {
         ItemKind::Inbox | ItemKind::Section => group.tasks(container, None).collect(),
-        ItemKind::Area | ItemKind::Project => {
+        ItemKind::Project => {
             let mut rows: Vec<Row> = group.tasks(container, None).collect();
             for section in group.shown(container, ItemKind::Section) {
                 rows.push(Row::Section(section));
@@ -143,7 +143,7 @@ pub(super) fn opens(document: &Document, id: ItemId) -> bool {
     item(id).is_some_and(|item| {
         matches!(
             item.kind,
-            ItemKind::Inbox | ItemKind::Area | ItemKind::Project | ItemKind::Section
+            ItemKind::Inbox | ItemKind::Project | ItemKind::Section
         )
     }) && path(document, id)
         .into_iter()
@@ -205,7 +205,7 @@ mod tests {
 
     use super::*;
     use crate::domain::{Completion, PlacementError};
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
     fn add(document: &mut Document, parent: ItemId, kind: ItemKind) -> ItemId {
         document
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn an_area_shows_its_sections_and_projects_too() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let area = document.push(None, Node::Item(Item::new(Project, "a")))?;
         let project = add(&mut document, area, Project);
         let section = add(&mut document, area, Section);
         assert_eq!(
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn an_opened_section_shows_its_tasks_outside_any_section() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let area = document.push(None, Node::Item(Item::new(Project, "a")))?;
         let section = add(&mut document, area, Section);
         let task = add(&mut document, section, Task);
         assert_eq!(
@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn kept_content_checklists_and_the_trash_are_not_rows() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let area = document.push(None, Node::Item(Item::new(Project, "a")))?;
         document.push(Some(area), Node::Kept("text".to_owned()))?;
         let task = add(&mut document, area, Task);
         add(&mut document, task, ChecklistItem);
@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn a_completed_container_shows_none_of_its_contents() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let area = document.push(None, Node::Item(Item::new(Project, "a")))?;
         let section = add(&mut document, area, Section);
         add(&mut document, section, Task);
         let project = add(&mut document, area, Project);
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn a_path_runs_from_the_top_level_down_to_the_container() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let area = document.push(None, Node::Item(Item::new(Project, "a")))?;
         let project = add(&mut document, area, Project);
         let section = add(&mut document, project, Section);
         assert_eq!(path(&document, section), [area, project, section]);
@@ -478,7 +478,7 @@ mod tests {
     fn only_containers_outside_the_trash_open() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let inbox = document.inbox();
-        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let area = document.push(None, Node::Item(Item::new(Project, "a")))?;
         let project = add(&mut document, area, Project);
         let section = add(&mut document, project, Section);
         let task = add(&mut document, section, Task);

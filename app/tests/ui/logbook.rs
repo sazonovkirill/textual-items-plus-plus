@@ -81,7 +81,7 @@ Work:
             "  ✔ Call the bank · Inbox",
             "",
             "  2 days ago · Sat 3 Oct",
-            "  \u{f0256} Site · Work",
+            "  # Site · Work",
             "",
             "  278 days ago · Wed 31 Dec 2025",
             "  ✔ Plan · Work",

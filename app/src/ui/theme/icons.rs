@@ -7,8 +7,6 @@ use crate::app::IconSet;
 /// Something the UI marks with an icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
-    /// An area.
-    Area,
     /// A project.
     Project,
     /// A section.
@@ -73,12 +71,10 @@ impl Icon {
     /// The table: each Nerd Fonts v3 code point beside its plain marker, every one a single cell.
     const fn glyphs(self) -> (&'static str, &'static str) {
         match self {
-            // nf-md-cube_outline
-            Self::Area => ("\u{f01a7}", "◆"),
-            // nf-md-folder_outline
-            Self::Project => ("\u{f0256}", "○"),
-            // nf-md-format_section
-            Self::Section => ("\u{f069f}", "§"),
+            // The owner's markers, as Todoist marks a project with `#`, with Nerd Fonts icons too
+            // (D-66).
+            Self::Project => ("#", "#"),
+            Self::Section => ("/", "/"),
             // The task markers and the fold markers stay plain with Nerd Font icons too, as in
             // taskpaper-terminal (its D-59, D-60).
             Self::Task => ("-", "-"),
@@ -131,8 +127,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 25] = [
-        Icon::Area,
+    const ICONS: [Icon; 24] = [
         Icon::Project,
         Icon::Section,
         Icon::Task,
@@ -162,8 +157,13 @@ mod tests {
     /// The task and fold markers, drawn the same with Nerd Font icons as without.
     const MARKERS: [Icon; 4] = [Icon::Task, Icon::DoneTask, Icon::Expanded, Icon::Collapsed];
 
+    /// The project and section glyphs are plain characters in both sets (D-66).
+    const PLAIN: [Icon; 2] = [Icon::Project, Icon::Section];
+
     fn icons() -> impl Iterator<Item = Icon> {
-        ICONS.into_iter().filter(|icon| !MARKERS.contains(icon))
+        ICONS
+            .into_iter()
+            .filter(|icon| !MARKERS.contains(icon) && !PLAIN.contains(icon))
     }
 
     // FR-UI-04, ui.md §7

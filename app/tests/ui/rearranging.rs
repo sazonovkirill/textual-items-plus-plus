@@ -128,7 +128,7 @@ fn a_task_or_a_section_is_not_indented_and_the_status_line_says_why() {
 
 const PLANS: &str = "\
 Inbox:
-Plans: @area
+Plans:
 \tGarden:
 \tKitchen:
 \t\t- Paint the walls
@@ -138,7 +138,7 @@ Plans: @area
 \t\t- Call the plumber
 ";
 
-/// The app on a file holding [`PLANS`], opened on the area, and the file's path.
+/// The app on a file holding [`PLANS`], opened on its project, and the file's path.
 fn plans() -> (TempDir, PathBuf, Harness) {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
@@ -165,7 +165,7 @@ fn a_task_moved_into_the_next_section_is_saved_there() {
         saved(&mut harness, &path),
         "\
 Inbox:
-Plans: @area
+Plans:
 \tGarden:
 \tKitchen:
 \t\t- Paint the walls
@@ -182,8 +182,6 @@ Plans: @area
 fn a_project_indents_into_the_project_above_and_outdents_out_of_it() {
     let (_dir, path, mut harness) = plans();
     harness.key(KeyCode::Char('G'));
-    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
-    assert!(status(&harness).ends_with("nothing to outdent from"));
     harness.key(KeyCode::Char(']'));
     let indented = listed(&harness);
     assert!(

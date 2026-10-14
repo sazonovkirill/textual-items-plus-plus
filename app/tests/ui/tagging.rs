@@ -180,7 +180,7 @@ fn an_at_sign_typed_in_a_title_points_to_the_tag_picker() {
 fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_areas() {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
-    fs::write(&path, "Inbox:\nWork: @area\n\tSite:\n\t\t- Ship it\n").expect("written");
+    fs::write(&path, "Inbox:\nWork:\n\tSite:\n\t\t- Ship it\n").expect("written");
     let mut harness = Harness::open(path.clone(), 70, 16);
     harness.ctrl('g');
     harness.type_text("work");
@@ -194,6 +194,6 @@ fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_areas() {
     harness.wait(1000);
     assert_eq!(
         fs::read_to_string(&path).expect("the file is there"),
-        "Inbox:\nWork: @area @home\n\tSite: @web\n\t\t- Ship it @launch\n"
+        "Inbox:\nWork: @home\n\tSite: @web\n\t\t- Ship it @launch\n"
     );
 }

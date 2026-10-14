@@ -65,7 +65,7 @@ impl Document {
 mod tests {
     use super::*;
     use crate::domain::item::Item;
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
     fn item(kind: ItemKind, title: &str) -> Node {
         Node::Item(Item::new(kind, title))
@@ -91,7 +91,7 @@ mod tests {
     fn a_task_becomes_a_project_in_its_place_its_checklist_its_tasks() -> Result<(), PlacementError>
     {
         let mut document = Document::new();
-        let area = document.push(None, item(Area, "Home"))?;
+        let area = document.push(None, item(Project, "Home"))?;
         let first = document.push(Some(area), item(Task, "first"))?;
         let mut original = Item::new(Task, "Move house");
         original.description = "Before May.".to_owned();
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn areas_and_sections_become_projects_and_projects_sections() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = document.push(None, item(Area, "Work"))?;
+        let area = document.push(None, item(Project, "Work"))?;
         let section = document.push(Some(area), item(Section, "Soon"))?;
         let task = document.push(Some(section), item(Task, "Write"))?;
         let project = document.push(Some(area), item(Project, "Site"))?;
@@ -154,7 +154,7 @@ mod tests {
     fn a_kind_that_cannot_go_there_or_hold_the_contents_is_refused() -> Result<(), PlacementError> {
         let mut document = Document::new();
         let inboxed = document.push(Some(document.inbox()), item(Task, "Call"))?;
-        let area = document.push(None, item(Area, "Work"))?;
+        let area = document.push(None, item(Project, "Work"))?;
         let section = document.push(Some(area), item(Section, "Soon"))?;
         let in_section = document.push(Some(section), item(Task, "Write"))?;
         let top = document.push(None, item(Project, "Top"))?;

@@ -185,7 +185,7 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
     let text = "Inbox:\n\
                 \t- Late @due(2026-10-04)\n\
                 \t- Done late @due(2026-10-01) @done(2026-10-03)\n\
-                Work: @area @start(2026-10-06) @due(2026-10-12)\n";
+                Work: @start(2026-10-06) @due(2026-10-12)\n";
     let (_dir, _path, mut harness) = on_file(text);
     harness.ctrl('o');
     assert_eq!(
@@ -212,6 +212,6 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
     harness.ctrl('b');
     harness.type_text("jjjjj.");
     let heading = harness.rows()[2].trim_end().to_owned();
-    assert!(heading.contains("│  󰆧 Work "), "{heading}");
+    assert!(heading.contains("│  # Work "), "{heading}");
     assert!(heading.ends_with(" 󱙭 tomorrow 󱙬 next Mon"), "{heading}");
 }

@@ -134,7 +134,7 @@ fn siblings(document: &Document, parent: Option<ItemId>) -> &[ItemId] {
 fn group(kind: ItemKind) -> u8 {
     match kind {
         ItemKind::Section => 1,
-        ItemKind::Area | ItemKind::Project => 2,
+        ItemKind::Project => 2,
         _ => 0,
     }
 }
@@ -197,7 +197,7 @@ fn list<'a>(
     };
     if !matches!(
         item.kind,
-        ItemKind::Inbox | ItemKind::Area | ItemKind::Project | ItemKind::Section
+        ItemKind::Inbox | ItemKind::Project | ItemKind::Section
     ) {
         return;
     }
@@ -223,9 +223,9 @@ fn list<'a>(
 mod tests {
     use super::*;
     use crate::domain::{Completion, Item, PlacementError};
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
-    /// The Inbox holds task `i`; area Work holds task `loose`, section `s_section` with task `s`
+    /// The Inbox holds task `i`; project Work holds task `loose`, section `s_section` with task `s`
     /// and project `site`, which holds task `p`, a kept line, section `launch` and project
     /// `blog`; project `solo` stands at the top level. A project in the Trash and a completed
     /// one with a section are in Work too.
@@ -256,7 +256,7 @@ mod tests {
         let mut document = Document::new();
         let inbox = Some(document.inbox());
         let i = add(&mut document, inbox, Task, "i")?;
-        let work = add(&mut document, None, Area, "Work")?;
+        let work = add(&mut document, None, Project, "Work")?;
         let loose = add(&mut document, Some(work), Task, "loose")?;
         let s_section = add(&mut document, Some(work), Section, "S")?;
         let s = add(&mut document, Some(s_section), Task, "s")?;
@@ -325,12 +325,12 @@ mod tests {
         assert_eq!(
             listed(&document, &[s_section]),
             Some(["Site", "Blog", "Solo"].map(String::from).into()),
-            "a section goes to an area or a project"
+            "a section goes to a project"
         );
         assert_eq!(
             listed(&document, &[site]),
             Some(["Home", "Solo"].map(String::from).into()),
-            "a project goes to the top level, an area or a project, but not into itself"
+            "a project goes to the top level or a project, but not into itself"
         );
         assert_eq!(
             listed(&document, &[solo]),
@@ -344,14 +344,11 @@ mod tests {
     #[test]
     fn only_projects_sections_and_tasks_move() -> Result<(), PlacementError> {
         let Fixture {
-            mut document,
-            i,
-            work,
-            ..
+            mut document, i, ..
         } = fixture()?;
         let check = add(&mut document, Some(i), ChecklistItem, "c")?;
         let inbox = document.inbox();
-        for items in [&[][..], &[inbox], &[work], &[check], &[ItemId::new(99)]] {
+        for items in [&[][..], &[inbox], &[check], &[ItemId::new(99)]] {
             assert_eq!(listed(&document, items), None, "{items:?}");
         }
         Ok(())

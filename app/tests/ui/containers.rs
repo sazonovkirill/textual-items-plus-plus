@@ -1,4 +1,4 @@
-//! Creating, renaming and deleting areas, projects and sections.
+//! Creating, renaming and deleting projects and sections.
 
 use std::fs;
 
@@ -34,10 +34,10 @@ fn crumbs(harness: &Harness) -> String {
 
 // FR-ORG-06, FR-EDIT-05, D-40
 #[test]
-fn add_an_area_with_a_project_and_a_section() {
+fn add_a_project_with_a_subproject_and_a_section() {
     let mut harness = Harness::new(60, 16);
     harness.ctrl('b');
-    harness.type_text("aHome");
+    harness.type_text("pHome");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
@@ -51,7 +51,7 @@ fn add_an_area_with_a_project_and_a_section() {
     harness.key(KeyCode::Esc);
     assert_eq!(
         pane(&harness),
-        ["  󰆧 Home", "", "  󰚟 Chores", "▌ - Sweep", "", "  󰉖 Garden",]
+        ["  # Home", "", "  / Chores", "▌ - Sweep", "", "  # Garden",]
     );
 }
 
@@ -63,7 +63,7 @@ fn the_container_shown_is_renamed_in_its_heading_and_deleted() {
     harness.type_text("website");
     harness.key(KeyCode::Enter);
     harness.type_text("R site");
-    assert!(harness.rows()[2].starts_with("  󰉖 Website site "));
+    assert!(harness.rows()[2].starts_with("  # Website site "));
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 60, 16)),
         Some(Position::new(16, 2)),
@@ -86,7 +86,7 @@ fn new_containers_are_saved_with_their_kind_tags() {
     fs::write(&path, "Inbox:\n").expect("written");
     let mut harness = Harness::open(path.clone(), 60, 16);
     harness.ctrl('b');
-    harness.type_text("aHome");
+    harness.type_text("pHome");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
     harness.type_text("pGarden");
@@ -97,6 +97,6 @@ fn new_containers_are_saved_with_their_kind_tags() {
     harness.wait(1000);
     assert_eq!(
         fs::read_to_string(&path).expect("the file is there"),
-        "Inbox:\nHome: @area\n\tGarden:\n\t\tSpring: @section\n"
+        "Inbox:\nHome:\n\tGarden:\n\t\tSpring: @section\n"
     );
 }

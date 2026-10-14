@@ -5,7 +5,7 @@ Inbox:
 	- Plan the weekend trip @start({today+3})
 	- Read the article Sam sent
 	- Cancel the newspaper @deleted({today-1})
-Work: @area
+Work:
 	Everything for the day job.
 	- Answer the recruiter's email @due({today-1})
 	Website: @due({today+20})
@@ -40,7 +40,7 @@ Work: @area
 			- Pick the first three topics
 	Hiring: @section
 		- Review two portfolios @due({today})
-Home: @area
+Home:
 	- Water the plants @start({today-1})
 	Move to the new flat:
 		- Pack the books
@@ -52,6 +52,6 @@ Home: @area
 			- Change the address at the bank
 			- Register at the town hall @start({today+7})
 Learn Rust:
-	A project outside any area.
+	A project with nothing above it.
 	- Finish the ownership chapter @rust
 	- Write a small CLI @rust @start({today+1})

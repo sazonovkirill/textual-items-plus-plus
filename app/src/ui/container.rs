@@ -502,7 +502,7 @@ impl<'a> ContainerPane<'a> {
         }
     }
 
-    /// The line naming what a view's group is listed under: an area or project as its title
+    /// The line naming what a view's group is listed under: a project as its title
     /// line without chips, or a period of days or the day of completion in bold; none for an item
     /// that is not one.
     fn heading(&self, heading: Heading) -> Option<Piece<'a>> {
@@ -654,7 +654,6 @@ impl<'a> ContainerPane<'a> {
     fn marker(&self, item: &Item) -> &'static str {
         let icon = match item.kind {
             ItemKind::Inbox => Icon::Inbox,
-            ItemKind::Area => Icon::Area,
             ItemKind::Project => Icon::Project,
             ItemKind::Section => Icon::Section,
             ItemKind::Task | ItemKind::ChecklistItem if item.completed.is_some() => Icon::DoneTask,
@@ -668,9 +667,7 @@ impl<'a> ContainerPane<'a> {
     fn title_style(&self, item: &Item) -> Style {
         let theme = self.theme;
         let style = match item.kind {
-            ItemKind::Inbox | ItemKind::Project | ItemKind::Area => {
-                Style::new().fg(theme.kind(item.kind)).bold()
-            }
+            ItemKind::Inbox | ItemKind::Project => Style::new().fg(theme.kind(item.kind)).bold(),
             ItemKind::Section => Style::new().fg(theme.kind(item.kind)).bold().italic(),
             ItemKind::Task | ItemKind::ChecklistItem => Style::new(),
         };
@@ -1268,24 +1265,24 @@ mod tests {
             padded(
                 50,
                 &[
-                    "  ○ Website                    ≡ ❞ 2 ⇥ in 20 days",
+                    "  # Website                    ≡ ❞ 2 ⇥ in 20 days",
                     "  The new marketing site, built with the design",
                     "  team.",
                     "",
                     "  - Collect logos from partners",
                     "",
-                    "  § Launch",
+                    "  / Launch",
                     "    What has to happen before launch.",
                     "▌ - Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today",
                     "▌   @writing",
                     "▌   Keep it under 300 words.",
                     "  - Book the launch call @meeting           ⇥ Sat",
                     "",
-                    "  § Polish",
+                    "  / Polish",
                     "  - Fix the footer links",
                     "  ✔ Compress the hero image",
                     "",
-                    "  ○ Blog",
+                    "  # Blog",
                     "    A project inside a project.",
                     "",
                 ]
@@ -1295,7 +1292,7 @@ mod tests {
 
     // FR-VIEW-05, D-26
     #[test]
-    fn an_area_shows_its_child_projects_as_one_row_each() {
+    fn a_project_shows_its_child_projects_as_one_row_each() {
         let document = demo();
         let home = find(&document, "Home");
         let buf = draw_pane(&document, home, None, (40, 6), &mut 0);
@@ -1304,11 +1301,11 @@ mod tests {
             padded(
                 40,
                 &[
-                    "  ◆ Home",
+                    "  # Home",
                     "",
                     "  - Water the plants        ↦ yesterday",
                     "",
-                    "  ○ Move to the new flat",
+                    "  # Move to the new flat",
                     "",
                 ]
             )
@@ -1418,12 +1415,12 @@ mod tests {
             padded(
                 36,
                 &[
-                    "  ○ Website      ≡ ❞ 2 ⇥ in 20 days",
+                    "  # Website      ≡ ❞ 2 ⇥ in 20 days",
                     "  The new marketing site, built wit…",
                     "",
                     "  - Collect logos from partners",
                     "",
-                    "  § Launch",
+                    "  / Launch",
                     "    What has to happen before launc…",
                     "  - Write the … ☑ 1/5 ≡ ❞ 1 ↦ today",
                     "    Keep it under 300 words.",
@@ -1497,7 +1494,7 @@ mod tests {
         );
         assert_eq!(top, 11, "a row in view does not scroll");
         let buf = draw_pane(&document, website, Some("Launch"), (50, 5), &mut top);
-        assert_eq!((top, lines(&buf)[0].trim_end()), (6, "▌ § Launch"));
+        assert_eq!((top, lines(&buf)[0].trim_end()), (6, "▌ / Launch"));
         draw_pane(
             &document,
             website,
@@ -1539,7 +1536,7 @@ mod tests {
             draw_pane(&document, website, Some("Polish"), size, &mut 0);
         }
         let buf = draw_pane(&document, website, Some("Polish"), (4, 1), &mut 0);
-        assert_eq!(lines(&buf), ["▌ § "]);
+        assert_eq!(lines(&buf), ["▌ / "]);
     }
 
     #[test]

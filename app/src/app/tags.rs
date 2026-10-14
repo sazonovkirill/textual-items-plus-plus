@@ -328,9 +328,9 @@ mod tests {
     use super::*;
     use crate::app::rows;
     use crate::domain::{Completion, ItemKind, PlacementError};
-    use ItemKind::{Area, Project, Section, Task};
+    use ItemKind::{Project, Section, Task};
 
-    /// The Inbox holds `a @home`, `b` and `c @home @work`, and `gone @old` in the Trash; area
+    /// The Inbox holds `a @home`, `b` and `c @home @work`, and `gone @old` in the Trash; project
     /// `work @office` holds task `loose`, section `meetings` with `call @phone`, and project
     /// `site`, whose section `launch` holds `ship @deep` and `done @deep`, completed.
     struct Fixture {
@@ -368,7 +368,7 @@ mod tests {
             ..Item::new(Task, "gone")
         };
         document.push(inbox, Node::Item(gone))?;
-        let work = add(&mut document, None, Area, "work", &["office"])?;
+        let work = add(&mut document, None, Project, "work", &["office"])?;
         add(&mut document, Some(work), Task, "loose", &[])?;
         let meetings = add(&mut document, Some(work), Section, "meetings", &[])?;
         add(&mut document, Some(meetings), Task, "call", &["phone"])?;

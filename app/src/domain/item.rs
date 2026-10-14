@@ -47,11 +47,11 @@ impl Node {
 pub enum ItemKind {
     /// The built-in container for tasks not yet organized (FR-ORG-07).
     Inbox,
-    /// A top-level area of responsibility.
-    Area,
-    /// A goal made of tasks, which can hold other projects.
+    /// A goal made of tasks, which can hold other projects to any depth, as Todoist's (D-65).
+    /// A layout kept before areas went names an area `area`, which is now a project (D-66).
+    #[serde(alias = "area")]
     Project,
-    /// A titled group of tasks inside an area or a project.
+    /// A titled group of tasks inside a project.
     Section,
     /// One thing to do.
     Task,
@@ -64,13 +64,12 @@ impl ItemKind {
     /// `parent` is `None`. The Inbox sits nowhere: a document has exactly one, of its own.
     #[must_use]
     pub fn fits_in(self, parent: Option<Self>) -> bool {
-        use ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
+        use ItemKind::{ChecklistItem, Inbox, Project, Section, Task};
         match self {
             Inbox => false,
-            Area => parent.is_none(),
-            Project => matches!(parent, None | Some(Area | Project)),
-            Section => matches!(parent, Some(Area | Project)),
-            Task => matches!(parent, Some(Inbox | Area | Project | Section)),
+            Project => matches!(parent, None | Some(Project)),
+            Section => parent == Some(Project),
+            Task => matches!(parent, Some(Inbox | Project | Section)),
             ChecklistItem => matches!(parent, Some(Task | ChecklistItem)),
         }
     }
@@ -207,7 +206,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Inbox, Project, Section, Task};
 
     #[test]
     fn identifiers_are_equal_only_with_the_same_number() {
@@ -216,13 +215,12 @@ mod tests {
         assert!(ItemId::new(7) < ItemId::new(8));
     }
 
-    // FR-ORG-01, FR-ORG-02, FR-ORG-03, FR-ORG-04, FR-ORG-07, FR-CHK-01
+    // FR-ORG-02, FR-ORG-03, FR-ORG-04, FR-ORG-07, FR-CHK-01
     #[test]
     fn each_kind_fits_only_where_the_hierarchy_allows() {
         let places = [
             None,
             Some(Inbox),
-            Some(Area),
             Some(Project),
             Some(Section),
             Some(Task),
@@ -235,13 +233,9 @@ mod tests {
                 .collect()
         };
         assert_eq!(allowed(Inbox), []);
-        assert_eq!(allowed(Area), [None]);
-        assert_eq!(allowed(Project), [None, Some(Area), Some(Project)]);
-        assert_eq!(allowed(Section), [Some(Area), Some(Project)]);
-        assert_eq!(
-            allowed(Task),
-            [Some(Inbox), Some(Area), Some(Project), Some(Section)]
-        );
+        assert_eq!(allowed(Project), [None, Some(Project)]);
+        assert_eq!(allowed(Section), [Some(Project)]);
+        assert_eq!(allowed(Task), [Some(Inbox), Some(Project), Some(Section)]);
         assert_eq!(allowed(ChecklistItem), [Some(Task), Some(ChecklistItem)]);
     }
 

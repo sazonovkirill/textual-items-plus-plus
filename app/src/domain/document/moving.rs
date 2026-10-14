@@ -84,7 +84,7 @@ impl Document {
 mod tests {
     use super::*;
     use crate::domain::item::{Item, ItemKind, Node};
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
     fn item(kind: ItemKind, title: &str) -> Node {
         Node::Item(Item::new(kind, title))
@@ -228,15 +228,15 @@ mod tests {
             d,
             ..
         } = fixture()?;
-        let area = document.push(None, item(Area, "x"))?;
+        let top = document.push(None, item(Project, "x"))?;
         let check = document.push(Some(d), item(ChecklistItem, "c"))?;
         let missing = ItemId::new(99);
         let refused = [
             (a, Destination::Last(None), PlacementError::DoesNotFit),
             (section, Destination::Last(None), PlacementError::DoesNotFit),
             (
-                area,
-                Destination::Last(Some(project)),
+                top,
+                Destination::Last(Some(section)),
                 PlacementError::DoesNotFit,
             ),
             (

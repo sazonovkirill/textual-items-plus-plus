@@ -22,6 +22,7 @@ Things 3 areas do not nest; the owner asked for nesting projects only (D-2).
 
 **Proposed default:** A.
 **Decision (2026-10-13):** A, areas do not nest.
+Since D-66 (2026-10-14) there are no areas: top-level projects take their place.
 **Affects:** FR-ORG-01, FR-STORE-02.
 
 ### OQ-2 · What converting between kinds does with contents that do not fit — decided
@@ -204,6 +205,7 @@ Work: @area
 ```
 
 **Decision (2026-10-13):** A, kind tags.
+Since D-66 (2026-10-14) there are no areas: `@section` alone is a kind tag, and a line tagged `@area` reads as a project.
 
 **Affects:** FR-STORE-02.
 

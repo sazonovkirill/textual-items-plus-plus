@@ -1,4 +1,4 @@
-//! Editing the title of a task, section, project or area in place, an existing one's or one just
+//! Editing the title of a task, section or project in place, an existing one's or one just
 //! added, any item's description in place, or its note or a comment, an existing one or one just
 //! added, in the attachments panel (FR-EDIT-01, FR-EDIT-02, FR-EDIT-03, FR-EDIT-05, FR-ORG-06,
 //! FR-ORG-10, FR-ATT-03, FR-ATT-04). The text is written to the document as it is typed, so the
@@ -93,11 +93,7 @@ impl Editing {
         let item = document.node(id).and_then(Node::item).filter(|item| {
             matches!(
                 item.kind,
-                ItemKind::Task
-                    | ItemKind::Section
-                    | ItemKind::Project
-                    | ItemKind::Area
-                    | ItemKind::ChecklistItem
+                ItemKind::Task | ItemKind::Section | ItemKind::Project | ItemKind::ChecklistItem
             )
         })?;
         Some(Self {
@@ -280,7 +276,7 @@ impl Editing {
     /// Applies `edit` to the text and shows it as the item's title, description or note. An edit
     /// that puts `@` at the start of a word of a title, by typing it or by deleting what stood
     /// before it, is refused: TaskPaper has no escape for it, so the word would read back as a
-    /// tag. So is an edit that starts a section's, project's or area's title with `-` and a space,
+    /// tag. So is an edit that starts a section's or project's title with `-` and a space,
     /// which would read back as a task. A description's or a note's lines are guarded, so they
     /// hold any text (FR-STORE-04, FR-STORE-05).
     ///
@@ -665,12 +661,12 @@ mod tests {
         let (mut document, _, _, selection) = document()?;
         let mut editing = Editing::new_item(
             &mut document,
-            Item::new(ItemKind::Area, ""),
+            Item::new(ItemKind::Project, ""),
             (None, 0),
             selection.clone(),
         );
         let id = editing.id();
-        assert_eq!(editing.kind(), ItemKind::Area);
+        assert_eq!(editing.kind(), ItemKind::Project);
         assert_eq!(document.top_level(), [id]);
         typed(&mut editing, &mut document, "Home");
         let (transaction, _) = editing.finish(&mut document);
@@ -692,7 +688,7 @@ mod tests {
         let (mut document, a, _, selection) = document()?;
         let mut editing = Editing::new_item(
             &mut document,
-            Item::new(ItemKind::Area, ""),
+            Item::new(ItemKind::Project, ""),
             (None, 0),
             selection.clone(),
         );
@@ -782,7 +778,7 @@ mod tests {
     #[test]
     fn every_item_but_a_checklist_item_has_a_description() -> Result<(), PlacementError> {
         let (mut document, a, check, selection) = document()?;
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
         for id in [document.inbox(), area, a] {
             assert!(Editing::description(&document, id, selection.clone()).is_some());
         }

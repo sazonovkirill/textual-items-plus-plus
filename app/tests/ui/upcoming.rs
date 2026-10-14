@@ -38,7 +38,7 @@ fn open_upcoming() {
         "",
         "  Rest of October",
         "  - Hand back the old keys                       \u{f166c} next Sat",
-        "  \u{f0256} Website                              \u{f11d7} \u{f0189} 2 \u{f166c} in 20 days",
+        "  # Website                              \u{f11d7} \u{f0189} 2 \u{f166c} in 20 days",
         "    The new marketing site, built with the design team.",
         "",
         " \u{f01bf} NAVIGATE · Demo data · not saved",

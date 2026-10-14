@@ -67,7 +67,9 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Palette, &["ctrl+p", "g c"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o` and `O` add
     // the focused row's kind, and the lower and upper case of a kind's letter add one at the
-    // bottom and the top of the container shown (owner, D-40).
+    // bottom and the top of the container shown (owner, D-40). In the sidebar `p` adds a
+    // top-level project and `i`, for **i**nside, one in the focused project; in the pane, where
+    // the container shown is the focused project, they add the same (owner, D-66).
     (Command::EditTitle, &["enter"]),
     (Command::NewLike(Side::Below), &["o"]),
     (Command::NewLike(Side::Above), &["O"]),
@@ -77,6 +79,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::AddSection(End::Top), &["S"]),
     (Command::AddProject(End::Bottom), &["p"]),
     (Command::AddProject(End::Top), &["P"]),
+    (Command::AddSubproject(End::Bottom), &["i"]),
+    (Command::AddSubproject(End::Top), &["I"]),
     (Command::Delete, &["d d", "delete"]),
     // In the Trash, `u` undeletes, as vim's undo would the deletion, and `de` empties it (D-55).
     (Command::Restore, &["u"]),
@@ -714,6 +718,8 @@ mod tests {
             ('S', Command::AddSection(End::Top)),
             ('p', Command::AddProject(End::Bottom)),
             ('P', Command::AddProject(End::Top)),
+            ('i', Command::AddSubproject(End::Bottom)),
+            ('I', Command::AddSubproject(End::Top)),
         ] {
             assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
         }

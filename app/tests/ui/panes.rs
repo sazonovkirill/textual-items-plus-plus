@@ -172,7 +172,7 @@ fn the_panes_and_what_they_show_come_back_on_the_next_launch() {
     let path = dir.path().join("todo.taskpaper");
     std::fs::write(
         &path,
-        "Inbox:\n\t- Call the bank\nWork: @area\n\tWebsite:\n\t\t- Collect logos\n\t\t- Ship it\n",
+        "Inbox:\n\t- Call the bank\nWork:\n\tWebsite:\n\t\t- Collect logos\n\t\t- Ship it\n",
     )
     .expect("the fixture is written");
     let mut harness = Harness::open(path.clone(), 100, 16);

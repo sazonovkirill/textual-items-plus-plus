@@ -43,16 +43,16 @@ fn move_a_task_to_another_project() {
         window(&harness, "Move to"),
         [
             "›",
-            " 󰆧 Work",
-            "   󰉖 Website",
-            "     󰚟 Launch",
-            "     󰚟 Polish",
-            "     󰉖 Blog",
-            "   󰚟 Hiring",
-            " 󰆧 Home",
-            "   󰉖 Move to the new flat",
-            "     󰚟 Paperwork",
-            " 󰉖 Learn Rust",
+            " # Work",
+            "   # Website",
+            "     / Launch",
+            "     / Polish",
+            "     # Blog",
+            "   / Hiring",
+            " # Home",
+            "   # Move to the new flat",
+            "     / Paperwork",
+            " # Learn Rust",
         ],
         "every container but the Inbox the task is in, sections included, as a tree"
     );
@@ -62,7 +62,7 @@ fn move_a_task_to_another_project() {
         "the cursor stands in the query"
     );
     harness.type_text("rust");
-    assert_eq!(window(&harness, "Move to"), ["› rust", " 󰉖 Learn Rust"]);
+    assert_eq!(window(&harness, "Move to"), ["› rust", " # Learn Rust"]);
     harness.key(KeyCode::Enter);
     assert_eq!(window(&harness, "Move to"), Vec::<String>::new());
     assert_eq!(
@@ -81,8 +81,8 @@ fn move_a_task_to_another_project() {
     assert_eq!(
         pane(&harness),
         [
-            "  󰉖 Learn Rust",
-            "  A project outside any area.",
+            "  # Learn Rust",
+            "  A project with nothing above it.",
             "▌ - Finish the ownership chapter @rust",
             "  - Write a small CLI @rust                                          󱙭 tomorrow",
             "  - Call the bank about the card                                          󱙬 Wed",
@@ -118,12 +118,12 @@ fn a_project_moves_to_the_top_level_and_escape_closes_the_picker() {
         [
             "›",
             " 󰋜 Home",
-            " 󰆧 Work",
-            " 󰆧 Home",
-            "   󰉖 Move to the new flat",
-            " 󰉖 Learn Rust",
+            " # Work",
+            " # Home",
+            "   # Move to the new flat",
+            " # Learn Rust",
         ],
-        "a project goes to the top level, an area or a project, never into itself"
+        "a project goes to the top level or a project, never into itself"
     );
     harness.key(KeyCode::Esc);
     assert_eq!(window(&harness, "Move to"), Vec::<String>::new());
@@ -143,7 +143,7 @@ fn a_project_moves_to_the_top_level_and_escape_closes_the_picker() {
         window(&harness, "Navigator")
             .last()
             .map(|row| row.trim_end_matches(|c: char| c.is_ascii_digit() || c == ' ')),
-        Some(" 󰉖 Blog"),
+        Some(" # Blog"),
         "Blog is the last at the top level"
     );
 }

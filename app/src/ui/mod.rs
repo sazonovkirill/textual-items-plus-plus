@@ -834,7 +834,6 @@ fn stop_icon(stop: Stop) -> Icon {
     match stop {
         Stop::Place(place) => match place.kind {
             ItemKind::Inbox => Icon::Inbox,
-            ItemKind::Area => Icon::Area,
             _ => Icon::Project,
         },
         Stop::View(view) => view_icon(view),
@@ -871,7 +870,6 @@ fn move_to_popup<'a>(
         Destination::Home => Icon::Home,
         Destination::Container { kind, .. } => match kind {
             ItemKind::Inbox => Icon::Inbox,
-            ItemKind::Area => Icon::Area,
             ItemKind::Section => Icon::Section,
             _ => Icon::Project,
         },

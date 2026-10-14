@@ -55,7 +55,7 @@ impl Period {
 /// is listed on, in date order, with its items in date order and then in file order. An item is
 /// listed on its start date, else its due date, when that comes after `today` (OQ-8); a
 /// container's dates are its own, so its contents are listed by theirs (OQ-20). It lists tasks,
-/// sections, projects and areas outside the Trash, and not the contents of a completed item
+/// sections and projects outside the Trash, and not the contents of a completed item
 /// (FR-ORG-09); within each group the completed ones come last, and only when `show_completed`
 /// (FR-VIEW-11). No group is empty.
 #[must_use]
@@ -106,7 +106,7 @@ fn collect(document: &Document, id: ItemId, today: Date, dated: &mut Vec<Entry>)
     }
     let row = match item.kind {
         ItemKind::Task => Some(Row::Task { id, section: None }),
-        ItemKind::Section | ItemKind::Project | ItemKind::Area => Some(Row::Project(id)),
+        ItemKind::Section | ItemKind::Project => Some(Row::Project(id)),
         ItemKind::Inbox => None,
         ItemKind::ChecklistItem => return,
     };
@@ -305,7 +305,7 @@ mod tests {
     fn lists_areas_projects_and_sections_and_their_contents_in_file_order()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let area = add(&mut document, None, ItemKind::Area, TOMORROW, None)?;
+        let area = add(&mut document, None, ItemKind::Project, TOMORROW, None)?;
         let project = add(&mut document, Some(area), ItemKind::Project, None, TOMORROW)?;
         let kind = ItemKind::Section;
         let section = add(&mut document, Some(project), kind, TOMORROW, None)?;

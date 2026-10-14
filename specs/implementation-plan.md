@@ -99,7 +99,7 @@ Find anything fast and make the app yours.
 | # | Step | Covers | After | Try it |
 |---|---|---|---|---|
 | 5.1 | **Command palette.** Every registered command with its keys, filtered as you type. | FR-NAV-06 | M4 | `Ctrl+P`, type `move` |
-| 5.2 | **Go to Symbol.** Any area, project, section or task by fuzzy match, opened here or in a new pane. | FR-NAV-05, FR-PANE-02 (palette) | M4 | `/`, type a task |
+| 5.2 | **Go to Symbol.** Any project, section or task by fuzzy match, opened here or in a new pane. | FR-NAV-05, FR-PANE-02 (palette) | M4 | `/`, type a task |
 | 5.3 | **Full-text search.** Titles, descriptions, notes, comments, tags and checklists; completed marked, Trash left out; results open where the item lives or in a new pane, and can be filtered by tags. | FR-SRCH-01–03, FR-PANE-02 (search), FR-TAG-04 (search) | M4 | Search a word that is only in a comment |
 | 5.4 | **Shortcuts panel.** `?` shows the bindings for the current context, from the registry. | FR-KEY-03, FR-KEY-02 | M4 | Press `?` |
 | 5.5 | **Settings.** Port the TOML config that keeps comments and unknown keys, and the settings window with live preview: theme, icons, word wrap. | FR-SET-01–04, FR-UI-03 (switching), FR-UI-04 (toggle), FR-UI-05 | M4 | Switch to Flexoki Light |

@@ -9,7 +9,7 @@ use super::{
 use crate::domain::{Document, ItemId, ItemKind, Node, Transaction};
 
 /// The transaction that converts each of `items` in its place to a project, or to a section when
-/// every one is a project, as a project can't become an area (D-25); items already of that kind
+/// every one is a project (D-25); items already of that kind
 /// stay as they are, and so does each one the hierarchy refuses, or whose title, as a task's
 /// can, starts with `-` and a space, which would read back as a task (FR-TASK-06, FR-ORG-06,
 /// D-47).
@@ -50,7 +50,7 @@ pub(super) fn convert_all(document: &Document, items: &[ItemId]) -> Result<Trans
 
 /// Where a new item of `kind`, a section or a project, goes to group `items`, given in the order
 /// of the rows: where the first of them is, among the children of its parent (D-25). A section
-/// groups only tasks in an area or a project (FR-OPS-07); a project groups tasks, sections and
+/// groups only tasks in a project (FR-OPS-07); a project groups tasks, sections and
 /// projects anywhere but in a section or the Inbox (FR-OPS-08). `None` with no items.
 ///
 /// # Errors
@@ -104,15 +104,15 @@ fn kind(document: &Document, id: ItemId) -> Option<ItemKind> {
 mod tests {
     use super::*;
     use crate::domain::{Item, PlacementError};
-    use ItemKind::{Area, ChecklistItem, Project, Section, Task};
+    use ItemKind::{ChecklistItem, Project, Section, Task};
 
-    /// The Inbox holds `inboxed`; area Work holds tasks `paint` and `order`, section `section`
+    /// The Inbox holds `inboxed`; project Work holds tasks `paint` and `order`, section `section`
     /// holding task `sell`, and projects `site` and `holder`, which holds a section; project `top`
     /// is at the top level.
     struct Fixture {
         document: Document,
         inboxed: ItemId,
-        area: ItemId,
+        work: ItemId,
         paint: ItemId,
         order: ItemId,
         section: ItemId,
@@ -126,19 +126,19 @@ mod tests {
         let mut document = Document::new();
         let item = |kind, title| Node::Item(Item::new(kind, title));
         let inboxed = document.push(Some(document.inbox()), item(Task, "inboxed"))?;
-        let area = document.push(None, item(Area, "Work"))?;
-        let paint = document.push(Some(area), item(Task, "paint"))?;
-        let order = document.push(Some(area), item(Task, "order"))?;
-        let section = document.push(Some(area), item(Section, "Soon"))?;
+        let work = document.push(None, item(Project, "Work"))?;
+        let paint = document.push(Some(work), item(Task, "paint"))?;
+        let order = document.push(Some(work), item(Task, "order"))?;
+        let section = document.push(Some(work), item(Section, "Soon"))?;
         let sell = document.push(Some(section), item(Task, "sell"))?;
-        let site = document.push(Some(area), item(Project, "site"))?;
-        let holder = document.push(Some(area), item(Project, "holder"))?;
+        let site = document.push(Some(work), item(Project, "site"))?;
+        let holder = document.push(Some(work), item(Project, "holder"))?;
         document.push(Some(holder), item(Section, "inner"))?;
         let top = document.push(None, item(Project, "top"))?;
         Ok(Fixture {
             document,
             inboxed,
-            area,
+            work,
             paint,
             order,
             section,
@@ -164,7 +164,6 @@ mod tests {
     fn items_become_projects_or_all_projects_sections() -> Result<(), PlacementError> {
         let Fixture {
             document,
-            area,
             paint,
             section,
             site,
@@ -177,8 +176,6 @@ mod tests {
         let back = converted(&mixed, &[paint, section]);
         assert_eq!(kind(&back, paint), Some(Section));
         assert_eq!(kind(&back, section), Some(Section));
-        let area_converted = converted(&document, &[area]);
-        assert_eq!(kind(&area_converted, area), Some(Project));
         assert_eq!(convert_all(&document, &[]), Ok(Transaction::default()));
         Ok(())
     }
@@ -189,7 +186,7 @@ mod tests {
         let Fixture {
             document,
             inboxed,
-            area,
+            work,
             paint,
             sell,
             holder,
@@ -214,7 +211,7 @@ mod tests {
             assert_eq!(convert_all(&document, &items), Err(refusal), "{items:?}");
         }
         let mut dashed = document.clone();
-        let plan = dashed.push(Some(area), Node::Item(Item::new(Task, "- Plan")))?;
+        let plan = dashed.push(Some(work), Node::Item(Item::new(Task, "- Plan")))?;
         assert_eq!(
             convert_all(&dashed, &[plan]),
             Err(Refusal::ReadsAsTask),
@@ -233,7 +230,7 @@ mod tests {
     fn a_group_goes_where_its_first_item_is() -> Result<(), PlacementError> {
         let Fixture {
             document,
-            area,
+            work,
             paint,
             order,
             section,
@@ -242,11 +239,11 @@ mod tests {
         } = fixture()?;
         assert_eq!(
             group_place(&document, &[order, paint], Section),
-            Ok(Some((Some(area), 1)))
+            Ok(Some((Some(work), 1)))
         );
         assert_eq!(
             group_place(&document, &[section, paint, site], Project),
-            Ok(Some((Some(area), 2)))
+            Ok(Some((Some(work), 2)))
         );
         assert_eq!(group_place(&document, &[], Section), Ok(None));
         Ok(())
