@@ -82,9 +82,9 @@ pub(super) fn settings_input(event: &Event) -> Option<SettingsInput> {
 /// The largest the window gets across.
 const WIDTH: u16 = 64;
 
-/// The window: the settings with their values, the highlighted one on the selection colors, a
-/// `*` and the value in bold where it is not the default, and the settings file's path, if
-/// there is one.
+/// The window: the settings with their values, the highlighted one on the selection colors and
+/// in view, a `*` and the value in bold where it is not the default, and the settings file's
+/// path, if there is one.
 pub(super) struct SettingsWindow<'a> {
     settings: Settings,
     defaults: Settings,
@@ -170,7 +170,13 @@ impl Widget for SettingsWindow<'_> {
             .title(" Settings ");
         let inner = frame.inner(area);
         frame.render(area, buf);
-        for ((line, focused), row) in lines.into_iter().zip(inner.rows()) {
+        // A window too short for its lines scrolls only as far as shows the highlighted setting.
+        let end = lines
+            .iter()
+            .rposition(|&(_, focused)| focused)
+            .map_or(0, |last| last + 1);
+        let offset = end.saturating_sub(usize::from(inner.height));
+        for ((line, focused), row) in lines.into_iter().skip(offset).zip(inner.rows()) {
             if focused {
                 buf.set_style(row, Style::new().bg(theme.selection).fg(theme.band_text));
             }
@@ -259,6 +265,29 @@ mod tests {
             "a changed value"
         );
         assert!(!buf[(18, 4)].modifier.contains(Modifier::BOLD));
+    }
+
+    // FR-SET-02, FR-UI-06
+    #[test]
+    fn a_short_window_scrolls_to_keep_the_highlighted_setting_in_view() {
+        let theme = BuiltIn::default().colors();
+        let area = Rect::new(0, 0, 40, 9);
+        let mut buf = Buffer::empty(area);
+        let settings = (Settings::default(), Settings::default());
+        SettingsWindow::new(settings, Setting::WeatherIdle, None, &theme).render(area, &mut buf);
+        let rows: Vec<String> = (0..area.height)
+            .map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect())
+            .collect();
+        assert_eq!(rows[6], "│   Weather after idle       3 minutes │");
+        assert_eq!(rows[7], "│   How long the app sits idle before …│");
+        assert_eq!(buf[(4, 6)].bg, theme.selection);
+        let mut buf = Buffer::empty(area);
+        SettingsWindow::new(settings, Setting::Theme, None, &theme).render(area, &mut buf);
+        assert_eq!(
+            buf[(4, 2)].bg,
+            theme.selection,
+            "from the top while it fits"
+        );
     }
 
     // FR-SET-01
