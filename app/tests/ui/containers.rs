@@ -56,7 +56,7 @@ fn add_an_area_with_a_project_and_a_section() {
     );
 }
 
-// FR-ORG-06, FR-EDIT-02
+// FR-ORG-06, FR-EDIT-02, D-83
 #[test]
 fn the_container_shown_is_renamed_in_its_heading_and_deleted() {
     let mut harness = Harness::new(60, 16);
@@ -73,6 +73,14 @@ fn the_container_shown_is_renamed_in_its_heading_and_deleted() {
     harness.key(KeyCode::Esc);
     assert_eq!(title(&harness), "# Website site");
     harness.type_text("dc");
+    assert_eq!(title(&harness), "# Website site", "no key deletes it");
+    harness.ctrl('p');
+    harness.type_text("delete container");
+    assert!(
+        harness.screen().contains("Delete Container"),
+        "a command with no key"
+    );
+    harness.key(KeyCode::Enter);
     assert_eq!(title(&harness), "󰆧 Work");
     assert!(!harness.screen().contains("Website"));
     harness.type_text("z");

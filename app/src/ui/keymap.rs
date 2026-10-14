@@ -94,9 +94,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Cut, &["ctrl+x"]),
     (Command::Paste(Side::Below), &["ctrl+v"]),
     (Command::Paste(Side::Above), &["alt+v"]),
-    // The container shown, which no row of its own shows (D-40).
+    // The container shown, which no row of its own shows (D-40); deleting it has no key (D-83).
     (Command::RenameContainer, &["R"]),
-    (Command::DeleteContainer, &["d c"]),
     // `Alt` with a motion moves, leaving taskpaper-terminal's `Tab`/`Shift+Tab` to move between
     // panes; the attachments panel's own keys nest checklist items (D-24, D-42, D-79, D-82).
     (Command::Move(Direction::Up), &["alt+k", "alt+up"]),
@@ -780,8 +779,6 @@ mod tests {
             assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
         }
         assert_eq!(keymap.press(&char('R')), Some(Command::RenameContainer));
-        keymap.press(&char('d'));
-        assert_eq!(keymap.press(&char('c')), Some(Command::DeleteContainer));
     }
 
     // FR-KEY-02
