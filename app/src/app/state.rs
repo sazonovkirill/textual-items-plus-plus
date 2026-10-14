@@ -596,6 +596,10 @@ impl State {
             }
             (Command::NewArea(side), _) => self.sidebar_new(&entries, ItemKind::Area, side),
             (Command::EditTitle, Some(id)) => {
+                self.open(id, None);
+                self.sidebar.focus(false);
+            }
+            (Command::RenameContainer, Some(id)) => {
                 self.editing = Editing::existing(&self.document, id, self.selection.clone());
             }
             (Command::Delete, Some(id)) => {

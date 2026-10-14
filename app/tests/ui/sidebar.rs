@@ -94,7 +94,7 @@ fn reorder_projects_in_the_sidebar() {
 
 // FR-VIEW-10, FR-EDIT-05, FR-ORG-06
 #[test]
-fn add_a_project_to_an_area_and_rename_it_in_the_sidebar() {
+fn add_rename_and_open_entries_in_the_sidebar() {
     let mut harness = sidebar();
     harness.type_text("gg");
     harness.type_text("op");
@@ -115,7 +115,7 @@ fn add_a_project_to_an_area_and_rename_it_in_the_sidebar() {
         harness.rows()[0].contains("󰋜 Inbox"),
         "the pane stays on the Inbox"
     );
-    harness.key(KeyCode::Enter);
+    harness.type_text("R");
     harness.type_text("s");
     harness.key(KeyCode::Enter);
     assert_eq!(
@@ -129,6 +129,9 @@ fn add_a_project_to_an_area_and_rename_it_in_the_sidebar() {
         entries(&harness).first().map(String::as_str),
         Some("*󰆧 Errands")
     );
+    harness.key(KeyCode::Enter);
+    let crumbs: String = harness.rows()[0].chars().skip(28).collect();
+    assert!(crumbs.contains("Errands"), "Enter opens it: {crumbs:?}");
 }
 
 // FR-VIEW-10, FR-OPS-03

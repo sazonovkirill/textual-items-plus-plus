@@ -96,7 +96,7 @@ impl<'a, T> PickerPopup<'a, T> {
         self
     }
 
-    /// The window with what `badge` gives each entry, such as a count, in the accent color at
+    /// The window with what `badge` gives each entry, such as a count, dimmed at
     /// the entry's right end; nothing for an empty one.
     #[must_use]
     pub fn badge(mut self, badge: &'a dyn Fn(&T) -> String) -> Self {
@@ -190,7 +190,7 @@ impl<T> Widget for PickerPopup<'_, T> {
                 .map(|badge| badge(&entry.value))
                 .unwrap_or_default();
             if !badge.is_empty() {
-                let badge = Span::styled(format!(" {badge} "), Style::new().fg(theme.accent));
+                let badge = Span::styled(format!(" {badge} "), Style::new().fg(theme.dim_text));
                 let width = u16::try_from(badge.width()).unwrap_or(u16::MAX);
                 let at = Rect::new(row.right().saturating_sub(width), row.y, width, 1);
                 badge.render(at.intersection(row), buf);
@@ -474,7 +474,7 @@ mod tests {
                 "│     ○ Blog           3 │",
             ]
         );
-        assert_eq!(buf[(22, 2)].fg, theme().accent);
+        assert_eq!(buf[(22, 2)].fg, theme().dim_text);
         assert_eq!(buf[(22, 2)].bg, theme().selection, "on the focused row");
         typed(&mut picker, [TextEdit::Insert('o')]);
         assert_eq!(

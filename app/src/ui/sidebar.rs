@@ -192,7 +192,7 @@ impl Widget for SidebarPane<'_> {
             let title = self.title(place, content);
             let count = match place.open_tasks {
                 0 => Span::raw(""),
-                count => Span::styled(format!(" {count}"), Style::new().fg(theme.accent)),
+                count => Span::styled(format!(" {count}"), Style::new().fg(theme.dim_text)),
             };
             let count_width = u16::try_from(count.width()).unwrap_or(u16::MAX);
             let icon_area = Rect::new(title.icon, row.y, title.x.saturating_sub(title.icon), 1);
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(buf[(5, 1)].bg, theme.current_line);
         assert_eq!(buf[(0, 1)].fg, theme.focus);
         assert_eq!(buf[(3, 0)].fg, theme.headers, "an area");
-        assert_eq!(buf[(17, 0)].fg, theme.accent, "a count");
+        assert_eq!(buf[(17, 0)].fg, theme.dim_text, "a count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusPane);
         let (rows, buf, _) = draw(&state, 20, 5);
@@ -343,7 +343,7 @@ mod tests {
     {
         let mut state = state()?;
         give(&mut state, Command::Focus(crate::app::Focus::Next));
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::RenameContainer);
         let (rows, _, caret) = draw(&state, 20, 3);
         assert_eq!(rows[1], "▌  ○ Website       │", "no count while edited");
         assert_eq!(caret, Some(Position::new(12, 1)));

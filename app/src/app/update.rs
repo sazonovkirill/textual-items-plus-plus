@@ -444,6 +444,13 @@ mod tests {
             state.document().inbox(),
             "going home passes"
         );
+        give(&mut state, Command::EditTitle);
+        assert_eq!(state.container(), work, "Enter opens it");
+        assert!(
+            !state.sidebar_has_keys() && state.sidebar().is_some(),
+            "Enter gives the keys to the pane"
+        );
+        give(&mut state, Command::FocusSidebar);
         give(&mut state, Command::Navigator);
         assert!(state.navigator().is_some(), "the Navigator passes");
         Ok(())
@@ -459,7 +466,7 @@ mod tests {
         state = State::new(document, Opened::Demo);
         let pane = state.selection().clone();
         give(&mut state, Command::Sidebar);
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::RenameContainer);
         type_into(&mut state, "s");
         edit(&mut state, EditInput::Next);
         assert!(state.editing().is_none(), "Enter only ends editing");
@@ -525,6 +532,7 @@ mod tests {
         let before = state.clone();
         for command in [
             Command::EditTitle,
+            Command::RenameContainer,
             Command::Delete,
             Command::Move(Direction::Up),
             Command::Indent,
