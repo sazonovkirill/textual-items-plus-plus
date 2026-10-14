@@ -137,7 +137,7 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     state.set_today(today);
     state.history.forget_changed();
     state.forget_refusal();
-    let mut effects = dispatch(state, message, today);
+    let mut effects = dispatch(state, message, today, true);
     state.settle_sidebar();
     effects.extend(state.step_saving());
     effects
@@ -145,8 +145,10 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
 
 /// Applies `message` to `state` by the module that owns it. A command or a paste ends visual
 /// line mode, as in vim, unless it moves the focus, extends or toggles the mode, or shows or
-/// scrolls the shortcuts panel (D-82).
-fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
+/// scrolls the shortcuts panel (D-82). A command goes to the attachments panel with the keys only
+/// `to_panel`: one chosen from the command palette or the context menu, which only a list or the
+/// sidebar opens, acts there even once the panel has come to cover the list (D-120).
+fn dispatch(state: &mut State, message: Message, today: Date, to_panel: bool) -> Vec<Effect> {
     let emptying = matches!(state.notice(), Some(Notice::EmptyTrash(_)));
     if let Message::Command(_) | Message::Paste(..) = message {
         state.finish_editing();
@@ -167,7 +169,8 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         }
     }
     if let Message::Command(command) = message
-        && (state.panel_command(command, today) || state.sidebar_command(command, today))
+        && (to_panel && state.panel_command(command, today)
+            || state.sidebar_command(command, today))
     {
         return Vec::new();
     }
@@ -182,12 +185,12 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::GoToSymbol(input) => state.go_to_symbol_input(input),
         Message::Palette(input) => {
             if let Some(command) = state.palette_input(input) {
-                return dispatch(state, Message::Command(command), today);
+                return dispatch(state, Message::Command(command), today, false);
             }
         }
         Message::ContextMenu(input) => {
             if let Some(command) = state.context_menu_input(input) {
-                return dispatch(state, Message::Command(command), today);
+                return dispatch(state, Message::Command(command), today, false);
             }
         }
         Message::MoveTo(input) => state.move_to_input(input),

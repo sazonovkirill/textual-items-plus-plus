@@ -159,20 +159,7 @@ impl State {
             command == Command::Quit
                 || (self.editing().is_none()
                     && (attachments::acts_on(command) || attachments::moves_keys(command)))
-        } else if self.editing().is_some()
-            || self.navigator.is_some()
-            || self.palette.is_some()
-            || self.context_menu.is_some()
-            || self.go_to_symbol.is_some()
-            || self.move_to.is_some()
-            || self.tags.is_some()
-            || self.date_prompt.is_some()
-            || self.quick_add.is_some()
-            || self.edit_dialog.is_some()
-            || self.settings_window.is_some()
-            || self.save_as.is_some()
-            || self.searching
-        {
+        } else if self.editing().is_some() || self.prompting() {
             context == Some(Context::Global)
         } else {
             context != Some(Context::Conflict)

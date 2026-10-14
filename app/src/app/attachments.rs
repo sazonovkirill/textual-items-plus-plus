@@ -139,22 +139,30 @@ impl State {
     }
 
     /// Whether the panel of the pane with the keys has them, rather than its list, as it always
-    /// does while it covers the list (D-112).
+    /// does while it covers the list and the list holds no edit and nothing it opened (D-112,
+    /// D-120).
     pub(super) fn panel_has_keys(&self) -> bool {
-        (self.in_panel || self.pane.covered)
+        (self.in_panel || self.pane.covered && !self.prompting() && self.editing().is_none())
             && self.pane.panel.is_some()
             && !self.sidebar.has_keys()
     }
 
     /// Has the pane at `index` among the [`panes`](Self::panes) know whether its panel, while
-    /// open, covers the whole of it as a frontend draws it, keeping the keys from its list; a
-    /// panel that has the keys keeps them once it no longer covers it (D-112).
+    /// open, covers the whole of it as a frontend draws it, keeping the keys from its list,
+    /// whose edit ends while the panel covers it; a panel that has the keys keeps them once it no
+    /// longer covers it, and one that takes them by covering the list keeps them for its own
+    /// edits (D-112, D-120).
     pub fn set_covered(&mut self, index: usize, covered: bool) {
         self.in_panel |= self.panel_has_keys();
+        let list_has_keys = index == self.left.len() && !self.in_panel && !self.sidebar.has_keys();
+        if covered && list_has_keys && self.pane.panel.is_some() {
+            self.finish_editing();
+        }
         let panes = self.left.iter_mut().chain([&mut self.pane]);
         if let Some(pane) = panes.chain(&mut self.right).nth(index) {
             pane.covered = covered;
         }
+        self.in_panel |= self.panel_has_keys();
     }
 
     /// Opens the panel of the pane with the keys on the focused item or on the container shown,
@@ -548,8 +556,8 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, Refusal, TextEdit,
-        update, view::View,
+        Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, Prefill,
+        QuickAddInput, Refusal, TextEdit, update, view::View,
     };
     use crate::domain::{Completion, PlacementError};
 
@@ -1437,6 +1445,41 @@ mod tests {
             keys(&state),
             Some((1, false)),
             "Esc gives the list the keys"
+        );
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-EDIT-07, D-112, D-120
+    #[test]
+    fn what_the_list_opened_keeps_the_keys_from_a_panel_that_comes_to_cover_it()
+    -> Result<(), PlacementError> {
+        let (mut state, a, _) = two_tasks()?;
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::QuickAdd(Prefill::Nothing));
+        state.set_covered(0, true);
+        assert_eq!(keys(&state), Some((0, false)), "Quick Add keeps the keys");
+        update(&mut state, Message::QuickAdd(QuickAddInput::Cancel), TODAY);
+        assert_eq!(keys(&state), Some((0, true)), "then the panel takes them");
+        state.set_covered(0, false);
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::EditTitle);
+        edit(&mut state, EditInput::Text(TextEdit::Insert('!')));
+        state.set_covered(0, true);
+        assert!(state.editing().is_none(), "covering the list ends its edit");
+        assert_eq!(
+            state
+                .document
+                .node(a)
+                .and_then(Node::item)
+                .map(|item| item.title.as_str()),
+            Some("a!"),
+            "kept"
+        );
+        assert_eq!(
+            keys(&state),
+            Some((0, true)),
+            "and the panel takes the keys"
         );
         Ok(())
     }

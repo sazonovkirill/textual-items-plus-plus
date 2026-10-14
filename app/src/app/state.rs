@@ -304,6 +304,24 @@ impl State {
         self.sidebar.has_keys()
     }
 
+    /// Whether a picker, the command palette, the context menu, Go to Symbol, a prompt, Quick Add,
+    /// the edit dialog or the settings window is open, or the words to search for are typed,
+    /// which then take the keys.
+    pub(super) fn prompting(&self) -> bool {
+        self.navigator.is_some()
+            || self.palette.is_some()
+            || self.context_menu.is_some()
+            || self.go_to_symbol.is_some()
+            || self.move_to.is_some()
+            || self.tags.is_some()
+            || self.date_prompt.is_some()
+            || self.quick_add.is_some()
+            || self.edit_dialog.is_some()
+            || self.settings_window.is_some()
+            || self.save_as.is_some()
+            || self.searching
+    }
+
     /// The item edited, which of its texts and the text edited, in edit mode: the note of the
     /// item the attachments panel is on, an entry's item while the sidebar has the keys, else a
     /// row's item or the container shown, whose title and description head the pane.
