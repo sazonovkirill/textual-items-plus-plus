@@ -78,7 +78,7 @@ pub(super) fn path(document: &Document, container: ItemId) -> Vec<ItemId> {
         return Vec::new();
     }
     let mut path = vec![container];
-    while let Some((Some(parent), _)) = path.last().and_then(|&id| document.position(id)) {
+    while let Some(parent) = path.last().and_then(|&id| document.parent(id)) {
         path.push(parent);
     }
     path.reverse();

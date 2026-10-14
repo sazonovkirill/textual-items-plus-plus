@@ -61,7 +61,7 @@ use animation::{Animator, Before, DrawnPane, Intent};
 use attachments::{AttachmentsPanel, PanelKey, Scroll, Scrolled};
 use clipboard::Clipboard;
 use conflict::ConflictPrompt;
-use container::ContainerPane;
+use container::{ContainerPane, Top};
 use crumbs::Crumbs;
 use date_prompt::DatePromptPanel;
 use file::File;
@@ -96,8 +96,8 @@ pub struct Tui {
     theme: Theme,
     /// The settings file, where a setting changed in the app is kept (FR-SET-04).
     config: ConfigFile,
-    /// The first line of each pane's content on screen, left to right.
-    tops: Vec<usize>,
+    /// Where each pane is scrolled to, left to right.
+    tops: Vec<Top>,
     /// The first pane on screen, when they do not all fit.
     first: usize,
     /// How the attachments panel is scrolled.
@@ -131,7 +131,7 @@ impl Tui {
     #[must_use]
     pub fn new(state: State, today: Date, clock: fn() -> DateTime) -> Self {
         Self {
-            tops: vec![0; state.panes().count()],
+            tops: vec![Top::default(); state.panes().count()],
             theme: state.settings().theme.colors(),
             animator: Animator::new(state.settings().animations),
             state,
@@ -453,11 +453,11 @@ impl Tui {
         let after = self.state.panes().count();
         if after > panes {
             let opened = self.state.current_pane().min(self.tops.len());
-            self.tops.insert(opened, 0);
+            self.tops.insert(opened, Top::default());
         } else if after < panes && current < self.tops.len() {
             self.tops.remove(current);
         }
-        self.tops.resize(after, 0);
+        self.tops.resize(after, Top::default());
         self.theme = self.state.settings().theme.colors();
     }
 

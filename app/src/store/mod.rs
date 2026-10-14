@@ -27,7 +27,7 @@ pub use folders::{
     recovery as recovery_folder,
 };
 pub use layouts::{Layouts, LayoutsError};
-pub use open::{OpenError, OpenFile, decode, open, recover};
+pub use open::{OpenError, OpenFile, decode, encode, open, recover};
 pub use recovery::{Recovery, RecoveryError};
 pub use version::Version;
 pub use watch::{Watcher, watch};

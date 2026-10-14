@@ -5,7 +5,7 @@
 //! to keep the focus in view, and the title being edited, if any, as a text field in its row, or
 //! in the heading for the container's own; a description being edited shows whole where it shows.
 
-use std::{borrow::Cow, ops::Range};
+use std::{borrow::Cow, collections::HashMap, ops::Range, rc::Rc};
 
 use jiff::civil::Date;
 use ratatui::{
@@ -41,10 +41,10 @@ const HEADING: usize = usize::MAX;
 pub(super) struct ContainerPane<'a> {
     document: &'a Document,
     shown: Shown,
-    rows: Vec<Row>,
+    rows: Rc<[Row]>,
     /// The container shown when its title is a row the focus takes.
     heading: Option<ItemId>,
-    groups: Vec<Group>,
+    groups: Rc<[Group]>,
     selection: &'a Selection,
     editing: Option<(ItemId, Part, &'a TextField)>,
     /// The words searched for, while the pane shows search results, and whether they are typed.
@@ -75,7 +75,7 @@ impl<'a> ContainerPane<'a> {
         Self {
             document: state.document(),
             shown: pane.shown(),
-            rows: pane.rows(),
+            rows: pane.shared_rows(),
             heading: pane.heading(),
             groups: pane.groups(),
             selection: pane.selection(),
@@ -179,122 +179,329 @@ impl Piece<'_> {
     }
 }
 
-impl StatefulWidget for ContainerPane<'_> {
-    type State = usize;
+/// Where a pane is scrolled to: the first line it shows is `line` lines into its content's part
+/// numbered `part`. Counting by parts rather than by lines lets a pane lay out only the parts it
+/// shows, however many rows it has (N-PERF-02).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Top {
+    part: usize,
+    line: usize,
+}
 
-    fn render(self, area: Rect, buf: &mut Buffer, top: &mut usize) {
+impl Top {
+    /// `lines` lines further down.
+    fn down(self, lines: usize) -> Self {
+        Self {
+            line: self.line + lines,
+            ..self
+        }
+    }
+}
+
+/// A part of the pane's content, laid out on its own: the heading, a blank line opening a group
+/// with the group's heading, if any, or a row with the number it has among the rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Block {
+    Heading,
+    Gap(Option<Heading>),
+    Row(usize),
+}
+
+/// A part laid out: its pieces, the line of the part each starts at, the lines it takes in all
+/// and the lines of its row, if it shows one.
+struct Laid<'a> {
+    pieces: Vec<Piece<'a>>,
+    starts: Vec<usize>,
+    height: usize,
+    row: Option<(usize, usize)>,
+}
+
+/// The pane's parts in content `width`, each laid out when first asked for, so that drawing lays
+/// out only those around the focus and on screen.
+struct Layout<'p, 'a> {
+    pane: &'p ContainerPane<'a>,
+    parts: Vec<Block>,
+    /// The part of each row, by the number it has among the rows.
+    row_parts: Vec<usize>,
+    width: u16,
+    laid: HashMap<usize, Laid<'a>>,
+}
+
+impl<'p, 'a> Layout<'p, 'a> {
+    fn new(pane: &'p ContainerPane<'a>, width: u16) -> Self {
+        let parts = pane.parts();
+        let row_parts = (parts.iter().enumerate())
+            .filter_map(|(part, block)| matches!(block, Block::Row(_)).then_some(part))
+            .collect();
+        Self {
+            parts,
+            row_parts,
+            pane,
+            width,
+            laid: HashMap::new(),
+        }
+    }
+
+    /// The part numbered `part` laid out.
+    fn laid(&mut self, part: usize) -> &Laid<'a> {
+        let (pane, width) = (self.pane, self.width);
+        let kind = self.parts.get(part).copied();
+        self.laid.entry(part).or_insert_with(|| {
+            let pieces = kind.map_or_else(Vec::new, |kind| pane.part_pieces(kind, width));
+            let mut starts = Vec::with_capacity(pieces.len());
+            let mut height = 0;
+            let mut row: Option<(usize, usize)> = None;
+            for piece in &pieces {
+                starts.push(height);
+                let end = height + piece.height(width);
+                if piece.row.is_some() {
+                    row = Some(row.map_or((height, end), |(first, _)| (first, end)));
+                }
+                height = end;
+            }
+            Laid {
+                pieces,
+                starts,
+                height,
+                row,
+            }
+        })
+    }
+
+    fn height(&mut self, part: usize) -> usize {
+        self.laid(part).height
+    }
+
+    /// Past the last line.
+    fn end(&self) -> Top {
+        Top {
+            part: self.parts.len(),
+            line: 0,
+        }
+    }
+
+    /// `at` with its line inside its part, moving on past the parts it counts beyond.
+    fn settled(&mut self, mut at: Top) -> Top {
+        while at.part < self.parts.len() {
+            let height = self.height(at.part);
+            if at.line < height {
+                break;
+            }
+            at.line -= height;
+            at.part += 1;
+        }
+        if at.part >= self.parts.len() {
+            return self.end();
+        }
+        at
+    }
+
+    /// The position `lines` lines above `at`, or the first line.
+    fn up(&mut self, at: Top, mut lines: usize) -> Top {
+        let mut at = at;
+        while at.line < lines {
+            lines -= at.line;
+            let Some(part) = at.part.checked_sub(1) else {
+                return self.settled(Top::default());
+            };
+            at = Top {
+                part,
+                line: self.height(part),
+            };
+        }
+        self.settled(Top {
+            line: at.line - lines,
+            ..at
+        })
+    }
+
+    /// The lines from `from` down to `to`, counted no further than past `limit`.
+    fn between(&mut self, from: Top, to: Top, limit: usize) -> usize {
+        let mut lines = 0;
+        let mut part = from.part;
+        while part < to.part && lines <= limit + from.line {
+            lines += self.height(part);
+            part += 1;
+        }
+        if part < to.part {
+            return limit + 1;
+        }
+        (lines + to.line).saturating_sub(from.line)
+    }
+
+    /// The part showing row `row`, or the heading, the first part, for [`HEADING`].
+    fn part_of(&self, row: usize) -> Option<usize> {
+        if row == HEADING {
+            Some(0)
+        } else {
+            self.row_parts.get(row).copied()
+        }
+    }
+
+    /// The lines of row `row`, from its first to past its last.
+    fn row_span(&mut self, row: usize) -> Option<(Top, Top)> {
+        let part = self.part_of(row)?;
+        let (start, end) = self.laid(part).row?;
+        let start = self.settled(Top { part, line: start });
+        Some((start, Top { part, line: end }))
+    }
+
+    /// The line of the caret, if a piece has one.
+    fn caret(&mut self) -> Option<(Top, usize)> {
+        let edited = self.pane.editing.and_then(|(id, ..)| {
+            self.pane
+                .rows
+                .iter()
+                .position(|row| row.id() == id)
+                .and_then(|row| self.part_of(row))
+        });
+        let width = self.width;
+        [Some(0), edited].into_iter().flatten().find_map(|part| {
+            let laid = self.laid(part);
+            let (piece, start) = laid
+                .pieces
+                .iter()
+                .zip(&laid.starts)
+                .find(|(piece, _)| piece.caret.is_some())?;
+            let (line, column) = piece.caret?;
+            let column = column - piece.shift(width);
+            let x = usize::from(GUTTER + piece.x) + column;
+            Some((
+                Top {
+                    part,
+                    line: start + line,
+                },
+                x,
+            ))
+        })
+    }
+
+    /// Scrolls `top` to keep the lines `span` in view in a pane `height` lines tall, moving it
+    /// no further than needed; to the first of them when they are more than `height`.
+    fn scrolled(&mut self, top: Top, span: Option<(Top, Top)>, height: usize) -> Top {
+        let end = self.end();
+        let top = if self.between(top, end, height) < height {
+            self.up(end, height).min(top)
+        } else {
+            top
+        };
+        match span {
+            Some((start, end)) if start < top || self.between(start, end, height) > height => start,
+            Some((_, end)) if self.between(top, end, height) > height => self.up(end, height),
+            _ => top,
+        }
+    }
+}
+
+impl StatefulWidget for ContainerPane<'_> {
+    type State = Top;
+
+    fn render(self, area: Rect, buf: &mut Buffer, top: &mut Top) {
         self.draw(area, buf, top);
     }
 }
 
 impl ContainerPane<'_> {
-    /// Draws the pane over `area` from content line `top`, scrolled as little as keeps the
-    /// focused row in view, and returns the screen lines of each row on screen, the heading's
-    /// among them, in order.
-    pub(super) fn draw(self, area: Rect, buf: &mut Buffer, top: &mut usize) -> Vec<(ItemId, Rect)> {
+    /// Draws the pane over `area` from `top`, scrolled as little as keeps the focused row in
+    /// view, and returns the screen lines of each row on screen, the heading's among them, in
+    /// order.
+    pub(super) fn draw(self, area: Rect, buf: &mut Buffer, top: &mut Top) -> Vec<(ItemId, Rect)> {
         let width = area.width.saturating_sub(GUTTER);
-        let (pieces, lines, y) = self.laid_out(width);
+        let height = usize::from(area.height);
+        let mut layout = Layout::new(&self, width);
         let focused = self.focused_row();
-        let span = focused.map(|row| row_span(&pieces, &lines, width, row));
+        let span = focused.and_then(|row| layout.row_span(row));
         // Focusing the first row shows the container's title and description above it, when
         // they fit with the row, as does editing that description. A caret stays in view.
-        let height = usize::from(area.height);
-        let caret = pieces
-            .iter()
-            .zip(&lines)
-            .find_map(|(piece, start)| Some(start + piece.caret?.0));
-        let in_row = |line| span.is_some_and(|(start, end)| (start..end).contains(&line));
+        let caret = layout.caret().map(|(line, _)| line);
+        let in_row = |line| span.is_some_and(|(start, end)| start <= line && line < end);
+        let first = layout.settled(Top::default());
         let shown = match caret {
-            Some(line) if !in_row(line) => Some((if line < height { 0 } else { line }, line + 1)),
+            Some(line) if !in_row(line) => {
+                let from = if layout.between(first, line, height) < height {
+                    first
+                } else {
+                    line
+                };
+                Some((from, line.down(1)))
+            }
             _ => span.map(|(start, end)| match focused {
-                Some(0) if end <= height => (0, end),
+                Some(0) if layout.between(first, end, height) <= height => (first, end),
                 _ => (start, end),
             }),
         };
-        *top = scrolled(*top, shown, y, height);
-        *top = scrolled(*top, caret.map(|line| (line, line + 1)), y, height);
-        let band = span.filter(|_| self.keys);
-        if let Some((start, end)) = band {
-            self.band(area, buf, start, end, *top);
+        let settled = layout.settled(*top);
+        *top = layout.scrolled(settled, shown, height);
+        *top = layout.scrolled(*top, caret.map(|line| (line, line.down(1))), height);
+        let mut shown = Vec::new();
+        let mut start = 0;
+        let mut part = top.part;
+        while part < layout.parts.len() && start < top.line + height {
+            shown.push((part, start));
+            start += layout.height(part);
+            part += 1;
         }
-        for (index, row) in self.rows.iter().enumerate() {
-            if self.keys && Some(index) != focused && self.selection.is_picked(row.id()) {
-                let (start, end) = row_span(&pieces, &lines, width, index);
-                self.picked(area, buf, start, end, *top);
+        let focused_part = focused.and_then(|row| layout.part_of(row));
+        let band = shown
+            .iter()
+            .filter(|_| self.keys)
+            .find(|&&(part, _)| Some(part) == focused_part)
+            .and_then(|&(part, at)| {
+                let (start, end) = layout.laid(part).row?;
+                Some((at + start, at + end))
+            });
+        if let Some((start, end)) = band {
+            self.band(area, buf, start, end, top.line);
+        }
+        for &(part, at) in &shown {
+            let picked = self.keys
+                && Some(part) != focused_part
+                && matches!(layout.parts.get(part), Some(&Block::Row(index))
+                    if self.rows.get(index).is_some_and(|row| self.selection.is_picked(row.id())));
+            let laid = layout.laid(part);
+            if let Some((start, end)) = laid.row.filter(|_| picked) {
+                self.picked(area, buf, at + start, at + end, top.line);
+            }
+            for (piece, &start) in laid.pieces.iter().zip(&laid.starts) {
+                draw(piece, at + start, top.line, area, buf);
             }
         }
-        for (piece, &start) in pieces.iter().zip(&lines) {
-            draw(piece, start, *top, area, buf);
-        }
         if let Some((start, end)) = band {
-            self.band_text(area, buf, start, end, *top);
+            self.band_text(area, buf, start, end, top.line);
         }
-        self.on_screen(&pieces, &lines, area, *top)
+        self.on_screen(&mut layout, &shown, area, top.line)
     }
 
-    /// The screen lines over `area` of each row the pieces laid out at content `lines` show from
-    /// content line `top`, in order.
+    /// The screen lines over `area` of each row the parts `shown` show, each with the line it
+    /// starts at counted from the first part's start, `top` lines of which are scrolled away.
     fn on_screen(
         &self,
-        pieces: &[Piece],
-        lines: &[usize],
+        layout: &mut Layout,
+        shown: &[(usize, usize)],
         area: Rect,
         top: usize,
     ) -> Vec<(ItemId, Rect)> {
-        let width = area.width.saturating_sub(GUTTER);
         let bottom = top + usize::from(area.height);
-        let mut shown: Vec<(usize, Rect)> = Vec::new();
-        for (piece, &start) in pieces.iter().zip(lines) {
-            let end = start + piece.height(width);
-            let (Some(row), true) = (piece.row, start < bottom && end > top) else {
-                continue;
-            };
-            let y = |line: usize| area.y + u16::try_from(line - top).unwrap_or(u16::MAX);
-            let rect = Rect::new(area.x, y(start.max(top)), area.width, 0);
-            let rect = Rect {
-                height: y(end.min(bottom)) - rect.y,
-                ..rect
-            };
-            match shown.last_mut() {
-                Some((last, lines)) if *last == row => *lines = lines.union(rect),
-                _ => shown.push((row, rect)),
-            }
-        }
         shown
-            .into_iter()
-            .filter_map(|(row, rect)| {
-                let id = if row == HEADING {
-                    self.heading?
-                } else {
-                    self.rows.get(row)?.id()
+            .iter()
+            .filter_map(|&(part, at)| {
+                let id = match layout.parts.get(part)? {
+                    Block::Heading => self.heading?,
+                    Block::Row(index) => self.rows.get(*index)?.id(),
+                    Block::Gap(_) => return None,
                 };
-                Some((id, rect))
+                let (start, end) = layout.laid(part).row?;
+                let (start, end) = ((at + start).max(top), (at + end).min(bottom));
+                let y = |line: usize| area.y + u16::try_from(line - top).unwrap_or(u16::MAX);
+                (start < end).then(|| {
+                    (
+                        id,
+                        Rect::new(area.x, y(start), area.width, y(end) - y(start)),
+                    )
+                })
             })
             .collect()
     }
-}
-
-/// The first line to show so that the lines `span` of the focused row are in view, moving `top`
-/// no further than needed; the focused row's first lines when it is taller than `height`.
-fn scrolled(top: usize, span: Option<(usize, usize)>, total: usize, height: usize) -> usize {
-    let top = top.min(total.saturating_sub(height));
-    match span {
-        Some((start, end)) if start < top || end - start > height => start,
-        Some((_, end)) if end > top + height => end - height,
-        _ => top,
-    }
-}
-
-/// The content lines from the first to past the last of row `row`.
-fn row_span(pieces: &[Piece], lines: &[usize], width: u16, row: usize) -> (usize, usize) {
-    let mut span: Option<(usize, usize)> = None;
-    for (piece, &start) in pieces.iter().zip(lines) {
-        if piece.row == Some(row) {
-            let end = start + piece.height(width);
-            span = Some(span.map_or((start, end), |(first, _)| (first, end)));
-        }
-    }
-    span.unwrap_or_default()
 }
 
 /// Draws `piece`, whose first line is content line `start`, where it falls in `area` when the
@@ -327,37 +534,22 @@ fn draw(piece: &Piece, start: usize, top: usize, area: Rect, buf: &mut Buffer) {
 }
 
 impl<'a> ContainerPane<'a> {
-    /// Where the terminal's cursor goes when the pane is drawn over `area` from content line
-    /// `top`: at the caret of the title being edited, when it is in view and the pane has room
-    /// for it.
-    pub(super) fn caret(&self, area: Rect, top: usize) -> Option<Position> {
-        let width = area.width.saturating_sub(GUTTER);
-        let (pieces, lines, _) = self.laid_out(width);
-        let (piece, &start) = pieces
-            .iter()
-            .zip(&lines)
-            .find(|(piece, _)| piece.caret.is_some())?;
-        let (line, column) = piece.caret?;
-        let row = (start + line)
-            .checked_sub(top)
-            .filter(|&row| row < usize::from(area.height))?;
-        let column = column - piece.shift(width);
-        let x = usize::from(area.x + GUTTER + piece.x) + column;
-        let x = u16::try_from(x).ok().filter(|&x| x < area.right())?;
-        Some(Position::new(x, area.y + u16::try_from(row).ok()?))
-    }
-
-    /// The pane's content in content `width`: its pieces, the content line each starts at and
-    /// the lines they take in all.
-    fn laid_out(&self, width: u16) -> (Vec<Piece<'a>>, Vec<usize>, usize) {
-        let pieces = self.pieces(width);
-        let mut lines = Vec::with_capacity(pieces.len());
-        let mut y = 0;
-        for piece in &pieces {
-            lines.push(y);
-            y += piece.height(width);
+    /// Where the terminal's cursor goes when the pane is drawn over `area` scrolled to `top`: at
+    /// the caret of the title being edited, when it is in view and the pane has room for it.
+    pub(super) fn caret(&self, area: Rect, top: Top) -> Option<Position> {
+        let height = usize::from(area.height);
+        let mut layout = Layout::new(self, area.width.saturating_sub(GUTTER));
+        let (line, x) = layout.caret()?;
+        let top = layout.settled(top);
+        if line < top {
+            return None;
         }
-        (pieces, lines, y)
+        let row = layout.between(top, line, height);
+        let row = u16::try_from(row).ok().filter(|&row| row < area.height)?;
+        let x = u16::try_from(usize::from(area.x) + x)
+            .ok()
+            .filter(|&x| x < area.right())?;
+        Some(Position::new(x, area.y + row))
     }
 
     /// The index of the focused row among the state's rows, or [`HEADING`] for the heading.
@@ -384,12 +576,52 @@ impl<'a> ContainerPane<'a> {
         Some(field_columns(area.width.saturating_sub(GUTTER), x))
     }
 
-    /// The pane's content in content `width`: the container's title and description, then its
-    /// rows; or the view's name, then each of its groups after a blank line, under its heading.
-    fn pieces(&self, width: u16) -> Vec<Piece<'a>> {
-        let mut pieces = Vec::new();
+    /// The parts of the pane's content: the heading, then a part for each row, after a gap
+    /// opening each group of a container's rows; or, for a view, its name, then each of its groups
+    /// after a gap with its heading.
+    fn parts(&self) -> Vec<Block> {
+        let mut parts = vec![Block::Heading];
         match self.shown {
-            Shown::Container(id) => {
+            Shown::Container(_) => {
+                for (index, row) in self.rows.iter().enumerate() {
+                    let before = index
+                        .checked_sub(1)
+                        .and_then(|before| self.rows.get(before));
+                    let opens_group = index == 0
+                        || match row {
+                            Row::Section(_) => true,
+                            Row::Project(_) => !matches!(before, Some(Row::Project(_))),
+                            Row::Task { .. } => false,
+                        };
+                    if opens_group {
+                        parts.push(Block::Gap(None));
+                    }
+                    parts.push(Block::Row(index));
+                }
+            }
+            Shown::View(_) => {
+                let mut indexes = 0..;
+                for group in self.groups.iter() {
+                    parts.push(Block::Gap(group.heading));
+                    parts.extend(
+                        group
+                            .rows
+                            .iter()
+                            .zip(&mut indexes)
+                            .map(|(_, index)| Block::Row(index)),
+                    );
+                }
+            }
+        }
+        parts
+    }
+
+    /// The pieces of `part` in content `width`: the container's title and description, or the
+    /// view's name; a blank line with the group's heading under it; or a row's lines.
+    fn part_pieces(&self, part: Block, width: u16) -> Vec<Piece<'a>> {
+        let mut pieces = Vec::new();
+        match (part, self.shown) {
+            (Block::Heading, Shown::Container(id)) => {
                 if let Some(container) = self.item(id) {
                     let row = self.heading.map(|_| HEADING);
                     pieces.push(match self.edited(id, Part::Title) {
@@ -413,39 +645,16 @@ impl<'a> ContainerPane<'a> {
                         });
                     }
                 }
-                let rows = &self.rows;
-                let shown = rows
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, row)| Some((index, row, self.item(row.id())?)));
-                for (index, row, item) in shown {
-                    let before = index.checked_sub(1).and_then(|before| rows.get(before));
-                    let opens_group = index == 0
-                        || match row {
-                            Row::Section(_) => true,
-                            Row::Project(_) => !matches!(before, Some(Row::Project(_))),
-                            Row::Task { .. } => false,
-                        };
-                    if opens_group {
-                        pieces.push(Piece::blank());
-                    }
-                    self.row_pieces(index, *row, item, width, &mut pieces);
-                }
             }
-            Shown::View(view) => {
-                pieces.push(self.view_title(view));
-                let mut indexes = 0..;
-                for group in &self.groups {
-                    pieces.push(Piece::blank());
-                    pieces.extend(group.heading.and_then(|heading| self.heading(heading)));
-                    let shown = group
-                        .rows
-                        .iter()
-                        .zip(&mut indexes)
-                        .filter_map(|(row, index)| Some((index, row, self.item(row.id())?)));
-                    for (index, row, item) in shown {
-                        self.row_pieces(index, *row, item, width, &mut pieces);
-                    }
+            (Block::Heading, Shown::View(view)) => pieces.push(self.view_title(view)),
+            (Block::Gap(heading), _) => {
+                pieces.push(Piece::blank());
+                pieces.extend(heading.and_then(|heading| self.heading(heading)));
+            }
+            (Block::Row(index), _) => {
+                let row = self.rows.get(index);
+                if let Some((row, item)) = row.and_then(|row| Some((*row, self.item(row.id())?))) {
+                    self.row_pieces(index, row, item, width, &mut pieces);
                 }
             }
         }
@@ -937,7 +1146,7 @@ mod tests {
         container: ItemId,
         focused: Option<&str>,
         size: (u16, u16),
-        top: &mut usize,
+        top: &mut Top,
     ) -> Buffer {
         draw_wrapped(document, container, focused, size, top, true)
     }
@@ -948,7 +1157,7 @@ mod tests {
         container: ItemId,
         focused: Option<&str>,
         (width, height): (u16, u16),
-        top: &mut usize,
+        top: &mut Top,
         wrap: bool,
     ) -> Buffer {
         let theme = BuiltIn::default().colors();
@@ -957,8 +1166,8 @@ mod tests {
         let pane = ContainerPane {
             document,
             shown: Shown::Container(container),
-            groups: Vec::new(),
-            rows: app::rows(document, container, true),
+            groups: Rc::from([]),
+            rows: app::rows(document, container, true).into(),
             heading: (container != document.inbox()).then_some(container),
             selection: &selection,
             editing: None,
@@ -977,6 +1186,16 @@ mod tests {
     /// Draws the Inbox of the demo document, `width` by 10, while `field` edits the title of
     /// its task titled `title`, and returns the buffer and where the caret is.
     fn draw_editing(title: &str, field: &TextField, width: u16) -> (Buffer, Option<Position>) {
+        draw_editing_from(title, field, width, Top::default())
+    }
+
+    /// As [`draw_editing`], with the caret placed for the pane scrolled to `top`.
+    fn draw_editing_from(
+        title: &str,
+        field: &TextField,
+        width: u16,
+        top: Top,
+    ) -> (Buffer, Option<Position>) {
         let document = demo();
         let theme = BuiltIn::default().colors();
         let id = find(&document, title);
@@ -985,8 +1204,8 @@ mod tests {
         let pane = ContainerPane {
             document: &document,
             shown: Shown::Container(document.inbox()),
-            groups: Vec::new(),
-            rows: app::rows(&document, document.inbox(), false),
+            groups: Rc::from([]),
+            rows: app::rows(&document, document.inbox(), false).into(),
             heading: None,
             selection: &selection,
             editing: Some((id, Part::Title, field)),
@@ -998,8 +1217,8 @@ mod tests {
             wrap: true,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, 10));
-        let caret = pane.caret(buf.area, 0);
-        pane.render(buf.area, &mut buf, &mut 0);
+        let caret = pane.caret(buf.area, top);
+        pane.render(buf.area, &mut buf, &mut Top::default());
         (buf, caret)
     }
 
@@ -1014,8 +1233,8 @@ mod tests {
         let pane = ContainerPane {
             document: &document,
             shown: Shown::Container(document.inbox()),
-            groups: Vec::new(),
-            rows: app::rows(&document, document.inbox(), false),
+            groups: Rc::from([]),
+            rows: app::rows(&document, document.inbox(), false).into(),
             heading: None,
             selection: &selection,
             editing: Some((document.inbox(), Part::Title, &field)),
@@ -1027,7 +1246,7 @@ mod tests {
             wrap: true,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
-        pane.render(buf.area, &mut buf, &mut 0);
+        pane.render(buf.area, &mut buf, &mut Top::default());
         assert_eq!(
             lines(&buf).first().map(String::as_str),
             Some("  ⊔ Tray            ")
@@ -1050,8 +1269,8 @@ mod tests {
         let pane = || ContainerPane {
             document: &document,
             shown: Shown::Container(document.inbox()),
-            groups: Vec::new(),
-            rows: app::rows(&document, document.inbox(), false),
+            groups: Rc::from([]),
+            rows: app::rows(&document, document.inbox(), false).into(),
             heading: None,
             selection: &selection,
             editing: Some((id, Part::Description, field)),
@@ -1064,7 +1283,7 @@ mod tests {
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         let area = buf.area;
-        let mut top = 0;
+        let mut top = Top::default();
         pane().render(area, &mut buf, &mut top);
         (
             buf,
@@ -1153,7 +1372,7 @@ mod tests {
             IconSet::Plain,
         );
         let mut buf = Buffer::empty(Rect::new(0, 0, 40, 9));
-        pane.render(buf.area, &mut buf, &mut 0);
+        pane.render(buf.area, &mut buf, &mut Top::default());
         assert_eq!(
             lines(&buf)
                 .iter()
@@ -1190,7 +1409,7 @@ mod tests {
                 IconSet::Plain,
             );
             let mut buf = Buffer::empty(Rect::new(0, 0, 40, 6));
-            pane.render(buf.area, &mut buf, &mut 0);
+            pane.render(buf.area, &mut buf, &mut Top::default());
             lines(&buf)[2..]
                 .iter()
                 .map(|line| line.trim_end().to_owned())
@@ -1243,7 +1462,7 @@ mod tests {
             IconSet::Plain,
         );
         let mut buf = Buffer::empty(Rect::new(0, 0, 40, 16));
-        pane.render(buf.area, &mut buf, &mut 0);
+        pane.render(buf.area, &mut buf, &mut Top::default());
         let lines = lines(&buf);
         assert!(
             lines.iter().any(|line| line.contains("Garden")),
@@ -1272,7 +1491,7 @@ mod tests {
             IconSet::Plain,
         );
         let mut buf = Buffer::empty(Rect::new(0, 0, 40, 6));
-        pane.render(buf.area, &mut buf, &mut 0);
+        pane.render(buf.area, &mut buf, &mut Top::default());
         assert_eq!(
             lines(&buf)
                 .iter()
@@ -1313,7 +1532,7 @@ mod tests {
                 IconSet::Plain,
             );
             let mut buf = Buffer::empty(Rect::new(0, 0, 70, 5));
-            pane.render(buf.area, &mut buf, &mut 0);
+            pane.render(buf.area, &mut buf, &mut Top::default());
             buf
         };
         let buf = draw(&state);
@@ -1402,7 +1621,7 @@ mod tests {
             IconSet::Plain,
         );
         let mut buf = Buffer::empty(Rect::new(0, 0, 30, 8));
-        pane.render(buf.area, &mut buf, &mut 0);
+        pane.render(buf.area, &mut buf, &mut Top::default());
         let rows = lines(&buf);
         let marked: Vec<_> = (0..8u16)
             .filter(|&y| buf[(0, y)].symbol() == FOCUS_MARKER)
@@ -1472,6 +1691,15 @@ mod tests {
             Some(Position::new(4, 9)),
             "the caret goes where the edited row is"
         );
+        let below = Top {
+            part: usize::MAX,
+            line: 0,
+        };
+        assert_eq!(
+            draw_editing_from("Buy coffee beans", &start, 20, below).1,
+            None,
+            "a row scrolled above the top has no caret"
+        );
         assert_eq!(
             draw_editing("Read the article Sam sent", &start, 20).1,
             None,
@@ -1505,7 +1733,7 @@ mod tests {
             website,
             Some("Write the announcement"),
             (50, 20),
-            &mut 0,
+            &mut Top::default(),
         );
         assert_eq!(
             lines(&buf),
@@ -1542,7 +1770,13 @@ mod tests {
     fn the_heading_takes_the_focus_as_a_row_with_its_description() {
         let document = demo();
         let website = find(&document, "Website");
-        let buf = draw_pane(&document, website, Some("Website"), (50, 4), &mut 0);
+        let buf = draw_pane(
+            &document,
+            website,
+            Some("Website"),
+            (50, 4),
+            &mut Top::default(),
+        );
         assert_eq!(
             lines(&buf),
             [
@@ -1562,7 +1796,7 @@ mod tests {
     fn a_project_shows_its_child_projects_as_one_row_each() {
         let document = demo();
         let home = find(&document, "Home");
-        let buf = draw_pane(&document, home, None, (40, 6), &mut 0);
+        let buf = draw_pane(&document, home, None, (40, 6), &mut Top::default());
         assert_eq!(
             lines(&buf),
             padded(
@@ -1590,7 +1824,7 @@ mod tests {
             website,
             Some("Write the announcement"),
             (50, 20),
-            &mut 0,
+            &mut Top::default(),
         );
         let at = |x, y| buf[(x, y)].style();
         let title = at(4, 0);
@@ -1658,7 +1892,7 @@ mod tests {
             inbox,
             Some("Call the bank about the card"),
             (20, 6),
-            &mut 0,
+            &mut Top::default(),
             false,
         );
         assert_eq!(
@@ -1676,7 +1910,14 @@ mod tests {
             )
         );
         let website = find(&document, "Website");
-        let buf = draw_wrapped(&document, website, None, (36, 10), &mut 0, false);
+        let buf = draw_wrapped(
+            &document,
+            website,
+            None,
+            (36, 10),
+            &mut Top::default(),
+            false,
+        );
         assert_eq!(
             lines(&buf),
             padded(
@@ -1708,7 +1949,7 @@ mod tests {
             inbox,
             Some("Call the bank about the card"),
             (20, 9),
-            &mut 0,
+            &mut Top::default(),
         );
         assert_eq!(
             lines(&buf),
@@ -1734,64 +1975,86 @@ mod tests {
     fn the_pane_scrolls_just_enough_to_keep_the_focused_row_in_view() {
         let document = demo();
         let website = find(&document, "Website");
-        let mut top = 0;
-        let buf = draw_pane(
-            &document,
-            website,
-            Some("Fix the footer links"),
-            (50, 5),
-            &mut top,
-        );
-        assert_eq!(top, 10);
-        assert_eq!(lines(&buf)[4].trim_end(), "▌ - Fix the footer links");
-        draw_pane(
-            &document,
-            website,
-            Some("Compress the hero image"),
-            (50, 5),
-            &mut top,
-        );
-        assert_eq!(top, 11, "one row further down scrolls one line");
-        draw_pane(
-            &document,
-            website,
-            Some("Fix the footer links"),
-            (50, 5),
-            &mut top,
-        );
-        assert_eq!(top, 11, "a row in view does not scroll");
-        let buf = draw_pane(&document, website, Some("Launch"), (50, 5), &mut top);
-        assert_eq!((top, lines(&buf)[0].trim_end()), (6, "▌ / Launch"));
-        draw_pane(
-            &document,
-            website,
-            Some("Collect logos from partners"),
-            (50, 5),
-            &mut top,
-        );
-        assert_eq!(top, 0, "the first row shows the title above it");
-        let buf = draw_pane(
-            &document,
-            website,
-            Some("Write the announcement"),
-            (50, 1),
-            &mut top,
-        );
-        assert_eq!(top, 8, "a row taller than the pane shows its first line");
+        let mut top = Top::default();
+        let first = |focused, height, top: &mut Top| {
+            let buf = draw_pane(&document, website, Some(focused), (50, height), top);
+            (
+                lines(&buf)[0].trim_end().to_owned(),
+                lines(&buf).last().cloned(),
+            )
+        };
+        let (line, last) = first("Fix the footer links", 5, &mut top);
+        assert_eq!(line, "    Keep it under 300 words.");
         assert_eq!(
-            lines(&buf)[0].trim_end(),
-            "▌ - Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today"
+            last.as_deref().map(str::trim_end),
+            Some("▌ - Fix the footer links")
         );
+        assert_eq!(
+            first("Compress the hero image", 5, &mut top).0,
+            "  - Book the launch call @meeting           ⇥ Sat",
+            "one row further down scrolls one line"
+        );
+        assert_eq!(
+            first("Fix the footer links", 5, &mut top).0,
+            "  - Book the launch call @meeting           ⇥ Sat",
+            "a row in view does not scroll"
+        );
+        assert_eq!(first("Launch", 5, &mut top).0, "▌ / Launch");
+        assert_eq!(
+            first("Collect logos from partners", 5, &mut top).0,
+            "  # Website                    ≡ ❞ 2 ⇥ in 20 days",
+            "the first row shows the title above it"
+        );
+        assert_eq!(
+            first("Write the announcement", 1, &mut top).0,
+            "▌ - Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today",
+            "a row taller than the pane shows its first line"
+        );
+    }
+
+    /// Scrolls a pane `height` lines tall, holding the Inbox's title, a blank line and
+    /// `tasks` one-line tasks, from content line `top` to keep content lines `span` in view, and
+    /// gives the content line it scrolls to.
+    fn scrolled(tasks: usize, top: usize, span: Option<(usize, usize)>, height: usize) -> usize {
+        let mut document = Document::new();
+        for task in 0..tasks {
+            let item = Item::new(ItemKind::Task, format!("Task {task}"));
+            document
+                .push(Some(document.inbox()), Node::Item(item))
+                .expect("a task fits the Inbox");
+        }
+        let theme = BuiltIn::default().colors();
+        let selection = Selection::default();
+        let pane = ContainerPane {
+            document: &document,
+            shown: Shown::Container(document.inbox()),
+            groups: Rc::from([]),
+            rows: app::rows(&document, document.inbox(), false).into(),
+            heading: None,
+            selection: &selection,
+            editing: None,
+            search: None,
+            keys: true,
+            today: TODAY,
+            theme: &theme,
+            icons: IconSet::Plain,
+            wrap: true,
+        };
+        let mut layout = Layout::new(&pane, 40);
+        let mut at = |line| layout.settled(Top { part: 0, line });
+        let (top, span) = (at(top), span.map(|(start, end)| (at(start), at(end))));
+        let scrolled = layout.scrolled(top, span, height);
+        layout.between(Top::default(), scrolled, usize::MAX - 1)
     }
 
     #[test]
     fn scrolling_keeps_the_top_within_the_content() {
-        assert_eq!(scrolled(30, None, 10, 4), 6);
-        assert_eq!(scrolled(30, None, 3, 4), 0);
-        assert_eq!(scrolled(2, Some((0, 1)), 10, 4), 0);
-        assert_eq!(scrolled(2, Some((7, 9)), 10, 4), 5);
-        assert_eq!(scrolled(2, Some((3, 5)), 10, 4), 2);
-        assert_eq!(scrolled(0, Some((3, 9)), 10, 4), 3);
+        assert_eq!(scrolled(9, 30, None, 4), 7);
+        assert_eq!(scrolled(1, 30, None, 4), 0);
+        assert_eq!(scrolled(9, 2, Some((0, 1)), 4), 0);
+        assert_eq!(scrolled(9, 2, Some((7, 9)), 4), 5);
+        assert_eq!(scrolled(9, 2, Some((3, 5)), 4), 2);
+        assert_eq!(scrolled(9, 0, Some((3, 9)), 4), 3);
     }
 
     // FR-UI-06
@@ -1800,18 +2063,42 @@ mod tests {
         let document = demo();
         let website = find(&document, "Website");
         for size in [(0, 0), (1, 1), (2, 3), (3, 2), (50, 0)] {
-            draw_pane(&document, website, Some("Polish"), size, &mut 0);
+            draw_pane(
+                &document,
+                website,
+                Some("Polish"),
+                size,
+                &mut Top::default(),
+            );
         }
-        let buf = draw_pane(&document, website, Some("Polish"), (4, 1), &mut 0);
+        let buf = draw_pane(
+            &document,
+            website,
+            Some("Polish"),
+            (4, 1),
+            &mut Top::default(),
+        );
         assert_eq!(lines(&buf), ["▌ / "]);
     }
 
     #[test]
     fn a_container_without_rows_shows_its_title_alone() {
         let document = Document::new();
-        let buf = draw_pane(&document, document.inbox(), None, (12, 2), &mut 0);
+        let buf = draw_pane(
+            &document,
+            document.inbox(),
+            None,
+            (12, 2),
+            &mut Top::default(),
+        );
         assert_eq!(lines(&buf), padded(12, &["  ⊔ Inbox", ""]));
-        let missing = draw_pane(&document, ItemId::new(9), None, (12, 1), &mut 0);
+        let missing = draw_pane(
+            &document,
+            ItemId::new(9),
+            None,
+            (12, 1),
+            &mut Top::default(),
+        );
         assert_eq!(lines(&missing), padded(12, &[""]));
     }
 
@@ -1841,7 +2128,7 @@ mod tests {
         }];
         document.push(Some(inbox), Node::Item(task))?;
         document.push(Some(inbox), Node::Item(talked))?;
-        let buf = draw_pane(&document, inbox, None, (30, 4), &mut 0);
+        let buf = draw_pane(&document, inbox, None, (30, 4), &mut Top::default());
         assert_eq!(
             lines(&buf),
             padded(

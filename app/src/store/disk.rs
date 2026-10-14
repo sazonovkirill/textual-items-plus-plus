@@ -4,26 +4,33 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        Arc,
+        mpsc::{self, Receiver, Sender},
+    },
     thread::{self, JoinHandle},
 };
 
 use jiff::civil::{Date, DateTime};
 
-use super::{Backups, Version, atomic};
+use super::{Backups, Version, atomic, encode, taskpaper::Source};
+use crate::domain::Document;
 
 /// Disk work, done in the order it is submitted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Job {
-    /// Replace the file at `path` with `text` (F-FILE-04), unless just before that the file is no
-    /// longer at `expected`, `None` meaning no file, because another program changed it
-    /// (F-FILE-06). Reports [`Outcome::Saved`], [`Outcome::SaveRefused`] or
-    /// [`Outcome::SaveFailed`].
+    /// Replace the file at `path` with `document`, written back with `source` (F-FILE-04), unless
+    /// just before that the file is no longer at `expected`, `None` meaning no file, because
+    /// another program changed it (F-FILE-06). The worker writes the text, which for a large file
+    /// takes longer than a frame may (N-PERF-02). Reports [`Outcome::Saved`],
+    /// [`Outcome::SaveRefused`] or [`Outcome::SaveFailed`].
     Save {
         /// The file.
         path: PathBuf,
         /// What it should hold.
-        text: String,
+        document: Document,
+        /// The outline it is written back with.
+        source: Arc<Source>,
         /// The version the file should be at now.
         expected: Option<Version>,
     },
@@ -168,9 +175,10 @@ fn work(queue: &Receiver<Request>, mut report: impl FnMut(Outcome), mut backups:
             match request {
                 Request::Job(Job::Save {
                     path,
-                    text,
+                    document,
+                    source,
                     expected,
-                }) => Some(save(&path, &text, expected)),
+                }) => Some(save(&path, &encode(&document, &source), expected)),
                 Request::Job(Job::Backup { path, today }) => backups
                     .ensure(&path, today)
                     .err()
@@ -246,11 +254,12 @@ pub(super) fn read(path: &Path) -> io::Result<Option<Vec<u8>>> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
     use jiff::civil::date;
 
     use super::*;
+    use crate::store::decode;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -269,11 +278,15 @@ mod tests {
         std::mem::take(&mut *outcomes.lock().expect("no panic"))
     }
 
-    /// A save of `text` to `path`, where the file holds `expected`, or nothing.
+    /// A save of `text`, which writes back as it reads, to `path`, where the file holds
+    /// `expected`, or nothing.
     fn save_over(path: &Path, text: &str, expected: Option<&str>) -> Job {
+        let (document, source) = decode(text.as_bytes()).expect("the text is UTF-8");
+        assert_eq!(encode(&document, &source), text);
         Job::Save {
             path: path.to_owned(),
-            text: text.to_owned(),
+            document,
+            source: Arc::new(source),
             expected: expected.map(|text| Version::of(text.as_bytes())),
         }
     }
@@ -290,28 +303,28 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let (disk, outcomes) = start(dir.path());
         let path = dir.path().join("todo.taskpaper");
-        disk.submit(save_over(&path, "one", None));
+        disk.submit(save_over(&path, "Inbox:\none", None));
         disk.submit(save_over(
             &dir.path().join("missing/x.taskpaper"),
-            "x",
+            "Inbox:\n",
             None,
         ));
-        disk.submit(save_over(&path, "two", Some("one")));
+        disk.submit(save_over(&path, "Inbox:\ntwo", Some("Inbox:\none")));
         disk.flush();
         assert_eq!(
             taken(&outcomes),
             [
-                saved("one"),
+                saved("Inbox:\none"),
                 Outcome::SaveFailed {
                     reason: format!(
                         "the folder {} does not exist",
                         dir.path().join("missing").display()
                     )
                 },
-                saved("two"),
+                saved("Inbox:\ntwo"),
             ]
         );
-        assert_eq!(fs::read_to_string(&path)?, "two");
+        assert_eq!(fs::read_to_string(&path)?, "Inbox:\ntwo");
         Ok(())
     }
 
@@ -322,10 +335,10 @@ mod tests {
         let (disk, outcomes) = start(dir.path());
         let path = dir.path().join("todo.taskpaper");
         fs::write(&path, "theirs")?;
-        disk.submit(save_over(&path, "mine", Some("known")));
-        disk.submit(save_over(&path, "mine", None));
+        disk.submit(save_over(&path, "Inbox:\n", Some("known")));
+        disk.submit(save_over(&path, "Inbox:\n", None));
         let gone = dir.path().join("gone.taskpaper");
-        disk.submit(save_over(&gone, "mine", Some("known")));
+        disk.submit(save_over(&gone, "Inbox:\n", Some("known")));
         disk.flush();
         let theirs = Some(b"theirs".to_vec());
         assert_eq!(
@@ -354,7 +367,7 @@ mod tests {
         let (disk, outcomes) = start(dir.path());
         let file = dir.path().join("file");
         fs::write(&file, "")?;
-        disk.submit(save_over(&file.join("x.taskpaper"), "mine", None));
+        disk.submit(save_over(&file.join("x.taskpaper"), "Inbox:\n", None));
         disk.flush();
         let outcomes = taken(&outcomes);
         assert!(
@@ -373,10 +386,10 @@ mod tests {
         let (disk, outcomes) = start(dir.path());
         let link = dir.path().join("loop.taskpaper");
         std::os::unix::fs::symlink(&link, &link)?;
-        disk.submit(save_over(&link, "mine", None));
+        disk.submit(save_over(&link, "Inbox:\n", None));
         let folder = dir.path().join("folder.taskpaper");
         fs::create_dir(&folder)?;
-        disk.submit(save_over(&folder, "mine", None));
+        disk.submit(save_over(&folder, "Inbox:\n", None));
         disk.flush();
         let outcomes = taken(&outcomes);
         assert!(
@@ -402,9 +415,9 @@ mod tests {
             path: path.clone(),
             today: TODAY,
         });
-        disk.submit(save_over(&path, "saved", Some("on disk")));
+        disk.submit(save_over(&path, "Inbox:\nsaved", Some("on disk")));
         drop(disk);
-        assert_eq!(taken(&outcomes), [saved("saved")], "dropping waits");
+        assert_eq!(taken(&outcomes), [saved("Inbox:\nsaved")], "dropping waits");
         let folder = fs::read_dir(dir.path().join("backups"))?
             .next()
             .ok_or("a backup folder")??

@@ -62,6 +62,11 @@ impl Sidebar {
         self.keys = self.shown && keys;
     }
 
+    /// Whether the sidebar shows.
+    pub(super) fn shows(&self) -> bool {
+        self.shown
+    }
+
     /// Whether the sidebar has the keys.
     pub(super) fn has_keys(&self) -> bool {
         self.keys

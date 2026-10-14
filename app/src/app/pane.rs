@@ -2,13 +2,15 @@
 //! completed items shown or not, tag filter and width (FR-PANE-01). Hides how it keeps its focus
 //! on a row and gives way when what it shows can no longer be shown.
 
+use std::{cell::RefCell, rc::Rc};
+
 use jiff::civil::Date;
 
 use super::{
     Selection, TextField,
     container::{self, Row},
     focus::{self, Focus},
-    tags,
+    search, tags,
     view::{self, Group, Shown, View},
     visits::{Visit, Visits},
 };
@@ -29,6 +31,36 @@ pub(super) struct Pane {
     /// The width the pane keeps, as the frontend measures it, once narrowed or widened; without
     /// one it shares what the others leave (FR-PANE-02).
     pub(super) width: Option<u16>,
+    listing: Listing,
+}
+
+/// The rows and groups a pane listed last, with what they were listed from, so that they are
+/// found once for each change rather than each time they are asked for (N-PERF-02). They are
+/// asked for only of the document of the state holding the pane, whose revisions never repeat,
+/// and a reload, which brings another document, forgets them. It only saves work, so every
+/// listing is equal to every other.
+#[derive(Debug, Clone, Default)]
+struct Listing(RefCell<Option<Listed>>);
+
+impl PartialEq for Listing {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Listing {}
+
+/// What a pane lists and what from.
+#[derive(Debug, Clone)]
+struct Listed {
+    revision: u64,
+    shown: Shown,
+    today: Date,
+    show_completed: bool,
+    query: String,
+    filter: Vec<String>,
+    rows: Rc<[Row]>,
+    groups: Rc<[Group]>,
 }
 
 impl Pane {
@@ -49,6 +81,7 @@ impl Pane {
             filter: Vec::new(),
             query: TextField::new(String::new()),
             width: None,
+            listing: Listing::default(),
         };
         pane.arrive(document, today, visit);
         pane
@@ -75,34 +108,88 @@ impl Pane {
     }
 
     /// The rows the pane lists in `document` on `today`, in order, those the tag filter keeps.
-    pub(super) fn rows(&self, document: &Document, today: Date) -> Vec<Row> {
-        listed(
-            document,
-            (self.shown, today, self.query.text()),
-            self.show_completed,
-            &self.filter,
-        )
+    pub(super) fn rows(&self, document: &Document, today: Date) -> Rc<[Row]> {
+        self.listed(document, today, |listed| Rc::clone(&listed.rows))
     }
 
     /// The groups of the view shown, each under its heading, with the rows the tag filter keeps;
     /// none for a container.
-    pub(super) fn groups(&self, document: &Document, today: Date) -> Vec<Group> {
-        let Shown::View(shown) = self.shown else {
-            return Vec::new();
+    pub(super) fn groups(&self, document: &Document, today: Date) -> Rc<[Group]> {
+        self.listed(document, today, |listed| Rc::clone(&listed.groups))
+    }
+
+    /// What `read` reads of what the pane lists in `document` on `today`, listed again only when
+    /// the document or what the pane shows has changed since it was last listed.
+    fn listed<T>(&self, document: &Document, today: Date, read: impl FnOnce(&Listed) -> T) -> T {
+        let mut listing = self.listing.0.borrow_mut();
+        let query = match self.shown {
+            Shown::View(View::Search) => self.query.text(),
+            _ => "",
         };
-        view::groups(
-            document,
-            shown,
+        let current = listing.as_ref().filter(|listed| {
+            listed.revision == document.revision()
+                && listed.shown == self.shown
+                && listed.today == today
+                && listed.show_completed == self.show_completed
+                && listed.query == query
+                && listed.filter == self.filter
+        });
+        if let Some(listed) = current {
+            return read(listed);
+        }
+        let narrowed = listing.take_if(|listed| {
+            listed.revision == document.revision()
+                && listed.shown == Shown::View(View::Search)
+                && self.shown == listed.shown
+                && listed.show_completed == self.show_completed
+                && listed.filter == self.filter
+                && search::narrows(&listed.query, query)
+        });
+        if let Some(listed) = narrowed {
+            let rows = search::refined(document, query, &listed.rows);
+            let groups = if rows.is_empty() {
+                Vec::new()
+            } else {
+                vec![Group {
+                    heading: None,
+                    rows: rows.clone(),
+                }]
+            };
+            return read(listing.insert(Listed {
+                query: query.to_owned(),
+                rows: rows.into(),
+                groups: groups.into(),
+                ..listed
+            }));
+        }
+        let (rows, groups) = match self.shown {
+            Shown::Container(id) => (
+                container::rows(document, id, self.show_completed),
+                Vec::new(),
+            ),
+            Shown::View(shown) => {
+                let groups = view::groups(document, shown, today, self.show_completed, query);
+                let rows = groups.iter().flat_map(|group| group.rows.clone()).collect();
+                let groups = groups
+                    .into_iter()
+                    .filter_map(|group| {
+                        let rows = tags::filtered(document, group.rows, &self.filter);
+                        (!rows.is_empty()).then_some(Group { rows, ..group })
+                    })
+                    .collect();
+                (rows, groups)
+            }
+        };
+        read(listing.insert(Listed {
+            revision: document.revision(),
+            shown: self.shown,
             today,
-            self.show_completed,
-            self.query.text(),
-        )
-        .into_iter()
-        .filter_map(|group| {
-            let rows = tags::filtered(document, group.rows, &self.filter);
-            (!rows.is_empty()).then_some(Group { rows, ..group })
-        })
-        .collect()
+            show_completed: self.show_completed,
+            query: query.to_owned(),
+            filter: self.filter.clone(),
+            rows: tags::filtered(document, rows, &self.filter).into(),
+            groups: groups.into(),
+        }))
     }
 
     /// Moves the focus as `motion` says, keeping what is picked.
@@ -223,6 +310,7 @@ impl Pane {
         nearest: impl Fn(ItemId) -> Option<ItemId>,
         exact: impl Fn(ItemId) -> Option<ItemId>,
     ) {
+        self.listing = Listing::default();
         let opens = |id: ItemId| container::opens(document, id).then_some(id);
         if let Shown::Container(id) = self.shown {
             let kept = exact(id).and_then(opens);
@@ -296,12 +384,20 @@ impl<'a> PaneView<'a> {
     /// The rows the pane lists, in order, those the tag filter keeps.
     #[must_use]
     pub fn rows(&self) -> Vec<Row> {
+        self.shared_rows().to_vec()
+    }
+
+    /// As [`rows`](Self::rows), shared with the pane rather than copied, for a frontend that
+    /// reads them for each frame (N-PERF-02).
+    #[must_use]
+    pub fn shared_rows(&self) -> Rc<[Row]> {
         self.pane.rows(self.document, self.today)
     }
 
-    /// The groups of the view shown, each under its heading; none for a container.
+    /// The groups of the view shown, each under its heading; none for a container. They are
+    /// shared with the pane rather than copied (N-PERF-02).
     #[must_use]
-    pub fn groups(&self) -> Vec<Group> {
+    pub fn groups(&self) -> Rc<[Group]> {
         self.pane.groups(self.document, self.today)
     }
 

@@ -696,6 +696,30 @@ mod tests {
         Ok(())
     }
 
+    // F-FILE-06, N-PERF-02
+    #[test]
+    fn a_reload_lists_the_document_read_again_at_whatever_revision() -> TestResult {
+        let mut state = opened(&["a", "b", "c"])?;
+        // The same changes in another order: the same revision, with other identifiers.
+        let mut theirs = Document::new();
+        let inbox = Some(theirs.inbox());
+        let project = theirs.push(None, Node::Item(Item::new(ItemKind::Project, "P")))?;
+        for title in ["a", "b", "c"] {
+            theirs.push(inbox, Node::Item(Item::new(ItemKind::Task, title)))?;
+        }
+        for title in ["p1", "p2"] {
+            theirs.push(Some(project), Node::Item(Item::new(ItemKind::Task, title)))?;
+        }
+        assert_eq!(theirs.revision(), state.document().revision());
+        send(&mut state, Message::OnDisk(OnDisk::Changed(theirs.clone())));
+        assert_eq!(
+            state.rows(),
+            crate::app::container::rows(&theirs, theirs.inbox(), false),
+            "not the rows listed before"
+        );
+        Ok(())
+    }
+
     // F-FILE-06, FR-OPS-01
     #[test]
     fn a_reload_keeps_the_picked_items_found_again() -> TestResult {

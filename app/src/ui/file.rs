@@ -5,7 +5,7 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::mpsc::Sender,
+    sync::{Arc, mpsc::Sender},
 };
 
 use jiff::civil::{Date, DateTime};
@@ -16,8 +16,7 @@ use crate::{
     domain::Document,
     store::{
         self, Backups, Disk, Job, Layouts, OpenError, OpenFile, Outcome, Recovery, RecoveryError,
-        Version, Watcher,
-        taskpaper::{Source, serialize, write_document},
+        Version, Watcher, taskpaper::Source,
     },
 };
 
@@ -45,8 +44,8 @@ pub struct Edge {
 #[derive(Debug)]
 pub(super) struct File {
     path: PathBuf,
-    /// The outline the document is written back with.
-    source: Source,
+    /// The outline the document is written back with, shared with the saves under way.
+    source: Arc<Source>,
     /// The version of the file the app last read or wrote, `None` while there is none.
     known: Option<Version>,
     /// The file as another program left it, with the outline it reads as when it can be read,
@@ -119,7 +118,7 @@ impl File {
         });
         let file = Self {
             path,
-            source,
+            source: Arc::new(source),
             known: version,
             theirs: None,
             disk,
@@ -140,7 +139,8 @@ impl File {
         });
         self.disk.submit(Job::Save {
             path: self.path.clone(),
-            text: self.text(document),
+            document: document.clone(),
+            source: Arc::clone(&self.source),
             expected: self.known,
         });
     }
@@ -207,7 +207,7 @@ impl File {
     /// From now on the document is written the way the file another program left was read.
     pub(super) fn reloaded(&mut self) {
         if let Some((_, Some(source))) = self.theirs.take() {
-            self.source = source;
+            self.source = Arc::new(source);
         }
     }
 
@@ -261,7 +261,7 @@ impl File {
 
     /// `document` as its file holds it.
     pub(super) fn text(&self, document: &Document) -> String {
-        serialize(&write_document(document, &self.source))
+        store::encode(document, &self.source)
     }
 
     /// Writes `document`, which holds changes the file lacks, to a recovery file, once the disk

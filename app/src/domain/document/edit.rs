@@ -192,23 +192,21 @@ impl Document {
     #[must_use]
     pub fn position(&self, id: ItemId) -> Option<(Option<ItemId>, usize)> {
         let index_in = |siblings: &[ItemId]| siblings.iter().position(|&child| child == id);
-        if let Some(index) = index_in(&self.top_level) {
-            return Some((None, index));
+        match self.parent(id) {
+            Some(parent) => Some((Some(parent), index_in(self.children(parent))?)),
+            None => Some((None, index_in(&self.top_level)?)),
         }
-        self.entries
-            .iter()
-            .find_map(|(&parent, entry)| Some((Some(parent), index_in(&entry.children)?)))
     }
 
     /// The node `id` with its subtree as it is now, for building an [`Op::Remove`]; `None` when
     /// this document has no such node.
     #[must_use]
     pub fn snapshot(&self, id: ItemId) -> Option<Snapshot> {
-        let top = (id, self.entries.get(&id)?.clone());
+        let top = (id, self.entries.get(id)?.clone());
         let mut below = Vec::new();
         let mut pending: Vec<ItemId> = top.1.children.iter().rev().copied().collect();
         while let Some(next) = pending.pop() {
-            let entry = self.entries.get(&next)?.clone();
+            let entry = self.entries.get(next)?.clone();
             pending.extend(entry.children.iter().rev());
             below.push((next, entry));
         }
@@ -219,7 +217,7 @@ impl Document {
     /// such node.
     #[must_use]
     pub fn branch(&self, id: ItemId) -> Option<Branch> {
-        let entry = self.entries.get(&id)?;
+        let entry = self.entries.get(id)?;
         Some(Branch {
             node: entry.node.clone(),
             children: entry
@@ -320,12 +318,20 @@ impl Document {
         let made = ItemId::new(self.next_number);
         if let Some(&(id, _)) = subtree
             .entries()
-            .find(|&&(id, _)| id >= made || self.entries.contains_key(&id))
+            .find(|&&(id, _)| id >= made || self.entries.get(id).is_some())
         {
             return Err(PlacementError::IdUnavailable(id));
         }
-        self.entries.extend(subtree.entries().cloned());
         self.siblings_mut(parent)?.insert(index, subtree.id());
+        for (id, entry) in subtree.entries() {
+            self.entries.insert(*id, entry.clone(), None);
+        }
+        self.entries.set_parent(subtree.id(), parent);
+        for (id, entry) in subtree.entries() {
+            for &child in &entry.children {
+                self.entries.set_parent(child, Some(*id));
+            }
+        }
         Ok(())
     }
 
@@ -342,7 +348,7 @@ impl Document {
             return Err(PlacementError::Stale(id));
         }
         for (id, _) in subtree.entries() {
-            self.entries.remove(id);
+            self.entries.remove(*id);
         }
         self.siblings_mut(parent)?.remove(index);
         Ok(())
@@ -351,7 +357,7 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use super::super::Nodes;
 
     use proptest::prelude::*;
 
@@ -846,8 +852,26 @@ mod tests {
 
     /// What a document holds, leaving out which identifiers it has handed out, since undoing an
     /// insert does not take back its identifier.
-    fn nodes(document: &Document) -> (&HashMap<ItemId, Entry>, &[ItemId]) {
+    fn nodes(document: &Document) -> (&Nodes, &[ItemId]) {
         (&document.entries, &document.top_level)
+    }
+
+    /// Where `id` is in `document`, found by looking through every node's children, as
+    /// [`Document::position`] should find it.
+    fn placed(document: &Document, id: ItemId) -> Option<(Option<ItemId>, usize)> {
+        let index_in = |siblings: &[ItemId]| siblings.iter().position(|&child| child == id);
+        if let Some(index) = index_in(document.top_level()) {
+            return Some((None, index));
+        }
+        let mut pending = vec![document.inbox()];
+        pending.extend(document.top_level());
+        while let Some(parent) = pending.pop() {
+            if let Some(index) = index_in(document.children(parent)) {
+                return Some((Some(parent), index));
+            }
+            pending.extend(document.children(parent));
+        }
+        None
     }
 
     /// Picks one of the fixture's edits by `choice`: a rename, a removal, an insert or a move.
@@ -871,7 +895,7 @@ mod tests {
     }
 
     proptest! {
-        // FR-EDIT-06, N-UX-02
+        // FR-EDIT-06, N-UX-02, N-PERF-02
         #[test]
         fn undoing_any_sequence_of_edits_restores_the_document(
             choices in prop::collection::vec((0..10usize, 0..10usize, 0..3u8), 0..12)
@@ -896,10 +920,20 @@ mod tests {
                 } else {
                     prop_assert_eq!(&document, &before);
                 }
+                for &id in &ids {
+                    let placed = placed(&document, id);
+                    prop_assert_eq!(document.position(id), placed);
+                    prop_assert_eq!(document.parent(id), placed.and_then(|(parent, _)| parent));
+                }
             }
             while let (Some(transaction), Some(before)) = (applied.pop(), states.pop()) {
                 document.apply(&transaction.inverse())?;
                 prop_assert_eq!(nodes(&document), nodes(&before));
+                for &id in &ids {
+                    let placed = placed(&document, id);
+                    prop_assert_eq!(document.position(id), placed);
+                    prop_assert_eq!(document.parent(id), placed.and_then(|(parent, _)| parent));
+                }
             }
         }
     }

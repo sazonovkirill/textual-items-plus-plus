@@ -47,17 +47,17 @@ enum Place {
 /// does not interpret, such as a task at the top level or a project inside a section, are kept
 /// with everything under them (FR-STORE-09).
 #[must_use]
-pub fn read_document(outline: &Outline) -> (Document, Source) {
+pub fn read_document(outline: Outline) -> (Document, Source) {
     let mut reader = Reader {
-        outline,
+        outline: &outline,
         document: Document::new(),
         lines: HashMap::new(),
     };
     let mut inbox_found = false;
     let mut previous = None;
     let mut inbox_after = None;
-    for &line_id in children(outline, outline.root()) {
-        if !inbox_found && is_inbox(line(outline, line_id)) {
+    for &line_id in children(&outline, outline.root()) {
+        if !inbox_found && is_inbox(line(&outline, line_id)) {
             inbox_found = true;
             inbox_after = previous;
             reader.read_inbox(line_id);
@@ -65,12 +65,13 @@ pub fn read_document(outline: &Outline) -> (Document, Source) {
             previous = Some(reader.read_node(None, Place::Top, line_id));
         }
     }
+    let (document, lines) = (reader.document, reader.lines);
     let source = Source {
-        outline: outline.clone(),
-        lines: reader.lines,
+        outline,
+        lines,
         inbox_after,
     };
-    (reader.document, source)
+    (document, source)
 }
 
 /// The outline of `document`, in the format `source` was read in. A node whose line, description
@@ -760,7 +761,7 @@ Work: @area
 ";
 
     fn load(text: &str) -> (Document, Source) {
-        read_document(&parse_bytes(text.as_bytes()).unwrap())
+        read_document(parse_bytes(text.as_bytes()).unwrap())
     }
 
     fn save(document: &Document, source: &Source) -> String {

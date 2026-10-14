@@ -9,11 +9,16 @@ license = "MIT"
 name = "tipp"
 path = "src/main.rs"
 
+[[bench]]
+name = "perf"
+harness = false
+
 [dependencies]
 anyhow = "1.0.104"
 arboard = { version = "3.6.1", default-features = false }
 crossterm = { version = "0.29.0", features = ["osc52"] }
 jiff = "0.2.37"
+memchr = "2.8.3"
 notify-debouncer-full = "0.7.0"
 nucleo-matcher = "0.3.1"
 ratatui = { version = "0.30.2", features = ["unstable-rendered-line-info"] }

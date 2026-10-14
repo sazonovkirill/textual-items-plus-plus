@@ -109,56 +109,73 @@ pub(super) fn places(document: &Document) -> Vec<Candidate<Place>> {
     let mut places = Vec::new();
     let tops = std::iter::once(document.inbox()).chain(document.top_level().iter().copied());
     for id in tops {
-        list(document, id, &mut Vec::new(), &mut places);
+        if let Some(item) = shown(document, id)
+            && matches!(item.kind, ItemKind::Inbox | ItemKind::Project)
+        {
+            list(document, id, item, &mut Vec::new(), &mut places);
+        }
     }
     places
 }
 
-/// Adds the place `id` is, if it is one, and those inside it to `places`, under the titles
-/// `above`.
+/// Adds the place `id`, shown as `item`, and those inside it to `places`, under the titles
+/// `above`, and gives how many open tasks it holds; each place's count is the sum of what is
+/// inside it, so the document is walked once (N-PERF-02).
 fn list<'a>(
     document: &'a Document,
     id: ItemId,
+    item: &'a Item,
     above: &mut Vec<&'a str>,
     places: &mut Vec<Candidate<Place>>,
-) {
-    let Some(item) = shown(document, id) else {
-        return;
-    };
-    if !matches!(item.kind, ItemKind::Inbox | ItemKind::Project) {
-        return;
-    }
+) -> usize {
+    let at = places.len();
     places.push(Candidate {
         value: Place {
             id,
             kind: item.kind,
             depth: above.len(),
-            open_tasks: open_tasks(document, id),
+            open_tasks: 0,
         },
         text: item.title.clone(),
         detail: above.join(" › "),
     });
     above.push(&item.title);
+    let mut open = 0;
     for &child in document.children(id) {
-        list(document, child, above, places);
+        let held = match shown(document, child) {
+            Some(inside) if inside.kind == ItemKind::Project => {
+                list(document, child, inside, above, places)
+            }
+            _ => open_tasks(document, id, child),
+        };
+        open += held;
     }
     above.pop();
+    if let Some(place) = places.get_mut(at) {
+        place.value.open_tasks = open;
+    }
+    open
 }
 
-/// How many tasks not completed `id` holds, at any depth, leaving out the Trash, what completed
-/// items hold (FR-ORG-09) and, as its view does, the Inbox's scheduled tasks (FR-VIEW-01).
-fn open_tasks(document: &Document, id: ItemId) -> usize {
-    document
-        .children(id)
-        .iter()
-        .filter_map(|&child| Some((child, shown(document, child)?)))
-        .filter(|(_, item)| !container::scheduled_out_of_inbox(document, id, item))
-        .map(|(child, item)| match item.kind {
-            ItemKind::Task => 1,
-            // Only tasks hold checklist items, so below a task there are no tasks to count.
-            _ => open_tasks(document, child),
-        })
-        .sum()
+/// How many tasks not completed `child` of `parent` is or holds, at any depth, leaving out the
+/// Trash, what completed items hold (FR-ORG-09) and, as its view does, the Inbox's scheduled
+/// tasks (FR-VIEW-01).
+fn open_tasks(document: &Document, parent: ItemId, child: ItemId) -> usize {
+    let Some(item) = shown(document, child) else {
+        return 0;
+    };
+    if container::scheduled_out_of_inbox(document, parent, item) {
+        return 0;
+    }
+    match item.kind {
+        ItemKind::Task => 1,
+        // Only tasks hold checklist items, so below a task there are no tasks to count.
+        _ => document
+            .children(child)
+            .iter()
+            .map(|&inside| open_tasks(document, child, inside))
+            .sum(),
+    }
 }
 
 /// The item `id`, unless it is not one, is in the Trash or is completed.

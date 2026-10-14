@@ -13,7 +13,7 @@ const DEMO: &str = include_str!("demo.taskpaper");
 /// The demo document, with every date placeholder resolved relative to `today`.
 #[must_use]
 pub fn document(today: Date) -> Document {
-    read_document(&parse(&resolve(DEMO, today))).0
+    read_document(parse(&resolve(DEMO, today))).0
 }
 
 /// `text` with each `{today}`, `{today+N}` and `{today-N}` replaced by that day, `N` days from
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn demo_is_written_back_as_resolved() {
         let text = resolve(DEMO, TODAY);
-        let (document, source) = read_document(&parse(&text));
+        let (document, source) = read_document(parse(&text));
         assert_eq!(serialize(&write_document(&document, &source)), text);
     }
 }

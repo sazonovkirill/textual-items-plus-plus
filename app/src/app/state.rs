@@ -1,6 +1,6 @@
 //! The application state a frontend renders, changed only by [`update`](super::update).
 
-use std::{mem, path::PathBuf};
+use std::{mem, path::PathBuf, rc::Rc};
 
 use jiff::civil::Date;
 
@@ -160,8 +160,8 @@ impl State {
 
     /// The rows every pane lists, left to right, to keep each pane's focus on a row once they
     /// change.
-    fn listings(&self) -> Vec<Vec<Row>> {
-        self.panes().map(|pane| pane.rows()).collect()
+    fn listings(&self) -> Vec<Rc<[Row]>> {
+        self.panes().map(|pane| pane.shared_rows()).collect()
     }
 
     /// The document.
@@ -198,6 +198,11 @@ impl State {
     /// The rows the pane lists, in order, those the tag filter keeps.
     #[must_use]
     pub fn rows(&self) -> Vec<Row> {
+        self.listed().to_vec()
+    }
+
+    /// As [`rows`](Self::rows), shared with the pane rather than copied.
+    pub(super) fn listed(&self) -> Rc<[Row]> {
         self.pane().rows(&self.document, self.today)
     }
 
@@ -205,7 +210,7 @@ impl State {
     /// none for a container.
     #[must_use]
     pub fn groups(&self) -> Vec<Group> {
-        self.pane().groups(&self.document, self.today)
+        self.pane().groups(&self.document, self.today).to_vec()
     }
 
     /// The tags the pane is filtered by, none when it is not (FR-TAG-04).
@@ -297,7 +302,7 @@ impl State {
     /// Moves the focus a row `direction`, picking the rows from where the run of extensions
     /// began to it (FR-OPS-01).
     pub(super) fn extend_selection(&mut self, direction: Direction) {
-        let rows = self.rows();
+        let rows = self.listed();
         let motion = match direction {
             Direction::Up => Focus::Previous,
             Direction::Down => Focus::Next,
@@ -308,13 +313,13 @@ impl State {
 
     /// Picks the focused row, or unpicks it when it is picked (FR-OPS-01).
     pub(super) fn toggle_picked(&mut self) {
-        let rows = self.rows();
+        let rows = self.listed();
         self.pane_mut().selection.toggle(&rows);
     }
 
     /// Picks every row (FR-OPS-01).
     pub(super) fn select_all(&mut self) {
-        let rows = self.rows();
+        let rows = self.listed();
         self.pane_mut().selection.select_all(&rows);
     }
 
@@ -326,13 +331,13 @@ impl State {
     /// The selected items without those inside another of them, which go along with it, in the
     /// order of the rows: what a command that moves or takes items acts on.
     fn targets(&self) -> Vec<ItemId> {
-        container::outermost_rows(&self.document, self.pane().selection.items(&self.rows()))
+        container::outermost_rows(&self.document, self.pane().selection.items(&self.listed()))
     }
 
     /// Completes the selected items on `today`, or uncompletes them when all are completed, as
     /// one step to undo, moving the focus on when its row hides.
     pub(super) fn toggle_completed(&mut self, today: Date) {
-        let items = self.pane().selection.items(&self.rows());
+        let items = self.pane().selection.items(&self.listed());
         let transaction = completion::toggle(&self.document, items, today);
         self.change(transaction);
     }
@@ -341,7 +346,7 @@ impl State {
     /// commands that edit an item's own details act on (owner, D-68).
     fn described(&self) -> Vec<ItemId> {
         let selection = &self.pane().selection;
-        let items = selection.items(&self.rows());
+        let items = selection.items(&self.listed());
         if !items.is_empty() {
             return items;
         }
@@ -391,7 +396,7 @@ impl State {
     pub(super) fn delete(&mut self, today: Date) {
         let transaction = if self.pane().shown == Shown::View(View::Trash) {
             // Taking items out of the document is what cutting does once they are copied.
-            clipboard::cut(&self.document, &self.pane().selection.items(&self.rows()))
+            clipboard::cut(&self.document, &self.pane().selection.items(&self.listed()))
         } else {
             trash::delete(&self.document, self.targets(), today)
         };
@@ -401,7 +406,7 @@ impl State {
     /// Puts the selected items in the Trash back where they were, as one step to undo, moving the
     /// focus on from the rows that leave; nothing selected elsewhere is in the Trash (FR-VIEW-04).
     pub(super) fn restore_selected(&mut self) {
-        let items = self.pane().selection.items(&self.rows());
+        let items = self.pane().selection.items(&self.listed());
         self.change(trash::restore(&self.document, items));
     }
 
@@ -478,7 +483,7 @@ impl State {
     pub(super) fn open_move_to(&mut self) {
         self.navigator = None;
         self.tags = None;
-        self.move_to = MoveTo::open(&self.document, self.pane().selection.items(&self.rows()));
+        self.move_to = MoveTo::open(&self.document, self.pane().selection.items(&self.listed()));
     }
 
     /// Applies `input` to the open Move to picker: choosing a destination closes it and moves the
@@ -709,7 +714,7 @@ impl State {
         let place = adding::place(
             &self.document,
             container,
-            &self.rows(),
+            &self.listed(),
             self.pane().selection.focused(),
             side,
         );
@@ -737,7 +742,7 @@ impl State {
         let Some((parent, index)) = adding::container_place(
             &self.document,
             container,
-            &self.rows(),
+            &self.listed(),
             self.pane().selection.focused(),
             kind,
             side,
@@ -921,17 +926,14 @@ impl State {
     /// when it is not a row.
     fn change_focusing(&mut self, transaction: Transaction, focused: Option<ItemId>) {
         let before = self.listings();
-        let listed_before = before.get(self.left.len()).map_or(&[][..], Vec::as_slice);
-        let (shown, today, show_completed) =
-            (self.pane().shown, self.today, self.pane().show_completed);
-        let filter = self.pane().filter.clone();
-        let query = self.pane().query.text().to_owned();
-        let mut after = self.pane().selection.clone();
+        let listed_before = before.get(self.left.len()).map_or(&[][..], |rows| rows);
+        let (pane, today) = (&self.pane, self.today);
+        let mut after = pane.selection.clone();
         let selection = after.clone();
         self.history
             .commit(&mut self.document, transaction, selection, |document| {
-                let rows = listed(document, (shown, today, &query), show_completed, &filter);
-                let heading = pane::heading(document, shown);
+                let rows = pane.rows(document, today);
+                let heading = pane::heading(document, pane.shown);
                 after.focus(focus::kept(listed_before, &rows, heading, focused));
                 after
             })
@@ -955,7 +957,9 @@ impl State {
     /// Keeps the sidebar's focus on an entry once a message may have changed the tree.
     pub(super) fn settle_sidebar(&mut self) {
         self.sidebar.reveal(&self.document);
-        self.sidebar.settle(&self.sidebar.visible(&self.document));
+        if self.sidebar.shows() {
+            self.sidebar.settle(&self.sidebar.visible(&self.document));
+        }
     }
 
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
@@ -1118,7 +1122,7 @@ impl State {
 
     /// Selects `selection` in the pane with the keys, if there is one, keeping each pane's focus
     /// on a row shown.
-    fn restore(&mut self, selection: Option<Selection>, before: &[Vec<Row>]) {
+    fn restore(&mut self, selection: Option<Selection>, before: &[Rc<[Row]>]) {
         if let Some(selection) = selection {
             self.pane_mut().selection = selection;
             self.settle(before);
@@ -1128,7 +1132,7 @@ impl State {
     /// Keeps each pane's focus on a row now that the rows `before` it listed have changed, and
     /// has a pane whose container shown no longer opens give way to the nearest one above it that
     /// does, so that an edit in one pane shows in every pane at once (FR-PANE-01).
-    fn settle(&mut self, before: &[Vec<Row>]) {
+    fn settle(&mut self, before: &[Rc<[Row]>]) {
         let (document, today) = (&self.document, self.today);
         let panes = self
             .left

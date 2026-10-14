@@ -18,6 +18,12 @@ impl ItemId {
     pub const fn new(number: u64) -> Self {
         Self(number)
     }
+
+    /// The number of this identifier.
+    #[must_use]
+    pub(crate) const fn number(self) -> u64 {
+        self.0
+    }
 }
 
 /// One node of a document.

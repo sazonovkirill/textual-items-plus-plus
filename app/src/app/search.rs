@@ -9,7 +9,7 @@ use super::{
     container::Row,
     view::{Group, View},
 };
-use crate::domain::{Document, Item, ItemId, ItemKind, Node, comments};
+use crate::domain::{Document, Item, ItemId, ItemKind, Node, Tag, comments};
 
 /// What the user does while typing the words to search for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,15 +116,20 @@ impl Query {
         })
     }
 
-    /// Whether item `id` holds every word in its text.
+    /// Whether item `id` holds every word in its text. A word holds no whitespace, so it is found
+    /// within the title, one tag, the description, the note, one comment or one checklist item,
+    /// each looked through as it is (N-PERF-02).
     fn finds(&self, document: &Document, id: ItemId, item: &Item) -> bool {
-        let mut text = named(item);
-        for (_, line) in lines(document, id, item) {
-            text.push('\n');
-            text.push_str(line);
-        }
-        let text = folded(&text);
-        self.words.iter().all(|word| text.contains(word.as_str()))
+        let mut checklist = Vec::new();
+        checklist_titles(document, id, &mut checklist);
+        self.words.iter().all(|word| {
+            holds(&item.title, word)
+                || item.tags.iter().any(|tag| holds(&named_tag(tag), word))
+                || holds(&item.description, word)
+                || holds(&item.note, word)
+                || (item.comments.iter()).any(|comment| holds(comments::split(comment).1, word))
+                || checklist.iter().any(|title| holds(title, word))
+        })
     }
 }
 
@@ -157,7 +162,7 @@ impl State {
             SearchInput::Edit(edit) => {
                 let pane = self.pane_mut();
                 pane.query = pane.query.edited(edit);
-                let first = self.rows().first().map(|row| row.id());
+                let first = self.listed().first().map(|row| row.id());
                 let selection = &mut self.pane_mut().selection;
                 selection.clear();
                 selection.focus(first);
@@ -203,6 +208,33 @@ pub(super) fn groups(document: &Document, query: &str) -> Vec<Group> {
     }]
 }
 
+/// Whether every item `to` finds is one `from` finds too, as when words are typed on: each word
+/// of `from` is part of a word of `to`. Then the results for `to` are those for `from` that it
+/// finds, which [`refined`] picks without walking the whole document again (N-PERF-02).
+pub(super) fn narrows(from: &str, to: &str) -> bool {
+    let (from, to) = (Query::new(from), Query::new(to));
+    !from.words.is_empty()
+        && from
+            .words
+            .iter()
+            .all(|word| to.words.iter().any(|longer| longer.contains(word.as_str())))
+}
+
+/// The rows of `rows`, results of a query that [`narrows`] to `query`, that `query` finds.
+pub(super) fn refined(document: &Document, query: &str, rows: &[Row]) -> Vec<Row> {
+    let query = Query::new(query);
+    rows.iter()
+        .copied()
+        .filter(|row| {
+            let id = row.id();
+            document
+                .node(id)
+                .and_then(Node::item)
+                .is_some_and(|item| query.finds(document, id, item))
+        })
+        .collect()
+}
+
 /// Adds `id`, when `query` finds it, and what it holds that shows to `found`, with whether each
 /// is completed.
 fn visit(document: &Document, query: &Query, id: ItemId, found: &mut Vec<(bool, Row)>) {
@@ -233,15 +265,33 @@ fn visit(document: &Document, query: &Query, id: ItemId, found: &mut Vec<(bool, 
 fn named(item: &Item) -> String {
     let mut text = item.title.clone();
     for tag in &item.tags {
-        text.push_str(" @");
-        text.push_str(&tag.name);
-        if let Some(value) = &tag.value {
-            text.push('(');
-            text.push_str(value);
-            text.push(')');
-        }
+        text.push(' ');
+        text.push_str(&named_tag(tag));
     }
     text
+}
+
+/// `tag` as a row shows it: `@name`, or `@name(value)`.
+fn named_tag(tag: &Tag) -> String {
+    match &tag.value {
+        Some(value) => format!("@{}({value})", tag.name),
+        None => format!("@{}", tag.name),
+    }
+}
+
+/// Whether `text` holds `word`, a lowercase one, in any case: as [`folded`] would find it, without
+/// making a lowercase copy of text that is all ASCII.
+fn holds(text: &str, word: &str) -> bool {
+    if !text.is_ascii() {
+        return folded(text).contains(word);
+    }
+    let text = text.as_bytes();
+    word.as_bytes().split_first().is_none_or(|(&first, rest)| {
+        memchr::memchr2_iter(first, first.to_ascii_uppercase(), text).any(|at| {
+            text.get(at + 1..at + 1 + rest.len())
+                .is_some_and(|after| after.eq_ignore_ascii_case(rest))
+        })
+    })
 }
 
 /// The lines of item `id` outside its title and tags, in the order an excerpt takes them: its
@@ -374,6 +424,40 @@ mod tests {
         );
         assert_eq!(groups(&document, " \t"), [], "no words find nothing");
         assert_eq!(groups(&document, "nowhere"), [], "nothing found, no group");
+    }
+
+    // FR-SRCH-01, N-PORT-04
+    #[test]
+    fn words_are_found_in_any_case_in_text_beyond_ascii() {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let cafe = add(&mut document, inbox, Task, "Café ÜBER alles", |_| {});
+        add(&mut document, inbox, Task, "Cafe uber", |_| {});
+        assert_eq!(found(&document, "über café"), [task(cafe)]);
+        assert_eq!(found(&document, "ALLES"), [task(cafe)]);
+    }
+
+    // FR-SRCH-01, N-PERF-02
+    #[test]
+    fn typing_on_narrows_the_results_and_refining_them_finds_what_a_search_finds() {
+        assert!(narrows("ban", "bank"));
+        assert!(narrows("ban nin", "NINE bank"));
+        assert!(narrows("bank", "bank nine"), "a word added narrows too");
+        assert!(!narrows("bank", "ban"), "a shorter word widens");
+        assert!(!narrows("bank nine", "bank"), "a word taken away widens");
+        assert!(!narrows("", "bank"), "no words found nothing to narrow");
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        for title in ["Call the bank", "Bank at nine", "Bandana", "nothing"] {
+            add(&mut document, inbox, Task, title, |_| {});
+        }
+        for (from, to) in [("ban", "bank"), ("ban", "ban nine"), ("n", "nine bank")] {
+            assert_eq!(
+                refined(&document, to, &found(&document, from)),
+                found(&document, to),
+                "{from:?} to {to:?}"
+            );
+        }
     }
 
     // FR-SRCH-03, FR-ORG-09, OQ-14
@@ -547,6 +631,30 @@ mod tests {
         assert!(state.sidebar_has_keys());
         state.open_search();
         assert!(!state.sidebar_has_keys(), "the words typed are the pane's");
+    }
+
+    // FR-SRCH-01, FR-SRCH-03, N-PERF-02
+    #[test]
+    fn the_results_follow_the_words_and_the_document_as_they_change() {
+        let (mut state, [first, second, done]) = state();
+        state.open_search();
+        type_text(&mut state, "pla");
+        assert_eq!(state.rows(), [first, second, done].map(task));
+        type_text(&mut state, "n b");
+        assert_eq!(state.rows(), [task(second)], "typing on narrows");
+        state.search_input(SearchInput::Edit(TextEdit::DeleteBackward));
+        assert_eq!(
+            state.rows(),
+            [first, second, done].map(task),
+            "taking a letter away widens"
+        );
+        state.search_input(SearchInput::Done);
+        state.toggle_completed(TODAY);
+        assert_eq!(
+            state.rows(),
+            [second, first, done].map(task),
+            "a result completed moves down among the completed"
+        );
     }
 
     // FR-SRCH-02, FR-SRCH-03, FR-VIEW-11

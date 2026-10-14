@@ -4,7 +4,7 @@
 //! taskpaper-terminal's ([ui.md §9](../../../specs/reference/taskpaper-terminal/specs/ui.md#9-animation-fr-ui-11)).
 //! Hides tachyonfx, the triggers and every duration.
 
-use std::{ffi::OsStr, mem, time::Duration};
+use std::{ffi::OsStr, mem, rc::Rc, time::Duration};
 
 use ratatui::{
     buffer::{Buffer, Cell},
@@ -89,8 +89,10 @@ pub(super) struct Before {
     /// The position of the pane with the keys among the panes.
     current: usize,
     focus: Option<ItemId>,
-    /// What each pane shows and the items of its rows, the heading first when it takes the focus.
-    panes: Vec<(Shown, Vec<ItemId>)>,
+    /// What each pane shows.
+    panes: Vec<Shown>,
+    /// The rows of the pane with the keys, under its heading when the heading takes the focus.
+    rows: (Option<ItemId>, Rc<[Row]>),
     windows: [bool; 11],
     theme: BuiltIn,
 }
@@ -101,14 +103,11 @@ impl Before {
         Self {
             current: state.current_pane(),
             focus: state.selection().focused(),
-            panes: state
-                .panes()
-                .map(|pane| {
-                    let rows = pane.heading().into_iter();
-                    let rows = rows.chain(pane.rows().into_iter().map(Row::id));
-                    (pane.shown(), rows.collect())
-                })
-                .collect(),
+            panes: state.panes().map(|pane| pane.shown()).collect(),
+            rows: {
+                let pane = state.pane_view();
+                (pane.heading(), pane.shared_rows())
+            },
             windows: [
                 state.navigator().is_some(),
                 state.palette().is_some(),
@@ -126,17 +125,25 @@ impl Before {
         }
     }
 
-    /// The pane with the keys: what it shows and its rows.
-    fn pane(&self) -> Option<&(Shown, Vec<ItemId>)> {
-        self.panes.get(self.current)
+    /// What the pane with the keys shows.
+    fn pane(&self) -> Option<Shown> {
+        self.panes.get(self.current).copied()
+    }
+
+    /// Where `id` is among the rows of the pane with the keys, the heading first.
+    fn at(&self, id: ItemId) -> Option<usize> {
+        let (heading, rows) = &self.rows;
+        if *heading == Some(id) {
+            return Some(0);
+        }
+        let at = rows.iter().position(|row| row.id() == id)?;
+        Some(at + usize::from(heading.is_some()))
     }
 
     /// Whether focus jumped from here to `after`: it moved, other than to a row next to the one
     /// it left, in the rows before or after the move, in the same pane showing the same place.
     fn jumped_to(&self, after: &Self) -> bool {
-        let (Some(focus), Some((was, before)), Some((now, rows))) =
-            (after.focus, self.pane(), after.pane())
-        else {
+        let (Some(focus), Some(was), Some(now)) = (after.focus, self.pane(), after.pane()) else {
             return false;
         };
         if self.current != after.current || was != now {
@@ -145,13 +152,12 @@ impl Before {
         let Some(left) = self.focus.filter(|&left| left != focus) else {
             return false;
         };
-        let next_to = |rows: &[ItemId]| {
-            let at = |id| rows.iter().position(|&row| row == id);
-            at(left)
-                .zip(at(focus))
+        let next_to = |rows: &Self| {
+            rows.at(left)
+                .zip(rows.at(focus))
                 .is_some_and(|(a, b)| a.abs_diff(b) == 1)
         };
-        !(next_to(before) || next_to(rows))
+        !(next_to(self) || next_to(after))
     }
 
     /// The panes of `after` that opened or show another place than here: the one with the keys
@@ -163,12 +169,8 @@ impl Before {
         if after.panes.len() < self.panes.len() {
             return Vec::new();
         }
-        let shown = |panes: &[(Shown, Vec<ItemId>)]| -> Vec<Shown> {
-            panes.iter().map(|&(shown, _)| shown).collect()
-        };
-        let (before, now) = (shown(&self.panes), shown(&after.panes));
-        (0..now.len())
-            .filter(|&index| before.get(index) != now.get(index))
+        (0..after.panes.len())
+            .filter(|&index| self.panes.get(index) != after.panes.get(index))
             .collect()
     }
 }
@@ -855,10 +857,14 @@ mod tests {
     #[test]
     fn focus_lands_nowhere_when_nothing_has_it_and_jumps_when_it_moves_further_than_a_row() {
         let ids: Vec<ItemId> = (1..=3).map(ItemId::new).collect();
+        let rows: Rc<[Row]> = (ids.iter())
+            .map(|&id| Row::Task { id, section: None })
+            .collect();
         let at = |focus: Option<usize>| Before {
             current: 0,
             focus: focus.and_then(|index| ids.get(index).copied()),
-            panes: vec![(Shown::View(View::Today), ids.clone())],
+            panes: vec![Shown::View(View::Today)],
+            rows: (None, Rc::clone(&rows)),
             windows: [false; 11],
             theme: BuiltIn::default(),
         };
@@ -867,10 +873,21 @@ mod tests {
         assert!(at(Some(0)).jumped_to(&at(Some(2))));
         assert!(!at(None).jumped_to(&at(Some(2))), "nothing left");
         let elsewhere = Before {
-            panes: vec![(Shown::View(View::Upcoming), ids.clone())],
+            panes: vec![Shown::View(View::Upcoming)],
             ..at(Some(1))
         };
         assert!(at(Some(0)).jumped_to(&elsewhere), "to another place");
+        let heading = ItemId::new(9);
+        let headed = |focus| Before {
+            focus: Some(focus),
+            rows: (Some(heading), Rc::clone(&rows)),
+            ..at(None)
+        };
+        assert!(
+            !headed(heading).jumped_to(&headed(ItemId::new(1))),
+            "the heading is the row above the first"
+        );
+        assert!(headed(heading).jumped_to(&headed(ItemId::new(2))));
     }
 
     #[test]

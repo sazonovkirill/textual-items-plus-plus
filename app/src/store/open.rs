@@ -9,7 +9,7 @@ use jiff::civil::DateTime;
 
 use super::{
     BackupError, Backups, Version, disk,
-    taskpaper::{DecodeError, Source, parse_bytes, read_document},
+    taskpaper::{DecodeError, Source, parse_bytes, read_document, serialize, write_document},
 };
 use crate::domain::Document;
 
@@ -151,7 +151,13 @@ pub fn recover(
 ///
 /// [`DecodeError`] when they are not UTF-8.
 pub fn decode(bytes: &[u8]) -> Result<(Document, Source), DecodeError> {
-    Ok(read_document(&parse_bytes(bytes)?))
+    Ok(read_document(parse_bytes(bytes)?))
+}
+
+/// The text of a file holding `document`, read as `source`.
+#[must_use]
+pub fn encode(document: &Document, source: &Source) -> String {
+    serialize(&write_document(document, source))
 }
 
 #[cfg(test)]
@@ -192,7 +198,7 @@ mod tests {
     fn a_missing_file_holds_an_empty_document() -> TestResult {
         let dir = tempfile::tempdir()?;
         let opened = open(&dir.path().join("new.taskpaper"))?;
-        assert_eq!(opened.document, read_document(&parse("")).0);
+        assert_eq!(opened.document, read_document(parse("")).0);
         assert_eq!(opened.version, None);
         assert_eq!(
             fs::read_dir(dir.path())?.count(),

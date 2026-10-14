@@ -1,8 +1,6 @@
 //! The document: every node in its place and order, the Inbox apart from the top-level list, with
 //! the hierarchy of FR-ORG-01–04 kept on every change.
 
-use std::collections::HashMap;
-
 use thiserror::Error;
 
 use super::item::{Item, ItemId, ItemKind, Node};
@@ -10,16 +8,18 @@ use super::item::{Item, ItemId, ItemKind, Node};
 mod converting;
 mod edit;
 mod moving;
+mod nodes;
 
 pub use edit::{Branch, Op, Snapshot, Transaction};
 pub use moving::Destination;
+use nodes::Nodes;
 
 /// The whole todo list: the Inbox, always first (FR-ORG-07), then the top-level nodes in the
 /// user's order (FR-ORG-08), each with its children. Two documents are equal when they hold the
 /// same nodes, whatever their revisions.
 #[derive(Debug, Clone)]
 pub struct Document {
-    entries: HashMap<ItemId, Entry>,
+    entries: Nodes,
     inbox: ItemId,
     top_level: Vec<ItemId>,
     next_number: u64,
@@ -95,13 +95,15 @@ impl Document {
             node: Node::Item(Item::new(ItemKind::Inbox, "Inbox")),
             children: Vec::new(),
         };
-        Self {
-            entries: HashMap::from([(inbox, entry)]),
+        let mut document = Self {
+            entries: Nodes::default(),
             inbox,
             top_level: Vec::new(),
             next_number: 1,
             revision: 0,
-        }
+        };
+        document.entries.insert(inbox, entry, None);
+        document
     }
 
     /// A number that changes with every change to the document, so that one revision of it can
@@ -126,33 +128,38 @@ impl Document {
     /// The node `id`, or `None` when this document has none.
     #[must_use]
     pub fn node(&self, id: ItemId) -> Option<&Node> {
-        self.entries.get(&id).map(|entry| &entry.node)
+        self.entries.get(id).map(|entry| &entry.node)
     }
 
     /// The children of `id` in order; none when this document has no such node.
     #[must_use]
     pub fn children(&self, id: ItemId) -> &[ItemId] {
-        self.entries.get(&id).map_or(&[], |entry| &entry.children)
+        self.entries.get(id).map_or(&[], |entry| &entry.children)
+    }
+
+    /// The node `id` is inside; `None` at the top level, for the Inbox and for nodes not in this
+    /// document. Unlike [`position`](Self::position), it does not look through the siblings.
+    #[must_use]
+    pub fn parent(&self, id: ItemId) -> Option<ItemId> {
+        self.entries.parent(id)
     }
 
     /// Whether the contents of `id` are hidden everywhere because it, or an item it is inside,
     /// is completed (FR-ORG-09).
     #[must_use]
     pub fn conceals(&self, id: ItemId) -> bool {
-        let mut at = id;
-        loop {
+        let mut at = Some(id);
+        while let Some(id) = at {
             if self
-                .node(at)
+                .node(id)
                 .and_then(Node::item)
                 .is_some_and(|item| item.completed.is_some())
             {
                 return true;
             }
-            match self.position(at) {
-                Some((Some(parent), _)) => at = parent,
-                _ => return false,
-            }
+            at = self.parent(id);
         }
+        false
     }
 
     /// Adds `node` as the last child of `parent`, or last at the top level when `parent` is
@@ -174,6 +181,7 @@ impl Document {
                 node,
                 children: Vec::new(),
             },
+            parent,
         );
         Ok(id)
     }
@@ -186,7 +194,7 @@ impl Document {
     /// [`PlacementError::NoSuchNode`] when `id` is not an item of this document, and
     /// [`PlacementError::KindChanged`] when `item` is of another kind.
     pub fn set(&mut self, id: ItemId, item: Item) -> Result<Item, PlacementError> {
-        let Some(Node::Item(old)) = self.entries.get_mut(&id).map(|entry| &mut entry.node) else {
+        let Some(Node::Item(old)) = self.entries.get_mut(id).map(|entry| &mut entry.node) else {
             return Err(PlacementError::NoSuchNode(id));
         };
         if old.kind != item.kind {
@@ -223,7 +231,7 @@ impl Document {
         match parent {
             Some(id) => self
                 .entries
-                .get(&id)
+                .get(id)
                 .map(|entry| entry.children.as_slice())
                 .ok_or(PlacementError::NoSuchNode(id)),
             None => Ok(&self.top_level),
@@ -235,7 +243,7 @@ impl Document {
         match parent {
             Some(id) => self
                 .entries
-                .get_mut(&id)
+                .get_mut(id)
                 .map(|entry| &mut entry.children)
                 .ok_or(PlacementError::NoSuchNode(id)),
             None => Ok(&mut self.top_level),

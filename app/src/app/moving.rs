@@ -182,6 +182,9 @@ pub(super) fn shift_all(
     let (transaction, _) = each(document, ordered, |document, id| {
         let before = rows(document);
         let transaction = shift(document, &before, id, direction);
+        if items.len() == 1 {
+            return Ok(transaction);
+        }
         let mut moved = document.clone();
         moved
             .apply(&transaction)
@@ -244,12 +247,21 @@ pub(super) fn outdent_all(document: &Document, items: &[ItemId]) -> Result<Trans
 }
 
 /// The transaction of `step` taken for each of `ordered` in turn, on the document as the steps
-/// before left it, and the first refusal, if any step refused.
+/// before left it, and the first refusal, if any step refused. The document is copied to take
+/// the steps on only when there is more than one, since copying a large one takes long
+/// (N-PERF-02).
 pub(super) fn each(
     document: &Document,
     ordered: impl IntoIterator<Item = ItemId>,
     mut step: impl FnMut(&Document, ItemId) -> Result<Transaction, Refusal>,
 ) -> (Transaction, Option<Refusal>) {
+    let ordered: Vec<ItemId> = ordered.into_iter().collect();
+    if let &[id] = ordered.as_slice() {
+        return match step(document, id) {
+            Ok(transaction) => (transaction, None),
+            Err(refusal) => (Transaction::default(), Some(refusal)),
+        };
+    }
     let mut scratch = document.clone();
     let mut ops = Vec::new();
     let mut refused = None;
@@ -678,6 +690,11 @@ mod tests {
             shifted_all(&mut document, top, &["d", "e"], Direction::Up)?,
             ["#S", "b", "d", "a", "c", "#T", "e", "#U", "P", "Q"],
             "each crosses its own heading"
+        );
+        assert_eq!(
+            shifted_all(&mut document, top, &["a"], Direction::Down)?,
+            ["#S", "b", "d", "c", "a", "#T", "e", "#U", "P", "Q"],
+            "one moves as Move does"
         );
         Ok(())
     }

@@ -2157,6 +2157,7 @@ dependencies = [
  "crossterm",
  "insta",
  "jiff",
+ "memchr",
  "notify-debouncer-full",
  "nucleo-matcher",
  "proptest",
