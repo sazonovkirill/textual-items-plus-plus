@@ -1,6 +1,6 @@
 //! The attachments panel: an item's note, a task's checklist and an item's comments, read and
-//! edited in a modal panel that takes the keys while it is open, as taskpaper-terminal's
-//! attachments panel is
+//! edited in a panel of a pane, each pane having its own, which takes the keys while it has them
+//! as a pane's list does, as taskpaper-terminal's attachments panel is
 //! ([attachments.md §3–5](../../../specs/reference/taskpaper-terminal/specs/attachments.md#3-attachments-panel-fr-att-03),
 //! FR-ATT-01–05, FR-CHK-02–03). One of them is selected, which the keys act on. The note, a
 //! checklist item and a comment are edited as an item's description and title are, so a session
@@ -13,7 +13,9 @@ use jiff::civil::{Date, DateTime};
 use super::{
     Command, Focus, Notice, Refusal, Side, State, TextField, Whose,
     checklist::{self, ChecklistLine},
+    container,
     editing::Editing,
+    view::{Shown, View},
 };
 use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Node, Op, Transaction, comments};
 
@@ -82,26 +84,64 @@ pub struct AttachmentsView<'a> {
     pub editing: Option<&'a TextField>,
 }
 
+impl Panel {
+    /// The item the panel is on.
+    pub(super) fn id(self) -> ItemId {
+        self.id
+    }
+}
+
+/// `panel` as a frontend shows it on `document`, with `editing` the text of what it has selected
+/// as it is edited; none once its item is gone.
+pub(super) fn view<'a>(
+    document: &'a Document,
+    panel: Panel,
+    editing: Option<&'a TextField>,
+) -> Option<AttachmentsView<'a>> {
+    let Panel { id, selected, .. } = panel;
+    let item = document.node(id).and_then(Node::item)?;
+    let checklist = (item.kind == ItemKind::Task).then(|| checklist::lines(document, id));
+    Some(AttachmentsView {
+        id,
+        item,
+        selected: kept(item, selected),
+        checklist,
+        editing,
+    })
+}
+
+/// Whether a panel on `id` stays open in a pane showing `shown` on `document`: while its item is
+/// there and, unless the pane shows the Trash, not in the Trash with what holds it.
+pub(super) fn stays(document: &Document, id: ItemId, shown: Shown) -> bool {
+    let item = |id| document.node(id).and_then(Node::item);
+    item(id).is_some()
+        && (shown == Shown::View(View::Trash)
+            || container::path(document, id)
+                .into_iter()
+                .all(|id| item(id).is_none_or(|item| item.deleted.is_none())))
+}
+
 impl State {
-    /// The attachments panel, while it is open (FR-ATT-01).
+    /// The attachments panel that has the keys, while one does (FR-ATT-01).
     #[must_use]
     pub fn attachments(&self) -> Option<AttachmentsView<'_>> {
-        let Panel { id, selected, .. } = self.pane.panel?;
-        let item = self.document.node(id).and_then(Node::item)?;
-        let checklist = (item.kind == ItemKind::Task).then(|| checklist::lines(&self.document, id));
-        // The panel is modal, so what is edited while it is open is what it has selected.
-        let editing = self.editing().map(|(_, _, field)| field);
-        Some(AttachmentsView {
-            id,
-            item,
-            selected: kept(item, selected),
-            checklist,
-            editing,
-        })
+        let panel = self.pane.panel.filter(|_| self.panel_has_keys())?;
+        // While the panel has the keys, what is edited is what it has selected.
+        view(
+            &self.document,
+            panel,
+            self.editing().map(|(_, _, field)| field),
+        )
     }
 
-    /// Opens the panel on the focused item or on the container shown, as `whose` says, with
-    /// `selected` selected as far as it has it. Nothing opens with nothing focused.
+    /// Whether the panel of the pane with the keys has them, rather than its list.
+    pub(super) fn panel_has_keys(&self) -> bool {
+        self.in_panel && self.pane.panel.is_some() && !self.sidebar.has_keys()
+    }
+
+    /// Opens the panel of the pane with the keys on the focused item or on the container shown,
+    /// as `whose` says, with `selected` selected as far as it has it, and gives it the keys.
+    /// Nothing opens with nothing focused.
     pub(super) fn open_attachments(&mut self, whose: Whose, selected: Selected) {
         let id = match whose {
             Whose::Focused => self.pane().selection.focused(),
@@ -112,7 +152,8 @@ impl State {
         }
     }
 
-    /// Opens the panel on item `id` with `selected` selected as far as it has it, unless it is a
+    /// Opens the panel of the pane with the keys on item `id` with `selected` selected as far as
+    /// it has it, in place of the item it was on, and gives it the keys, unless `id` is a
     /// checklist item, which has no attachments (FR-ATT-01, FR-ATT-02).
     pub(super) fn open_panel(&mut self, id: ItemId, selected: Selected) {
         let attached = self
@@ -122,26 +163,27 @@ impl State {
             .is_some_and(|item| item.kind != ItemKind::ChecklistItem);
         if attached {
             self.pane.panel = Some(Panel::new(id, selected));
+            self.in_panel = true;
         }
     }
 
-    /// Opens the panel on the checklist of the focused task, its first item selected; for any
-    /// other item the status line says it has none (FR-ATT-02). Nothing opens with nothing
-    /// focused.
+    /// Opens the panel of the pane with the keys on the checklist of the focused task, its first
+    /// item selected, and gives it the keys; for any other item the status line says it has none
+    /// (FR-ATT-02). Nothing opens with nothing focused.
     pub(super) fn open_checklist(&mut self) {
         let Some(id) = self.pane().selection.focused() else {
             return;
         };
         if is_task(&self.document, id) {
             let selected = first_of_checklist(&self.document, id);
-            self.pane.panel = Some(Panel::new(id, selected));
+            self.open_panel(id, selected);
         } else {
             self.notify(Notice::NoChecklist);
         }
     }
 
-    /// Applies `input` to the open panel. Nothing happens while it is closed, and only closing
-    /// while something in it is edited.
+    /// Applies `input` to the panel that has the keys: closing it gives them to its pane's list.
+    /// Nothing happens while no panel has them, and only closing while something in it is edited.
     pub(super) fn attachments_input(&mut self, input: AttachmentsInput) {
         let Some(view) = self.attachments() else {
             return;
@@ -155,6 +197,7 @@ impl State {
             AttachmentsInput::Close => {
                 self.finish_editing();
                 self.pane.panel = None;
+                self.in_panel = false;
             }
             _ if editing => {}
             AttachmentsInput::Edit => {
@@ -191,12 +234,13 @@ impl State {
         }
     }
 
-    /// Gives `command` to the open panel on `today`, and returns whether it took it. With a
-    /// checklist entry selected it acts on the selected item as the same command acts on a row
-    /// (FR-CHK-03): checking it, editing it, adding an item beside it, moving it among its
-    /// siblings, indenting and outdenting it, each one step to undo. The motions select as in
-    /// the panel. Quitting, pasting and the conflict prompt's commands pass to the app; every
-    /// other command does nothing while the panel is open.
+    /// Gives `command` to the panel that has the keys on `today`, and returns whether it took
+    /// it. With a checklist entry selected it acts on the selected item as the same command acts
+    /// on a row (FR-CHK-03): checking it, editing it, adding an item beside it, moving it among
+    /// its siblings, indenting and outdenting it, each one step to undo. The motions select as
+    /// in the panel. Quitting, pasting, the conflict prompt's commands and those that
+    /// [move the keys](moves_keys) pass to the app; every other command does nothing while the
+    /// panel has the keys.
     pub(super) fn panel_command(&mut self, command: Command, today: Date) -> bool {
         let passes = matches!(
             command,
@@ -205,8 +249,8 @@ impl State {
                 | Command::KeepMine
                 | Command::TakeTheirs
                 | Command::ShowDiff
-        );
-        if passes || self.pane.panel.is_none() {
+        ) || moves_keys(command);
+        if passes || !self.panel_has_keys() {
             return false;
         }
         let selected = self.attachments().map(|view| view.selected);
@@ -337,6 +381,19 @@ pub(super) fn rematched(
         selected @ (Selected::Note | Selected::Comment(None)) => selected,
     };
     Some(Panel::new(found, selected))
+}
+
+/// Whether `command` moves the keys among the sidebar and the panes' lists and panels, which the
+/// panel that has the keys passes to the app (FR-PANE-02).
+pub(super) fn moves_keys(command: Command) -> bool {
+    matches!(
+        command,
+        Command::NextPane
+            | Command::PreviousPane
+            | Command::FocusPane(_)
+            | Command::FocusLeft
+            | Command::FocusRight
+    )
 }
 
 /// Whether the open panel acts on `command`, as [`State::panel_command`] says: the motions and
@@ -549,9 +606,11 @@ mod tests {
         assert_eq!(
             state.attachments().map(|view| view.id),
             Some(inbox),
-            "the sidebar opens it on its focused entry"
+            "the sidebar opens it on its focused entry, the panel getting the keys"
         );
+        assert!(!state.sidebar_has_keys());
         state.attachments_input(AttachmentsInput::Close);
+        state.focus_pane(0);
         assert!(state.sidebar_command(Command::OpenComments(Whose::Focused), TODAY));
         assert_eq!(state.attachments().map(|view| view.id), Some(inbox));
         let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
@@ -1189,6 +1248,233 @@ mod tests {
             "the first item when the one selected is gone"
         );
         assert_eq!(rematched(Selected::Checklist(None), &all), Some(entry(b)));
+        Ok(())
+    }
+
+    /// The item each pane's panel is on, left to right, none where it has none.
+    fn panels(state: &State) -> Vec<Option<ItemId>> {
+        state
+            .panes()
+            .map(|pane| pane.attachments().map(|view| view.id))
+            .collect()
+    }
+
+    /// Where the keys are: the sidebar as `None`, else the pane with them and whether its
+    /// panel has them.
+    fn keys(state: &State) -> Option<(usize, bool)> {
+        (!state.sidebar_has_keys()).then(|| (state.current_pane(), state.attachments().is_some()))
+    }
+
+    /// A state on a file whose Inbox holds tasks `a` and `b`, focused on `a`, with the sidebar
+    /// showing.
+    fn two_tasks() -> Result<(State, ItemId, ItemId), PlacementError> {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let a = document.push(inbox, Node::Item(Item::new(ItemKind::Task, "a")))?;
+        let b = document.push(inbox, Node::Item(Item::new(ItemKind::Task, "b")))?;
+        let state = State::new(document, Opened::File("a.taskpaper".into()), TODAY);
+        Ok((state, a, b))
+    }
+
+    // FR-ATT-01, FR-PANE-01, FR-PANE-02
+    #[test]
+    fn each_pane_has_its_own_panel_and_the_keys_go_through_lists_and_panels()
+    -> Result<(), PlacementError> {
+        let (mut state, a, b) = two_tasks()?;
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        assert_eq!(
+            (panels(&state), keys(&state)),
+            (vec![Some(a)], Some((0, true)))
+        );
+        for expected in [None, Some((0, false)), Some((0, true))] {
+            give(&mut state, Command::NextPane);
+            assert_eq!(keys(&state), expected, "the sidebar, the list, the panel");
+        }
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Focus(Focus::Next));
+        assert_eq!(
+            panels(&state),
+            [Some(a)],
+            "the panel stays on its item while the list moves"
+        );
+        give(&mut state, Command::OpenInNewPane);
+        give(&mut state, Command::OpenComments(Whose::Focused));
+        assert_eq!(panels(&state), [Some(a), Some(b)]);
+        assert_eq!(selected(&state), Some(Selected::Comment(None)));
+        assert_eq!(keys(&state), Some((1, true)));
+        let stops = [
+            None,
+            Some((0, false)),
+            Some((0, true)),
+            Some((1, false)),
+            Some((1, true)),
+        ];
+        for expected in stops {
+            give(&mut state, Command::NextPane);
+            assert_eq!(keys(&state), expected, "Tab wraps around");
+        }
+        for expected in stops.iter().rev().skip(1).chain(stops.last()) {
+            give(&mut state, Command::PreviousPane);
+            assert_eq!(keys(&state), *expected, "Shift+Tab goes back");
+        }
+        give(&mut state, Command::FocusPane(1));
+        assert_eq!(keys(&state), Some((0, false)), "g1 gives the list the keys");
+        for expected in [
+            Some((0, true)),
+            Some((1, false)),
+            Some((1, true)),
+            Some((1, true)),
+        ] {
+            give(&mut state, Command::FocusRight);
+            assert_eq!(keys(&state), expected, "Ctrl+W l stops at the last");
+        }
+        for expected in [
+            Some((1, false)),
+            Some((0, true)),
+            Some((0, false)),
+            None,
+            None,
+        ] {
+            give(&mut state, Command::FocusLeft);
+            assert_eq!(keys(&state), expected, "Ctrl+W h stops at the sidebar");
+        }
+        give(&mut state, Command::FocusPane(2));
+        give(&mut state, Command::FocusRight);
+        give(&mut state, Command::FocusPane(0));
+        give(&mut state, Command::FocusRight);
+        assert_eq!(
+            keys(&state),
+            Some((1, true)),
+            "back from the sidebar to the panel that had the keys"
+        );
+        assert!(state.takes(Command::NextPane) && state.takes(Command::FocusPane(1)));
+        input(&mut state, AttachmentsInput::Close);
+        assert_eq!(
+            (panels(&state), keys(&state)),
+            (vec![Some(a), None], Some((1, false))),
+            "Esc closes only the panel with the keys, the list getting them"
+        );
+        give(&mut state, Command::FocusRight);
+        assert_eq!(keys(&state), Some((1, false)), "no panel to go to");
+        give(&mut state, Command::ClosePane);
+        assert_eq!(
+            (panels(&state), keys(&state)),
+            (vec![Some(a)], Some((0, false))),
+            "a pane closes with its panel, the next pane's list getting the keys"
+        );
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-ATT-02
+    #[test]
+    fn opening_on_another_item_moves_the_panel_there_and_gives_it_the_keys()
+    -> Result<(), PlacementError> {
+        let (mut state, _, b) = two_tasks()?;
+        let inbox = state.document().inbox();
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Focus(Focus::Next));
+        give(&mut state, Command::OpenChecklist);
+        assert_eq!(
+            (panels(&state), keys(&state)),
+            (vec![Some(b)], Some((0, true)))
+        );
+        assert_eq!(selected(&state), Some(Selected::Checklist(None)));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::OpenNote(Whose::Shown));
+        assert_eq!(panels(&state), [Some(inbox)], "on the container shown");
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Go(Go::View(View::Logbook)));
+        assert_eq!(
+            panels(&state),
+            [Some(inbox)],
+            "showing another place keeps the panel"
+        );
+        give(&mut state, Command::Go(Go::Back));
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::OpenInNewPane);
+        give(&mut state, Command::FocusPane(0));
+        give(&mut state, Command::OpenComments(Whose::Focused));
+        assert_eq!(
+            (panels(&state), keys(&state)),
+            (vec![Some(inbox), None], Some((0, true))),
+            "the sidebar opens it in the first pane, which it leads"
+        );
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-VIEW-04
+    #[test]
+    fn a_panel_closes_once_its_item_is_gone_or_in_the_trash_unless_it_shows_the_trash()
+    -> Result<(), PlacementError> {
+        let (mut state, a, b) = two_tasks()?;
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Delete);
+        assert_eq!(panels(&state), [None], "a went to the Trash");
+        give(&mut state, Command::Undo);
+        assert_eq!(panels(&state), [None], "and the panel stays closed");
+        give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::OpenInNewPane);
+        give(&mut state, Command::Go(Go::View(View::Trash)));
+        give(&mut state, Command::FocusPane(1));
+        give(&mut state, Command::Delete);
+        assert_eq!(panels(&state), [None, None]);
+        give(&mut state, Command::FocusPane(2));
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        input(
+            &mut state,
+            AttachmentsInput::AddComment(TODAY.at(9, 5, 0, 0)),
+        );
+        type_text(&mut state, "kept");
+        edit(&mut state, EditInput::Done);
+        assert_eq!(
+            panels(&state),
+            [None, Some(a)],
+            "in the Trash, the panel stays on what is there"
+        );
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Go(Go::Back));
+        assert_eq!(panels(&state), [None, None], "and closes leaving it");
+        give(&mut state, Command::FocusPane(1));
+        give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Cut);
+        assert_eq!(panels(&state), [None, None], "b, cut, is gone");
+        assert!(item(&state, b).is_none());
+        Ok(())
+    }
+
+    // FR-ATT-05, FR-EDIT-06
+    #[test]
+    fn what_one_panel_edits_shows_in_no_other_and_ends_as_the_keys_leave()
+    -> Result<(), PlacementError> {
+        let (mut state, a, _) = two_tasks()?;
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::OpenInNewPane);
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        input(&mut state, AttachmentsInput::Edit);
+        type_text(&mut state, "x");
+        let editing: Vec<_> = state
+            .panes()
+            .map(|pane| {
+                pane.attachments()
+                    .and_then(|view| view.editing)
+                    .map(TextField::text)
+            })
+            .collect();
+        assert_eq!(editing, [None, Some("x")]);
+        give(&mut state, Command::PreviousPane);
+        assert_eq!(state.editing(), None, "leaving ends editing");
+        assert_eq!(note(&state, a), Some("x"));
+        assert_eq!(keys(&state), Some((1, false)));
+        give(&mut state, Command::Undo);
+        assert_eq!(note(&state, a), Some(""), "one step to undo");
         Ok(())
     }
 }

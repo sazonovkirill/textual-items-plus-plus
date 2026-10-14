@@ -1,11 +1,12 @@
 //! The attachments panel in the terminal (FR-ATT-01–04, FR-CHK-02): the keys that drive it and
-//! the panel itself, over the right side of the screen from its top to the status line, as
+//! the panel itself, over the right part of the pane it is open in, from its top to the status
+//! line, as
 //! taskpaper-terminal draws it
 //! ([attachments.md §3–5](../../../specs/reference/taskpaper-terminal/specs/attachments.md#3-attachments-panel-fr-att-03)):
 //! a border titled with the item, the Note section under its heading, the note rendered as
 //! Markdown or, while it is edited, as typed, a task's Checklist section under its heading, the
 //! Comments section under its heading, newest first, what is selected on the current-line band
-//! with the focus marker, and a hint naming the keys.
+//! with the focus marker while it has the keys, and a hint naming the keys.
 
 use std::ops::Range;
 
@@ -28,7 +29,9 @@ use super::{
     markdown::{self, Format, NoteLine},
 };
 use crate::{
-    app::{self, AttachmentsInput, AttachmentsView, ChecklistLine, Command, Focus, Selected},
+    app::{
+        self, AttachmentsInput, AttachmentsView, ChecklistLine, Command, Direction, Focus, Selected,
+    },
     domain::comments,
 };
 
@@ -43,12 +46,15 @@ pub(super) enum PanelKey {
     /// Gives the core this input.
     Input(AttachmentsInput),
     /// Gives the core this command, which the panel takes before the main keymap's: `]`/`[`
-    /// and `Tab`/`Shift+Tab` nest checklist items there, while elsewhere they nudge the start
-    /// date (D-82) and cycle the panes (D-79).
+    /// nest checklist items there, while elsewhere they nudge the start date (D-82).
     Command(Command),
+    /// With a checklist item selected, indents it, or outdents it `Up`, as `Tab` and
+    /// `Shift+Tab` do; else gives the keys to where they go next that way, as they do elsewhere
+    /// (D-79).
+    Nest(Direction),
     /// Adds a comment stamped now.
     AddComment,
-    /// Widens the panel over the whole of the panes, or narrows it back to half the screen.
+    /// Widens the panel over the whole of its pane, or narrows it back to half of it.
     Widen,
     /// Scrolls through what is selected, or selects another.
     Scroll(Scroll),
@@ -139,11 +145,11 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
     ),
     (
         (KeyModifiers::NONE, KeyCode::Tab),
-        PanelKey::Command(Command::Indent),
+        PanelKey::Nest(Direction::Down),
     ),
     (
         (KeyModifiers::SHIFT, KeyCode::BackTab),
-        PanelKey::Command(Command::Outdent),
+        PanelKey::Nest(Direction::Up),
     ),
     (
         (KeyModifiers::NONE, KeyCode::Char('j')),
@@ -178,10 +184,6 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
         PanelKey::Scroll(Scroll::Pages(-1)),
     ),
     (
-        (KeyModifiers::NONE, KeyCode::Char('g')),
-        PanelKey::Scroll(Scroll::Top),
-    ),
-    (
         (KeyModifiers::NONE, KeyCode::Home),
         PanelKey::Scroll(Scroll::Top),
     ),
@@ -197,8 +199,10 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
 /// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
-/// `a` adds a comment, `\\` widens or narrows the panel, `]` or `Tab` and `[` or `Shift+Tab`
-/// indent and outdent the selected checklist item, and the motion keys scroll or select. Only key presses count.
+/// `a` adds a comment, `\\` widens or narrows the panel, `]` and `[` indent and outdent the
+/// selected checklist item, `Tab` and `Shift+Tab` [nest](PanelKey::Nest) it, and the motion keys
+/// scroll or select; `g` is left to start the keymap's sequences, as `gg` selecting the first
+/// entry and `gn` moving the keys on. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()
@@ -229,7 +233,7 @@ pub(super) struct Scrolled {
 }
 
 /// The open panel on `today`, the local date, which says how far back a comment's time is
-/// written, over half the screen or, when `full`, the whole of the panes. Its state is how it is
+/// written, over half its pane or, when `full`, the whole of it. Its state is how it is
 /// scrolled, which it keeps within the content, on what is selected and on the caret while
 /// something is edited.
 pub(super) struct AttachmentsPanel<'a> {
@@ -238,6 +242,7 @@ pub(super) struct AttachmentsPanel<'a> {
     icons: IconSet,
     today: Date,
     full: bool,
+    focused: bool,
 }
 
 impl<'a> AttachmentsPanel<'a> {
@@ -254,23 +259,32 @@ impl<'a> AttachmentsPanel<'a> {
             icons,
             today,
             full: false,
+            focused: true,
         }
     }
 
-    /// The panel over the whole of the panes when `full`, as its hint then says.
+    /// The panel over the whole of its pane when `full`, as its hint then says.
     pub(super) fn full(self, full: bool) -> Self {
         Self { full, ..self }
     }
 
-    /// Where the panel goes over `screen`, the screen above the status line, while it is not
-    /// full: at its right, half as wide within 40 to 72 columns, its whole height.
-    pub(super) fn area(screen: Rect) -> Rect {
-        let width = (screen.width / 2).clamp(WIDTH.0, WIDTH.1).min(screen.width);
+    /// The panel with the keys when `focused`, what is selected marked as the focused row is;
+    /// without them nothing is marked and its border is dim, as a pane without the keys marks
+    /// no row.
+    pub(super) fn focused(self, focused: bool) -> Self {
+        Self { focused, ..self }
+    }
+
+    /// Where the panel goes over `pane`, the pane it is open in, while it is not full: at its
+    /// right, half as wide within 40 to 72 columns, its whole height, or the whole pane when it
+    /// is narrower than that.
+    pub(super) fn area(pane: Rect) -> Rect {
+        let width = (pane.width / 2).clamp(WIDTH.0, WIDTH.1).min(pane.width);
         Rect::new(
-            screen.right().saturating_sub(width),
-            screen.y,
+            pane.right().saturating_sub(width),
+            pane.y,
             width,
-            screen.height,
+            pane.height,
         )
     }
 
@@ -695,7 +709,11 @@ impl StatefulWidget for AttachmentsPanel<'_> {
         let top = &mut scrolled.top;
         let theme = self.theme;
         Clear.render(area, buf);
-        let accent = Style::new().fg(theme.accent);
+        let accent = Style::new().fg(if self.focused {
+            theme.accent
+        } else {
+            theme.rule
+        });
         let frame = Block::bordered()
             .style(Style::new().bg(theme.background).fg(theme.text))
             .border_style(accent)
@@ -718,6 +736,7 @@ impl StatefulWidget for AttachmentsPanel<'_> {
             *top = (*top).clamp(end.saturating_sub(page), start);
         }
         let banded: Vec<Rect> = (own.start.max(*top)..own.end.min(*top + page))
+            .filter(|_| self.focused)
             .map(|line| {
                 let y = content.y + u16::try_from(line - *top).unwrap_or(u16::MAX);
                 Rect::new(inner.x, y, inner.width, 1)
@@ -797,11 +816,11 @@ mod tests {
                 none,
                 PanelKey::Command(Command::Outdent),
             ),
-            (KeyCode::Tab, none, PanelKey::Command(Command::Indent)),
+            (KeyCode::Tab, none, PanelKey::Nest(Direction::Down)),
             (
                 KeyCode::BackTab,
                 KeyModifiers::SHIFT,
-                PanelKey::Command(Command::Outdent),
+                PanelKey::Nest(Direction::Up),
             ),
             (KeyCode::Char('j'), none, PanelKey::Scroll(Scroll::Lines(1))),
             (KeyCode::Up, none, PanelKey::Scroll(Scroll::Lines(-1))),
@@ -811,7 +830,7 @@ mod tests {
                 PanelKey::Scroll(Scroll::Pages(1)),
             ),
             (KeyCode::PageUp, none, PanelKey::Scroll(Scroll::Pages(-1))),
-            (KeyCode::Char('g'), none, PanelKey::Scroll(Scroll::Top)),
+            (KeyCode::Home, none, PanelKey::Scroll(Scroll::Top)),
             (
                 KeyCode::Char('G'),
                 KeyModifiers::SHIFT,
@@ -825,6 +844,11 @@ mod tests {
             );
         }
         assert_eq!(panel_input(&press(KeyCode::Char('x'), none)), None);
+        assert_eq!(
+            panel_input(&press(KeyCode::Char('g'), none)),
+            None,
+            "g starts the keymap's sequences, gg among them"
+        );
     }
 
     // FR-ATT-01

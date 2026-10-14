@@ -988,17 +988,32 @@ mod tests {
     fn a_reload_keeps_the_attachments_panel_open_while_its_item_is_found_again() -> TestResult {
         let mut state = opened(&["a"])?;
         command(&mut state, Command::OpenNote(Whose::Focused));
+        command(&mut state, Command::FocusLeft);
+        command(&mut state, Command::OpenInNewPane);
+        command(&mut state, Command::OpenComments(Whose::Focused));
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
         );
         let a = titled(&state, "a").ok_or("a")?;
+        let panels = |state: &State| -> Vec<_> {
+            state
+                .panes()
+                .map(|pane| pane.attachments().map(|view| view.id))
+                .collect()
+        };
+        assert_eq!(panels(&state), [Some(a), Some(a)], "each pane's panel");
         assert_eq!(state.attachments().map(|view| view.id), Some(a));
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
-        assert!(state.attachments().is_none(), "a, which it is on, is gone");
+        assert_eq!(
+            panels(&state),
+            [None, None],
+            "a, which they are on, is gone"
+        );
+        assert!(state.attachments().is_none());
         Ok(())
     }
 

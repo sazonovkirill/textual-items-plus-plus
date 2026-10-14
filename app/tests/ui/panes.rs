@@ -268,3 +268,78 @@ fn each_title_line_ends_in_its_pane_number_and_a_long_title_gives_way_to_it() {
         "with word wrap off the title is cut before it"
     );
 }
+
+/// The columns of the top-left corners of the attachments panels on the top row.
+fn panels(harness: &Harness) -> Vec<usize> {
+    let rows = harness.rows();
+    rows.first()
+        .map(|top| {
+            top.chars()
+                .enumerate()
+                .filter_map(|(column, c)| (c == '┌').then_some(column))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The mode the status line names.
+fn mode(harness: &Harness) -> String {
+    let rows = harness.rows();
+    let status = rows.last().map(String::as_str).unwrap_or_default();
+    status
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Whether the focus marker shows in the panel whose left edge is at `column`, on any row.
+fn panel_marked(harness: &Harness, column: usize) -> bool {
+    harness.rows().iter().any(|row| {
+        row.chars()
+            .skip(column)
+            .take(3)
+            .collect::<String>()
+            .starts_with("│▌")
+    })
+}
+
+// FR-ATT-01, FR-PANE-01, FR-PANE-02
+#[test]
+fn each_pane_opens_its_own_attachments_panel_and_tab_goes_through_both() {
+    let mut harness = today_beside_website();
+    harness.type_text("\\");
+    assert_eq!(panels(&harness), [60], "over the right of the second pane");
+    assert_eq!(mode(&harness), "ATTACHMENTS");
+    harness.type_text("g1\\");
+    assert_eq!(
+        panels(&harness),
+        [9, 60],
+        "and of the first, each in its own"
+    );
+    assert!(panel_marked(&harness, 9) && !panel_marked(&harness, 60));
+    harness.key(KeyCode::Tab);
+    assert_eq!(mode(&harness), "NAVIGATE", "the second pane's list");
+    assert!(!panel_marked(&harness, 9) && !panel_marked(&harness, 60));
+    harness.key(KeyCode::Tab);
+    assert_eq!(mode(&harness), "ATTACHMENTS", "then its panel");
+    assert!(panel_marked(&harness, 60) && !panel_marked(&harness, 9));
+    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
+    assert_eq!(mode(&harness), "NAVIGATE", "Shift+Tab back to its list");
+    harness.key(KeyCode::Tab);
+    harness.type_text("\\");
+    assert_eq!(panels(&harness), [9, 50], "full covers only its own pane");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        (panels(&harness), mode(&harness)),
+        (vec![9], "NAVIGATE".to_owned()),
+        "Esc closes only the panel with the keys"
+    );
+    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
+    assert_eq!(
+        mode(&harness),
+        "ATTACHMENTS",
+        "Shift+Tab back to the first's panel"
+    );
+    assert!(panel_marked(&harness, 9));
+}

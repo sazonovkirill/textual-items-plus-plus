@@ -108,15 +108,10 @@ pub struct Tui {
     theme: Theme,
     /// The settings file, where a setting changed in the app is kept (FR-SET-04).
     config: ConfigFile,
-    /// Where each pane is scrolled to, left to right.
-    tops: Vec<Top>,
+    /// How each pane is drawn, left to right.
+    drawn: Vec<PaneDrawn>,
     /// The first pane on screen, when they do not all fit.
     first: usize,
-    /// How the attachments panel is scrolled.
-    panel: Scrolled,
-    /// Whether the attachments panel covers the whole of the panes rather than half the screen,
-    /// as `\\` toggles it while it is open; it opens at half.
-    panel_full: bool,
     /// Where the app was last drawn.
     area: Rect,
     quit: bool,
@@ -149,15 +144,13 @@ impl Tui {
     #[must_use]
     pub fn new(state: State, today: Date, edge: &Edge) -> Self {
         Self {
-            tops: vec![Top::default(); state.panes().count()],
+            drawn: vec![PaneDrawn::default(); state.panes().count()],
             theme: state.settings().theme.colors(),
             animator: Animator::new(state.settings().animations),
             state,
             keymap: Keymap::default(),
             config: ConfigFile::new(None),
             first: 0,
-            panel: Scrolled::default(),
-            panel_full: false,
             area: Rect::default(),
             quit: false,
             file: None,
@@ -308,9 +301,9 @@ impl Tui {
     /// command palette (FR-NAV-06), the Move to picker (FR-OPS-04) and, in edit mode, the title,
     /// description or note being edited take them the same way (FR-EDIT-01), `Ctrl+V` pasting the
     /// clipboard's text there as a terminal paste goes in (FR-EDIT-04), and so do the date
-    /// prompt (FR-DATE-02), the Save As prompt (FR-STORE-11) and the settings window (FR-SET-02). The open attachments panel takes
-    /// them, scrolling itself (FR-ATT-01), leaving quitting and the commands it acts on
-    /// (FR-CHK-03). The mouse wheel scrolls the shortcuts panel while it shows, and the mouse
+    /// prompt (FR-DATE-02), the Save As prompt (FR-STORE-11) and the settings window (FR-SET-02). The attachments panel that has
+    /// the keys takes them, scrolling itself (FR-ATT-01), leaving quitting, the commands it acts
+    /// on (FR-CHK-03) and those moving the keys to another list or panel (FR-PANE-02). The mouse wheel scrolls the shortcuts panel while it shows, and the mouse
     /// does nothing else (D-74). A key, paste, click or resize while the weather plays only ends
     /// it (FR-UI-08).
     pub fn handle(&mut self, event: &Event, today: Date) {
@@ -364,24 +357,7 @@ impl Tui {
             .map(Message::Edit)
             .or_else(|| self.global(event))
         } else if self.state.attachments().is_some() {
-            match attachments::panel_input(event) {
-                Some(PanelKey::Input(input)) => Some(Message::Attachments(input)),
-                Some(PanelKey::Command(command)) => Some(Message::Command(command)),
-                Some(PanelKey::AddComment) => {
-                    Some(Message::Attachments(AttachmentsInput::AddComment((self
-                        .edge
-                        .clock)(
-                    ))))
-                }
-                Some(PanelKey::Widen) => {
-                    self.panel_full = !self.panel_full;
-                    None
-                }
-                Some(PanelKey::Scroll(scroll)) => self
-                    .panel_scroll(scroll)
-                    .map(|motion| Message::Attachments(AttachmentsInput::Select(motion))),
-                None => self.global(event),
-            }
+            self.panel_message(event)
         } else if let Some((picker, focus)) = self.dialog_keys() {
             if picker {
                 picker_input(event).map(|input| Message::EditDialog(EditDialogInput::Tags(input)))
@@ -422,6 +398,50 @@ impl Tui {
         }
     }
 
+    /// The message of what `event` does in the attachments panel that has the keys, while nothing
+    /// in it is edited (FR-ATT-01): its own keys, `Tab` and `Shift+Tab` nesting a checklist item
+    /// selected and otherwise moving the keys on, and the global commands it takes.
+    fn panel_message(&mut self, event: &Event) -> Option<Message> {
+        match attachments::panel_input(event) {
+            Some(PanelKey::Input(input)) => Some(Message::Attachments(input)),
+            Some(PanelKey::Command(command)) => Some(Message::Command(command)),
+            Some(PanelKey::Nest(direction)) => {
+                let on_item = self
+                    .state
+                    .attachments()
+                    .is_some_and(|view| matches!(view.selected, Selected::Checklist(Some(_))));
+                Some(Message::Command(match (on_item, direction) {
+                    (true, Direction::Down) => Command::Indent,
+                    (true, Direction::Up) => Command::Outdent,
+                    (false, Direction::Down) => Command::NextPane,
+                    (false, Direction::Up) => Command::PreviousPane,
+                }))
+            }
+            Some(PanelKey::AddComment) => {
+                Some(Message::Attachments(AttachmentsInput::AddComment((self
+                    .edge
+                    .clock)(
+                ))))
+            }
+            Some(PanelKey::Widen) => {
+                if let Some(drawn) = self.drawn.get_mut(self.state.current_pane()) {
+                    drawn.panel.full = !drawn.panel.full;
+                }
+                None
+            }
+            Some(PanelKey::Scroll(scroll)) => self
+                .panel_scroll(scroll)
+                .map(|motion| Message::Attachments(AttachmentsInput::Select(motion))),
+            // `gg` goes to the top as `Home` does.
+            None => match self.global(event) {
+                Some(Message::Command(Command::Focus(Focus::First))) => self
+                    .panel_scroll(Scroll::Top)
+                    .map(|motion| Message::Attachments(AttachmentsInput::Select(motion))),
+                message => message,
+            },
+        }
+    }
+
     /// Scrolls the shortcuts panel [`WHEEL`] lines while it shows when `mouse` turns the wheel,
     /// the only thing the mouse does (D-74).
     fn wheel(&mut self, mouse: MouseEvent) {
@@ -444,18 +464,19 @@ impl Tui {
         };
     }
 
-    /// Scrolls the open attachments panel as `scroll` says, through what is selected while it
-    /// goes past the panel's edge, and returns the motion that selects another otherwise
-    /// (FR-ATT-01).
+    /// Scrolls the attachments panel that has the keys as `scroll` says, through what is
+    /// selected while it goes past the panel's edge, and returns the motion that selects another
+    /// otherwise (FR-ATT-01).
     fn panel_scroll(&mut self, scroll: Scroll) -> Option<Focus> {
         let view = self.state.attachments()?;
-        let [panes, ..] = self.layout(self.area);
-        let area = self.panel_area(panes);
-        let shown = AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
-            .full(self.panel_full);
+        let (area, drawn) = self.keyed_panel(self.area);
+        let shown =
+            AttachmentsPanel::new(view, &self.theme, self.icons(), self.today).full(drawn.full);
         let selected = shown.selected_lines(area);
-        let (top, motion) = scroll.from(self.panel.top, shown.page(area), selected);
-        self.panel.top = top;
+        let (top, motion) = scroll.from(drawn.scrolled.top, shown.page(area), selected);
+        if let Some(drawn) = self.drawn.get_mut(self.state.current_pane()) {
+            drawn.panel.scrolled.top = top;
+        }
         motion
     }
 
@@ -553,10 +574,9 @@ impl Tui {
     }
 
     /// Gives `message` to the core and carries out its effects, keeping each pane's scroll with
-    /// it as panes open and close, and opening the attachments panel at half.
+    /// it as panes open and close, and opening each attachments panel at half and at its top.
     fn update(&mut self, message: Message) {
         let (panes, current) = (self.state.panes().count(), self.state.current_pane());
-        let panel_open = self.state.attachments().is_some();
         let intent = Intent::of(&message);
         let effects = app::update(&mut self.state, message, self.today);
         self.animator.observe(intent, &self.state);
@@ -564,15 +584,19 @@ impl Tui {
         for effect in effects {
             self.run(effect);
         }
-        self.panel_full &= panel_open;
         let after = self.state.panes().count();
         if after > panes {
-            let opened = self.state.current_pane().min(self.tops.len());
-            self.tops.insert(opened, Top::default());
-        } else if after < panes && current < self.tops.len() {
-            self.tops.remove(current);
+            let opened = self.state.current_pane().min(self.drawn.len());
+            self.drawn.insert(opened, PaneDrawn::default());
+        } else if after < panes && current < self.drawn.len() {
+            self.drawn.remove(current);
         }
-        self.tops.resize(after, Top::default());
+        self.drawn.resize(after, PaneDrawn::default());
+        for (drawn, pane) in self.drawn.iter_mut().zip(self.state.panes()) {
+            if pane.attachments().is_none() {
+                drawn.panel = PanelDrawn::default();
+            }
+        }
         self.theme = self.state.settings().theme.colors();
     }
 
@@ -663,9 +687,10 @@ impl Tui {
         }
         let [panes, prompt, _] = self.layout(area);
         if let Some(view) = self.state.attachments() {
+            let (area, drawn) = self.keyed_panel(area);
             return AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
-                .full(self.panel_full)
-                .caret(self.panel_area(panes), self.panel.top);
+                .full(drawn.full)
+                .caret(area, drawn.scrolled.top);
         }
         if let Some(view) = self.state.edit_dialog() {
             return match &view.picker {
@@ -706,9 +731,9 @@ impl Tui {
             return SidebarPane::new(&self.state, view, &self.theme, self.icons()).caret(side);
         }
         let top = self
-            .tops
+            .drawn
             .get(self.state.current_pane())
-            .copied()
+            .map(|drawn| drawn.top)
             .unwrap_or_default();
         self.current_pane().caret(self.current_area(room), top)
     }
@@ -762,21 +787,20 @@ impl Tui {
 
     /// The columns the note being edited wraps in, as last drawn.
     fn note_columns(&self) -> usize {
-        let [panes, ..] = self.layout(self.area);
-        AttachmentsPanel::columns(self.panel_area(panes))
+        AttachmentsPanel::columns(self.keyed_panel(self.area).0)
     }
 
-    /// Where the attachments panel goes of `panes`, the area they share with the shortcuts
-    /// panel: over half the screen at the right of the panes' strip, or while it is full over
-    /// the whole of the panes beside the sidebar.
-    fn panel_area(&self, panes: Rect) -> Rect {
-        let strip = self.strip(panes);
-        if self.panel_full {
-            let [_, room] = split(strip, self.state.sidebar().is_some());
-            room
-        } else {
-            AttachmentsPanel::area(strip)
-        }
+    /// Where the attachments panel of the pane with the keys goes when the app is drawn over
+    /// `area`, and how it is drawn.
+    fn keyed_panel(&self, area: Rect) -> (Rect, PanelDrawn) {
+        let [panes, ..] = self.layout(area);
+        let [_, room] = split(self.strip(panes), self.state.sidebar().is_some());
+        let drawn = self
+            .drawn
+            .get(self.state.current_pane())
+            .map(|drawn| drawn.panel)
+            .unwrap_or_default();
+        (panel_area(self.current_area(room), drawn.full), drawn)
     }
 
     /// Carries out one effect of the core.
@@ -968,21 +992,34 @@ impl Tui {
     }
 
     /// Draws the panes placed in `room`, a dim rule apart, scrolling each to keep its focus in
-    /// view.
+    /// view, each with its attachments panel over its right part while it is open, marking what
+    /// is selected in the one that has the keys (FR-ATT-01).
     fn render_panes(&mut self, room: Rect, buf: &mut Buffer) {
         let placed = self.pane_areas(room);
         if let Some(&(first, _)) = placed.first() {
             self.first = first;
         }
         let current = self.state.current_pane();
+        let keyed = self.state.attachments().is_some();
         for (index, pane) in self.state.panes().enumerate() {
             let Some(&(_, area)) = placed.iter().find(|&&(placed, _)| placed == index) else {
                 continue;
             };
-            let mut top = self.tops.get(index).copied().unwrap_or_default();
-            let drawn = self.pane(pane, index).draw(area, buf, &mut top);
-            if let Some(kept) = self.tops.get_mut(index) {
-                *kept = top;
+            let mut kept = self.drawn.get(index).copied().unwrap_or_default();
+            let drawn = self.pane(pane, index).draw(area, buf, &mut kept.top);
+            if let Some(view) = pane.attachments() {
+                AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
+                    .full(kept.panel.full)
+                    .focused(keyed && index == current)
+                    .render(
+                        panel_area(area, kept.panel.full),
+                        buf,
+                        &mut kept.panel.scrolled,
+                    );
+            }
+            let top = kept.top;
+            if let Some(slot) = self.drawn.get_mut(index) {
+                *slot = kept;
             }
             self.animator.drawn(DrawnPane {
                 index,
@@ -1070,6 +1107,32 @@ impl Tui {
         self.state
             .left_in()
             .map(|copy| format!("tipp: left theirs on disk; mine is in {}", copy.display()))
+    }
+}
+
+/// How a pane is drawn: where it is scrolled to and how its attachments panel is.
+#[derive(Debug, Clone, Copy, Default)]
+struct PaneDrawn {
+    top: Top,
+    panel: PanelDrawn,
+}
+
+/// How a pane's attachments panel is drawn: how it is scrolled, and whether it covers the whole
+/// pane rather than half of it, as `\\` toggles it while it has the keys; it opens at half.
+#[derive(Debug, Clone, Copy, Default)]
+struct PanelDrawn {
+    scrolled: Scrolled,
+    full: bool,
+}
+
+/// Where the attachments panel of the pane drawn over `pane` goes: over its right half within
+/// the panel's widths, the whole pane when it is narrower than that, or over the whole pane
+/// while `full` (FR-ATT-01).
+fn panel_area(pane: Rect, full: bool) -> Rect {
+    if full {
+        pane
+    } else {
+        AttachmentsPanel::area(pane)
     }
 }
 
@@ -1265,8 +1328,8 @@ impl Widget for &mut Tui {
     /// apart, beside the sidebar while it shows and the
     /// shortcuts panel at the right while it shows, over the status line, scrolling each pane to
     /// keep its focus in view, the date prompt between them while it is open, and the Navigator,
-    /// the command palette, Go to Symbol, Move to, the tag picker, the settings window, the attachments panel or
-    /// the conflict prompt over them while it is open, and the weather over everything while it
+    /// the command palette, Go to Symbol, Move to, the tag picker, the settings window or the
+    /// conflict prompt over them while it is open, each pane's attachments panel over its pane, and the weather over everything while it
     /// plays.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
@@ -1324,15 +1387,6 @@ impl Widget for &mut Tui {
             let settings = (self.state.settings(), self.state.default_settings());
             SettingsWindow::new(settings, focused, self.config.path(), &self.theme)
                 .render(panes, buf);
-        }
-        match self.state.attachments() {
-            Some(view) => {
-                let area = self.panel_area(panes);
-                AttachmentsPanel::new(view, &self.theme, icons, self.today)
-                    .full(self.panel_full)
-                    .render(area, buf, &mut self.panel);
-            }
-            None => self.panel = Scrolled::default(),
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
             let (theirs, mine) = if view.diff {

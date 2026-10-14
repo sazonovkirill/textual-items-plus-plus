@@ -156,7 +156,7 @@ fn a_long_note_scrolls() {
         "the caret stays in view"
     );
     harness.key(KeyCode::Esc);
-    harness.type_text("g");
+    harness.type_text("gg");
     assert_eq!(
         panel(&harness)[2],
         "│▌line 1                               │"
@@ -190,7 +190,7 @@ fn a_long_note_scrolls() {
         ],
         "and the next goes on to the task's empty checklist"
     );
-    harness.type_text("gG");
+    harness.type_text("ggG");
     assert_eq!(
         panel(&harness)[3..8],
         [
@@ -298,17 +298,21 @@ fn a_note_is_saved_as_guarded_lines_and_reads_back() {
 
 // FR-ATT-01, FR-ATT-02
 #[test]
-fn backslash_widens_the_panel_over_the_panes_beside_the_sidebar_and_back() {
+fn backslash_widens_the_panel_over_its_pane_beside_the_sidebar_and_back() {
     let mut harness = Harness::new(100, 12);
     let corner = |harness: &Harness| harness.rows()[0].chars().position(|c| c == '┌');
     harness.ctrl('b');
     harness.type_text("\\");
-    assert_eq!(corner(&harness), Some(50), "it opens over half the screen");
+    assert_eq!(
+        corner(&harness),
+        Some(60),
+        "it opens over the pane's right half, 40 columns at least"
+    );
     harness.type_text("\\");
     assert_eq!(
         corner(&harness),
         Some(28),
-        "over the panes, beside the sidebar"
+        "over its whole pane, beside the sidebar"
     );
     let rows = harness.rows();
     assert!(rows[2].starts_with(" 󰖙 Today"), "the sidebar stays");
@@ -321,9 +325,9 @@ fn backslash_widens_the_panel_over_the_panes_beside_the_sidebar_and_back() {
     );
     harness.key(KeyCode::Esc);
     harness.type_text("\\");
-    assert_eq!(corner(&harness), Some(50), "and back to half");
+    assert_eq!(corner(&harness), Some(60), "and back to half");
     harness.type_text("\\");
     harness.key(KeyCode::Esc);
     harness.type_text("\\");
-    assert_eq!(corner(&harness), Some(50), "it opens at half again");
+    assert_eq!(corner(&harness), Some(60), "it opens at half again");
 }

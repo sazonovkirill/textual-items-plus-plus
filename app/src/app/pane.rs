@@ -7,8 +7,8 @@ use std::{cell::RefCell, rc::Rc};
 use jiff::civil::Date;
 
 use super::{
-    Selection, TextField,
-    attachments::Panel,
+    AttachmentsView, Selection, TextField,
+    attachments::{self, Panel},
     container::{self, Row},
     focus::{self, Focus},
     search, tags,
@@ -234,11 +234,13 @@ impl Pane {
     }
 
     /// Shows what `visit` showed, focused on its item when that is a row there or the heading,
-    /// and on the first row otherwise, else the heading, with nothing picked and no tag filter.
+    /// and on the first row otherwise, else the heading, with nothing picked and no tag filter;
+    /// the panel stays on its item as far as it [stays](attachments::stays) open there.
     pub(super) fn arrive(&mut self, document: &Document, today: Date, visit: Visit) {
         self.selection.clear();
         self.filter.clear();
         self.shown = visit.shown;
+        self.keep_panel(document);
         let rows = self.rows(document, today);
         let heading = self.heading(document);
         let focused = visit
@@ -271,10 +273,20 @@ impl Pane {
         }
     }
 
+    /// Closes the panel once it no longer [stays](attachments::stays) open on its item.
+    fn keep_panel(&mut self, document: &Document) {
+        let shown = self.shown;
+        self.panel = self
+            .panel
+            .filter(|panel| attachments::stays(document, panel.id(), shown));
+    }
+
     /// Keeps the focus on a row now that the rows `before` have changed, and when the container
     /// shown no longer opens, having gone to the Trash or into a completed item, shows the
-    /// nearest one above it that does, else the Inbox, focused where it was.
+    /// nearest one above it that does, else the Inbox, focused where it was. The panel closes
+    /// once its item is gone.
     pub(super) fn settle(&mut self, document: &Document, today: Date, before: &[Row]) {
+        self.keep_panel(document);
         if !view::opens(document, self.shown) {
             let path = self.path(document);
             let visit = path
@@ -363,16 +375,30 @@ pub struct PaneView<'a> {
     pane: &'a Pane,
     document: &'a Document,
     today: Date,
+    editing: Option<&'a TextField>,
 }
 
 impl<'a> PaneView<'a> {
-    /// `pane` showing `document` on `today`.
-    pub(super) fn new(pane: &'a Pane, document: &'a Document, today: Date) -> Self {
+    /// `pane` showing `document` on `today`, with `editing` the text edited in its panel, while
+    /// its panel has the keys and something in it is edited.
+    pub(super) fn new(
+        pane: &'a Pane,
+        document: &'a Document,
+        today: Date,
+        editing: Option<&'a TextField>,
+    ) -> Self {
         Self {
             pane,
             document,
             today,
+            editing,
         }
+    }
+
+    /// The pane's attachments panel, while it is open (FR-ATT-01).
+    #[must_use]
+    pub fn attachments(&self) -> Option<AttachmentsView<'a>> {
+        attachments::view(self.document, self.pane.panel?, self.editing)
     }
 
     /// What the pane shows.

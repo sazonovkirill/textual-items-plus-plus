@@ -75,6 +75,9 @@ pub struct State {
     /// The item whose title, description or note is edited, in edit mode (FR-EDIT-01), in the
     /// sidebar while it has the keys.
     editing: Option<Editing>,
+    /// Whether the attachments panel of the pane with the keys has them, rather than its list,
+    /// while it is open (FR-ATT-01).
+    pub(super) in_panel: bool,
     pub(super) sidebar: Sidebar,
     /// Whether the shortcuts panel shows (FR-KEY-03).
     pub(super) shortcuts: bool,
@@ -125,6 +128,7 @@ impl State {
             tags: None,
             edit_dialog: None,
             editing: None,
+            in_panel: false,
             sidebar,
             shortcuts: false,
             settings: Settings::default(),
@@ -148,11 +152,12 @@ impl State {
 
     /// The panes, left to right, as a frontend draws them (FR-PANE-01).
     pub fn panes(&self) -> impl Iterator<Item = PaneView<'_>> {
+        let view = |pane| PaneView::new(pane, &self.document, self.today, None);
         self.left
             .iter()
-            .chain([&self.pane])
-            .chain(&self.right)
-            .map(|pane| PaneView::new(pane, &self.document, self.today))
+            .map(view)
+            .chain([self.pane_view()])
+            .chain(self.right.iter().map(view))
     }
 
     /// The position of the pane with the keys among [`panes`](Self::panes); the commands that
@@ -165,7 +170,8 @@ impl State {
     /// The pane with the keys, as a frontend draws it.
     #[must_use]
     pub fn pane_view(&self) -> PaneView<'_> {
-        PaneView::new(&self.pane, &self.document, self.today)
+        let editing = self.attachments().and_then(|view| view.editing);
+        PaneView::new(&self.pane, &self.document, self.today, editing)
     }
 
     /// The rows every pane lists, left to right, to keep each pane's focus on a row once they
@@ -555,7 +561,7 @@ impl State {
     /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near, while
     /// the sidebar has the keys, or in a view, which has no place to paste into.
     pub(super) fn paste(&mut self, side: Side, branches: &[Branch]) {
-        if self.pane.panel.is_some() {
+        if self.panel_has_keys() {
             self.paste_checklist(side, branches);
             return;
         }
@@ -928,6 +934,7 @@ impl State {
     /// indented and outdented. Nothing happens outside edit mode.
     pub(super) fn edit_input(&mut self, input: EditInput) {
         let container = self.container();
+        let in_panel = self.panel_has_keys();
         let Some(editing) = self.editing.as_mut() else {
             return;
         };
@@ -944,7 +951,7 @@ impl State {
                     self.notify(Notice::TagInTitle);
                 }
             }
-            EditInput::Next if self.pane.panel.is_some() => {
+            EditInput::Next if in_panel => {
                 let checklist = editing.kind() == ItemKind::ChecklistItem;
                 if self.finish_editing() && checklist {
                     self.new_checklist_item(Side::Below);
@@ -1010,7 +1017,7 @@ impl State {
         };
         let (id, started) = (editing.id(), editing.revision());
         let in_sidebar = self.sidebar.has_keys();
-        let in_panel = self.pane.panel.is_some();
+        let in_panel = self.panel_has_keys();
         let heading = !in_sidebar && Some(id) == self.container();
         let listed = self.listings();
         let (transaction, before) = editing.finish(&mut self.document);
@@ -1088,7 +1095,8 @@ impl State {
     /// took it. It acts on its focused entry: moving the focus, renaming, editing its description
     /// in the pane, adding an area or a project, collapsing it, deleting, moving, converting,
     /// pinning, flagging and setting its dates, each one step to
-    /// undo, opening Move to for it or the attachments panel on it, and showing the entry in the
+    /// undo, opening Move to for it or the first pane's attachments panel on it, which gets the
+    /// keys, and showing the entry in the
     /// first pane, the sidebar keeping the keys, or in a new pane, which gets them; a view's entry
     /// is only shown. The commands [`sidebar_passes`] names pass to the app; every other command
     /// does nothing.
@@ -1171,10 +1179,13 @@ impl State {
             (Command::TogglePinned, Some(Shown::View(_))) => self.notify(Notice::NotAProject),
             (Command::ToggleFlagged, Some(Shown::Container(id))) => self.toggle_flagged_for(&[id]),
             (Command::ToggleFlagged, Some(Shown::View(_))) => self.notify(Notice::NotFlaggable),
+            // The attachments panel opens in the first pane, which the sidebar leads (D-79).
             (Command::OpenNote(_), Some(Shown::Container(id))) => {
+                self.focus_pane(1);
                 self.open_panel(id, Selected::Note);
             }
             (Command::OpenComments(_), Some(Shown::Container(id))) => {
+                self.focus_pane(1);
                 self.open_panel(id, Selected::Comment(Some(0)));
             }
             (Command::OpenChecklist, Some(_)) => self.notify(Notice::NoChecklist),
@@ -1332,7 +1343,7 @@ impl State {
 
     /// Adds a pane showing what `visit` shows right of the one with the keys and gives it the
     /// keys. It shows completed items when that pane does or `visit` focuses one, and has no
-    /// history and no tag filter.
+    /// history, no tag filter and no attachments panel.
     pub(super) fn open_pane(&mut self, visit: Visit) {
         let pane = Pane::new(
             &self.document,
@@ -1342,10 +1353,12 @@ impl State {
         );
         self.left.push(mem::replace(&mut self.pane, pane));
         self.sidebar.focus(false);
+        self.in_panel = false;
     }
 
-    /// Closes the pane with the keys, giving them to the pane on its left, or on its right when it
-    /// was the first. The only pane stays (FR-PANE-02).
+    /// Closes the pane with the keys, with its attachments panel, giving them to the list of the
+    /// pane on its left, or on its right when it was the first. The only pane stays
+    /// (FR-PANE-02).
     pub(super) fn close_pane(&mut self) {
         let next = self
             .left
@@ -1353,11 +1366,12 @@ impl State {
             .or_else(|| (!self.right.is_empty()).then(|| self.right.remove(0)));
         if let Some(next) = next {
             self.pane = next;
+            self.in_panel = false;
         }
     }
 
-    /// Gives the keys to the pane numbered `number`, counted from 1 on the left, when there is
-    /// one, or for 0 to the sidebar, showing it when hidden (FR-PANE-02, FR-VIEW-10).
+    /// Gives the keys to the list of the pane numbered `number`, counted from 1 on the left, when
+    /// there is one, or for 0 to the sidebar, showing it when hidden (FR-PANE-02, FR-VIEW-10).
     pub(super) fn focus_pane(&mut self, number: usize) {
         let Some(index) = number.checked_sub(1) else {
             if self.sidebar.shows() {
@@ -1377,48 +1391,92 @@ impl State {
             self.step_right();
         }
         self.sidebar.focus(false);
+        self.in_panel = false;
     }
 
-    /// Gives the keys to the pane on the left of the one with them, or from the first pane to the
-    /// sidebar while it shows (FR-PANE-02, FR-VIEW-10).
-    pub(super) fn focus_left(&mut self) {
+    /// Where the keys can go, in order: the sidebar while it shows, then each pane's list,
+    /// followed by its attachments panel while that is open (FR-PANE-02, FR-ATT-01).
+    fn key_stops(&self) -> Vec<KeyStop> {
+        let panes = self.left.iter().chain([&self.pane]).chain(&self.right);
+        let panes = panes.enumerate().flat_map(|(index, pane)| {
+            [
+                Some(KeyStop::List(index)),
+                pane.panel.map(|_| KeyStop::Panel(index)),
+            ]
+        });
+        self.sidebar
+            .shows()
+            .then_some(KeyStop::Sidebar)
+            .into_iter()
+            .chain(panes.flatten())
+            .collect()
+    }
+
+    /// Where the keys are.
+    fn key_stop(&self) -> KeyStop {
         if self.sidebar.has_keys() {
-            return;
-        }
-        if self.left.is_empty() {
-            self.sidebar.focus(true);
+            KeyStop::Sidebar
+        } else if self.panel_has_keys() {
+            KeyStop::Panel(self.left.len())
         } else {
-            self.step_left();
+            KeyStop::List(self.left.len())
         }
     }
 
-    /// Gives the keys from the sidebar back to the pane that had them, or to the pane on the right
-    /// of the one with them (FR-PANE-02, FR-VIEW-10).
+    /// Gives the keys to `stop`.
+    fn focus_stop(&mut self, stop: KeyStop) {
+        match stop {
+            KeyStop::Sidebar => self.focus_pane(0),
+            KeyStop::List(index) => self.focus_pane(index + 1),
+            KeyStop::Panel(index) => {
+                self.focus_pane(index + 1);
+                self.in_panel = true;
+            }
+        }
+    }
+
+    /// Gives the keys to where they can go next to where they are, in `direction` as
+    /// [`key_stops`](Self::key_stops) orders them, wrapping around at either end when `wraps`.
+    fn step_keys(&mut self, direction: Direction, wraps: bool) {
+        let stops = self.key_stops();
+        let at = stops
+            .iter()
+            .position(|&stop| stop == self.key_stop())
+            .unwrap_or_default();
+        let next = match direction {
+            Direction::Down if at + 1 == stops.len() && wraps => Some(0),
+            Direction::Down => Some(at + 1),
+            Direction::Up if at == 0 && wraps => stops.len().checked_sub(1),
+            Direction::Up => at.checked_sub(1),
+        };
+        if let Some(&stop) = next.and_then(|next| stops.get(next)) {
+            self.focus_stop(stop);
+        }
+    }
+
+    /// Gives the keys to where they can go left of where they are: from an attachments panel to
+    /// its pane's list, from a list to the panel or list of the pane on its left, and from the
+    /// first pane's list to the sidebar while it shows (FR-PANE-02, FR-VIEW-10).
+    pub(super) fn focus_left(&mut self) {
+        self.step_keys(Direction::Up, false);
+    }
+
+    /// Gives the keys from the sidebar back to the list or panel that had them, or else to where
+    /// they can go right of where they are: from a list to its pane's attachments panel while it
+    /// is open, else to the list of the pane on the right (FR-PANE-02, FR-VIEW-10).
     pub(super) fn focus_right(&mut self) {
         if self.sidebar.has_keys() {
             self.sidebar.focus(false);
         } else {
-            self.step_right();
+            self.step_keys(Direction::Down, false);
         }
     }
 
-    /// Gives the keys to the next pane in `direction`, the sidebar while it shows counting as the
-    /// pane before the first, wrapping around at either end (FR-PANE-02, FR-VIEW-10).
+    /// Gives the keys to where they can go next in `direction`: the sidebar while it shows, then
+    /// each pane's list and its attachments panel while it is open, wrapping around at either
+    /// end (FR-PANE-02, FR-VIEW-10).
     pub(super) fn cycle_pane(&mut self, direction: Direction) {
-        let last = self.left.len() + 1 + self.right.len();
-        let first = usize::from(!self.sidebar.shows());
-        let at = if self.sidebar.has_keys() {
-            0
-        } else {
-            self.left.len() + 1
-        };
-        let next = match direction {
-            Direction::Down if at == last => first,
-            Direction::Down => at + 1,
-            Direction::Up if at == first => last,
-            Direction::Up => at - 1,
-        };
-        self.focus_pane(next);
+        self.step_keys(direction, true);
     }
 
     /// Focuses the sidebar's entry in `direction`, shown or hidden, and shows it in the first
@@ -1524,6 +1582,15 @@ impl State {
         let (document, today) = (&self.document, self.today);
         self.pane.show(document, today, shown, focused);
     }
+}
+
+/// Where the keys can be: the sidebar, or the list or the attachments panel of the pane at a
+/// position among the panes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyStop {
+    Sidebar,
+    List(usize),
+    Panel(usize),
 }
 
 /// Whether the sidebar passes `command` to the app while it has the keys: quitting, undo and

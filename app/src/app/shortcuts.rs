@@ -139,8 +139,8 @@ impl KeyGroup {
 
 impl State {
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
-    /// commands and quitting, while the attachments panel is open quitting and, while nothing in
-    /// it is edited, the commands it acts on (FR-CHK-03), while a picker, the command palette, Go
+    /// commands and quitting, while an attachments panel has the keys quitting and, while nothing
+    /// in it is edited, the commands it acts on (FR-CHK-03) and those that move the keys, while a picker, the command palette, Go
     /// to Symbol, the date prompt, Quick Add or the settings window is open, in edit mode or
     /// while the words to search for are typed only global ones, while the sidebar has the keys
     /// those it takes, and otherwise any but Toggle Evening outside Today (FR-VIEW-13).
@@ -153,7 +153,9 @@ impl State {
         if self.conflict().is_some() {
             command == Command::Quit || context == Some(Context::Conflict)
         } else if self.attachments().is_some() {
-            command == Command::Quit || (self.editing().is_none() && attachments::acts_on(command))
+            command == Command::Quit
+                || (self.editing().is_none()
+                    && (attachments::acts_on(command) || attachments::moves_keys(command)))
         } else if self.editing().is_some()
             || self.navigator.is_some()
             || self.palette.is_some()

@@ -89,6 +89,8 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
                             .expect("the panel's commands are registered")
                             .title
                     }
+                    PanelKey::Nest(Direction::Down) => "Indent or Next Pane",
+                    PanelKey::Nest(Direction::Up) => "Outdent or Previous Pane",
                     PanelKey::AddComment => "Add Comment",
                     PanelKey::Widen => "Full or Half Width",
                     PanelKey::Scroll(Scroll::Lines(lines)) if lines < 0 => "Scroll Up",
@@ -617,7 +619,7 @@ mod tests {
         );
         let (_, editing) = &window_keys(Window::Editing(Part::Title))[0];
         assert!(editing.contains(&("Paste".to_owned(), "Ctrl+V".to_owned())));
-        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 13)]);
+        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 15)]);
         assert_eq!(headings(Window::Settings), [("Settings", 6)]);
         assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 19)]);
         assert_eq!(

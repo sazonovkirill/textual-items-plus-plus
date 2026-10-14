@@ -256,7 +256,7 @@ fn tab_and_shift_tab_nest_an_item_selected_or_edited_and_leave_the_panes_be() {
             .iter()
             .map(|row| {
                 row.chars()
-                    .skip(51)
+                    .skip(61)
                     .collect::<String>()
                     .trim_end_matches(['│', ' '])
                     .to_owned()
