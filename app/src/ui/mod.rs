@@ -141,10 +141,14 @@ impl Tui {
     }
 
     /// The frontend's clock reads `now`, counted from the start of the session, on `today`, the
-    /// local date: a save that is due starts.
+    /// local date: a save that is due starts, and a key sequence waiting too long ends, giving
+    /// its command when it is a binding of its own.
     pub fn tick(&mut self, now: Duration, today: Date) {
         self.today = today;
         self.update(Message::Tick(now));
+        if let Some(command) = self.keymap.tick(now) {
+            self.give(command);
+        }
     }
 
     /// Waits until the disk work asked for so far is done and its reports are among the inputs.
@@ -157,7 +161,10 @@ impl Tui {
     /// When the next [`tick`](Self::tick) is due without any input, if one is.
     #[must_use]
     pub fn deadline(&self) -> Option<Duration> {
-        self.state.deadline()
+        [self.state.deadline(), self.keymap.deadline()]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// Handles one terminal event on `today`, the local date: the keys of a bound command give
@@ -165,18 +172,17 @@ impl Tui {
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
     /// Move to picker (FR-OPS-04) and, in edit mode, the title being edited take them the same
-    /// way (FR-EDIT-01).
+    /// way (FR-EDIT-01). A key that cuts a sequence short gives the sequence's command first,
+    /// then acts on its own.
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
+        if let Some(command) = self.keymap.cut_short(event) {
+            self.give(command);
+        }
         let message = if self.state.conflict().is_some() {
             self.keymap
                 .press(event)
-                .filter(|&command| {
-                    command == Command::Quit
-                        || REGISTRY.iter().any(|entry| {
-                            entry.command == command && entry.context == Context::Conflict
-                        })
-                })
+                .filter(|&command| self.allows(command))
                 .map(Message::Command)
         } else if self.state.editing().is_some() {
             edit_keys::edit_input(event)
@@ -209,12 +215,35 @@ impl Tui {
     fn global(&mut self, event: &Event) -> Option<Message> {
         self.keymap
             .press(event)
-            .filter(|&command| {
-                REGISTRY
-                    .iter()
-                    .any(|entry| entry.command == command && entry.context == Context::Global)
-            })
+            .filter(|&command| self.allows(command))
             .map(Message::Command)
+    }
+
+    /// Gives `command` to the core when the app takes it now.
+    fn give(&mut self, command: Command) {
+        if self.allows(command) {
+            self.update(Message::Command(command));
+        }
+    }
+
+    /// Whether the app takes `command` now: while the conflict prompt is open only its own
+    /// commands and quitting, while the Navigator or Move to is open or in edit mode only global
+    /// ones, and otherwise any.
+    fn allows(&self, command: Command) -> bool {
+        let context = REGISTRY
+            .iter()
+            .find(|entry| entry.command == command)
+            .map(|entry| entry.context);
+        if self.state.conflict().is_some() {
+            command == Command::Quit || context == Some(Context::Conflict)
+        } else if self.state.editing().is_some()
+            || self.state.navigator().is_some()
+            || self.state.move_to().is_some()
+        {
+            context == Some(Context::Global)
+        } else {
+            true
+        }
     }
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the

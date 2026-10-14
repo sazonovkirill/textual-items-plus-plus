@@ -24,14 +24,25 @@ pub enum Command {
     Go(Go),
     /// Open the Navigator, or close it when it is open (FR-VIEW-07).
     Navigator,
-    /// Edit the focused task's title in place (FR-EDIT-01, FR-EDIT-02).
+    /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
     EditTitle,
     /// Add a task beside the focused row and edit its title (FR-EDIT-05).
     NewTask(Side),
+    /// Add a section on this side of the focus and edit its title (FR-EDIT-05, FR-ORG-06).
+    NewSection(Side),
+    /// Add a project on this side of the focus and edit its title (FR-EDIT-05, FR-ORG-06).
+    NewProject(Side),
+    /// Add an area on this side of the one holding the container shown and edit its title
+    /// (FR-EDIT-05, FR-ORG-06).
+    NewArea(Side),
     /// Move the selected items to the Trash (FR-OPS-05, OQ-19).
     Delete,
     /// Open the picker that moves the selected items to another container (FR-OPS-04).
     MoveTo,
+    /// Edit the title of the container shown, in place (FR-ORG-06).
+    RenameContainer,
+    /// Move the container shown to the Trash (FR-ORG-06, OQ-19).
+    DeleteContainer,
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
     KeepMine,
     /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
@@ -183,6 +194,36 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::NewSection(Side::Below),
+        title: "New Section Below",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::NewSection(Side::Above),
+        title: "New Section Above",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::NewProject(Side::Below),
+        title: "New Project Below",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::NewProject(Side::Above),
+        title: "New Project Above",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::NewArea(Side::Below),
+        title: "New Area Below",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::NewArea(Side::Above),
+        title: "New Area Above",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::Delete,
         title: "Delete",
         context: Context::Navigate,
@@ -190,6 +231,16 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::MoveTo,
         title: "Move To",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::RenameContainer,
+        title: "Rename Container",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::DeleteContainer,
+        title: "Delete Container",
         context: Context::Navigate,
     },
     // Global, so that its key closes the Navigator too.
@@ -269,16 +320,25 @@ mod tests {
         assert_eq!(context(Command::Navigator), Some(Context::Global));
     }
 
-    // FR-EDIT-01, FR-EDIT-05, FR-OPS-04, FR-OPS-05
+    // FR-EDIT-01, FR-EDIT-05, FR-OPS-04, FR-OPS-05, FR-ORG-06
     #[test]
     fn editing_adding_and_deleting_are_navigate_commands() {
-        for command in [
+        let added = [
+            Command::NewTask,
+            Command::NewSection,
+            Command::NewProject,
+            Command::NewArea,
+        ]
+        .into_iter()
+        .flat_map(|new| [new(Side::Below), new(Side::Above)]);
+        let others = [
             Command::EditTitle,
-            Command::NewTask(Side::Below),
-            Command::NewTask(Side::Above),
             Command::Delete,
             Command::MoveTo,
-        ] {
+            Command::RenameContainer,
+            Command::DeleteContainer,
+        ];
+        for command in added.chain(others) {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);
             assert_eq!(
                 entry.map(|entry| entry.context),

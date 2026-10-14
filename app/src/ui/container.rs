@@ -2,7 +2,7 @@
 //! taskpaper-terminal ([ui.md §2](../../../specs/reference/taskpaper-terminal/specs/ui.md#2-blocks)):
 //! its title and description, then a row for each of its items, with the focus marker and band
 //! on the focused one, wrapping long text and scrolling to keep the focus in view, and the title
-//! being edited, if any, as a text field in its row.
+//! being edited, if any, as a text field in its row, or in the heading for the container's own.
 
 use ratatui::{
     buffer::Buffer,
@@ -107,12 +107,17 @@ impl StatefulWidget for ContainerPane<'_> {
         let focused = self.focused_row();
         let span = focused.map(|row| row_span(&pieces, &lines, width, row));
         // Focusing the first row shows the container's title and description above it, when
-        // they fit with the row.
+        // they fit with the row; editing the title shows it.
         let height = usize::from(area.height);
-        let shown = span.map(|(start, end)| match focused {
-            Some(0) if end <= height => (0, end),
-            _ => (start, end),
-        });
+        let heading = self.editing.is_some_and(|(id, _)| id == self.container);
+        let shown = if heading {
+            Some((0, lines.get(1).copied().unwrap_or(y)))
+        } else {
+            span.map(|(start, end)| match focused {
+                Some(0) if end <= height => (0, end),
+                _ => (start, end),
+            })
+        };
         *top = scrolled(*top, shown, y, height);
         if let Some((start, end)) = span {
             self.band(area, buf, start, end, *top);
@@ -224,7 +229,10 @@ impl<'a> ContainerPane<'a> {
         let item = |id: ItemId| document.node(id).and_then(Node::item);
         let mut pieces = Vec::new();
         if let Some(container) = item(self.container) {
-            pieces.push(self.title(container, None));
+            pieces.push(match self.editing {
+                Some((id, field)) if id == self.container => self.field(container, field, None),
+                _ => self.title(container, None),
+            });
             if !container.description.is_empty() {
                 pieces.push(Piece {
                     x: 0,
@@ -256,7 +264,7 @@ impl<'a> ContainerPane<'a> {
                 pieces.push(Piece::blank());
             }
             pieces.push(match self.editing {
-                Some((id, field)) if id == row.id() => self.field(shown, field, index),
+                Some((id, field)) if id == row.id() => self.field(shown, field, Some(index)),
                 _ => self.title(shown, Some(index)),
             });
             if let Some(first) = shown.description.lines().next() {
@@ -294,10 +302,10 @@ impl<'a> ContainerPane<'a> {
         }
     }
 
-    /// The line of `item`, numbered `row`, while `field` edits its title: its marker, then the
-    /// text edited, without tags, the selected part in the selection colors, on one line that
-    /// scrolls sideways to keep the caret in view.
-    fn field(&self, item: &'a Item, field: &'a TextField, row: usize) -> Piece<'a> {
+    /// The line of `item`, numbered `row` if it is one, while `field` edits its title: its marker,
+    /// then the text edited, without tags, the selected part in the selection colors, on one line
+    /// that scrolls sideways to keep the caret in view.
+    fn field(&self, item: &'a Item, field: &'a TextField, row: Option<usize>) -> Piece<'a> {
         let text = field.text();
         let selection = field.selection().unwrap_or(field.caret()..field.caret());
         let selected = Style::new()
@@ -311,7 +319,7 @@ impl<'a> ContainerPane<'a> {
                 Span::styled(text.get(selection.clone()).unwrap_or_default(), selected),
                 Span::raw(text.get(selection.end..).unwrap_or_default()),
             ])),
-            ..self.title(item, Some(row))
+            ..self.title(item, row)
         }
     }
 

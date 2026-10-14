@@ -48,7 +48,11 @@ const READ: &str = "Read the article Sam sent";
 fn add_and_rename_a_task() {
     let mut harness = Harness::new(60, 12);
     harness.key(KeyCode::Char('o'));
-    assert_eq!(mode(&harness), "EDIT");
+    assert_eq!(mode(&harness), "NAVIGATE", "o waits for a type letter");
+    harness.wait(999);
+    assert_eq!(mode(&harness), "NAVIGATE");
+    harness.wait(1);
+    assert_eq!(mode(&harness), "EDIT", "and adds a task after a second");
     harness.type_text("Pay rent");
     assert_eq!(
         items(&harness),
@@ -132,7 +136,7 @@ fn ctrl_q_quits_while_editing() {
 #[test]
 fn a_terminal_too_narrow_for_the_title_hides_the_cursor() {
     let mut harness = Harness::new(4, 12);
-    harness.key(KeyCode::Char('o'));
+    harness.type_text("ot");
     assert_eq!(harness.tui.cursor(Rect::new(0, 0, 4, 12)), None);
     harness.terminal.backend_mut().resize(6, 12);
     harness.draw();

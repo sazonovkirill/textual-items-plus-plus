@@ -8,6 +8,7 @@ use jiff::civil::Date;
 use super::{
     Command, ConflictSide, EditInput, OnDisk, PickerInput, Report, State, autosave::Ending,
 };
+use crate::domain::ItemKind;
 
 /// A user intent or a result the frontend reports back.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,8 +89,17 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::Navigator) => state.toggle_navigator(),
         Message::Command(Command::EditTitle) => state.edit_title(),
         Message::Command(Command::NewTask(side)) => state.new_task(side),
+        Message::Command(Command::NewSection(side)) => {
+            state.new_container(ItemKind::Section, side);
+        }
+        Message::Command(Command::NewProject(side)) => {
+            state.new_container(ItemKind::Project, side);
+        }
+        Message::Command(Command::NewArea(side)) => state.new_container(ItemKind::Area, side),
         Message::Command(Command::Delete) => state.delete(today),
         Message::Command(Command::MoveTo) => state.open_move_to(),
+        Message::Command(Command::RenameContainer) => state.rename_container(),
+        Message::Command(Command::DeleteContainer) => state.delete_container(today),
         Message::Navigator(input) => state.navigator_input(input),
         Message::MoveTo(input) => state.move_to_input(input),
         Message::Edit(input) => state.edit_input(input),

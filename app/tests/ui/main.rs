@@ -2,6 +2,7 @@
 
 mod completing;
 mod container;
+mod containers;
 mod editing;
 mod moving;
 mod navigation;

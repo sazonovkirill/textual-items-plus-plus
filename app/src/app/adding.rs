@@ -1,7 +1,8 @@
-//! Where a new task goes: below or above the focused row, among the tasks it is shown with
-//! (FR-EDIT-05). Hides how a place in the rows maps to a place in the document.
+//! Where a new item goes: a task below or above the focused row, among the tasks it is shown
+//! with, and a section, project or area as near the focus as its kind can go (FR-EDIT-05,
+//! FR-ORG-06). Hides how a place in the rows maps to a place in the document.
 
-use super::container::Row;
+use super::container::{self, Row};
 use crate::domain::{Document, ItemId, ItemKind, Node};
 
 /// Which side of the focused row a new task goes.
@@ -47,6 +48,118 @@ pub(super) fn place(
             }
         }
         _ => last_task(document, container),
+    }
+}
+
+/// The parent, `None` for the top level, and the index among its children where a new item of
+/// `kind`, a section, project or area, goes on `side` of `focused` when `container` shows `rows`;
+/// `None` when it can go nowhere near, as a section from the Inbox.
+///
+/// An area goes beside the top-level item holding `container`, first when that is the Inbox. A
+/// section or project goes into `container` when it can hold it, nearest the focused row in the
+/// arrangement of FR-VIEW-05, a task listed under a section standing for the section: beside it
+/// when it is of the same kind, first among the items of its kind when it comes before them and
+/// last otherwise. When `container` cannot hold it, it goes the same way beside `container` in the
+/// nearest container above that can, or at the top level, first when coming from the Inbox.
+pub(super) fn container_place(
+    document: &Document,
+    container: ItemId,
+    rows: &[Row],
+    focused: Option<ItemId>,
+    kind: ItemKind,
+    side: Side,
+) -> Option<(Option<ItemId>, usize)> {
+    let below = usize::from(side == Side::Below);
+    let beside_at_top = |id: ItemId| match document.position(id) {
+        Some((None, index)) => index + below,
+        _ => 0,
+    };
+    if kind == ItemKind::Area {
+        let top = *container::path(document, container).first()?;
+        return Some((None, beside_at_top(top)));
+    }
+    if fits(document, kind, Some(container)) {
+        let anchor = rows
+            .iter()
+            .find(|row| Some(row.id()) == focused)
+            .map(|&row| match row {
+                Row::Task {
+                    section: Some(section),
+                    ..
+                } => section,
+                row => row.id(),
+            });
+        return Some((
+            Some(container),
+            in_group(document, container, kind, anchor, side),
+        ));
+    }
+    let mut anchor = container;
+    loop {
+        let parent = document.position(anchor).and_then(|(parent, _)| parent);
+        if fits(document, kind, parent) {
+            return Some(match parent {
+                Some(parent) => (
+                    Some(parent),
+                    in_group(document, parent, kind, Some(anchor), side),
+                ),
+                None => (None, beside_at_top(anchor)),
+            });
+        }
+        anchor = parent?;
+    }
+}
+
+/// Whether an item of `kind` may go in `parent`, or at the top level for `None`.
+fn fits(document: &Document, kind: ItemKind, parent: Option<ItemId>) -> bool {
+    match parent {
+        Some(id) => document
+            .node(id)
+            .and_then(Node::item)
+            .is_some_and(|item| kind.fits_in(Some(item.kind))),
+        None => kind.fits_in(None),
+    }
+}
+
+/// The index among `parent`'s children where a new item of `kind` goes nearest `anchor`, one of
+/// them: beside it on `side` when it is of `kind`, first among the children of `kind` when it is
+/// shown before them, and after the last of them otherwise. With no children of `kind`, it goes
+/// last.
+fn in_group(
+    document: &Document,
+    parent: ItemId,
+    kind: ItemKind,
+    anchor: Option<ItemId>,
+    side: Side,
+) -> usize {
+    let kind_of = |id: ItemId| document.node(id).and_then(Node::item).map(|item| item.kind);
+    let children = document.children(parent);
+    let of_kind = |id: &ItemId| kind_of(*id) == Some(kind);
+    let anchor = anchor.and_then(|id| {
+        Some((
+            children.iter().position(|&child| child == id)?,
+            kind_of(id)?,
+        ))
+    });
+    match anchor {
+        Some((at, anchor)) if anchor == kind => at + usize::from(side == Side::Below),
+        Some((_, anchor)) if shown_order(anchor) < shown_order(kind) => {
+            children.iter().position(of_kind).unwrap_or(children.len())
+        }
+        _ => children
+            .iter()
+            .rposition(of_kind)
+            .map_or(children.len(), |at| at + 1),
+    }
+}
+
+/// Where the rows of `kind` come in a container's arrangement: tasks, then sections, then
+/// projects (FR-VIEW-05).
+fn shown_order(kind: ItemKind) -> u8 {
+    match kind {
+        ItemKind::Section => 1,
+        ItemKind::Project => 2,
+        _ => 0,
     }
 }
 
@@ -199,6 +312,110 @@ mod tests {
             place(&fixture.document, empty, &rows, None, Side::Below),
             (empty, 0)
         );
+        Ok(())
+    }
+
+    fn container_at(
+        fixture: &Fixture,
+        shown: ItemId,
+        focused: Option<ItemId>,
+        kind: ItemKind,
+        side: Side,
+    ) -> Option<(Option<ItemId>, usize)> {
+        let rows = rows(&fixture.document, shown, false);
+        container_place(&fixture.document, shown, &rows, focused, kind, side)
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn a_section_goes_among_the_sections_nearest_the_focus() -> Result<(), PlacementError> {
+        let fixture = fixture()?;
+        let (p, section) = (fixture.project, ItemKind::Section);
+        let at = |focused, side| container_at(&fixture, p, focused, section, side);
+        for side in [Side::Below, Side::Above] {
+            assert_eq!(at(Some(fixture.loose), side), Some((Some(p), 2)));
+        }
+        assert_eq!(
+            at(Some(fixture.in_section), Side::Below),
+            Some((Some(p), 3))
+        );
+        assert_eq!(at(Some(fixture.section), Side::Above), Some((Some(p), 2)));
+        assert_eq!(at(Some(fixture.empty), Side::Below), Some((Some(p), 4)));
+        assert_eq!(at(Some(fixture.child), Side::Above), Some((Some(p), 4)));
+        assert_eq!(at(None, Side::Above), Some((Some(p), 4)));
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn a_project_goes_among_the_child_projects_nearest_the_focus() -> Result<(), PlacementError> {
+        let fixture = fixture()?;
+        let (p, project) = (fixture.project, ItemKind::Project);
+        let at = |focused, side| container_at(&fixture, p, focused, project, side);
+        for focused in [fixture.loose, fixture.in_section, fixture.empty] {
+            assert_eq!(at(Some(focused), Side::Below), Some((Some(p), 4)));
+        }
+        assert_eq!(at(Some(fixture.child), Side::Below), Some((Some(p), 5)));
+        assert_eq!(at(Some(fixture.child), Side::Above), Some((Some(p), 4)));
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn where_the_container_shown_cannot_hold_it_it_goes_beside_it_further_up()
+    -> Result<(), PlacementError> {
+        let fixture = fixture()?;
+        let (p, inbox) = (fixture.project, fixture.document.inbox());
+        let section = fixture.section;
+        let at = |shown, kind, side| container_at(&fixture, shown, None, kind, side);
+        assert_eq!(
+            at(section, ItemKind::Section, Side::Below),
+            Some((Some(p), 3))
+        );
+        assert_eq!(
+            at(section, ItemKind::Section, Side::Above),
+            Some((Some(p), 2))
+        );
+        assert_eq!(
+            at(section, ItemKind::Project, Side::Above),
+            Some((Some(p), 4))
+        );
+        assert_eq!(at(inbox, ItemKind::Project, Side::Below), Some((None, 0)));
+        assert_eq!(at(inbox, ItemKind::Section, Side::Below), None);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn an_area_goes_beside_the_top_level_item_holding_the_container_shown()
+    -> Result<(), PlacementError> {
+        let mut fixture = fixture()?;
+        let area = Node::Item(Item::new(ItemKind::Area, "a"));
+        fixture.document.push(None, area)?;
+        let at = |fixture: &Fixture, shown, side| {
+            container_at(fixture, shown, None, ItemKind::Area, side)
+        };
+        assert_eq!(at(&fixture, fixture.section, Side::Below), Some((None, 1)));
+        assert_eq!(at(&fixture, fixture.section, Side::Above), Some((None, 0)));
+        let inbox = fixture.document.inbox();
+        assert_eq!(at(&fixture, inbox, Side::Below), Some((None, 0)));
+        assert_eq!(at(&fixture, ItemId::new(99), Side::Below), None);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn the_first_of_its_kind_goes_last() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "a")))?;
+        let task = document.push(Some(area), Node::Item(Item::new(ItemKind::Task, "t")))?;
+        let rows = rows(&document, area, false);
+        for kind in [ItemKind::Section, ItemKind::Project] {
+            assert_eq!(
+                container_place(&document, area, &rows, Some(task), kind, Side::Above),
+                Some((Some(area), 1))
+            );
+        }
         Ok(())
     }
 }

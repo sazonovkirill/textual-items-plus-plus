@@ -76,7 +76,8 @@ pub fn read_document(outline: &Outline) -> (Document, Source) {
 /// The outline of `document`, in the format `source` was read in. A node whose line, description
 /// or attachments are unchanged since it was read gets the lines it was read from, so saving an
 /// unchanged document gives back the file it was read from (F-FILE-03); the Inbox keeps its place
-/// among the top-level nodes, or goes first.
+/// among the top-level nodes, or goes first, as it does when a project titled `Inbox` would come
+/// before it and read back as the Inbox (FR-STORE-08).
 #[must_use]
 pub fn write_document(document: &Document, source: &Source) -> Outline {
     let mut writer = Writer {
@@ -85,9 +86,19 @@ pub fn write_document(document: &Document, source: &Source) -> Outline {
         outline: Outline::new(source.outline.format().clone()),
     };
     let root = writer.outline.root();
-    let inbox_after = source
-        .inbox_after
-        .filter(|id| document.top_level().contains(id));
+    let top_level = document.top_level();
+    let named_inbox = top_level.iter().position(|&id| {
+        document
+            .node(id)
+            .and_then(Node::item)
+            .is_some_and(|item| item.kind == ItemKind::Project && item.title == "Inbox")
+    });
+    let inbox_after = source.inbox_after.filter(|id| {
+        top_level
+            .iter()
+            .position(|other| other == id)
+            .is_some_and(|at| named_inbox.is_none_or(|named| at < named))
+    });
     if inbox_after.is_none() {
         writer.write_node(root, Place::Top, document.inbox());
     }
@@ -745,6 +756,22 @@ Work: @area
             edited(text, Document::inbox, |inbox| inbox.note = "n".to_owned()),
             "A: @area\nInbox:\n\tNOTE @hidden\n\t\tn\n\t- t\nB:\n"
         );
+    }
+
+    // FR-STORE-08
+    #[test]
+    fn the_inbox_goes_before_a_project_titled_inbox_that_would_come_first() {
+        let text = "A: @area\nB:\nInbox:\n\t- t\n";
+        let (mut document, source) = load(text);
+        let [_, b] = children(&document, None);
+        let renamed = Item::new(ItemKind::Project, "Inbox");
+        document.set(b, renamed).unwrap();
+        assert_eq!(
+            save(&document, &source),
+            "Inbox:\n\t- t\nA: @area\nInbox:\n"
+        );
+        let (read, _) = load(&save(&document, &source));
+        assert_eq!(read.children(read.inbox()).len(), 1);
     }
 
     // FR-STORE-08

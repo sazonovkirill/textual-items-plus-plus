@@ -16,7 +16,7 @@ use super::{
     trash,
     visits::{Visit, Visits},
 };
-use crate::domain::{Document, ItemId, Transaction};
+use crate::domain::{Document, ItemId, ItemKind, Transaction};
 
 /// Where the document came from, which decides whether changes to it can be kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +41,7 @@ pub struct State {
     pub(super) navigator: Option<Picker<Place>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
-    /// The task whose title is edited, in edit mode (FR-EDIT-01).
+    /// The item whose title is edited, in edit mode (FR-EDIT-01).
     editing: Option<Editing>,
     pub(super) saving: Saving,
 }
@@ -125,7 +125,8 @@ impl State {
         self.move_to.as_ref().map(MoveTo::view)
     }
 
-    /// The task whose title is edited and the text edited, in edit mode.
+    /// The item whose title is edited and the text edited, in edit mode: a row's item, or the
+    /// container shown, whose title heads the pane.
     #[must_use]
     pub fn editing(&self) -> Option<(ItemId, &TextField)> {
         self.editing
@@ -178,7 +179,7 @@ impl State {
         }
     }
 
-    /// Starts editing the focused task's title. Nothing happens unless a task is focused.
+    /// Starts editing the focused row's title. Nothing happens unless a row is focused.
     pub(super) fn edit_title(&mut self) {
         let editing = self
             .selection
@@ -201,9 +202,61 @@ impl State {
             self.selection.focused(),
             side,
         );
-        let editing = Editing::new_task(&mut self.document, place, self.selection.clone());
+        let (parent, index) = place;
+        let editing = Editing::new_item(
+            &mut self.document,
+            ItemKind::Task,
+            (Some(parent), index),
+            self.selection.clone(),
+        );
         self.selection.focus(Some(editing.id()));
         self.editing = Some(editing);
+    }
+
+    /// Adds an empty section, project or area, as `kind` says, on `side` of the focus as near as
+    /// it can go, and starts editing its title: in its row when the container shown lists it, else
+    /// in the pane's heading, the new item opened. Nothing is added where the kind can go nowhere
+    /// near, as a section from the Inbox, or inside a completed container (FR-ORG-09).
+    pub(super) fn new_container(&mut self, kind: ItemKind, side: Side) {
+        let Some((parent, index)) = adding::container_place(
+            &self.document,
+            self.container,
+            &self.rows(),
+            self.selection.focused(),
+            kind,
+            side,
+        ) else {
+            return;
+        };
+        if parent.is_some_and(|parent| self.document.conceals(parent)) {
+            return;
+        }
+        let editing = Editing::new_item(
+            &mut self.document,
+            kind,
+            (parent, index),
+            self.selection.clone(),
+        );
+        let id = editing.id();
+        if parent == Some(self.container) {
+            self.selection.focus(Some(id));
+        } else {
+            self.open(id, None);
+        }
+        self.editing = Some(editing);
+    }
+
+    /// Starts editing the title of the container shown, in the pane's heading. The Inbox keeps
+    /// its name (FR-STORE-08).
+    pub(super) fn rename_container(&mut self) {
+        self.editing = Editing::existing(&self.document, self.container, self.selection.clone());
+    }
+
+    /// Moves the container shown to the Trash on `today`, as one step to undo; the pane then
+    /// shows the nearest container above it. The Inbox stays.
+    pub(super) fn delete_container(&mut self, today: Date) {
+        let transaction = trash::delete(&self.document, [self.container], today);
+        self.change(transaction);
     }
 
     /// Applies `input` to the edited title. Nothing happens outside edit mode.
@@ -214,7 +267,9 @@ impl State {
         match input {
             EditInput::Text(edit) => editing.input(&mut self.document, edit),
             EditInput::Next => {
-                if self.finish_editing() {
+                let row = editing.id() != self.container;
+                let next = row && matches!(editing.kind(), ItemKind::Task | ItemKind::Section);
+                if self.finish_editing() && next {
                     self.new_task(Side::Below);
                 }
             }
@@ -224,25 +279,32 @@ impl State {
         }
     }
 
-    /// Ends edit mode, making the edit one step to undo, and returns whether the task edited is
-    /// still there: a new task left empty is not. Outside edit mode nothing happens.
+    /// Ends edit mode, making the edit one step to undo, and returns whether the item edited is
+    /// still there: a new item left empty is not, and when it was opened to be edited, the pane
+    /// goes back to where it was. Outside edit mode nothing happens.
     pub(super) fn finish_editing(&mut self) -> bool {
         let Some(editing) = self.editing.take() else {
             return false;
         };
         let (id, started) = (editing.id(), editing.revision());
+        let heading = id == self.container;
         let (transaction, before) = editing.finish(&mut self.document);
         if transaction.ops().is_empty() {
             self.saving.unchanged(started, self.document.revision());
         }
         let mut after = self.selection.clone();
-        after.focus(Some(id));
+        if !heading {
+            after.focus(Some(id));
+        }
         self.history
             .commit(&mut self.document, transaction, before.clone(), |_| after)
             .expect("an edit's transaction is made from the document as it was");
         let kept = self.document.node(id).is_some();
         if !kept {
             self.selection = before;
+            if heading {
+                self.go(Go::Back);
+            }
         }
         kept
     }
@@ -430,6 +492,8 @@ impl State {
 
 #[cfg(test)]
 mod tests {
+    use jiff::civil::date;
+
     use super::*;
     use crate::app::TextEdit;
     use crate::domain::{Item, ItemKind, Node, PlacementError};
@@ -662,17 +726,19 @@ mod tests {
         Ok(())
     }
 
-    // FR-EDIT-01
+    // FR-EDIT-01, FR-ORG-06
     #[test]
-    fn only_a_task_is_edited() -> Result<(), PlacementError> {
-        let Fixture { mut state, .. } = fixture()?;
+    fn the_focused_row_is_edited_a_section_heading_too() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state, section, ..
+        } = fixture()?;
         navigate(&mut state, "Work");
         state.move_focus(Focus::NextSection);
         state.edit_title();
-        assert!(
-            state.editing().is_none(),
-            "renaming a section is not editing a task"
-        );
+        assert_eq!(state.editing().map(|(id, _)| id), Some(section));
+        type_text(&mut state, "ection");
+        state.edit_input(EditInput::Done);
+        assert_eq!(title(&state, section), Some("Section"));
         state.go(Go::Home);
         let mut document = state.document().clone();
         document.push(None, Node::Item(Item::new(ItemKind::Project, "Empty")))?;
@@ -919,6 +985,148 @@ mod tests {
         );
         navigate(&mut state, "Work");
         assert_eq!(state.container(), work);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn a_new_section_is_edited_in_its_row_and_enter_adds_its_first_task()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            section,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.new_container(ItemKind::Section, Side::Below);
+        let (new, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(state.container(), work);
+        assert_eq!(state.selection().focused(), Some(new));
+        assert_eq!(
+            state.rows().get(1),
+            Some(&Row::Section(new)),
+            "the new section comes first among the sections"
+        );
+        type_text(&mut state, "Next");
+        state.edit_input(EditInput::Next);
+        let (task, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(state.document().children(new), [task]);
+        state.edit_input(EditInput::Done);
+        assert_eq!(title(&state, new), Some("Next"));
+        assert_eq!(
+            state.rows().get(2),
+            Some(&Row::Section(section)),
+            "the section that was first follows it"
+        );
+        state.undo();
+        assert_eq!(state.document().node(new), None);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn enter_after_a_project_row_only_ends_editing() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            site,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::Last);
+        state.new_container(ItemKind::Project, Side::Above);
+        let (new, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(state.rows().last(), Some(&Row::Project(site)));
+        type_text(&mut state, "Garden");
+        state.edit_input(EditInput::Next);
+        assert!(state.editing().is_none());
+        assert_eq!(state.selection().focused(), Some(new));
+        assert_eq!(state.document().children(work).len(), 4);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn a_new_area_opens_with_its_title_edited_and_left_empty_the_pane_goes_back()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            inbox_task,
+            work,
+            ..
+        } = fixture()?;
+        let inbox = state.document().inbox();
+        state.new_container(ItemKind::Area, Side::Below);
+        let (area, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(at(&state), (area, None));
+        assert_eq!(state.document().top_level(), [area, work]);
+        type_text(&mut state, " ");
+        state.edit_input(EditInput::Next);
+        assert_eq!(at(&state), (inbox, Some(inbox_task)));
+        assert_eq!(state.document().top_level(), [work]);
+        state.go(Go::Forward);
+        assert_eq!(state.container(), inbox, "the area left empty is not there");
+        state.new_container(ItemKind::Area, Side::Above);
+        type_text(&mut state, "Home");
+        state.edit_input(EditInput::Done);
+        let home = state.document().top_level()[0];
+        assert_eq!(at(&state), (home, None));
+        assert_eq!(title(&state, home), Some("Home"));
+        state.go(Go::Back);
+        assert_eq!(at(&state), (inbox, Some(inbox_task)));
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06
+    #[test]
+    fn new_containers_go_only_where_they_can_show() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state, work, ..
+        } = fixture()?;
+        let before = state.clone();
+        state.new_container(ItemKind::Section, Side::Below);
+        assert_eq!(state, before, "the Inbox holds no section");
+        navigate(&mut state, "Work");
+        let mut done = Item::new(ItemKind::Area, "Work");
+        done.completed = Some(crate::domain::Completion::Undated);
+        state.document.set(work, done)?;
+        let before = state.clone();
+        for kind in [ItemKind::Section, ItemKind::Project] {
+            state.new_container(kind, Side::Below);
+            assert_eq!(state, before, "{kind:?} in a completed area");
+        }
+        state.new_container(ItemKind::Area, Side::Below);
+        let (area, _) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(state.document().top_level(), [work, area]);
+        Ok(())
+    }
+
+    // FR-ORG-06
+    #[test]
+    fn the_container_shown_is_renamed_in_place_and_deleted() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        state.rename_container();
+        assert!(state.editing().is_none(), "the Inbox keeps its name");
+        navigate(&mut state, "Site");
+        state.rename_container();
+        assert_eq!(state.editing().map(|(id, _)| id), Some(site));
+        type_text(&mut state, "s");
+        state.edit_input(EditInput::Next);
+        assert!(state.editing().is_none(), "Enter only ends editing");
+        assert_eq!(at(&state), (site, Some(in_site)));
+        assert_eq!(title(&state, site), Some("Sites"));
+        state.delete_container(date(2026, 10, 14));
+        assert_eq!(at(&state), (work, state.rows().first().map(|row| row.id())));
+        assert!(!state.rows().contains(&Row::Project(site)));
+        state.undo();
+        assert!(state.rows().contains(&Row::Project(site)));
         Ok(())
     }
 }

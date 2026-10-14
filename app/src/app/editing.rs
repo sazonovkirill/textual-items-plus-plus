@@ -1,6 +1,7 @@
-//! Editing a task's title in place, an existing task's or one just added (FR-EDIT-01, FR-EDIT-02,
-//! FR-EDIT-05). The title is written to the document as it is typed, so the task is drawn like
-//! any other, and the whole session becomes one change to undo when it ends.
+//! Editing the title of a task, section, project or area in place, an existing one's or one just
+//! added (FR-EDIT-01, FR-EDIT-02, FR-EDIT-05, FR-ORG-06). The title is written to the document as
+//! it is typed, so the item is drawn like any other, and the whole session becomes one change to
+//! undo when it ends.
 
 use super::{Selection, TextEdit, TextField};
 use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Snapshot, Transaction};
@@ -17,36 +18,44 @@ pub enum EditInput {
     Done,
 }
 
-/// A task whose title is being edited, the text edited, the selection before editing started and
-/// how the task was before it, and the document's revision then.
+/// An item whose title is being edited, its kind, the text edited, the selection before editing
+/// started and how the item was before it, and the document's revision then.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Editing {
     id: ItemId,
+    kind: ItemKind,
     field: TextField,
     before: Selection,
     origin: Origin,
     revision: u64,
 }
 
-/// How the edited task was before editing started.
+/// How the edited item was before editing started.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Origin {
     /// It was there, as this item.
     Existing(Item),
-    /// It was added for editing, at this index among this parent's children.
-    New { parent: ItemId, index: usize },
+    /// It was added for editing, at this index among this parent's children, or the top-level
+    /// nodes for `None`.
+    New {
+        parent: Option<ItemId>,
+        index: usize,
+    },
 }
 
 impl Editing {
-    /// Starts editing the title of `id`, the caret at its end, when it is a task; `before` is
-    /// the selection to restore when the session is undone.
+    /// Starts editing the title of `id`, the caret at its end, when it is a task, section,
+    /// project or area; `before` is the selection to restore when the session is undone.
     pub(super) fn existing(document: &Document, id: ItemId, before: Selection) -> Option<Self> {
-        let item = document
-            .node(id)
-            .and_then(Node::item)
-            .filter(|item| item.kind == ItemKind::Task)?;
+        let item = document.node(id).and_then(Node::item).filter(|item| {
+            matches!(
+                item.kind,
+                ItemKind::Task | ItemKind::Section | ItemKind::Project | ItemKind::Area
+            )
+        })?;
         Some(Self {
             id,
+            kind: item.kind,
             field: TextField::new(item.title.clone()),
             before,
             origin: Origin::Existing(item.clone()),
@@ -54,20 +63,23 @@ impl Editing {
         })
     }
 
-    /// Adds an empty task at `index` among `parent`'s children and starts editing it; `before` is
-    /// the selection to restore when it is undone or left empty.
-    pub(super) fn new_task(
+    /// Adds an empty item of `kind` at `index` among `parent`'s children, or the top-level nodes
+    /// for `None`, and starts editing it; `before` is the selection to restore when it is undone
+    /// or left empty. The caller picks a place where the kind fits.
+    pub(super) fn new_item(
         document: &mut Document,
-        (parent, index): (ItemId, usize),
+        kind: ItemKind,
+        (parent, index): (Option<ItemId>, usize),
         before: Selection,
     ) -> Self {
         let revision = document.revision();
         let id = document.new_id();
         document
-            .apply(&insert(parent, index, id, String::new()))
-            .expect("a task fits in every container at every index up to its children's count");
+            .apply(&insert(parent, index, id, kind, String::new()))
+            .expect("the caller places a new item where its kind fits");
         Self {
             id,
+            kind,
             field: TextField::new(String::new()),
             before,
             origin: Origin::New { parent, index },
@@ -75,9 +87,14 @@ impl Editing {
         }
     }
 
-    /// The task edited.
+    /// The item edited.
     pub(super) fn id(&self) -> ItemId {
         self.id
+    }
+
+    /// What the item edited is.
+    pub(super) fn kind(&self) -> ItemKind {
+        self.kind
     }
 
     /// The document's revision when editing started.
@@ -90,31 +107,35 @@ impl Editing {
         &self.field
     }
 
-    /// Applies `edit` to the text and shows it as the task's title. An edit that puts `@` at the
+    /// Applies `edit` to the text and shows it as the item's title. An edit that puts `@` at the
     /// start of a word, by typing it or by deleting what stood before it, is refused: TaskPaper
-    /// has no escape for it, so the word would read back as a tag.
+    /// has no escape for it, so the word would read back as a tag. So is an edit that starts a
+    /// section's, project's or area's title with `-` and a space, which would read back as a
+    /// task.
     pub(super) fn input(&mut self, document: &mut Document, edit: TextEdit) {
         let edited = self.field.edited(edit);
-        if word_starts(edited.text()) > word_starts(self.field.text()) {
+        if word_starts(edited.text()) > word_starts(self.field.text())
+            || (self.kind != ItemKind::Task && reads_as_task(edited.text()))
+        {
             return;
         }
         self.field = edited;
         let item = document
             .node(self.id)
             .and_then(Node::item)
-            .expect("the edited task stays in the document while it is edited");
+            .expect("the edited item stays in the document while it is edited");
         let item = Item {
             title: self.field.text().to_owned(),
             ..item.clone()
         };
         document
             .set(self.id, item)
-            .expect("a task stays a task when its title changes");
+            .expect("an item keeps its kind when its title changes");
     }
 
     /// Ends editing: puts the document back as it was before and returns the change the session
     /// made, to apply as one step, with the selection from before it. The title is trimmed. A new
-    /// task left empty is not added, and an existing one emptied keeps its title, so either
+    /// item left empty is not added, and an existing one emptied keeps its title, so either
     /// makes no change, as does a title left as it was.
     pub(super) fn finish(self, document: &mut Document) -> (Transaction, Selection) {
         let title = self.field.text().trim().to_owned();
@@ -126,7 +147,7 @@ impl Editing {
                 };
                 document
                     .set(self.id, item.clone())
-                    .expect("a task stays a task when its title changes");
+                    .expect("an item keeps its kind when its title changes");
                 if after.title.is_empty() || after.title == item.title {
                     Transaction::default()
                 } else {
@@ -138,13 +159,14 @@ impl Editing {
                 }
             }
             Origin::New { parent, index } => {
+                let draft = self.field.text().to_owned();
                 document
-                    .apply(&insert(parent, index, self.id, self.field.text().to_owned()).inverse())
-                    .expect("the new task stays where it was added while it is edited");
+                    .apply(&insert(parent, index, self.id, self.kind, draft).inverse())
+                    .expect("the new item stays where it was added while it is edited");
                 if title.is_empty() {
                     Transaction::default()
                 } else {
-                    insert(parent, index, self.id, title)
+                    insert(parent, index, self.id, self.kind, title)
                 }
             }
         };
@@ -165,13 +187,26 @@ fn word_starts(text: &str) -> usize {
         .count()
 }
 
-/// The transaction that puts a task titled `title`, numbered `id`, at `index` among `parent`'s
-/// children.
-fn insert(parent: ItemId, index: usize, id: ItemId, title: String) -> Transaction {
+/// Whether `title`, as a project's line, would read back as a task: it starts, once trimmed as
+/// it will be, with `-` and a space.
+fn reads_as_task(title: &str) -> bool {
+    let mut chars = title.trim_start().chars();
+    chars.next() == Some('-') && chars.next().is_some_and(char::is_whitespace)
+}
+
+/// The transaction that puts an item of `kind` titled `title`, numbered `id`, at `index` among
+/// `parent`'s children, or the top-level nodes for `None`.
+fn insert(
+    parent: Option<ItemId>,
+    index: usize,
+    id: ItemId,
+    kind: ItemKind,
+    title: String,
+) -> Transaction {
     Transaction::new(vec![Op::Insert {
-        parent: Some(parent),
+        parent,
         index,
-        subtree: Snapshot::new(id, Node::Item(Item::new(ItemKind::Task, title))),
+        subtree: Snapshot::new(id, Node::Item(Item::new(kind, title))),
     }])
 }
 
@@ -243,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn only_tasks_are_edited_here() -> Result<(), PlacementError> {
+    fn the_inbox_and_checklist_items_are_not_edited_here() -> Result<(), PlacementError> {
         let (document, _, check, selection) = document()?;
         let inbox = document.inbox();
         for id in [inbox, check, ItemId::new(99)] {
@@ -258,7 +293,12 @@ mod tests {
         let (mut document, a, _, selection) = document()?;
         let inbox = document.inbox();
         let original = document.clone();
-        let mut editing = Editing::new_task(&mut document, (inbox, 0), selection.clone());
+        let mut editing = Editing::new_item(
+            &mut document,
+            ItemKind::Task,
+            (Some(inbox), 0),
+            selection.clone(),
+        );
         let id = editing.id();
         assert_eq!(document.children(inbox), [id, a]);
         assert_eq!(title(&document, id), Some(""));
@@ -284,7 +324,8 @@ mod tests {
     fn a_new_task_left_empty_is_not_added() -> Result<(), PlacementError> {
         let (mut document, a, _, selection) = document()?;
         let inbox = document.inbox();
-        let mut editing = Editing::new_task(&mut document, (inbox, 1), selection);
+        let mut editing =
+            Editing::new_item(&mut document, ItemKind::Task, (Some(inbox), 1), selection);
         typed(&mut editing, &mut document, "  ");
         assert_eq!(editing.finish(&mut document).0, Transaction::default());
         assert_eq!(document.children(inbox), [a]);
@@ -338,6 +379,58 @@ mod tests {
             Some("x@y"),
             "nor by deleting what stands before it"
         );
+        Ok(())
+    }
+
+    // FR-ORG-06, FR-EDIT-05
+    #[test]
+    fn a_new_area_is_added_at_the_top_level_and_renamed_like_a_task() -> Result<(), PlacementError>
+    {
+        let (mut document, _, _, selection) = document()?;
+        let mut editing =
+            Editing::new_item(&mut document, ItemKind::Area, (None, 0), selection.clone());
+        let id = editing.id();
+        assert_eq!(editing.kind(), ItemKind::Area);
+        assert_eq!(document.top_level(), [id]);
+        typed(&mut editing, &mut document, "Home");
+        let (transaction, _) = editing.finish(&mut document);
+        assert_eq!(document.top_level(), []);
+        document.apply(&transaction)?;
+        assert_eq!(title(&document, id), Some("Home"));
+        let mut editing =
+            Editing::existing(&document, id, selection).ok_or(PlacementError::DoesNotFit)?;
+        typed(&mut editing, &mut document, " and garden");
+        let (transaction, _) = editing.finish(&mut document);
+        document.apply(&transaction)?;
+        assert_eq!(title(&document, id), Some("Home and garden"));
+        Ok(())
+    }
+
+    // FR-ORG-06, FR-STORE-02
+    #[test]
+    fn a_container_title_never_starts_with_a_dash_and_a_space() -> Result<(), PlacementError> {
+        let (mut document, a, _, selection) = document()?;
+        let mut editing =
+            Editing::new_item(&mut document, ItemKind::Area, (None, 0), selection.clone());
+        let area = editing.id();
+        typed(&mut editing, &mut document, " - x -y");
+        assert_eq!(title(&document, area), Some(" -x -y"));
+        editing.input(&mut document, TextEdit::SelectAll);
+        typed(&mut editing, &mut document, "x- y");
+        editing.input(
+            &mut document,
+            TextEdit::Move {
+                motion: Motion::Start,
+                select: false,
+            },
+        );
+        editing.input(&mut document, TextEdit::DeleteForward);
+        assert_eq!(title(&document, area), Some("x- y"));
+        let mut task =
+            Editing::existing(&document, a, selection).ok_or(PlacementError::DoesNotFit)?;
+        task.input(&mut document, TextEdit::SelectAll);
+        typed(&mut task, &mut document, "- a");
+        assert_eq!(title(&document, a), Some("- a"), "a task's may");
         Ok(())
     }
 }

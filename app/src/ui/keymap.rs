@@ -2,11 +2,14 @@
 //! that turns pressed keys into one, alike under the kitty keyboard protocol and legacy key
 //! reporting (N-PORT-03), single keys and sequences such as `gg` alike.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::app::{Command, Focus, Go, Side};
+
+/// How long a sequence waits for its next key, as in taskpaper-terminal (its keybindings.md §1).
+const TIMEOUT: Duration = Duration::from_secs(1);
 
 /// One key press: its modifiers and code, with `Shift` dropped from characters because the
 /// character already says whether it is shifted.
@@ -41,13 +44,23 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::Back), &["H", "alt+shift+left"]),
     (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
     (Command::Navigator, &["ctrl+g"]),
-    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37).
+    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37), with its type
+    // letters after the creation keys, and `a` for an area (D-40).
     (Command::EditTitle, &["enter"]),
-    (Command::NewTask(Side::Below), &["o"]),
-    (Command::NewTask(Side::Above), &["O"]),
+    (Command::NewTask(Side::Below), &["o", "o t"]),
+    (Command::NewTask(Side::Above), &["O", "O t"]),
+    (Command::NewSection(Side::Below), &["o s"]),
+    (Command::NewSection(Side::Above), &["O s"]),
+    (Command::NewProject(Side::Below), &["o p"]),
+    (Command::NewProject(Side::Above), &["O p"]),
+    (Command::NewArea(Side::Below), &["o a"]),
+    (Command::NewArea(Side::Above), &["O a"]),
     (Command::Delete, &["d d", "delete"]),
     // taskpaper-terminal's Move to key.
     (Command::MoveTo, &["g m"]),
+    // The container shown, which no row of its own shows (D-40).
+    (Command::RenameContainer, &["R"]),
+    (Command::DeleteContainer, &["d c"]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
     // while the user types (its D-115, D-38).
     (Command::KeepMine, &["ctrl+k"]),
@@ -132,13 +145,16 @@ pub(super) fn key_press(event: &Event) -> Option<Key> {
     Some(pressed(key.modifiers, key.code))
 }
 
-/// The commands the keys give, and the keys of a sequence pressed so far.
+/// The commands the keys give, the keys of a sequence pressed so far, when the first of them was
+/// pressed and the clock's latest reading.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keymap {
     commands: HashMap<Vec<Key>, Command>,
     /// Every sequence that is the start of a longer binding, with its keys as written.
     prefixes: HashMap<Vec<Key>, String>,
     pending: Vec<Key>,
+    since: Duration,
+    now: Duration,
 }
 
 impl Default for Keymap {
@@ -170,6 +186,8 @@ impl Default for Keymap {
             commands,
             prefixes,
             pending: Vec::new(),
+            since: Duration::ZERO,
+            now: Duration::ZERO,
         }
     }
 }
@@ -177,16 +195,54 @@ impl Default for Keymap {
 impl Keymap {
     /// The command `event` completes, if it is a key press. A press that starts or continues a
     /// sequence waits for the next key; one that continues none cancels the keys pressed so far
-    /// and does nothing else. Releases, repeats and other events change nothing.
+    /// and does nothing else, unless [`cut_short`](Self::cut_short) took it first. Releases,
+    /// repeats and other events change nothing.
     pub fn press(&mut self, event: &Event) -> Option<Command> {
         let key = key_press(event)?;
         let mut keys = std::mem::take(&mut self.pending);
+        if keys.is_empty() {
+            self.since = self.now;
+        }
         keys.push(key);
         if self.prefixes.contains_key(&keys) {
             self.pending = keys;
             return None;
         }
         self.commands.get(&keys).copied()
+    }
+
+    /// The command of the keys pressed so far, when they are a binding of their own and `event`
+    /// presses a key that continues no binding from them; the keys are then dropped, so that
+    /// `event` acts after the command as a key pressed alone, as taskpaper-terminal's `o` then
+    /// `B` starts a new item with `B` (its keybindings.md §1). `None`, changing nothing,
+    /// otherwise.
+    pub fn cut_short(&mut self, event: &Event) -> Option<Command> {
+        let command = *self.commands.get(&self.pending)?;
+        let mut keys = self.pending.clone();
+        keys.push(key_press(event)?);
+        if self.prefixes.contains_key(&keys) || self.commands.contains_key(&keys) {
+            return None;
+        }
+        self.pending.clear();
+        Some(command)
+    }
+
+    /// Takes the clock's reading `now`, counted from any fixed moment. A sequence pressed
+    /// [`TIMEOUT`] or more before ends: its keys are dropped, and their command, when they are
+    /// a binding of their own, is returned.
+    pub fn tick(&mut self, now: Duration) -> Option<Command> {
+        self.now = now;
+        if self.pending.is_empty() || now < self.since + TIMEOUT {
+            return None;
+        }
+        let keys = std::mem::take(&mut self.pending);
+        self.commands.get(&keys).copied()
+    }
+
+    /// When the sequence pressed so far ends without another key, if one is pending.
+    #[must_use]
+    pub fn deadline(&self) -> Option<Duration> {
+        (!self.pending.is_empty()).then(|| self.since + TIMEOUT)
     }
 
     /// The keys of an unfinished sequence, as the status line shows them, such as `g`; empty
@@ -227,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn no_binding_starts_another() {
+    fn only_a_single_key_binding_starts_another() {
         let bound: Vec<Vec<Key>> = DEFAULT_KEYS
             .iter()
             .flat_map(|(_, keys)| keys.iter().filter_map(|key| parse_sequence(key)))
@@ -235,7 +291,7 @@ mod tests {
         for keys in &bound {
             for other in &bound {
                 assert!(
-                    keys == other || !other.starts_with(keys),
+                    keys == other || keys.len() == 1 || !other.starts_with(keys),
                     "{keys:?} starts {other:?}"
                 );
             }
@@ -372,6 +428,74 @@ mod tests {
         let mut keymap = Keymap::default();
         keymap.press(&char('g'));
         assert_eq!(keymap.press(&char('#')), None);
+        assert_eq!(keymap.pending(), "");
+        assert_eq!(
+            keymap.press(&char('#')),
+            Some(Command::Focus(Focus::Parent))
+        );
+    }
+
+    // FR-EDIT-05, FR-ORG-06, FR-KEY-02
+    #[test]
+    fn creation_keys_take_taskpaper_terminals_type_letters() {
+        let mut keymap = Keymap::default();
+        for (first, side) in [('o', Side::Below), ('O', Side::Above)] {
+            for (second, command) in [
+                ('t', Command::NewTask(side)),
+                ('s', Command::NewSection(side)),
+                ('p', Command::NewProject(side)),
+                ('a', Command::NewArea(side)),
+            ] {
+                assert_eq!(keymap.press(&char(first)), None);
+                assert_eq!(keymap.pending(), first.to_string());
+                assert_eq!(keymap.cut_short(&char(second)), None);
+                assert_eq!(
+                    keymap.press(&char(second)),
+                    Some(command),
+                    "{first}{second}"
+                );
+            }
+        }
+        assert_eq!(keymap.press(&char('R')), Some(Command::RenameContainer));
+        keymap.press(&char('d'));
+        assert_eq!(keymap.press(&char('c')), Some(Command::DeleteContainer));
+    }
+
+    // FR-EDIT-05, FR-KEY-02
+    #[test]
+    fn a_key_that_continues_no_sequence_cuts_a_binding_short_and_then_acts_alone() {
+        let mut keymap = Keymap::default();
+        assert_eq!(keymap.cut_short(&char('o')), None, "nothing pending");
+        keymap.press(&char('o'));
+        assert_eq!(keymap.cut_short(&Event::Resize(80, 24)), None);
+        assert_eq!(
+            keymap.cut_short(&char('j')),
+            Some(Command::NewTask(Side::Below))
+        );
+        assert_eq!(keymap.pending(), "");
+        assert_eq!(keymap.press(&char('j')), Some(Command::Focus(Focus::Next)));
+        keymap.press(&char('g'));
+        assert_eq!(keymap.cut_short(&char('#')), None, "g alone is no binding");
+        assert_eq!(keymap.pending(), "g");
+    }
+
+    // FR-KEY-02
+    #[test]
+    fn a_sequence_ends_a_second_after_its_first_key() {
+        let mut keymap = Keymap::default();
+        assert_eq!(keymap.deadline(), None);
+        assert_eq!(keymap.tick(Duration::from_secs(5)), None);
+        keymap.press(&char('O'));
+        assert_eq!(keymap.deadline(), Some(Duration::from_secs(6)));
+        assert_eq!(keymap.tick(Duration::from_millis(5999)), None);
+        assert_eq!(keymap.pending(), "O");
+        assert_eq!(
+            keymap.tick(Duration::from_secs(6)),
+            Some(Command::NewTask(Side::Above))
+        );
+        assert_eq!((keymap.pending(), keymap.deadline()), ("", None));
+        keymap.press(&char('g'));
+        assert_eq!(keymap.tick(Duration::from_secs(7)), None);
         assert_eq!(keymap.pending(), "");
         assert_eq!(
             keymap.press(&char('#')),
