@@ -23,12 +23,13 @@ Each theme provides an exact hex value for every role below. Roles are foregroun
 | Background | background | Screen fill behind everything. |
 | Text | foreground | Item titles and body text. Must reach 4.5:1. |
 | Dim text | foreground | Notes, secondary metadata, hints, help text. Must reach 4.5:1. |
-| Primary | foreground | App title, active pane border, key hints, the main brand color. |
+| Primary | foreground | App title, active pane border, key hints, the main brand color; also the titles of projects and the Inbox. |
 | Accent | foreground | Secondary emphasis: counts, search matches, mode indicator. |
 | Selection | background | Fill of the selected row(s). Text must stay at least 4.5:1 on it. |
 | Focus marker | foreground | The glyph marking the focused row or pane, such as `▌` or `›`. |
 | Current-line band | background | Subtle fill of the cursor row when it is not selected, and the zebra or hover band. |
-| Headers | foreground | Project, section and date-group headings. |
+| Headers | foreground | Area titles and date-group headings. |
+| Sections | foreground | Section titles: the theme's yellow, Tag 3's color, so that areas, projects and sections never share a color. |
 | Rule lines | foreground (non-text) | Separators and box borders. 3:1 is not required, but rules must stay visible on the current-line band. |
 | Links | foreground | URLs and note links (also underlined). |
 | Start-date chip | foreground | Start/defer date label. A green hue. |
@@ -55,6 +56,7 @@ Each theme provides an exact hex value for every role below. Roles are foregroun
 | Focus marker | `#f5c2e7` | pink | 10.74:1 |
 | Current-line band | `#313244` | surface0 | text on it 8.69:1 |
 | Headers | `#89b4fa` | blue | 7.79:1 |
+| Sections | `#f9e2af` | yellow | 12.91:1 |
 | Rule lines | `#585b70` | surface2 | 2.46:1 (non-text) |
 | Links | `#74c7ec` | sapphire | 8.69:1 |
 | Start-date chip | `#a6e3a1` | green | 11.03:1 |
@@ -88,6 +90,7 @@ Notes: `subtext0` is used for dim text rather than `overlay0`/`overlay1` (the co
 | Focus marker | `#bb9af7` | magenta | 7.39:1 |
 | Current-line band | `#292e42` | bg_highlight | text on it 8.32:1 |
 | Headers | `#7dcfff` | cyan | 9.96:1 |
+| Sections | `#e0af68` | yellow | 8.55:1 |
 | Rule lines | `#3b4261` | fg_gutter | 1.74:1 (non-text) |
 | Links | `#2ac3de` | blue1 | 8.11:1 |
 | Start-date chip | `#9ece6a` | green | 9.35:1 |
@@ -121,6 +124,7 @@ Notes: dim text is `fg_dark`, not `comment` (`#565f89`, 2.76:1). Overdue uses `m
 | Focus marker | `#bc4c00` | severe.fg | 5.03:1 |
 | Current-line band | `#f6f8fa` | canvas.subtle | text on it 14.84:1 |
 | Headers | `#0550ae` | blue.6 | 7.59:1 |
+| Sections | `#9a6700` | yellow.5 | 4.87:1 |
 | Rule lines | `#d0d7de` | border.default | 1.45:1 (non-text) |
 | Links | `#0969da` | accent.fg | 5.19:1 |
 | Start-date chip | `#1a7f37` | success.fg | 5.08:1 |
@@ -154,6 +158,7 @@ Notes: every role clears 4.5:1. Checklist done uses `fg.subtle`, which happens t
 | Focus marker | `#a02f6f` | magenta-600 | 6.53:1 |
 | Current-line band | `#f2f0e5` | base-50 (bg-2) | text on it 16.74:1 |
 | Headers | `#5e409d` | purple-600 | 7.58:1 |
+| Sections | `#8e6b01` | yellow-700 | 4.80:1 |
 | Rule lines | `#cecdc3` | base-200 (ui-3) | 1.55:1 (non-text) |
 | Links | `#24837b` | cyan-600 | 4.43:1 **(<4.5)** |
 | Start-date chip | `#66800b` | green-600 | 4.39:1 **(<4.5)** |
@@ -188,6 +193,7 @@ It draws in the terminal's 16 ANSI colors, so it follows the user's palette and 
 | Current-line band | black |
 | Text on the band and selection | grey 255, light whatever the palette |
 | Headers | bright magenta |
+| Sections | yellow |
 | Rule lines | bright black |
 | Links | cyan |
 | Start-date chip | green |

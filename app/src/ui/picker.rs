@@ -5,7 +5,7 @@ use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Position, Rect},
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Clear, Widget},
 };
@@ -61,6 +61,7 @@ pub struct PickerPopup<'a, T> {
     icon: &'a dyn Fn(&T) -> Icon,
     depth: Option<&'a dyn Fn(&T) -> usize>,
     badge: Option<&'a dyn Fn(&T) -> String>,
+    color: Option<fn(&Theme, &T) -> Color>,
     icons: IconSet,
     theme: &'a Theme,
 }
@@ -82,6 +83,7 @@ impl<'a, T> PickerPopup<'a, T> {
             icon,
             depth: None,
             badge: None,
+            color: None,
             icons,
             theme,
         }
@@ -93,6 +95,14 @@ impl<'a, T> PickerPopup<'a, T> {
     #[must_use]
     pub fn tree(mut self, depth: &'a dyn Fn(&T) -> usize) -> Self {
         self.depth = Some(depth);
+        self
+    }
+
+    /// The window with each entry's icon and text in the color of the theme `color` gives it,
+    /// such as its kind's.
+    #[must_use]
+    pub fn color(mut self, color: fn(&Theme, &T) -> Color) -> Self {
+        self.color = Some(color);
         self
     }
 
@@ -172,11 +182,14 @@ impl<T> Widget for PickerPopup<'_, T> {
         let tree = self.depth.filter(|_| self.view.query.text().is_empty());
         for ((index, entry), row) in entries.zip(rows) {
             let indent = tree.map_or(0, |depth| depth(&entry.value) * 2);
+            let style = self.color.map_or_else(Style::new, |color| {
+                Style::new().fg(color(theme, &entry.value))
+            });
             let mut line = Line::from(vec![
                 Span::raw(" ".repeat(indent + 1)),
-                Span::raw((self.icon)(&entry.value).glyph(self.icons)),
+                Span::styled((self.icon)(&entry.value).glyph(self.icons), style),
                 Span::raw(" "),
-                Span::raw(entry.text.as_str()),
+                Span::styled(entry.text.as_str(), style),
             ]);
             if tree.is_none() && !entry.detail.is_empty() {
                 line.push_span(Span::styled(format!("  {}", entry.detail), dim));
@@ -435,7 +448,7 @@ mod tests {
 
     // FR-VIEW-07
     #[test]
-    fn a_tree_is_indented_while_the_query_is_empty_and_badges_stand_at_the_right() {
+    fn a_tree_is_indented_while_the_query_is_empty_with_colors_and_badges() {
         let mut picker = Picker::new(vec![
             candidate(2, "Work", ""),
             candidate(1, "Site", "Work"),
@@ -453,6 +466,13 @@ mod tests {
             PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &theme())
                 .tree(&depth)
                 .badge(&badge)
+                .color(|_, value| {
+                    if *value == 2 {
+                        Color::Red
+                    } else {
+                        Color::Green
+                    }
+                })
                 .render(area, &mut buf);
             buf
         };
@@ -473,6 +493,11 @@ mod tests {
                 "│ ○ Site                 │",
                 "│     ○ Blog           3 │",
             ]
+        );
+        assert_eq!(
+            (buf[(4, 2)].fg, buf[(6, 2)].fg, buf[(4, 3)].fg),
+            (Color::Red, Color::Red, Color::Green),
+            "each entry's icon and text in its color"
         );
         assert_eq!(buf[(22, 2)].fg, theme().dim_text);
         assert_eq!(buf[(22, 2)].bg, theme().selection, "on the focused row");

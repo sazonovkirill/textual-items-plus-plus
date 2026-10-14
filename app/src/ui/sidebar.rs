@@ -1,7 +1,7 @@
 //! The sidebar left of the pane: the areas and projects as a tree, each after its kind's icon
-//! with its open tasks counted at the right, as the Navigator lists them, the focused one marked
-//! while the sidebar has the keys and the title being edited there as a text field in its row
-//! (FR-VIEW-10).
+//! with its open tasks counted at the right, as the Navigator lists them, the entry of the
+//! container shown on the selection background, the focused one marked while the sidebar has the
+//! keys and the title being edited there as a text field in its row (FR-VIEW-10).
 
 use ratatui::{
     buffer::Buffer,
@@ -125,16 +125,13 @@ impl<'a> SidebarPane<'a> {
         }
     }
 
-    /// How the title of `place` is drawn: areas as headers, the entry of the container shown in
-    /// the primary color, the rest as text.
+    /// How the title of `place` is drawn: in its kind's color, areas bold as headers.
     fn title_style(&self, place: &Place) -> Style {
-        let theme = self.theme;
-        if Some(place.id) == self.current {
-            Style::new().fg(theme.primary).add_modifier(Modifier::BOLD)
-        } else if place.kind == ItemKind::Area {
-            Style::new().fg(theme.headers).add_modifier(Modifier::BOLD)
+        let style = Style::new().fg(self.theme.kind(place.kind));
+        if place.kind == ItemKind::Area {
+            style.add_modifier(Modifier::BOLD)
         } else {
-            Style::new().fg(theme.text)
+            style
         }
     }
 
@@ -185,8 +182,15 @@ impl Widget for SidebarPane<'_> {
         let offset = self.offset(content);
         let entries = self.view.entries.iter().enumerate().skip(offset);
         for ((index, place), row) in entries.zip(content.rows()) {
-            if self.view.keys && Some(index) == self.view.focused {
+            let focused = self.view.keys && Some(index) == self.view.focused;
+            let editing = self.editing.is_some_and(|(id, _)| id == place.id);
+            // The text field marks its selection on the selection background.
+            if Some(place.id) == self.current && !editing {
+                buf.set_style(row, Style::new().bg(theme.selection));
+            } else if focused {
                 buf.set_style(row, Style::new().bg(theme.current_line));
+            }
+            if focused {
                 buf.set_string(row.x, row.y, FOCUS_MARKER, Style::new().fg(theme.focus));
             }
             let title = self.title(place, content);
@@ -198,7 +202,6 @@ impl Widget for SidebarPane<'_> {
             let icon_area = Rect::new(title.icon, row.y, title.x.saturating_sub(title.icon), 1);
             Span::styled(icon(place.kind).glyph(self.icons), self.title_style(place))
                 .render(icon_area.intersection(row), buf);
-            let editing = self.editing.is_some_and(|(id, _)| id == place.id);
             let right = if editing { 0 } else { count_width };
             let text = Rect::new(
                 title.x,
@@ -310,6 +313,7 @@ mod tests {
         assert_eq!(buf[(5, 1)].bg, theme.current_line);
         assert_eq!(buf[(0, 1)].fg, theme.focus);
         assert_eq!(buf[(3, 0)].fg, theme.headers, "an area");
+        assert_eq!(buf[(7, 2)].fg, theme.primary, "a project");
         assert_eq!(buf[(17, 0)].fg, theme.dim_text, "a count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusPane);
@@ -319,7 +323,11 @@ mod tests {
         give(&mut state, Command::FocusSidebar);
         give(&mut state, Command::Go(crate::app::Go::Into));
         let (_, buf, _) = draw(&state, 20, 5);
-        assert_eq!(buf[(5, 1)].fg, theme.primary, "the container shown");
+        assert_eq!(
+            (buf[(5, 1)].fg, buf[(5, 1)].bg),
+            (theme.primary, theme.selection),
+            "the container shown keeps its kind's color on the selection background"
+        );
         Ok(())
     }
 

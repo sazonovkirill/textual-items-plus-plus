@@ -498,9 +498,10 @@ impl<'a> ContainerPane<'a> {
     fn title_style(&self, item: &Item) -> Style {
         let theme = self.theme;
         let style = match item.kind {
-            ItemKind::Inbox | ItemKind::Project => Style::new().fg(theme.primary).bold(),
-            ItemKind::Area => Style::new().fg(theme.headers).bold(),
-            ItemKind::Section => Style::new().fg(theme.headers).bold().italic(),
+            ItemKind::Inbox | ItemKind::Project | ItemKind::Area => {
+                Style::new().fg(theme.kind(item.kind)).bold()
+            }
+            ItemKind::Section => Style::new().fg(theme.kind(item.kind)).bold().italic(),
             ItemKind::Task | ItemKind::ChecklistItem => Style::new(),
         };
         if item.completed.is_some() {
@@ -987,7 +988,7 @@ mod tests {
             "the project's description"
         );
         let section = at(4, 6);
-        assert_eq!(section.fg, Some(theme.headers));
+        assert_eq!(section.fg, Some(theme.sections));
         assert!(
             section
                 .add_modifier

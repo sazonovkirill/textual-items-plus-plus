@@ -474,6 +474,7 @@ fn navigator_popup<'a>(
     };
     PickerPopup::new("Navigator", view, icon, icons, theme)
         .tree(&|place| place.depth)
+        .color(|theme, place| theme.kind(place.kind))
         .badge(&|place| match place.open_tasks {
             0 => String::new(),
             count => count.to_string(),
@@ -495,10 +496,15 @@ fn move_to_popup<'a>(
             _ => Icon::Project,
         },
     };
-    PickerPopup::new("Move to", view, icon, icons, theme).tree(&|destination| match destination {
-        Destination::Home => 0,
-        Destination::Container { depth, .. } => *depth,
-    })
+    PickerPopup::new("Move to", view, icon, icons, theme)
+        .tree(&|destination| match destination {
+            Destination::Home => 0,
+            Destination::Container { depth, .. } => *depth,
+        })
+        .color(|theme, destination| match destination {
+            Destination::Home => theme.text,
+            Destination::Container { kind, .. } => theme.kind(*kind),
+        })
 }
 
 impl Widget for &mut Tui {

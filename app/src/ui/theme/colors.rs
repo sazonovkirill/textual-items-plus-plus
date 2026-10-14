@@ -3,6 +3,8 @@
 
 use ratatui::style::Color;
 
+use crate::domain::ItemKind;
+
 /// The colors of a theme, one per role of themes.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
@@ -12,7 +14,8 @@ pub struct Theme {
     pub text: Color,
     /// Descriptions, secondary metadata, hints and help text.
     pub dim_text: Color,
-    /// The app title, the active pane's border and key hints.
+    /// The app title, the active pane's border, key hints, and the titles of projects and the
+    /// Inbox.
     pub primary: Color,
     /// Secondary emphasis: counts, search matches and the mode indicator.
     pub accent: Color,
@@ -25,8 +28,10 @@ pub struct Theme {
     /// Text in no color of its own on the current-line band and on selected rows, so it reads
     /// on them whatever the terminal's own text color.
     pub band_text: Color,
-    /// Area, project, section and date-group headings.
+    /// The titles of areas, and date-group headings.
     pub headers: Color,
+    /// The titles of sections, a color neither areas nor projects take.
+    pub sections: Color,
     /// Separators and box borders.
     pub rule: Color,
     /// Links, which are also underlined.
@@ -43,6 +48,20 @@ pub struct Theme {
     pub tag: Color,
     /// Completed items and checked checklist items, faded on purpose.
     pub done: Color,
+}
+
+impl Theme {
+    /// The color of the titles of `kind`: each kind of container has its own, which no other
+    /// takes, and tasks the text color.
+    #[must_use]
+    pub fn kind(&self, kind: ItemKind) -> Color {
+        match kind {
+            ItemKind::Inbox | ItemKind::Project => self.primary,
+            ItemKind::Area => self.headers,
+            ItemKind::Section => self.sections,
+            ItemKind::Task | ItemKind::ChecklistItem => self.text,
+        }
+    }
 }
 
 /// One of the built-in themes (FR-UI-03).
@@ -125,6 +144,7 @@ const TERMINAL_DARK: Theme = Theme {
     current_line: Color::Black,
     band_text: Color::Indexed(255),
     headers: Color::LightMagenta,
+    sections: Color::Yellow,
     rule: Color::DarkGray,
     link: Color::Cyan,
     start: Color::Green,
@@ -147,6 +167,7 @@ const CATPPUCCIN_MOCHA: Theme = Theme {
     current_line: Color::Rgb(0x31, 0x32, 0x44),
     band_text: Color::Rgb(0xcd, 0xd6, 0xf4),
     headers: Color::Rgb(0x89, 0xb4, 0xfa),
+    sections: Color::Rgb(0xf9, 0xe2, 0xaf),
     rule: Color::Rgb(0x58, 0x5b, 0x70),
     link: Color::Rgb(0x74, 0xc7, 0xec),
     start: Color::Rgb(0xa6, 0xe3, 0xa1),
@@ -169,6 +190,7 @@ const TOKYO_NIGHT: Theme = Theme {
     current_line: Color::Rgb(0x29, 0x2e, 0x42),
     band_text: Color::Rgb(0xc0, 0xca, 0xf5),
     headers: Color::Rgb(0x7d, 0xcf, 0xff),
+    sections: Color::Rgb(0xe0, 0xaf, 0x68),
     rule: Color::Rgb(0x3b, 0x42, 0x61),
     link: Color::Rgb(0x2a, 0xc3, 0xde),
     start: Color::Rgb(0x9e, 0xce, 0x6a),
@@ -191,6 +213,7 @@ const GITHUB_LIGHT: Theme = Theme {
     current_line: Color::Rgb(0xf6, 0xf8, 0xfa),
     band_text: Color::Rgb(0x1f, 0x23, 0x28),
     headers: Color::Rgb(0x05, 0x50, 0xae),
+    sections: Color::Rgb(0x9a, 0x67, 0x00),
     rule: Color::Rgb(0xd0, 0xd7, 0xde),
     link: Color::Rgb(0x09, 0x69, 0xda),
     start: Color::Rgb(0x1a, 0x7f, 0x37),
@@ -213,6 +236,7 @@ const FLEXOKI_LIGHT: Theme = Theme {
     current_line: Color::Rgb(0xf2, 0xf0, 0xe5),
     band_text: Color::Rgb(0x10, 0x0f, 0x0f),
     headers: Color::Rgb(0x5e, 0x40, 0x9d),
+    sections: Color::Rgb(0x8e, 0x6b, 0x01),
     rule: Color::Rgb(0xce, 0xcd, 0xc3),
     link: Color::Rgb(0x24, 0x83, 0x7b),
     start: Color::Rgb(0x66, 0x80, 0x0b),
@@ -228,7 +252,7 @@ mod tests {
     use super::*;
 
     /// Every color of `theme`, each with its role.
-    fn roles(theme: &Theme) -> [(&'static str, Color); 18] {
+    fn roles(theme: &Theme) -> [(&'static str, Color); 19] {
         [
             ("background", theme.background),
             ("text", theme.text),
@@ -240,6 +264,7 @@ mod tests {
             ("current_line", theme.current_line),
             ("band_text", theme.band_text),
             ("headers", theme.headers),
+            ("sections", theme.sections),
             ("rule", theme.rule),
             ("link", theme.link),
             ("start", theme.start),
@@ -325,6 +350,23 @@ mod tests {
         assert_ne!(dark.dim_text, dark.text);
         assert_ne!(dark.selection, dark.current_line);
         assert_ne!(dark.overdue, dark.due);
+    }
+
+    // FR-UI-02
+    #[test]
+    fn areas_projects_and_sections_each_have_a_color_of_their_own() {
+        for theme in BuiltIn::ALL {
+            let colors = theme.colors();
+            let [area, project, section] = [ItemKind::Area, ItemKind::Project, ItemKind::Section]
+                .map(|kind| colors.kind(kind));
+            let id = theme.id();
+            assert!(
+                area != project && project != section && section != area,
+                "{id}"
+            );
+            assert_eq!(colors.kind(ItemKind::Inbox), project);
+            assert_eq!(colors.kind(ItemKind::Task), colors.text);
+        }
     }
 
     // FR-UI-03, themes.md
