@@ -4,6 +4,7 @@
 use jiff::civil::Date;
 
 use super::{
+    all,
     container::{self, Row},
     today,
     upcoming::{self, Period},
@@ -17,6 +18,8 @@ pub enum View {
     Today,
     /// The open items dated after today, by day and then by month (FR-VIEW-02).
     Upcoming,
+    /// Every task in every list, grouped by where it lives (FR-VIEW-08).
+    All,
 }
 
 /// A view with what the Navigator shows of it.
@@ -38,6 +41,10 @@ pub const REGISTRY: &[Entry] = &[
         view: View::Upcoming,
         title: View::Upcoming.title(),
     },
+    Entry {
+        view: View::All,
+        title: View::All.title(),
+    },
 ];
 
 impl View {
@@ -47,6 +54,7 @@ impl View {
         match self {
             Self::Today => "Today",
             Self::Upcoming => "Upcoming",
+            Self::All => "All",
         }
     }
 }
@@ -91,6 +99,7 @@ pub(super) fn groups(
     match view {
         View::Today => today::groups(document, today, show_completed),
         View::Upcoming => upcoming::groups(document, today, show_completed),
+        View::All => all::groups(document, show_completed),
     }
 }
 

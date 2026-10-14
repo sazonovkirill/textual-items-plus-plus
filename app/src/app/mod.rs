@@ -3,6 +3,7 @@
 //! frontend.
 
 mod adding;
+mod all;
 pub mod autosave;
 mod clipboard;
 mod command;
