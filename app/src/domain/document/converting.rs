@@ -64,7 +64,7 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::item::Item;
+    use crate::domain::item::{Item, Tag};
     use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
     fn item(kind: ItemKind, title: &str) -> Node {
@@ -135,6 +135,62 @@ mod tests {
         assert_eq!(kind(&document, area), Some(Project));
         assert_eq!(document.children(area), [section, project]);
         assert_eq!(document.top_level(), [area]);
+        Ok(())
+    }
+
+    // D-120
+    #[test]
+    fn a_bare_tag_the_new_kind_reads_as_a_field_becomes_that_field() -> Result<(), PlacementError> {
+        let tagged = |kind, title, tags: &[Tag]| {
+            let mut item = Item::new(kind, title);
+            item.tags = tags.to_vec();
+            Node::Item(item)
+        };
+        let valued = Tag {
+            name: "pinned".to_owned(),
+            value: Some("yes".to_owned()),
+        };
+        let (pinned, flagged, later) = (
+            Tag::plain("pinned"),
+            Tag::plain("flagged"),
+            Tag::plain("later"),
+        );
+        let task = tagged(
+            Task,
+            "t",
+            &[pinned.clone(), valued.clone(), Tag::plain("home")],
+        );
+        let check = tagged(
+            ChecklistItem,
+            "c",
+            &[flagged.clone(), pinned.clone(), later],
+        );
+        let section = tagged(Section, "s", &[flagged, pinned.clone()]);
+        let mut document = Document::new();
+        let area = document.push(None, item(Area, "Home"))?;
+        let task = document.push(Some(area), task)?;
+        let check = document.push(Some(task), check)?;
+        let section = document.push(Some(area), section)?;
+        converted(&mut document, task, Project)?;
+        converted(&mut document, section, Project)?;
+        let item = |id| document.node(id).and_then(Node::item);
+        let task = item(task).ok_or(PlacementError::NoSuchNode(task))?;
+        assert!(task.pinned && !task.flagged && !task.later);
+        assert_eq!(
+            task.tags,
+            [valued, Tag::plain("home")],
+            "a valued tag stays"
+        );
+        let check = item(check).ok_or(PlacementError::NoSuchNode(check))?;
+        assert!(check.flagged && check.later && !check.pinned);
+        assert_eq!(
+            check.tags,
+            [pinned],
+            "a task does not read @pinned as a pin"
+        );
+        let section = item(section).ok_or(PlacementError::NoSuchNode(section))?;
+        assert!(section.pinned && section.flagged);
+        assert_eq!(section.tags, []);
         Ok(())
     }
 

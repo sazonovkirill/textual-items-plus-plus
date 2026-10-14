@@ -122,9 +122,8 @@ impl Snapshot {
         std::iter::once(&self.top).chain(&self.below)
     }
 
-    /// Makes the item `id` in this subtree one of kind `kind`, unpinned unless it is a project and
-    /// unflagged unless it [takes a flag](ItemKind::takes_flag); kept content and nodes outside it
-    /// stay as they are.
+    /// [Retypes](Item::retype) the item `id` in this subtree as one of kind `kind`; kept content
+    /// and nodes outside it stay as they are.
     pub(super) fn retype(&mut self, id: ItemId, kind: ItemKind) {
         let entry = std::iter::once(&mut self.top)
             .chain(&mut self.below)
@@ -137,9 +136,7 @@ impl Snapshot {
             },
         )) = entry
         {
-            item.kind = kind;
-            item.pinned &= kind == ItemKind::Project;
-            item.flagged &= kind.takes_flag();
+            item.retype(kind);
         }
     }
 }

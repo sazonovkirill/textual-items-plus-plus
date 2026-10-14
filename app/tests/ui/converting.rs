@@ -185,3 +185,38 @@ fn a_task_with_a_kind_tag_stays_a_task() {
     assert!(status(&harness).ends_with("only a task can be tagged @area or @section"));
     assert_eq!(saved(&mut harness, &path), text);
 }
+
+// FR-TASK-06, FR-VIEW-12, FR-VIEW-14, FR-ORG-12, D-120
+#[test]
+fn a_bare_pinned_or_flagged_tag_the_new_kind_reads_becomes_its_mark() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\nHome: @area\n\t- Plan @pinned @home\n\t\t- Pack @flagged\n";
+    fs::write(&path, text).expect("the fixture is written");
+    let mut harness = Harness::open(path.clone(), 120, 20);
+    harness.ctrl('g');
+    harness.type_text("home");
+    harness.key(KeyCode::Enter);
+    keys(&mut harness, "my");
+    assert_eq!(
+        saved(&mut harness, &path),
+        "Inbox:\nHome: @area\n\tPlan: @pinned @home\n\t\t- Pack @flagged\n",
+        "the lines read the same"
+    );
+    keys(&mut harness, "g!");
+    harness.ctrl('b');
+    let converted = harness.screen();
+    assert!(
+        converted.contains("Pack · Home › Plan"),
+        "flagged: {converted}"
+    );
+    assert_eq!(
+        converted.matches("# Plan").count(),
+        2,
+        "pinned: {converted}"
+    );
+    let mut harness = harness.relaunch(path);
+    keys(&mut harness, "g!");
+    harness.ctrl('b');
+    assert_eq!(harness.screen(), converted, "it reads back as it was shown");
+}

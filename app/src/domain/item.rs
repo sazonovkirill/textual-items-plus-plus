@@ -179,6 +179,27 @@ impl Item {
         }
     }
 
+    /// Makes it one of kind `kind`: unpinned unless it is a project and unflagged unless it
+    /// [takes a flag](ItemKind::takes_flag), and taking as its pin, flag or Later mark each bare
+    /// ordinary `@pinned`, `@flagged` or `@later` the file reads so on that kind, so it reads back
+    /// as it is (D-120).
+    pub fn retype(&mut self, kind: ItemKind) {
+        self.kind = kind;
+        self.pinned &= kind == ItemKind::Project;
+        self.flagged &= kind.takes_flag();
+        self.tags.retain(|tag| {
+            let field = match tag.name.as_str() {
+                _ if tag.value.is_some() => return true,
+                "pinned" if kind == ItemKind::Project => &mut self.pinned,
+                "flagged" if kind.takes_flag() => &mut self.flagged,
+                "later" => &mut self.later,
+                _ => return true,
+            };
+            *field = true;
+            false
+        });
+    }
+
     /// Its `kind` date, if it has one.
     #[must_use]
     pub fn date(&self, kind: DateKind) -> Option<Date> {
