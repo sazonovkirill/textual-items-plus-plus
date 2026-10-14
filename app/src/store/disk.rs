@@ -8,7 +8,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use jiff::civil::Date;
+use jiff::civil::{Date, DateTime};
 
 use super::{Backups, Version, atomic};
 
@@ -34,6 +34,17 @@ pub enum Job {
         path: PathBuf,
         /// The local date.
         today: Date,
+    },
+    /// Write `contents`, a version of the file at `path` that a conflict's choice discards, to a
+    /// conflict copy named by the local time `now` (F-FILE-06). Reports
+    /// [`Outcome::ConflictCopied`] or [`Outcome::ConflictCopyFailed`].
+    ConflictCopy {
+        /// The file.
+        path: PathBuf,
+        /// The version to keep.
+        contents: Vec<u8>,
+        /// The local time.
+        now: DateTime,
     },
     /// Read the file at `path`, to tell whether another program changed it (F-FILE-06). Reports
     /// [`Outcome::Checked`], or nothing when the file cannot be read, since the next save reports
@@ -64,6 +75,16 @@ pub enum Outcome {
     },
     /// The backup failed.
     BackupFailed {
+        /// Why, in words for the status line.
+        reason: String,
+    },
+    /// The conflict copy was written.
+    ConflictCopied {
+        /// Where.
+        copy: PathBuf,
+    },
+    /// The conflict copy could not be written.
+    ConflictCopyFailed {
         /// Why, in words for the status line.
         reason: String,
     },
@@ -156,6 +177,16 @@ fn work(queue: &Receiver<Request>, mut report: impl FnMut(Outcome), mut backups:
                     .map(|error| Outcome::BackupFailed {
                         reason: error.to_string(),
                     }),
+                Request::Job(Job::ConflictCopy {
+                    path,
+                    contents,
+                    now,
+                }) => Some(match backups.conflict(&path, &contents, now) {
+                    Ok(copy) => Outcome::ConflictCopied { copy },
+                    Err(error) => Outcome::ConflictCopyFailed {
+                        reason: error.to_string(),
+                    },
+                }),
                 Request::Job(Job::Check { path }) => read(&path)
                     .ok()
                     .map(|contents| Outcome::Checked { contents }),
@@ -400,6 +431,38 @@ mod tests {
             [Outcome::BackupFailed {
                 reason: "Is a directory (os error 21)".to_owned()
             }]
+        );
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn writes_conflict_copies_and_reports_where_or_why_not() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let (disk, outcomes) = start(dir.path());
+        let path = dir.path().join("todo.taskpaper");
+        fs::write(&path, "on disk")?;
+        let now = TODAY.at(9, 30, 0, 0);
+        disk.submit(Job::ConflictCopy {
+            path: path.clone(),
+            contents: b"theirs".to_vec(),
+            now,
+        });
+        disk.submit(Job::ConflictCopy {
+            path: dir.path().join("missing/todo.taskpaper"),
+            contents: b"mine".to_vec(),
+            now,
+        });
+        disk.flush();
+        let outcomes = taken(&outcomes);
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [Outcome::ConflictCopied { copy }, Outcome::ConflictCopyFailed { reason }]
+                    if fs::read_to_string(copy).is_ok_and(|copied| copied == "theirs")
+                        && reason.contains("No such file")
+            ),
+            "{outcomes:?}"
         );
         Ok(())
     }

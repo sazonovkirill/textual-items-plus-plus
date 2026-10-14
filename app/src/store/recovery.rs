@@ -3,7 +3,8 @@
 
 use std::{
     ffi::{OsStr, OsString},
-    fs, io,
+    fs,
+    io::{self, BufRead, Write},
     path::{Path, PathBuf},
 };
 
@@ -80,6 +81,75 @@ impl Recovery {
     }
 }
 
+impl Recovery {
+    /// The newest recovery file of `file` that is no older than `file`, or the newest of any when
+    /// `file` does not exist. Equal times count, because the clock that dates files can be too
+    /// coarse to tell apart a save and a crash right after it; of two recovery files written at
+    /// one time, the later name wins.
+    ///
+    /// # Errors
+    ///
+    /// The I/O error that kept the recovery folder or `file` from being read.
+    pub fn find(&self, file: &Path) -> io::Result<Option<PathBuf>> {
+        let Some(folder) = &self.folder else {
+            return Ok(None);
+        };
+        let entries = match fs::read_dir(folder) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let name = name(file)?;
+        // A file that does not exist, or whose time cannot be read, is older than any recovery
+        // file; opening it then reports what is wrong with it.
+        let changed = fs::metadata(file)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        let mut found = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            if is_recovery_of(&name, &entry.file_name()) {
+                found.push((entry.metadata()?.modified()?, entry.path()));
+            }
+        }
+        Ok(found
+            .into_iter()
+            .filter(|&(written, _)| changed.is_none_or(|changed| written >= changed))
+            .max()
+            .map(|(_, path)| path))
+    }
+
+    /// The recovery file to open `file` with, if the user wants one: when [`find`](Self::find)
+    /// finds one, asks on `ask` whether to open `file` with its changes and reads the answer, yes
+    /// or no, from `answer`
+    /// ([file-io.md §4](../../../specs/reference/taskpaper-terminal/specs/file-io.md#4-crash-safety)).
+    ///
+    /// # Errors
+    ///
+    /// The I/O error of looking for recovery files or of asking.
+    pub fn offer(
+        &self,
+        file: &Path,
+        answer: &mut dyn BufRead,
+        ask: &mut dyn Write,
+    ) -> io::Result<Option<PathBuf>> {
+        let Some(found) = self.find(file)? else {
+            return Ok(None);
+        };
+        write!(
+            ask,
+            "{} holds changes to {} that were not saved when tipp stopped.\nOpen the file with these changes? [y/N] ",
+            found.display(),
+            file.display()
+        )?;
+        ask.flush()?;
+        let mut reply = String::new();
+        answer.read_line(&mut reply)?;
+        let yes = matches!(reply.trim().to_lowercase().as_str(), "y" | "yes");
+        Ok(yes.then_some(found))
+    }
+}
+
 /// What the recovery files of `file` are named after: its backup folder's name, from its
 /// canonical path, or from its folder's canonical path while the file does not exist yet.
 fn name(file: &Path) -> io::Result<OsString> {
@@ -99,6 +169,16 @@ fn file_name(name: &OsStr, time: DateTime) -> OsString {
     let mut file = name.to_owned();
     file.push(format!("-{}.taskpaper", time.strftime(STAMP)));
     file
+}
+
+/// Whether `file` is the name of a recovery file of the file named `name`.
+fn is_recovery_of(name: &OsStr, file: &OsStr) -> bool {
+    file.as_encoded_bytes()
+        .strip_prefix(name.as_encoded_bytes())
+        .and_then(|rest| str::from_utf8(rest).ok())
+        .and_then(|rest| rest.strip_prefix('-')?.strip_suffix(".taskpaper"))
+        .and_then(|stamp| DateTime::strptime(STAMP, stamp).ok())
+        .is_some_and(|time| file_name(name, time) == file)
 }
 
 #[cfg(test)]
@@ -234,6 +314,177 @@ mod tests {
         assert!(
             matches!(written, Err(RecoveryError::Io(ref error)) if error.kind() == io::ErrorKind::InvalidFilename),
             "{written:?}"
+        );
+        Ok(())
+    }
+
+    /// Sets the time `file` last changed to `seconds` after the Unix epoch.
+    fn touch(file: &Path, seconds: u64) -> io::Result<()> {
+        fs::File::options().append(true).open(file)?.set_modified(
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(seconds),
+        )
+    }
+
+    /// Asks with `recovery` whether to open `file` with a recovery file, answering `reply`;
+    /// returns the recovery file accepted and the question.
+    fn offer(
+        recovery: &Recovery,
+        file: &Path,
+        reply: &str,
+    ) -> io::Result<(Option<PathBuf>, String)> {
+        let mut asked = Vec::new();
+        let accepted = recovery.offer(file, &mut reply.as_bytes(), &mut asked)?;
+        Ok((accepted, String::from_utf8_lossy(&asked).into_owned()))
+    }
+
+    // N-REL-01
+    #[test]
+    fn finds_the_newest_recovery_file_newer_than_the_file() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("todo.taskpaper");
+        fs::write(&file, "- a\n")?;
+        touch(&file, 2000)?;
+        let folder = dir.path().join("recovery");
+        fs::create_dir(&folder)?;
+        let name = name(&file)?.to_string_lossy().into_owned();
+        let copy = |stamp: &str, seconds| -> io::Result<PathBuf> {
+            let path = folder.join(format!("{name}-{stamp}.taskpaper"));
+            fs::write(&path, stamp)?;
+            touch(&path, seconds)?;
+            Ok(path)
+        };
+        let recovery = recovery(dir.path());
+        copy("20261001-120000", 1000)?;
+        assert_eq!(recovery.find(&file)?, None, "older than the file");
+        let as_old = copy("20261002-120000", 2000)?;
+        assert_eq!(recovery.find(&file)?, Some(as_old), "as old as the file");
+        let older = copy("20261003-120000", 3000)?;
+        let newest = copy("20261004-120000", 4000)?;
+        copy("20261005-120000", 2500)?;
+        assert_eq!(recovery.find(&file)?, Some(newest.clone()));
+        fs::remove_file(&newest)?;
+        assert_eq!(recovery.find(&file)?, Some(older));
+        let later_name = copy("20261003-120001", 3000)?;
+        assert_eq!(
+            recovery.find(&file)?,
+            Some(later_name),
+            "a tie goes to the later name"
+        );
+        fs::remove_file(&file)?;
+        assert!(recovery.find(&file)?.is_some(), "any is newer than no file");
+        Ok(())
+    }
+
+    #[test]
+    fn ignores_the_recovery_files_of_other_files_and_other_names() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let recovery = recovery(dir.path());
+        for sub in ["a", "b"] {
+            fs::create_dir(dir.path().join(sub))?;
+        }
+        let file = dir.path().join("a/todo.taskpaper");
+        let other = dir.path().join("b/todo.taskpaper");
+        fs::write(&file, "- a\n")?;
+        touch(&file, 1000)?;
+        recovery.write(Some(&other), "- b\n", CRASH)?;
+        let folder = dir.path().join("recovery");
+        let name = name(&file)?.to_string_lossy().into_owned();
+        for odd in [
+            format!("{name}-20261005-0907.taskpaper"),
+            format!("{name}-20261005-090703.txt"),
+            format!("{name}20261005-090703.taskpaper"),
+            format!("{name}-2026105-090703.taskpaper"),
+            format!("{name}-x-20261005-090703.taskpaper"),
+            name.clone(),
+        ] {
+            fs::write(folder.join(odd), "-")?;
+        }
+        assert_eq!(recovery.find(&file)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn finds_nothing_without_a_folder() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("todo.taskpaper");
+        assert_eq!(Recovery::new(None).find(&file)?, None);
+        assert_eq!(recovery(dir.path()).find(&file)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn looking_fails_when_the_folder_or_the_file_cannot_be_read() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("todo.taskpaper");
+        fs::write(dir.path().join("recovery"), "a file where the folder goes")?;
+        assert!(recovery(dir.path()).find(&file).is_err());
+        let dir = tempfile::tempdir()?;
+        recovery(dir.path()).write(None, "-", CRASH)?;
+        let missing = dir.path().join("missing/todo.taskpaper");
+        assert!(recovery(dir.path()).find(&missing).is_err());
+        Ok(())
+    }
+
+    // N-REL-01
+    #[test]
+    fn offers_a_newer_recovery_file_and_takes_it_on_yes() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("todo.taskpaper");
+        fs::write(&file, "- a\n")?;
+        touch(&file, 1000)?;
+        let recovery = recovery(dir.path());
+        let found = recovery.write(Some(&file), "- b\n", CRASH)?;
+        let (accepted, asked) = offer(&recovery, &file, "y\n")?;
+        assert_eq!(accepted.as_ref(), Some(&found));
+        assert_eq!(
+            asked,
+            format!(
+                "{} holds changes to {} that were not saved when tipp stopped.\nOpen the file with these changes? [y/N] ",
+                found.display(),
+                file.display()
+            )
+        );
+        for yes in ["yes\n", " Y "] {
+            assert_eq!(
+                offer(&recovery, &file, yes)?.0.as_ref(),
+                Some(&found),
+                "{yes:?}"
+            );
+        }
+        for no in ["n\n", "\n", "", "yep\n"] {
+            assert_eq!(offer(&recovery, &file, no)?.0, None, "{no:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn asks_nothing_without_a_newer_recovery_file() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("todo.taskpaper");
+        fs::write(&file, "- a\n")?;
+        assert_eq!(
+            offer(&recovery(dir.path()), &file, "y\n")?,
+            (None, String::new())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_failed_question_is_an_error() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("todo.taskpaper");
+        let recovery = recovery(dir.path());
+        recovery.write(Some(&file), "- b\n", CRASH)?;
+        let mut full: &mut [u8] = &mut [];
+        let error = recovery
+            .offer(&file, &mut "y\n".as_bytes(), &mut full)
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WriteZero);
+        let mut unreadable: &[u8] = b"\xff\n";
+        assert!(
+            recovery
+                .offer(&file, &mut unreadable, &mut Vec::new())
+                .is_err()
         );
         Ok(())
     }

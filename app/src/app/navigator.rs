@@ -2,7 +2,7 @@
 //! the fuzzy picker a key opens over the panes (FR-VIEW-07, OQ-10). Hides how the tree and its
 //! counts follow from the document; the views of the view registry join it as they arrive.
 
-use super::{Candidate, Picker, container};
+use super::{Candidate, Picker, PickerInput, TextEdit, container};
 use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 
 /// A place the Navigator lists, with what it shows of it.
@@ -27,6 +27,16 @@ pub(super) fn open(document: &Document, shown: ItemId) -> Picker<Place> {
         if picker.focus_where(|place| place.id == id) {
             break;
         }
+    }
+    picker
+}
+
+/// The Navigator over `document` as [`open`] opens it, with `query` typed again, as after a
+/// reload, which lists the places anew.
+pub(super) fn reopen(document: &Document, shown: ItemId, query: &str) -> Picker<Place> {
+    let mut picker = open(document, shown);
+    for c in query.chars() {
+        picker.input(PickerInput::Edit(TextEdit::Insert(c)));
     }
     picker
 }

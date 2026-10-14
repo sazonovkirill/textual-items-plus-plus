@@ -46,7 +46,20 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::NewTask(Side::Below), &["o"]),
     (Command::NewTask(Side::Above), &["O"]),
     (Command::Delete, &["d d", "delete"]),
+    // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
+    // while the user types (its D-115, D-38).
+    (Command::KeepMine, &["ctrl+k"]),
+    (Command::TakeTheirs, &["ctrl+r"]),
+    (Command::ShowDiff, &["ctrl+l"]),
 ];
+
+/// The first default key of `command`, as [`DEFAULT_KEYS`] writes it, to show beside it.
+pub(super) fn written(command: Command) -> Option<&'static str> {
+    DEFAULT_KEYS
+        .iter()
+        .find(|&&(bound, _)| bound == command)
+        .and_then(|(_, keys)| keys.first().copied())
+}
 
 /// The keys `text` names, as [`DEFAULT_KEYS`] writes a sequence. `None` unless each one is a
 /// key.

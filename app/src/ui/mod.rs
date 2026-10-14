@@ -1,16 +1,21 @@
 //! The UI layer: the terminal frontend, which turns terminal events into app messages, carries out
 //! the app's effects and draws its state.
 
+mod conflict;
 mod container;
 mod crumbs;
 mod edit_keys;
+mod file;
 mod keymap;
 mod picker;
 mod status;
 mod text_keys;
 mod theme;
 
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use crossterm::event::Event;
 use jiff::civil::Date;
@@ -22,22 +27,39 @@ use ratatui::{
     widgets::{StatefulWidget, Widget},
 };
 
+pub use file::Edge;
 pub use keymap::Keymap;
 pub use picker::{PickerPopup, picker_input};
 pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
-    app::{self, Context, Effect, Message, Opened, Place, REGISTRY, State},
+    app::{self, Command, Context, Effect, Message, Opened, Place, REGISTRY, State},
     domain::ItemKind,
-    store::{self, OpenError},
+    store::{self, OpenError, Outcome, RecoveryError},
 };
+use conflict::ConflictPrompt;
 use container::ContainerPane;
 use crumbs::Crumbs;
+use file::File;
 use status::StatusLine;
 
+/// What reaches the event loop: what the terminal, the disk worker, the watcher and the process
+/// report.
+#[derive(Debug)]
+pub enum Input {
+    /// A terminal event.
+    Terminal(Event),
+    /// How disk work went.
+    Disk(Outcome),
+    /// The watcher saw a change that may be to the file, so it is read again.
+    Check,
+    /// The process was told to end, as by `SIGTERM` or `SIGHUP`.
+    Terminate,
+}
+
 /// The running app as the terminal shows it: the core's state, the keys that drive it, how it is
-/// drawn and scrolled, and whether the session has ended.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// drawn and scrolled, the file it keeps in step, and whether the session has ended.
+#[derive(Debug)]
 pub struct Tui {
     state: State,
     keymap: Keymap,
@@ -46,12 +68,15 @@ pub struct Tui {
     /// The first line of the container pane's content on screen.
     top: usize,
     quit: bool,
+    file: Option<File>,
+    /// The local date, as last given.
+    today: Date,
 }
 
 impl Tui {
-    /// The app on `state`, in the default theme and icons (D-30).
+    /// The app on `state`, without a file, in the default theme and icons (D-30).
     #[must_use]
-    pub fn new(state: State) -> Self {
+    pub fn new(state: State, today: Date) -> Self {
         Self {
             state,
             keymap: Keymap::default(),
@@ -59,33 +84,100 @@ impl Tui {
             icons: IconSet::default(),
             top: 0,
             quit: false,
+            file: None,
+            today,
         }
     }
 
-    /// The app on the file at `path`, read-only until saving arrives, or without one on the
-    /// demo document for `today`, the local date (FR-STORE-01, D-29).
+    /// The app on the file at `path`, every change saved to it, with the document of the
+    /// recovery file `recovered` when one is given, or without a file on the demo document for
+    /// `today`, the local date, never saved (FR-STORE-01, FR-STORE-09, D-29). `edge` says where
+    /// the app's own files go and where the disk worker and the watcher report.
     ///
     /// # Errors
     ///
-    /// [`OpenError`] when the file cannot be read.
-    pub fn open(path: Option<PathBuf>, today: Date) -> Result<Self, OpenError> {
-        let state = match path {
-            Some(path) => {
-                // What saving needs of the outline waits for saving to arrive (M1.12).
-                let (document, _) = store::open(&path)?;
-                State::new(document, Opened::File(path))
-            }
-            None => State::new(store::demo::document(today), Opened::Demo),
+    /// [`OpenError`] when the file cannot be opened.
+    pub fn open(
+        path: Option<PathBuf>,
+        recovered: Option<&Path>,
+        today: Date,
+        edge: &Edge,
+    ) -> Result<Self, OpenError> {
+        let Some(path) = path else {
+            return Ok(Self::new(
+                State::new(store::demo::document(today), Opened::Demo),
+                today,
+            ));
         };
-        Ok(Self::new(state))
+        let (file, state) = File::open(path, recovered, today, edge)?;
+        Ok(Self {
+            file: Some(file),
+            ..Self::new(state, today)
+        })
+    }
+
+    /// Takes in `input` on `today`, the local date.
+    pub fn input(&mut self, input: Input, today: Date) {
+        self.today = today;
+        match input {
+            Input::Terminal(event) => self.handle(&event, today),
+            Input::Disk(outcome) => {
+                let messages = self
+                    .file
+                    .as_mut()
+                    .map(|file| file.outcome(outcome))
+                    .unwrap_or_default();
+                for message in messages {
+                    self.update(message);
+                }
+            }
+            Input::Check => {
+                if let Some(file) = &self.file {
+                    file.check();
+                }
+            }
+            Input::Terminate => self.update(Message::Terminate),
+        }
+    }
+
+    /// The frontend's clock reads `now`, counted from the start of the session, on `today`, the
+    /// local date: a save that is due starts.
+    pub fn tick(&mut self, now: Duration, today: Date) {
+        self.today = today;
+        self.update(Message::Tick(now));
+    }
+
+    /// Waits until the disk work asked for so far is done and its reports are among the inputs.
+    pub fn flush(&self) {
+        if let Some(file) = &self.file {
+            file.flush();
+        }
+    }
+
+    /// When the next [`tick`](Self::tick) is due without any input, if one is.
+    #[must_use]
+    pub fn deadline(&self) -> Option<Duration> {
+        self.state.deadline()
     }
 
     /// Handles one terminal event on `today`, the local date: the keys of a bound command give
-    /// it to the core, and the core's effects are carried out. While the Navigator is open it
-    /// takes the keys, leaving only those of global commands, such as its own, which closes it
-    /// (FR-VIEW-07); in edit mode the title being edited takes them the same way (FR-EDIT-01).
+    /// it to the core, and the core's effects are carried out. While the conflict prompt is open
+    /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
+    /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); in
+    /// edit mode the title being edited takes them the same way (FR-EDIT-01).
     pub fn handle(&mut self, event: &Event, today: Date) {
-        let message = if self.state.editing().is_some() {
+        self.today = today;
+        let message = if self.state.conflict().is_some() {
+            self.keymap
+                .press(event)
+                .filter(|&command| {
+                    command == Command::Quit
+                        || REGISTRY.iter().any(|entry| {
+                            entry.command == command && entry.context == Context::Conflict
+                        })
+                })
+                .map(Message::Command)
+        } else if self.state.editing().is_some() {
             edit_keys::edit_input(event)
                 .map(Message::Edit)
                 .or_else(|| self.global(event))
@@ -97,9 +189,14 @@ impl Tui {
             self.keymap.press(event).map(Message::Command)
         };
         if let Some(message) = message {
-            for effect in app::update(&mut self.state, message, today) {
-                self.run(effect);
-            }
+            self.update(message);
+        }
+    }
+
+    /// Gives `message` to the core and carries out its effects.
+    fn update(&mut self, message: Message) {
+        for effect in app::update(&mut self.state, message, self.today) {
+            self.run(effect);
         }
     }
 
@@ -120,6 +217,9 @@ impl Tui {
     /// else hidden.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
+        if self.state.conflict().is_some() {
+            return None;
+        }
         let [panes, _] = layout(area);
         match self.state.navigator() {
             Some(view) => Some(navigator_popup(&view, &self.theme, self.icons).caret(panes)),
@@ -132,6 +232,25 @@ impl Tui {
     fn run(&mut self, effect: Effect) {
         match effect {
             Effect::Quit => self.quit = true,
+            Effect::Save => {
+                if let Some(file) = &self.file {
+                    file.save(self.state.document(), self.today);
+                }
+            }
+            Effect::Copy { side, ending } => {
+                let report = self
+                    .file
+                    .as_ref()
+                    .and_then(|file| file.copy(side, self.state.document(), ending));
+                if let Some(report) = report {
+                    self.update(report);
+                }
+            }
+            Effect::Reloaded => {
+                if let Some(file) = &mut self.file {
+                    file.reloaded();
+                }
+            }
         }
     }
 
@@ -139,6 +258,30 @@ impl Tui {
     #[must_use]
     pub fn should_quit(&self) -> bool {
         self.quit
+    }
+
+    /// After a crash, writes the document to a recovery file when it holds changes its file
+    /// lacks, and returns where (N-REL-01); `None` when there is nothing to keep.
+    ///
+    /// # Errors
+    ///
+    /// [`RecoveryError`] when the recovery file could not be written.
+    pub fn recover(&self) -> Result<Option<PathBuf>, RecoveryError> {
+        match &self.file {
+            Some(file) if self.state.save_state() != app::autosave::SaveState::Saved => {
+                file.recover(self.state.document()).map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// What to say once the terminal is restored: where the document went when the session
+    /// ended with the conflict prompt open.
+    #[must_use]
+    pub fn farewell(&self) -> Option<String> {
+        self.state
+            .left_in()
+            .map(|copy| format!("tipp: left theirs on disk; mine is in {}", copy.display()))
     }
 }
 
@@ -181,7 +324,8 @@ fn navigator_popup<'a>(
 
 impl Widget for &mut Tui {
     /// Draws the pane, below its breadcrumbs and a rule, over the status line, scrolling the pane
-    /// to keep the focus in view, and the Navigator over the pane while it is open.
+    /// to keep the focus in view, and the Navigator or the conflict prompt over the pane while
+    /// it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         let [panes, status] = layout(area);
         let [crumbs, rule, pane] = pane_layout(panes);
@@ -196,13 +340,18 @@ impl Widget for &mut Tui {
         if let Some(view) = self.state.navigator() {
             navigator_popup(&view, &self.theme, self.icons).render(panes, buf);
         }
-        StatusLine::new(
-            self.state.opened(),
-            self.state.editing().is_some(),
-            self.keymap.pending(),
-            &self.theme,
-            self.icons,
-        )
-        .render(status, buf);
+        if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
+            let (theirs, mine) = if view.diff {
+                (
+                    file.theirs().unwrap_or_default(),
+                    file.text(self.state.document()),
+                )
+            } else {
+                (String::new(), String::new())
+            };
+            ConflictPrompt::new(view, &theirs, &mine, &self.theme).render(panes, buf);
+        }
+        StatusLine::new(&self.state, self.keymap.pending(), &self.theme, self.icons)
+            .render(status, buf);
     }
 }

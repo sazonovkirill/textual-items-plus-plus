@@ -20,7 +20,7 @@ mod watch;
 pub use backup::{BackupError, Backups, KEEP as BACKUPS_KEPT};
 pub use disk::{Disk, Job, Outcome};
 pub use folders::{backups as backups_folder, recovery as recovery_folder};
-pub use open::{OpenError, open};
+pub use open::{OpenError, OpenFile, decode, open, recover};
 pub use recovery::{Recovery, RecoveryError};
 pub use version::Version;
 pub use watch::{Watcher, watch};

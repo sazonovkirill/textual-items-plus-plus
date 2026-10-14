@@ -1,0 +1,1028 @@
+//! Keeping the opened file and the document in step: saving every change through the
+//! [`Autosave`] policy (FR-STORE-09, F-FILE-05), and what a change another program made to the
+//! file does: a silent reload, or the conflict prompt with its conflict copies when the document
+//! holds changes the file lacks (F-FILE-06,
+//! [file-io.md §3](../../../specs/reference/taskpaper-terminal/specs/file-io.md#3-external-changes)).
+//! The core only decides; the frontend reads, writes and copies the file and reports back.
+
+use std::{path::PathBuf, time::Duration};
+
+use super::{
+    Effect, State,
+    autosave::{Autosave, Ending, SaveState, Step},
+    container, navigator, text_path,
+};
+use crate::domain::{Document, ItemId};
+
+/// What the frontend reports of disk work the core asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Report {
+    /// The save asked for was written.
+    Saved,
+    /// The save failed, for this reason.
+    SaveFailed(String),
+    /// The save was not done, because the file on disk was no longer the version the core knows;
+    /// what is there now came just before as [`OnDisk`].
+    SaveRefused,
+    /// The daily backup failed, for this reason; saving goes on (F-FILE-09).
+    BackupFailed(String),
+    /// The conflict copy asked for was written here.
+    Copied(PathBuf),
+    /// The conflict copy asked for could not be written, for this reason.
+    CopyFailed(String),
+}
+
+/// What the file on disk turned out to hold when it was no longer the version the core last read
+/// or wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OnDisk {
+    /// The file now holds this document.
+    Changed(Document),
+    /// The file now holds bytes that are not UTF-8, so it cannot be read (F-FILE-07).
+    Unreadable,
+    /// The file was deleted or moved away; the next save creates it again.
+    Gone,
+}
+
+/// Which version of the file a conflict copy keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictSide {
+    /// The document as the app holds it.
+    Mine,
+    /// The file as another program left it on disk.
+    Theirs,
+}
+
+/// Something that happened to the file, for the status line to say until the next command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notice {
+    /// The file changed on disk and was read again.
+    Reloaded,
+    /// Keep mine overwrote the file; theirs is in this conflict copy.
+    KeptMine(PathBuf),
+    /// Take theirs reloaded the file; mine is in this conflict copy.
+    TookTheirs(PathBuf),
+    /// Take theirs was refused: the file on disk is not UTF-8.
+    CannotTakeTheirs,
+    /// A conflict copy failed, for this reason, so its choice did not go ahead; after a quit,
+    /// quitting again ends without saving.
+    CopyFailed(String),
+    /// The daily backup failed, for this reason.
+    BackupFailed(String),
+}
+
+/// The conflict prompt as a frontend shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConflictView {
+    /// Whether the document holds changes the file lacks; without them the prompt is open only
+    /// because the file on disk cannot be read.
+    pub unsaved: bool,
+    /// Whether the file on disk can be read, so Take theirs can take it.
+    pub readable: bool,
+    /// Whether the diff from the file on disk to the document is shown.
+    pub diff: bool,
+}
+
+/// The saving state of one opened document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Saving {
+    autosave: Autosave,
+    /// The frontend's clock, as it last told it.
+    now: Duration,
+    conflict: Option<Conflict>,
+    gone: bool,
+    notice: Option<Notice>,
+    /// Where the document went when the session ended with the conflict prompt open.
+    left_in: Option<PathBuf>,
+}
+
+/// The file changed on disk while the document held changes it lacks, or became unreadable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Conflict {
+    /// The file on disk, `None` when it cannot be read.
+    theirs: Option<Document>,
+    diff: bool,
+    /// The choice waiting for its conflict copy.
+    choosing: Option<Choice>,
+    /// Whether ending failed to keep the document, so quitting again ends without it.
+    confirm_quit: bool,
+}
+
+/// How a conflict is resolved, each once the version it discards is in a conflict copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Choice {
+    /// Overwrite the file with the document.
+    KeepMine,
+    /// Reload the file, holding this document, discarding the document's changes.
+    TakeTheirs(Document),
+    /// End the session this way, leaving the file on disk as it is.
+    Leave(Ending),
+}
+
+impl Saving {
+    /// Saving for a document at `revision` that the file holds, or, when not `saved`, one it
+    /// lacks, as one recovered after a crash; nothing is ever saved unless `saveable`.
+    pub(super) fn new(revision: u64, saved: bool, saveable: bool) -> Self {
+        Self {
+            autosave: if saved {
+                Autosave::new(revision, saveable)
+            } else {
+                Autosave::unsaved(revision, saveable)
+            },
+            now: Duration::ZERO,
+            conflict: None,
+            gone: false,
+            notice: None,
+            left_in: None,
+        }
+    }
+
+    /// The document went from `from` to `to` without changing, as an edit session that changes
+    /// nothing does.
+    pub(super) fn unchanged(&mut self, from: u64, to: u64) {
+        self.autosave.unchanged(from, to);
+    }
+}
+
+impl State {
+    /// The app showing `document`, recovered after a crash, as [`new`](Self::new) shows it, but
+    /// holding changes the file lacks, which are saved over it like any change (N-REL-01).
+    #[must_use]
+    pub fn recovered(document: Document, opened: super::Opened) -> Self {
+        let saveable = matches!(opened, super::Opened::File(_));
+        let revision = document.revision();
+        let mut state = Self::new(document, opened);
+        state.saving = Saving::new(revision, false, saveable);
+        state
+    }
+
+    /// What saving asks of the frontend now that a message changed the state: nothing while the
+    /// conflict prompt is open, since a save would be refused again at once, nor in edit mode,
+    /// whose title is not a change until editing ends.
+    pub(super) fn step_saving(&mut self) -> Vec<Effect> {
+        if self.saving.conflict.is_some() || self.editing().is_some() {
+            return Vec::new();
+        }
+        let saving = &mut self.saving;
+        match saving.autosave.step(self.document.revision(), saving.now) {
+            Step::Wait => Vec::new(),
+            Step::Save(_) => vec![Effect::Save],
+            Step::End => vec![Effect::Quit],
+        }
+    }
+
+    /// The frontend's clock now reads `now`.
+    pub(super) fn tick(&mut self, now: Duration) {
+        self.saving.now = now;
+    }
+
+    /// Clears what the status line said about the file, as each command does.
+    pub(super) fn clear_notice(&mut self) {
+        self.saving.notice = None;
+    }
+
+    /// Asks to end the session, saving first. With the conflict prompt open, the file on disk is
+    /// left as it is and the document goes to a conflict copy instead, so that neither is lost;
+    /// a quit after that copy failed ends without it. An edit under way is kept first.
+    pub(super) fn end(&mut self, ending: Ending) -> Vec<Effect> {
+        self.finish_editing();
+        let Some(conflict) = &mut self.saving.conflict else {
+            self.saving.autosave.end(ending);
+            return Vec::new();
+        };
+        match (ending, &conflict.choosing) {
+            (Ending::Quit, _) if conflict.confirm_quit => vec![Effect::Quit],
+            // The copy under way would be taken for this one; its choice ends quickly.
+            (Ending::Quit, Some(_))
+            | (Ending::Terminate, Some(Choice::Leave(Ending::Terminate))) => Vec::new(),
+            _ => {
+                conflict.choosing = Some(Choice::Leave(ending));
+                vec![Effect::Copy {
+                    side: ConflictSide::Mine,
+                    ending: true,
+                }]
+            }
+        }
+    }
+
+    /// Takes in how disk work went.
+    pub(super) fn disk_report(&mut self, report: Report) -> Vec<Effect> {
+        let saving = &mut self.saving;
+        match report {
+            Report::Saved => {
+                saving.autosave.saved();
+                saving.gone = false;
+            }
+            Report::SaveFailed(reason) => saving.autosave.failed(reason),
+            Report::SaveRefused => saving.autosave.refused(),
+            Report::BackupFailed(reason) => saving.notice = Some(Notice::BackupFailed(reason)),
+            Report::Copied(copy) => return self.copied(copy),
+            Report::CopyFailed(reason) => {
+                let Some(conflict) = &mut saving.conflict else {
+                    return Vec::new();
+                };
+                match conflict.choosing.take() {
+                    Some(Choice::Leave(Ending::Terminate)) => return vec![Effect::Quit],
+                    Some(Choice::Leave(Ending::Quit)) => conflict.confirm_quit = true,
+                    Some(Choice::KeepMine | Choice::TakeTheirs(_)) | None => {}
+                }
+                saving.notice = Some(Notice::CopyFailed(reason));
+            }
+        }
+        Vec::new()
+    }
+
+    /// The conflict copy of the choice under way was written to `copy`, so the choice goes ahead.
+    fn copied(&mut self, copy: PathBuf) -> Vec<Effect> {
+        let Some(Conflict {
+            choosing: Some(choice),
+            ..
+        }) = self
+            .saving
+            .conflict
+            .take_if(|conflict| conflict.choosing.is_some())
+        else {
+            return Vec::new();
+        };
+        match choice {
+            Choice::KeepMine => {
+                self.saving.autosave.overwrite();
+                self.saving.notice = Some(Notice::KeptMine(copy));
+                Vec::new()
+            }
+            Choice::TakeTheirs(theirs) => {
+                self.reload(theirs);
+                self.saving.notice = Some(Notice::TookTheirs(copy));
+                vec![Effect::Reloaded]
+            }
+            Choice::Leave(_) => {
+                self.saving.left_in = Some(copy);
+                vec![Effect::Quit]
+            }
+        }
+    }
+
+    /// Takes in what the file on disk now holds: a file that is gone is marked so; a changed one
+    /// is reloaded when the document holds nothing the file lacks and it can be read, and opens
+    /// the conflict prompt otherwise. With the prompt open, it is what the prompt offers from now
+    /// on, and a choice waiting for its copy no longer stands; a prompt open only because the
+    /// file could not be read closes and the file reloads once it can. An edit under way is kept first,
+    /// so it counts as a change the file lacks.
+    pub(super) fn on_disk(&mut self, change: OnDisk) -> Vec<Effect> {
+        self.finish_editing();
+        let theirs = match change {
+            OnDisk::Gone => {
+                self.saving.gone = true;
+                if let Some(conflict) = &mut self.saving.conflict {
+                    cancel_choice(conflict);
+                }
+                return Vec::new();
+            }
+            OnDisk::Changed(document) => Some(document),
+            OnDisk::Unreadable => None,
+        };
+        self.saving.gone = false;
+        let saved = self.saving.autosave.state(self.document.revision()) == SaveState::Saved;
+        if let Some(conflict) = &mut self.saving.conflict {
+            cancel_choice(conflict);
+            // A prompt open only because the file could not be read gives way once it can.
+            let leaving = matches!(conflict.choosing, Some(Choice::Leave(_)));
+            if !saved || theirs.is_none() || leaving {
+                conflict.theirs = theirs;
+                return Vec::new();
+            }
+            self.saving.conflict = None;
+        }
+        match theirs {
+            Some(theirs) if saved => {
+                self.reload(theirs);
+                self.saving.notice = Some(Notice::Reloaded);
+                vec![Effect::Reloaded]
+            }
+            theirs => {
+                self.saving.conflict = Some(Conflict {
+                    theirs,
+                    diff: false,
+                    choosing: None,
+                    confirm_quit: false,
+                });
+                Vec::new()
+            }
+        }
+    }
+
+    /// Keeps the document: once the file on disk is in a conflict copy, the document overwrites
+    /// it.
+    pub(super) fn keep_mine(&mut self) -> Vec<Effect> {
+        self.choose(Choice::KeepMine, ConflictSide::Theirs)
+    }
+
+    /// Takes the file on disk: once the document is in a conflict copy, the file is reloaded. A
+    /// file that cannot be read cannot be taken.
+    pub(super) fn take_theirs(&mut self) -> Vec<Effect> {
+        let Some(conflict) = &self.saving.conflict else {
+            return Vec::new();
+        };
+        if let Some(theirs) = conflict.theirs.clone() {
+            self.choose(Choice::TakeTheirs(theirs), ConflictSide::Mine)
+        } else {
+            self.saving.notice = Some(Notice::CannotTakeTheirs);
+            Vec::new()
+        }
+    }
+
+    /// Starts `choice` with a conflict copy of `discarded`, unless no prompt is open or a choice
+    /// is under way.
+    fn choose(&mut self, choice: Choice, discarded: ConflictSide) -> Vec<Effect> {
+        let Some(conflict) = self
+            .saving
+            .conflict
+            .as_mut()
+            .filter(|conflict| conflict.choosing.is_none())
+        else {
+            return Vec::new();
+        };
+        conflict.choosing = Some(choice);
+        vec![Effect::Copy {
+            side: discarded,
+            ending: false,
+        }]
+    }
+
+    /// Shows the diff in the conflict prompt, or hides it again.
+    pub(super) fn toggle_diff(&mut self) {
+        if let Some(conflict) = &mut self.saving.conflict {
+            conflict.diff = !conflict.diff;
+        }
+    }
+
+    /// Replaces the document with `document`, read again from the file, keeping the pane on the
+    /// container it showed, its focus and its history on the items they were on, as far as their
+    /// text paths find them, and the Navigator open on the places now listed with its query. The
+    /// undo history is cleared, since its steps fit only the document as it was.
+    fn reload(&mut self, document: Document) {
+        let old = std::mem::replace(&mut self.document, document);
+        let new = &self.document;
+        let nearest = |id| text_path::find(&old, new, id).map(|(found, _)| found);
+        let exact =
+            |id| text_path::find(&old, new, id).and_then(|(found, exact)| exact.then_some(found));
+        let opens = |id: ItemId| container::opens(new, id).then_some(id);
+        self.container = nearest(self.container)
+            .and_then(opens)
+            .unwrap_or_else(|| new.inbox());
+        let focused = self.selection.focused();
+        let rows = self.rows();
+        let row = |id: ItemId| rows.iter().any(|row| row.id() == id).then_some(id);
+        let focus = focused
+            .and_then(exact)
+            .and_then(row)
+            .or_else(|| focused.and_then(nearest).and_then(row))
+            .or_else(|| rows.first().map(|row| row.id()));
+        self.selection.focus(focus);
+        self.visits.rematch(|id| nearest(id).and_then(opens), exact);
+        if let Some(picker) = &self.navigator {
+            let query = picker.view().query.text().to_owned();
+            self.navigator = Some(navigator::reopen(new, self.container, &query));
+        }
+        self.history = super::History::default();
+        self.saving.autosave.reloaded(new.revision());
+    }
+
+    /// Whether the file on disk holds every change, and why the last save failed if it did.
+    #[must_use]
+    pub fn save_state(&self) -> SaveState<'_> {
+        self.saving.autosave.state(self.document.revision())
+    }
+
+    /// Whether the file was deleted or moved away; the next save creates it again.
+    #[must_use]
+    pub fn gone_from_disk(&self) -> bool {
+        self.saving.gone
+    }
+
+    /// What the status line says about the file until the next command.
+    #[must_use]
+    pub fn notice(&self) -> Option<&Notice> {
+        self.saving.notice.as_ref()
+    }
+
+    /// Whether quitting was refused because the document could not be kept, so quitting again
+    /// ends without saving it.
+    #[must_use]
+    pub fn confirming_quit(&self) -> bool {
+        self.saving.autosave.confirming_quit()
+            || self
+                .saving
+                .conflict
+                .as_ref()
+                .is_some_and(|conflict| conflict.confirm_quit)
+    }
+
+    /// The conflict prompt, while it is open.
+    #[must_use]
+    pub fn conflict(&self) -> Option<ConflictView> {
+        let conflict = self.saving.conflict.as_ref()?;
+        Some(ConflictView {
+            unsaved: self.save_state() != SaveState::Saved,
+            readable: conflict.theirs.is_some(),
+            diff: conflict.diff,
+        })
+    }
+
+    /// The conflict copy holding the document when the session ended with the conflict prompt
+    /// open, the only place its changes are then.
+    #[must_use]
+    pub fn left_in(&self) -> Option<&std::path::Path> {
+        self.saving.left_in.as_deref()
+    }
+
+    /// When saving is next due without anything else happening, so the frontend can wake then.
+    #[must_use]
+    pub fn deadline(&self) -> Option<Duration> {
+        if self.saving.conflict.is_some() || self.editing().is_some() {
+            return None;
+        }
+        self.saving.autosave.deadline()
+    }
+}
+
+/// Cancels the choice waiting for its copy, since the version it discards changed; leaving still
+/// stands, as the session is ending.
+fn cancel_choice(conflict: &mut Conflict) {
+    conflict
+        .choosing
+        .take_if(|choice| !matches!(choice, Choice::Leave(_)));
+}
+
+#[cfg(test)]
+mod tests {
+    use jiff::civil::{Date, date};
+
+    use super::*;
+    use crate::app::{
+        Command, EditInput, History, Message, Opened, PickerInput, Side, TextEdit, update,
+    };
+    use crate::domain::{Item, ItemKind, Node, PlacementError};
+
+    const TODAY: Date = date(2026, 10, 14);
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn secs(seconds: u64) -> Duration {
+        Duration::from_secs(seconds)
+    }
+
+    /// A document with the tasks `titles` in its Inbox, and the project `P` holding `p1` and
+    /// `p2`.
+    fn document(titles: &[&str]) -> Result<Document, PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        for title in titles {
+            document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, *title)))?;
+        }
+        let project = document.push(None, Node::Item(Item::new(ItemKind::Project, "P")))?;
+        for title in ["p1", "p2"] {
+            document.push(Some(project), Node::Item(Item::new(ItemKind::Task, title)))?;
+        }
+        Ok(document)
+    }
+
+    fn opened(titles: &[&str]) -> Result<State, PlacementError> {
+        Ok(State::new(
+            document(titles)?,
+            Opened::File("todo.taskpaper".into()),
+        ))
+    }
+
+    fn send(state: &mut State, message: Message) -> Vec<Effect> {
+        update(state, message, TODAY)
+    }
+
+    fn command(state: &mut State, command: Command) -> Vec<Effect> {
+        send(state, Message::Command(command))
+    }
+
+    /// `state` with a change saved neither on disk nor yet asked to be.
+    fn changed(titles: &[&str]) -> Result<State, PlacementError> {
+        let mut state = opened(titles)?;
+        command(&mut state, Command::ToggleCompleted);
+        Ok(state)
+    }
+
+    fn conflicted() -> Result<State, PlacementError> {
+        let mut state = changed(&["a"])?;
+        assert_eq!(
+            send(
+                &mut state,
+                Message::OnDisk(OnDisk::Changed(document(&["x"])?))
+            ),
+            []
+        );
+        Ok(state)
+    }
+
+    /// The first item of `state`'s document titled `title`, depth first from the Inbox.
+    fn titled(state: &State, title: &str) -> Option<ItemId> {
+        find(state.document(), title)
+    }
+
+    fn find(document: &Document, title: &str) -> Option<ItemId> {
+        let mut stack = vec![document.inbox()];
+        stack.extend(document.top_level().iter().rev());
+        stack.reverse();
+        while let Some(id) = stack.pop() {
+            if document
+                .node(id)
+                .and_then(Node::item)
+                .is_some_and(|item| item.title == title)
+            {
+                return Some(id);
+            }
+            stack.extend(document.children(id).iter().rev());
+        }
+        None
+    }
+
+    // FR-STORE-09, F-FILE-05
+    #[test]
+    fn a_change_is_saved_a_second_after_it_and_the_demo_never() -> TestResult {
+        let mut state = opened(&["a"])?;
+        assert_eq!(state.save_state(), SaveState::Saved);
+        assert_eq!(state.deadline(), None);
+        assert_eq!(command(&mut state, Command::ToggleCompleted), []);
+        assert_eq!(state.save_state(), SaveState::Unsaved);
+        assert_eq!(state.deadline(), Some(secs(1)));
+        assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
+        assert_eq!(send(&mut state, Message::Disk(Report::Saved)), []);
+        assert_eq!(state.save_state(), SaveState::Saved);
+        let mut demo = State::new(document(&["a"])?, Opened::Demo);
+        command(&mut demo, Command::ToggleCompleted);
+        assert_eq!(demo.deadline(), None);
+        assert_eq!(send(&mut demo, Message::Tick(secs(5))), []);
+        Ok(())
+    }
+
+    // F-FILE-05
+    #[test]
+    fn quitting_and_terminating_save_first() -> TestResult {
+        let mut state = changed(&["a"])?;
+        assert_eq!(command(&mut state, Command::Quit), [Effect::Save]);
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Saved)),
+            [Effect::Quit]
+        );
+        let mut state = changed(&["a"])?;
+        assert_eq!(send(&mut state, Message::Terminate), [Effect::Save]);
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::SaveFailed("full".into()))),
+            [Effect::Quit]
+        );
+        Ok(())
+    }
+
+    // FR-STORE-09
+    #[test]
+    fn a_failed_save_or_backup_is_kept_for_the_status_line() -> TestResult {
+        let mut state = changed(&["a"])?;
+        send(&mut state, Message::Tick(secs(1)));
+        send(
+            &mut state,
+            Message::Disk(Report::BackupFailed("denied".into())),
+        );
+        assert_eq!(state.notice(), Some(&Notice::BackupFailed("denied".into())));
+        send(&mut state, Message::Disk(Report::SaveFailed("full".into())));
+        assert_eq!(state.save_state(), SaveState::Failed { reason: "full" });
+        command(&mut state, Command::ShowCompleted);
+        assert_eq!(state.notice(), None, "a command clears it");
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn an_outside_change_reloads_keeping_what_the_pane_shows_and_clearing_undo() -> TestResult {
+        let mut state = opened(&["a", "b", "c"])?;
+        command(&mut state, Command::ToggleCompleted);
+        send(&mut state, Message::Tick(secs(1)));
+        send(&mut state, Message::Disk(Report::Saved));
+        command(&mut state, Command::ShowCompleted);
+        command(&mut state, Command::Focus(crate::app::Focus::Next));
+        assert_ne!(state.history, History::default());
+        let theirs = document(&["x", "b", "c"])?;
+        assert_eq!(
+            send(&mut state, Message::OnDisk(OnDisk::Changed(theirs.clone()))),
+            [Effect::Reloaded]
+        );
+        assert_eq!(state.document(), &theirs);
+        assert_eq!(state.container(), state.document().inbox());
+        assert_eq!(state.selection().focused(), titled(&state, "c"));
+        assert_eq!(state.history, History::default());
+        assert_eq!(state.notice(), Some(&Notice::Reloaded));
+        assert_eq!(state.save_state(), SaveState::Saved);
+        assert_eq!(state.deadline(), None, "nothing to save");
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_reload_falls_back_to_the_nearest_container_and_row_found() -> TestResult {
+        let mut state = opened(&["a"])?;
+        let project = titled(&state, "P").ok_or("P")?;
+        state.container = project;
+        state.selection.focus(titled(&state, "p2"));
+        let mut theirs = document(&["a"])?;
+        let p2 = find(&theirs, "p2").ok_or("p2")?;
+        theirs.set(p2, Item::new(ItemKind::Task, "renamed"))?;
+        send(&mut state, Message::OnDisk(OnDisk::Changed(theirs)));
+        assert_eq!(state.container(), titled(&state, "P").ok_or("P")?);
+        assert_eq!(
+            state.selection().focused(),
+            titled(&state, "p1"),
+            "the first row"
+        );
+        let mut state = opened(&["a"])?;
+        state.container = project;
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(Document::new())),
+        );
+        assert_eq!(state.container(), state.document().inbox(), "P is gone");
+        assert_eq!(state.selection().focused(), None);
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_reload_keeps_the_navigator_open_with_its_query() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::Navigator);
+        send(
+            &mut state,
+            Message::Navigator(PickerInput::Edit(TextEdit::Insert('p'))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["x"])?)),
+        );
+        let navigator = state.navigator().ok_or("open")?;
+        assert_eq!(navigator.query.text(), "p");
+        send(&mut state, Message::Navigator(PickerInput::Choose));
+        assert_eq!(state.container(), titled(&state, "P").ok_or("P")?);
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
+        );
+        command(&mut state, Command::Go(crate::app::Go::Back));
+        assert_eq!(
+            state.container(),
+            state.document().inbox(),
+            "back where it was"
+        );
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn an_outside_change_to_unsaved_changes_asks_and_pauses_saving() -> TestResult {
+        let mut state = conflicted()?;
+        let view = ConflictView {
+            unsaved: true,
+            readable: true,
+            diff: false,
+        };
+        assert_eq!(state.conflict(), Some(view));
+        assert_eq!(state.deadline(), None);
+        assert_eq!(send(&mut state, Message::Tick(secs(5))), []);
+        command(&mut state, Command::ShowDiff);
+        assert_eq!(state.conflict(), Some(ConflictView { diff: true, ..view }));
+        command(&mut state, Command::ShowDiff);
+        assert_eq!(state.conflict(), Some(view));
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_refused_save_does_not_save_over_the_file_that_refused_it() -> TestResult {
+        let mut state = changed(&["a"])?;
+        assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
+        let theirs = OnDisk::Changed(document(&["x"])?);
+        assert_eq!(send(&mut state, Message::OnDisk(theirs)), []);
+        assert_eq!(send(&mut state, Message::Disk(Report::SaveRefused)), []);
+        assert!(state.conflict().is_some());
+        let mut state = changed(&["a"])?;
+        send(&mut state, Message::Tick(secs(1)));
+        send(&mut state, Message::OnDisk(OnDisk::Gone));
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::SaveRefused)),
+            [Effect::Save],
+            "a file gone is created again"
+        );
+        assert_eq!(command(&mut state, Command::TakeTheirs), [], "no prompt");
+        assert_eq!(titled(&state, "nowhere"), None);
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn keeping_mine_copies_theirs_and_then_overwrites_the_file() -> TestResult {
+        let mut state = conflicted()?;
+        let mine = state.document().clone();
+        assert_eq!(
+            command(&mut state, Command::KeepMine),
+            [Effect::Copy {
+                side: ConflictSide::Theirs,
+                ending: false
+            }]
+        );
+        assert_eq!(command(&mut state, Command::KeepMine), [], "one at a time");
+        assert_eq!(command(&mut state, Command::TakeTheirs), []);
+        let copy = PathBuf::from("theirs.taskpaper");
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Copied(copy.clone()))),
+            []
+        );
+        assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
+        assert_eq!(state.conflict(), None);
+        assert_eq!(state.document(), &mine);
+        assert_eq!(state.notice(), Some(&Notice::KeptMine(copy)));
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            []
+        );
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn taking_theirs_copies_mine_and_then_reloads() -> TestResult {
+        let mut state = conflicted()?;
+        assert_eq!(
+            command(&mut state, Command::TakeTheirs),
+            [Effect::Copy {
+                side: ConflictSide::Mine,
+                ending: false
+            }]
+        );
+        let copy = PathBuf::from("mine.taskpaper");
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Copied(copy.clone()))),
+            [Effect::Reloaded]
+        );
+        assert_eq!(state.document(), &document(&["x"])?);
+        assert_eq!(state.save_state(), SaveState::Saved);
+        assert_eq!(state.notice(), Some(&Notice::TookTheirs(copy)));
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_failed_copy_leaves_the_prompt_open_to_choose_again() -> TestResult {
+        let mut state = conflicted()?;
+        command(&mut state, Command::KeepMine);
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::CopyFailed("full".into()))),
+            []
+        );
+        assert_eq!(state.notice(), Some(&Notice::CopyFailed("full".into())));
+        assert!(state.conflict().is_some());
+        assert_eq!(command(&mut state, Command::KeepMine).len(), 1);
+        let mut state = opened(&["a"])?;
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::CopyFailed("late".into()))),
+            [],
+            "nothing was waiting for it"
+        );
+        assert_eq!(state.notice(), None);
+        Ok(())
+    }
+
+    // F-FILE-06, F-FILE-07
+    #[test]
+    fn an_unreadable_file_asks_even_without_changes_and_cannot_be_taken() -> TestResult {
+        let mut state = opened(&["a"])?;
+        assert_eq!(send(&mut state, Message::OnDisk(OnDisk::Unreadable)), []);
+        assert_eq!(
+            state.conflict(),
+            Some(ConflictView {
+                unsaved: false,
+                readable: false,
+                diff: false
+            })
+        );
+        assert_eq!(command(&mut state, Command::TakeTheirs), []);
+        assert_eq!(state.notice(), Some(&Notice::CannotTakeTheirs));
+        command(&mut state, Command::Quit);
+        assert_eq!(
+            send(
+                &mut state,
+                Message::OnDisk(OnDisk::Changed(document(&["x"])?))
+            ),
+            [],
+            "leaving stands"
+        );
+        let mut state = opened(&["a"])?;
+        send(&mut state, Message::OnDisk(OnDisk::Unreadable));
+        command(&mut state, Command::KeepMine);
+        assert_eq!(
+            send(
+                &mut state,
+                Message::OnDisk(OnDisk::Changed(document(&["x"])?))
+            ),
+            [Effect::Reloaded],
+            "readable again"
+        );
+        assert_eq!(state.conflict(), None);
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            []
+        );
+        let mut state = opened(&["a"])?;
+        send(&mut state, Message::OnDisk(OnDisk::Unreadable));
+        command(&mut state, Command::KeepMine);
+        send(&mut state, Message::Disk(Report::Copied("theirs".into())));
+        assert_eq!(
+            send(&mut state, Message::Tick(secs(1))),
+            [Effect::Save],
+            "the file is overwritten though the document is unchanged"
+        );
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_new_change_on_disk_cancels_the_choice_under_way() -> TestResult {
+        let mut state = conflicted()?;
+        command(&mut state, Command::KeepMine);
+        send(&mut state, Message::OnDisk(OnDisk::Unreadable));
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            []
+        );
+        assert_eq!(state.conflict().map(|view| view.readable), Some(false));
+        command(&mut state, Command::KeepMine);
+        send(&mut state, Message::OnDisk(OnDisk::Gone));
+        assert!(state.gone_from_disk());
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            []
+        );
+        assert!(state.conflict().is_some());
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_file_gone_is_created_again_by_the_next_save() -> TestResult {
+        let mut state = changed(&["a"])?;
+        assert_eq!(send(&mut state, Message::OnDisk(OnDisk::Gone)), []);
+        assert!(state.gone_from_disk());
+        assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
+        send(&mut state, Message::Disk(Report::Saved));
+        assert!(!state.gone_from_disk());
+        send(&mut state, Message::OnDisk(OnDisk::Gone));
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a"])?)),
+        );
+        assert!(!state.gone_from_disk(), "it came back");
+        Ok(())
+    }
+
+    // F-FILE-05, F-FILE-06
+    #[test]
+    fn ending_with_the_prompt_open_keeps_mine_in_a_copy_and_leaves_theirs() -> TestResult {
+        let mine = Effect::Copy {
+            side: ConflictSide::Mine,
+            ending: true,
+        };
+        let mut state = conflicted()?;
+        assert_eq!(command(&mut state, Command::Quit), [mine]);
+        assert_eq!(
+            command(&mut state, Command::Quit),
+            [],
+            "the copy is under way"
+        );
+        assert_eq!(send(&mut state, Message::Terminate), [mine]);
+        assert_eq!(send(&mut state, Message::Terminate), []);
+        send(&mut state, Message::OnDisk(OnDisk::Unreadable));
+        let copy = PathBuf::from("mine.taskpaper");
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::Copied(copy.clone()))),
+            [Effect::Quit],
+            "leaving stands whatever the file does"
+        );
+        assert_eq!(state.left_in(), Some(copy.as_path()));
+        let mut state = conflicted()?;
+        command(&mut state, Command::KeepMine);
+        assert_eq!(command(&mut state, Command::Quit), []);
+        Ok(())
+    }
+
+    // F-FILE-05
+    #[test]
+    fn a_failed_copy_as_the_session_ends_asks_to_quit_again_or_ends_anyway() -> TestResult {
+        let mut state = conflicted()?;
+        command(&mut state, Command::Quit);
+        assert!(!state.confirming_quit());
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::CopyFailed("full".into()))),
+            []
+        );
+        assert!(state.confirming_quit());
+        assert_eq!(command(&mut state, Command::Quit), [Effect::Quit]);
+        let mut state = conflicted()?;
+        send(&mut state, Message::Terminate);
+        assert_eq!(
+            send(&mut state, Message::Disk(Report::CopyFailed("full".into()))),
+            [Effect::Quit]
+        );
+        Ok(())
+    }
+
+    // FR-EDIT-01, F-FILE-05
+    #[test]
+    fn a_title_being_edited_is_saved_once_editing_ends_or_the_session_does() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::EditTitle);
+        send(
+            &mut state,
+            Message::Edit(EditInput::Text(TextEdit::Insert('b'))),
+        );
+        assert_eq!(state.deadline(), None);
+        assert_eq!(
+            send(&mut state, Message::Tick(secs(5))),
+            [],
+            "not while typing"
+        );
+        assert_eq!(send(&mut state, Message::Edit(EditInput::Done)), []);
+        assert_eq!(send(&mut state, Message::Tick(secs(6))), [Effect::Save]);
+        send(&mut state, Message::Disk(Report::Saved));
+        command(&mut state, Command::EditTitle);
+        send(
+            &mut state,
+            Message::Edit(EditInput::Text(TextEdit::Insert('c'))),
+        );
+        assert_eq!(send(&mut state, Message::Terminate), [Effect::Save]);
+        assert_eq!(state.editing(), None);
+        assert!(titled(&state, "abc").is_some());
+        Ok(())
+    }
+
+    // FR-EDIT-01, F-FILE-06
+    #[test]
+    fn an_outside_change_ends_editing_first() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::EditTitle);
+        assert_eq!(
+            send(
+                &mut state,
+                Message::OnDisk(OnDisk::Changed(document(&["a"])?))
+            ),
+            [Effect::Reloaded],
+            "an edit that changed nothing"
+        );
+        assert_eq!(state.editing(), None);
+        for edit in [Command::EditTitle, Command::NewTask(Side::Below)] {
+            command(&mut state, edit);
+            send(
+                &mut state,
+                Message::Edit(EditInput::Text(TextEdit::Insert('b'))),
+            );
+            send(
+                &mut state,
+                Message::Edit(EditInput::Text(TextEdit::DeleteBackward)),
+            );
+            assert_eq!(
+                send(
+                    &mut state,
+                    Message::OnDisk(OnDisk::Changed(document(&["a"])?))
+                ),
+                [Effect::Reloaded],
+                "an edit typed and erased changed nothing"
+            );
+        }
+        command(&mut state, Command::EditTitle);
+        send(
+            &mut state,
+            Message::Edit(EditInput::Text(TextEdit::Insert('b'))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a"])?)),
+        );
+        assert_eq!(state.editing(), None);
+        assert!(state.conflict().is_some());
+        assert!(titled(&state, "ab").is_some());
+        Ok(())
+    }
+
+    // N-REL-01
+    #[test]
+    fn a_recovered_document_is_saved_over_the_file() -> TestResult {
+        let mut state = State::recovered(document(&["a"])?, Opened::File("todo".into()));
+        assert_eq!(state.save_state(), SaveState::Unsaved);
+        assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
+        let state = State::recovered(document(&["a"])?, Opened::Demo);
+        assert_eq!(state.deadline(), None);
+        Ok(())
+    }
+}

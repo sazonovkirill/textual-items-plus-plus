@@ -30,6 +30,14 @@ pub enum Command {
     NewTask(Side),
     /// Move the selected items to the Trash (FR-OPS-05, OQ-19).
     Delete,
+    /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
+    KeepMine,
+    /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
+    /// (F-FILE-06).
+    TakeTheirs,
+    /// In the conflict prompt, show the diff from the file on disk to the document, or hide it
+    /// (F-FILE-06).
+    ShowDiff,
 }
 
 /// Where a [`Command::Go`] takes the pane.
@@ -55,6 +63,8 @@ pub enum Context {
     Global,
     /// In navigate mode, moving between items (FR-EDIT-01).
     Navigate,
+    /// In the conflict prompt, which takes only its own keys and quitting (F-FILE-06).
+    Conflict,
 }
 
 /// A command with what the palette and the shortcuts panel show of it.
@@ -180,6 +190,21 @@ pub const REGISTRY: &[Entry] = &[
         command: Command::Navigator,
         title: "Open Navigator",
         context: Context::Global,
+    },
+    Entry {
+        command: Command::KeepMine,
+        title: "Keep Mine",
+        context: Context::Conflict,
+    },
+    Entry {
+        command: Command::TakeTheirs,
+        title: "Take Theirs",
+        context: Context::Conflict,
+    },
+    Entry {
+        command: Command::ShowDiff,
+        title: "Show Diff",
+        context: Context::Conflict,
     },
 ];
 

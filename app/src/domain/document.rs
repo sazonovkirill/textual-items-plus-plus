@@ -12,13 +12,15 @@ mod edit;
 pub use edit::{Op, Snapshot, Transaction};
 
 /// The whole todo list: the Inbox, always first (FR-ORG-07), then the top-level nodes in the
-/// user's order (FR-ORG-08), each with its children.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// user's order (FR-ORG-08), each with its children. Two documents are equal when they hold the
+/// same nodes, whatever their revisions.
+#[derive(Debug, Clone)]
 pub struct Document {
     entries: HashMap<ItemId, Entry>,
     inbox: ItemId,
     top_level: Vec<ItemId>,
     next_number: u64,
+    revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +59,24 @@ pub enum PlacementError {
     },
 }
 
+impl PartialEq for Document {
+    fn eq(&self, other: &Self) -> bool {
+        let Self {
+            entries,
+            inbox,
+            top_level,
+            next_number,
+            revision: _,
+        } = self;
+        *entries == other.entries
+            && *inbox == other.inbox
+            && *top_level == other.top_level
+            && *next_number == other.next_number
+    }
+}
+
+impl Eq for Document {}
+
 impl Default for Document {
     fn default() -> Self {
         Self::new()
@@ -77,7 +97,15 @@ impl Document {
             inbox,
             top_level: Vec::new(),
             next_number: 1,
+            revision: 0,
         }
+    }
+
+    /// A number that changes with every change to the document, so that one revision of it can
+    /// be told from another without comparing them; only revisions of one document compare.
+    #[must_use]
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// The Inbox.
@@ -136,6 +164,7 @@ impl Document {
         self.check_fit(parent, &node)?;
         let id = self.new_id();
         self.siblings_mut(parent)?.push(id);
+        self.revision += 1;
         self.entries.insert(
             id,
             Entry {
@@ -146,7 +175,8 @@ impl Document {
         Ok(id)
     }
 
-    /// Replaces the item `id` with `item`, of the same kind, and returns what it was.
+    /// Replaces the item `id` with `item`, of the same kind, and returns what it was; an item
+    /// replaced by its equal is no change.
     ///
     /// # Errors
     ///
@@ -158,6 +188,9 @@ impl Document {
         };
         if old.kind != item.kind {
             return Err(PlacementError::KindChanged);
+        }
+        if *old != item {
+            self.revision += 1;
         }
         Ok(std::mem::replace(old, item))
     }
@@ -219,6 +252,25 @@ mod tests {
 
     fn kept() -> Node {
         Node::Kept("text".to_owned())
+    }
+
+    // FR-STORE-09
+    #[test]
+    fn every_change_makes_a_new_revision_that_equality_ignores() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let start = document.revision();
+        let task = document.push(Some(document.inbox()), item(Task))?;
+        let pushed = document.revision();
+        assert_ne!(pushed, start);
+        let before = document.clone();
+        document.set(task, Item::new(Task, "x"))?;
+        assert_eq!(document.revision(), pushed, "no change");
+        document.set(task, Item::new(Task, "y"))?;
+        assert_ne!(document.revision(), pushed);
+        document.set(task, Item::new(Task, "x"))?;
+        assert_eq!(document, before, "the same nodes at another revision");
+        assert_ne!(document.revision(), before.revision());
+        Ok(())
     }
 
     // FR-ORG-07

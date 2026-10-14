@@ -1,5 +1,6 @@
 //! The status line at the bottom of the screen: the mode, what is open and whether changes to it
-//! are kept, and the keys of an unfinished sequence at its right end
+//! are saved, or what just happened to its file, and the keys of an unfinished sequence at its
+//! right end
 //! ([ui.md §1](../../../specs/reference/taskpaper-terminal/specs/ui.md#1-layout)).
 
 use ratatui::{
@@ -13,34 +14,29 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use super::{Icon, IconSet, Theme};
-use crate::app::Opened;
+use crate::app::{Notice, Opened, State, autosave::SaveState};
 
 /// What stands between the parts of the line.
 const SEPARATOR: &str = " · ";
 
-/// The status line for a document opened from `opened`, in edit mode or not, with the keys
-/// `pending` waiting.
+/// The status line for `state`, with the keys `pending` waiting.
 pub(super) struct StatusLine<'a> {
-    opened: &'a Opened,
-    editing: bool,
+    state: &'a State,
     pending: &'a str,
     theme: &'a Theme,
     icons: IconSet,
 }
 
 impl<'a> StatusLine<'a> {
-    /// The line for `opened`, in edit mode when `editing`, with `pending` keys, drawn in `theme`
-    /// with `icons`.
+    /// The line for `state` with `pending` keys, drawn in `theme` with `icons`.
     pub(super) fn new(
-        opened: &'a Opened,
-        editing: bool,
+        state: &'a State,
         pending: &'a str,
         theme: &'a Theme,
         icons: IconSet,
     ) -> Self {
         Self {
-            opened,
-            editing,
+            state,
             pending,
             theme,
             icons,
@@ -49,19 +45,21 @@ impl<'a> StatusLine<'a> {
 }
 
 impl Widget for StatusLine<'_> {
-    /// Draws the mode, then the file's path and that it is read-only until saving arrives, or
-    /// that the demo data is not saved (FR-STORE-01), the path giving up its start first, and then
-    /// itself, when the line is too narrow, and the pending keys at the right end.
+    /// Draws the mode, then the file's path and whether its changes are saved, or that the demo
+    /// data is not saved (FR-STORE-01), the path giving up its start first, and then itself,
+    /// when the line is too narrow, and the pending keys at the right end.
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let mode = if self.editing {
+        let mode = if self.state.editing().is_some() {
             format!(" {} EDIT", Icon::Edit.glyph(self.icons))
         } else {
             format!(" {} NAVIGATE", Icon::Navigate.glyph(self.icons))
         };
-        let (name, kept) = match self.opened {
-            Opened::Demo => ("Demo data".to_owned(), "not saved"),
-            Opened::File(path) => (path.display().to_string(), "read-only"),
+        let name = match self.state.opened() {
+            Opened::Demo => "Demo data".to_owned(),
+            Opened::File(path) => path.display().to_string(),
         };
+        let kept = kept(self.state);
+        let kept = kept.as_str();
         let pending = if self.pending.is_empty() {
             String::new()
         } else {
@@ -90,6 +88,36 @@ impl Widget for StatusLine<'_> {
     }
 }
 
+/// What the line says of the document's file: what just happened to it, else whether it holds
+/// every change. That quitting again ends without saving comes first, so it is never cut off.
+fn kept(state: &State) -> String {
+    let quit_again = if state.confirming_quit() {
+        "quit again to quit without saving; "
+    } else {
+        ""
+    };
+    let notice = state.notice().map(|notice| match notice {
+        Notice::Reloaded => "reloaded (changed on disk)".to_owned(),
+        Notice::KeptMine(copy) => format!("kept mine; theirs is in {}", copy.display()),
+        Notice::TookTheirs(copy) => format!("took theirs; mine is in {}", copy.display()),
+        Notice::CannotTakeTheirs => "cannot take theirs: the file on disk is not UTF-8".to_owned(),
+        Notice::CopyFailed(reason) => format!("{quit_again}conflict copy failed: {reason}"),
+        Notice::BackupFailed(reason) => format!("backup failed: {reason}"),
+    });
+    if let Some(notice) = notice {
+        return notice;
+    }
+    match (state.opened(), state.save_state()) {
+        (Opened::Demo, _) => "not saved".to_owned(),
+        (Opened::File(_), SaveState::Failed { reason }) => {
+            format!("{quit_again}save failed: {reason}")
+        }
+        (Opened::File(_), _) if state.gone_from_disk() => "not on disk".to_owned(),
+        (Opened::File(_), SaveState::Unsaved) => "unsaved".to_owned(),
+        (Opened::File(_), SaveState::Saved) => "saved".to_owned(),
+    }
+}
+
 /// `text` if it fits in `room` columns, else as much of its end as fits behind `…`.
 fn tail(text: &str, room: usize) -> String {
     if text.width() <= room {
@@ -115,19 +143,23 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::ui::BuiltIn;
+    use crate::{app, domain::Document, ui::BuiltIn};
 
     #[track_caller]
     fn check(opened: &Opened, pending: &str, width: u16, expected: &str) {
-        check_mode(opened, false, pending, width, expected);
+        check_state(
+            &State::new(Document::new(), opened.clone()),
+            pending,
+            width,
+            expected,
+        );
     }
 
     #[track_caller]
-    fn check_mode(opened: &Opened, editing: bool, pending: &str, width: u16, expected: &str) {
+    fn check_state(state: &State, pending: &str, width: u16, expected: &str) {
         let theme = BuiltIn::default().colors();
         let mut buf = Buffer::empty(Rect::new(0, 0, width, 1));
-        StatusLine::new(opened, editing, pending, &theme, IconSet::Plain)
-            .render(buf.area, &mut buf);
+        StatusLine::new(state, pending, &theme, IconSet::Plain).render(buf.area, &mut buf);
         let shown: String = buf
             .content()
             .iter()
@@ -150,23 +182,23 @@ mod tests {
     // FR-EDIT-01
     #[test]
     fn edit_mode_is_named_first() {
-        check_mode(
-            &Opened::Demo,
-            true,
-            "",
-            36,
-            " ✎ EDIT · Demo data · not saved     ",
+        let mut state = State::new(Document::new(), Opened::Demo);
+        app::update(
+            &mut state,
+            app::Message::Command(app::Command::NewTask(app::Side::Below)),
+            jiff::civil::date(2026, 10, 14),
         );
+        check_state(&state, "", 36, " ✎ EDIT · Demo data · not saved     ");
     }
 
     // FR-UI-02
     #[test]
-    fn a_file_shows_its_path_and_that_it_is_read_only() {
+    fn a_file_shows_its_path_and_that_it_is_saved() {
         check(
             &Opened::File(PathBuf::from("todo.taskpaper")),
             "",
             48,
-            " ↕ NAVIGATE · todo.taskpaper · read-only        ",
+            " ↕ NAVIGATE · todo.taskpaper · saved            ",
         );
     }
 
@@ -174,11 +206,11 @@ mod tests {
     #[test]
     fn a_narrow_line_cuts_the_path_from_its_start() {
         let long = Opened::File(PathBuf::from("notes/work/todo.taskpaper"));
-        check(&long, "", 40, " ↕ NAVIGATE · …odo.taskpaper · read-only");
-        check(&long, "", 30, " ↕ NAVIGATE · …per · read-only");
-        check(&long, "", 29, " ↕ NAVIGATE · …er · read-only");
-        check(&long, "", 27, " ↕ NAVIGATE · … · read-only");
-        check(&long, "", 26, " ↕ NAVIGATE · read-only   ");
+        check(&long, "", 36, " ↕ NAVIGATE · …odo.taskpaper · saved");
+        check(&long, "", 26, " ↕ NAVIGATE · …per · saved");
+        check(&long, "", 25, " ↕ NAVIGATE · …er · saved");
+        check(&long, "", 23, " ↕ NAVIGATE · … · saved");
+        check(&long, "", 22, " ↕ NAVIGATE · saved   ");
         check(&long, "", 10, " ↕ NAVIGAT");
     }
 
@@ -192,7 +224,7 @@ mod tests {
             " ↕ NAVIGATE · Demo data · not saved   g ",
         );
         let long = Opened::File(PathBuf::from("notes/work/todo.taskpaper"));
-        check(&long, "g", 35, " ↕ NAVIGATE · …paper · read-only g ");
+        check(&long, "g", 31, " ↕ NAVIGATE · …paper · saved g ");
     }
 
     #[test]

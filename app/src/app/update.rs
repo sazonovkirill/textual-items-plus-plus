@@ -1,12 +1,16 @@
 //! The update function: the one place messages change the state, dispatching each command to the
 //! module that owns it.
 
+use std::time::Duration;
+
 use jiff::civil::Date;
 
-use super::{Command, EditInput, PickerInput, State};
+use super::{
+    Command, ConflictSide, EditInput, OnDisk, PickerInput, Report, State, autosave::Ending,
+};
 
 /// A user intent or a result the frontend reports back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     /// The user gave a command.
     Command(Command),
@@ -14,6 +18,15 @@ pub enum Message {
     Navigator(PickerInput),
     /// The user did something while editing a title (FR-EDIT-01).
     Edit(EditInput),
+    /// The frontend's clock reads this, counted from any fixed moment, such as the start.
+    Tick(Duration),
+    /// The process was told to end, as by `SIGTERM` or `SIGHUP`: save first, then end anyway
+    /// (F-FILE-05).
+    Terminate,
+    /// How disk work the core asked for went.
+    Disk(Report),
+    /// The file on disk is no longer the version the core last read or wrote (F-FILE-06).
+    OnDisk(OnDisk),
 }
 
 /// Work the frontend carries out for the core, which never does I/O itself.
@@ -21,17 +34,49 @@ pub enum Message {
 pub enum Effect {
     /// End the session, after the effects before it.
     Quit,
+    /// Write the document as it is now to its file, unless the file on disk is no longer the
+    /// version last read or written, after the file's daily backup; report how it went as
+    /// [`Message::Disk`], after what is on disk as [`Message::OnDisk`] when it is refused.
+    Save,
+    /// Write `side` to a conflict copy of the file and report where as [`Message::Disk`]. When
+    /// the session is `ending`, a copy that fails goes to a recovery file instead, and the report
+    /// comes before the next effect.
+    Copy {
+        /// The version to keep.
+        side: ConflictSide,
+        /// Whether the session ends once it is kept.
+        ending: bool,
+    },
+    /// The document is now the one the file on disk was last reported to hold; write it the way
+    /// that file was read from now on.
+    Reloaded,
 }
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
 /// the effects the frontend should carry out, in order. A command given in edit mode ends it
-/// first, so that the edit is kept before anything else happens.
+/// first, so that the edit is kept before anything else happens. Every message is followed by
+/// what saving asks for after it.
 pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
+    let mut effects = dispatch(state, message, today);
+    effects.extend(state.step_saving());
+    effects
+}
+
+/// Applies `message` to `state` by the module that owns it.
+fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     if let Message::Command(_) = message {
         state.finish_editing();
+        state.clear_notice();
     }
     match message {
-        Message::Command(Command::Quit) => return vec![Effect::Quit],
+        Message::Command(Command::Quit) => return state.end(Ending::Quit),
+        Message::Command(Command::KeepMine) => return state.keep_mine(),
+        Message::Command(Command::TakeTheirs) => return state.take_theirs(),
+        Message::Command(Command::ShowDiff) => state.toggle_diff(),
+        Message::Tick(now) => state.tick(now),
+        Message::Terminate => return state.end(Ending::Terminate),
+        Message::Disk(report) => return state.disk_report(report),
+        Message::OnDisk(change) => return state.on_disk(change),
         Message::Command(Command::Focus(motion)) => state.move_focus(motion),
         Message::Command(Command::ToggleCompleted) => state.toggle_completed(today),
         Message::Command(Command::ShowCompleted) => state.toggle_show_completed(),
@@ -68,13 +113,14 @@ mod tests {
     }
 
     #[test]
-    fn quitting_asks_the_frontend_to_end_the_session_and_leaves_the_state_alone()
+    fn quitting_the_demo_asks_the_frontend_to_end_the_session_and_leaves_the_document_alone()
     -> Result<(), PlacementError> {
         let mut state = state()?;
         let before = state.clone();
         let effects = update(&mut state, Message::Command(Command::Quit), TODAY);
         assert_eq!(effects, [Effect::Quit]);
-        assert_eq!(state, before);
+        assert_eq!(state.document(), before.document());
+        assert_eq!(state.rows(), before.rows());
         Ok(())
     }
 
@@ -188,13 +234,13 @@ mod tests {
         assert!(state.editing().is_none());
         assert_eq!(titles(&state), ["n", "a", "b"]);
         assert_eq!(focused(&state), Some("b"));
+        give(&mut state, Command::Delete);
+        assert_eq!(titles(&state), ["n", "a"]);
         give(&mut state, Command::EditTitle);
         assert!(state.editing().is_some());
         let effects = update(&mut state, Message::Command(Command::Quit), TODAY);
         assert_eq!(effects, [Effect::Quit]);
         assert!(state.editing().is_none(), "quitting keeps the edit");
-        give(&mut state, Command::Delete);
-        assert_eq!(titles(&state), ["n", "a"]);
         Ok(())
     }
 

@@ -11,6 +11,7 @@ use super::{
     editing::Editing,
     focus::{self, Focus},
     navigator::{self, Place},
+    saving::Saving,
     trash,
     visits::{Visit, Visits},
 };
@@ -28,24 +29,27 @@ pub enum Opened {
 /// Everything the app knows while it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
-    document: Document,
+    pub(super) document: Document,
     opened: Opened,
-    container: ItemId,
-    selection: Selection,
-    history: History,
+    pub(super) container: ItemId,
+    pub(super) selection: Selection,
+    pub(super) history: History,
     /// Whether the pane shows completed items (FR-VIEW-11); per pane once there are several.
     show_completed: bool,
-    visits: Visits,
-    navigator: Option<Picker<Place>>,
+    pub(super) visits: Visits,
+    pub(super) navigator: Option<Picker<Place>>,
     /// The task whose title is edited, in edit mode (FR-EDIT-01).
     editing: Option<Editing>,
+    pub(super) saving: Saving,
 }
 
 impl State {
     /// The app showing `document`, opened from `opened`, at home: the Inbox, its first row
-    /// focused (FR-NAV-02).
+    /// focused (FR-NAV-02). The file holds the document, and every change to it is saved; the
+    /// demo document is never saved (FR-STORE-01, FR-STORE-09).
     #[must_use]
     pub fn new(document: Document, opened: Opened) -> Self {
+        let saving = Saving::new(document.revision(), true, matches!(opened, Opened::File(_)));
         let mut state = Self {
             container: document.inbox(),
             document,
@@ -56,6 +60,7 @@ impl State {
             visits: Visits::default(),
             navigator: None,
             editing: None,
+            saving,
         };
         state.move_focus(Focus::First);
         state
@@ -190,8 +195,11 @@ impl State {
         let Some(editing) = self.editing.take() else {
             return false;
         };
-        let id = editing.id();
+        let (id, started) = (editing.id(), editing.revision());
         let (transaction, before) = editing.finish(&mut self.document);
+        if transaction.ops().is_empty() {
+            self.saving.unchanged(started, self.document.revision());
+        }
         let mut after = self.selection.clone();
         after.focus(Some(id));
         self.history

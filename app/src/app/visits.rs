@@ -42,6 +42,24 @@ impl Visits {
     ) -> Option<Visit> {
         step(&mut self.forward, &mut self.back, current, opens)
     }
+
+    /// Moves every visit to where `container` finds its container now, with its focus where
+    /// `focused` finds it, dropping the visits whose container is not found, as after a reload.
+    pub(super) fn rematch(
+        &mut self,
+        container: impl Fn(ItemId) -> Option<ItemId>,
+        focused: impl Fn(ItemId) -> Option<ItemId>,
+    ) {
+        let rematch = |visit: Visit| {
+            Some(Visit {
+                container: container(visit.container)?,
+                focused: visit.focused.and_then(&focused),
+            })
+        };
+        for visits in [&mut self.back, &mut self.forward] {
+            *visits = visits.iter().copied().filter_map(rematch).collect();
+        }
+    }
 }
 
 /// Takes the latest visit of `from` to another container than `current`'s that `opens`, moving
@@ -115,6 +133,41 @@ mod tests {
         assert_eq!(visits.forward(visit(2), opens), None);
         // Once 3 opens again, it is there to go forward to.
         assert_eq!(visits.forward(visit(2), any), Some(visit(3)));
+    }
+
+    // F-FILE-06
+    #[test]
+    fn rematching_moves_each_visit_and_drops_those_not_found() {
+        let mut visits = Visits::default();
+        for container in [1, 2, 3] {
+            visits.leave(visit(container));
+        }
+        assert_eq!(visits.back(visit(4), any), Some(visit(3)));
+        let renumbered =
+            [(1, 11), (3, 13), (4, 14)].map(|(from, to)| (ItemId::new(from), ItemId::new(to)));
+        visits.rematch(
+            |id| {
+                renumbered
+                    .iter()
+                    .find(|&&(from, _)| from == id)
+                    .map(|&(_, to)| to)
+            },
+            |id| (id != ItemId::new(101)).then_some(id),
+        );
+        let moved = |container, focused: Option<u64>| Visit {
+            container: ItemId::new(container),
+            focused: focused.map(ItemId::new),
+        };
+        assert_eq!(
+            visits.forward(moved(13, Some(103)), any),
+            Some(moved(14, Some(104)))
+        );
+        assert_eq!(
+            visits.back(moved(14, None), any),
+            Some(moved(13, Some(103)))
+        );
+        assert_eq!(visits.back(moved(13, None), any), Some(moved(11, None)));
+        assert_eq!(visits.back(moved(11, None), any), None);
     }
 
     #[test]

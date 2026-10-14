@@ -1940,6 +1940,8 @@ dependencies = [
  "nucleo-matcher",
  "proptest",
  "ratatui",
+ "signal-hook",
+ "similar",
  "tempfile",
  "termlens",
  "thiserror 2.0.21",

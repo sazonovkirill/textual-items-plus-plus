@@ -197,6 +197,35 @@ impl Autosave {
         }
     }
 
+    /// The file on disk is to be overwritten with the document, as Keep mine asks, whether or
+    /// not it held the document before: it is saved as any change is, even after a save of it
+    /// failed.
+    pub fn overwrite(&mut self) {
+        self.saved = None;
+        self.failure = None;
+    }
+
+    /// The document is now the file's, read again at `revision`: the file holds it, and a save
+    /// under way or failed, being of what the document was, no longer counts.
+    pub fn reloaded(&mut self, revision: u64) {
+        self.saved = Some(revision);
+        self.seen = revision;
+        self.writing = None;
+        self.failure = None;
+    }
+
+    /// The document went from revision `from` to `to` without changing, as an edit session
+    /// that changes nothing does: when the file held it at `from`, it holds it at `to`, and a
+    /// change seen at `from` is still the latest.
+    pub fn unchanged(&mut self, from: u64, to: u64) {
+        if self.saved == Some(from) {
+            self.saved = Some(to);
+        }
+        if self.seen == from {
+            self.seen = to;
+        }
+    }
+
     /// The save under way was not done because another program changed the file; it is not a
     /// failure, and what follows is up to whoever handles the change.
     pub fn refused(&mut self) {
@@ -356,6 +385,60 @@ mod tests {
         assert_eq!(autosave.state(1), SaveState::Unsaved);
         assert_eq!(autosave.deadline(), Some(ms(1000)));
         assert_eq!(autosave.step(1, ms(1000)), Step::Save(1));
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_reloaded_document_is_what_the_file_holds() {
+        let mut autosave = opened();
+        autosave.step(1, ms(0));
+        assert_eq!(autosave.step(1, ms(1000)), Step::Save(1));
+        autosave.failed("disk full".to_owned());
+        autosave.reloaded(7);
+        assert_eq!(autosave.state(7), SaveState::Saved);
+        assert_eq!(autosave.deadline(), None);
+        assert_eq!(autosave.step(7, ms(5000)), Step::Wait);
+        autosave.saved();
+        assert_eq!(
+            autosave.state(8),
+            SaveState::Unsaved,
+            "no save was under way"
+        );
+        assert_eq!(autosave.step(8, ms(5000)), Step::Wait);
+        assert_eq!(autosave.step(8, ms(6000)), Step::Save(8));
+    }
+
+    // F-FILE-06
+    #[test]
+    fn overwriting_saves_the_document_again() {
+        let mut autosave = opened();
+        autosave.step(1, ms(0));
+        assert_eq!(autosave.step(1, ms(1000)), Step::Save(1));
+        autosave.failed("disk full".to_owned());
+        autosave.overwrite();
+        assert_eq!(autosave.state(1), SaveState::Unsaved);
+        assert_eq!(autosave.step(1, ms(1000)), Step::Save(1));
+        autosave.saved();
+        let mut autosave = opened();
+        autosave.overwrite();
+        assert_eq!(
+            autosave.step(0, ms(1000)),
+            Step::Save(0),
+            "a saved document too"
+        );
+    }
+
+    #[test]
+    fn a_revision_that_changed_nothing_keeps_the_save_state() {
+        let mut autosave = opened();
+        autosave.unchanged(0, 3);
+        assert_eq!(autosave.state(3), SaveState::Saved);
+        assert_eq!(autosave.deadline(), None);
+        autosave.step(4, ms(100));
+        autosave.unchanged(4, 5);
+        assert_eq!(autosave.state(5), SaveState::Unsaved, "4 was not saved");
+        assert_eq!(autosave.deadline(), Some(ms(1100)), "it is still due");
+        assert_eq!(autosave.step(5, ms(1100)), Step::Save(5));
     }
 
     // F-FILE-05

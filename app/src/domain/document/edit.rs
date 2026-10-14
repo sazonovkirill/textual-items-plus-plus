@@ -191,6 +191,7 @@ impl Document {
                 return Err(error);
             }
         }
+        self.revision += 1;
         Ok(())
     }
 
@@ -343,6 +344,11 @@ mod tests {
         assert_eq!(title(&document, task), Some("Rewrite"));
         document.apply(&transaction.inverse())?;
         assert_eq!(document, original);
+        assert_ne!(
+            document.revision(),
+            original.revision(),
+            "undoing is a change"
+        );
         Ok(())
     }
 

@@ -4,9 +4,8 @@
 use std::{fmt::Write, fs};
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
-use textual_items_plus_plus::ui::Tui;
 
-use crate::support::{Harness, TODAY};
+use crate::support::Harness;
 
 /// The row the focus marker is on, without the marker and trailing spaces.
 fn focused(harness: &Harness) -> Option<String> {
@@ -141,7 +140,7 @@ fn section_motions_move_between_headings_and_to_the_section_of_a_task() {
 
 // FR-STORE-01, FR-VIEW-05
 #[test]
-fn a_file_opens_on_its_inbox_read_only() {
+fn a_file_opens_on_its_inbox_saved() {
     let text = "Inbox:\n\t- Renew the passport @due(2026-11-01)\n\t- Book flights @travel\nWork: @area\n\t- Not in the Inbox\n";
     let (dir, mut harness) = on_file(text, 60, 8);
     let path = dir.path().join("todo.taskpaper");
@@ -159,7 +158,7 @@ fn a_file_opens_on_its_inbox_read_only() {
             "▌ - Renew the passport",
             "  - Book flights @travel",
             "",
-            format!(" 󰆿 NAVIGATE · {} · read-only", path.display()).as_str(),
+            format!(" 󰆿 NAVIGATE · {} · saved", path.display()).as_str(),
         ]
     );
     harness.type_text("j");
@@ -167,9 +166,9 @@ fn a_file_opens_on_its_inbox_read_only() {
     assert_eq!(fs::read_to_string(&path).expect("the file is there"), text);
 }
 
-// FR-STORE-01
+// FR-STORE-01, F-FILE-01
 #[test]
-fn a_missing_file_opens_empty_and_is_not_created_yet() {
+fn a_missing_file_opens_empty_and_is_not_created_until_a_change() {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("new.taskpaper");
     let mut harness = Harness::open(path.clone(), 40, 4);
@@ -185,7 +184,9 @@ fn a_file_that_is_not_utf8_does_not_open() {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("binary.taskpaper");
     fs::write(&path, b"\xff\xfe").expect("the fixture is written");
-    let error = Tui::open(Some(path), TODAY).expect_err("not UTF-8");
+    let error = Harness::on(Some(path), None, 40, 4)
+        .err()
+        .expect("not UTF-8");
     assert!(error.to_string().contains("not valid UTF-8"), "{error}");
 }
 

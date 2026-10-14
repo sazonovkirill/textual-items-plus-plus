@@ -1,48 +1,153 @@
-//! Starting the app and driving it with keys, as a user would, on a terminal of fixed size.
+//! Starting the app and driving it with keys, as a user would, on a terminal of fixed size, with
+//! the time and the disk work it asks for under the test's control.
 
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::{self, Receiver},
+    time::Duration,
+};
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use jiff::civil::{Date, date};
+use jiff::civil::{Date, DateTime, date};
 use ratatui::{Terminal, backend::TestBackend};
-use textual_items_plus_plus::ui::Tui;
+use tempfile::TempDir;
+use textual_items_plus_plus::ui::{Edge, Input, Tui};
 
 /// The local date the tests run on.
 pub const TODAY: Date = date(2026, 10, 5);
+
+/// The local time the tests run at.
+pub const NOW: DateTime = TODAY.at(9, 30, 0, 0);
 
 /// A running app with the terminal it draws on.
 pub struct Harness {
     pub tui: Tui,
     pub terminal: Terminal<TestBackend>,
+    /// What the disk worker and the watcher report.
+    received: Receiver<Input>,
+    /// The app's own folders, for backups and recovery files.
+    folders: TempDir,
+    /// The time on the app's clock.
+    now: Duration,
 }
 
 impl Harness {
     /// Starts the app without a file, on the demo document, on a `width` by `height` terminal
     /// and draws its first screen.
     pub fn new(width: u16, height: u16) -> Self {
-        Self::on(None, width, height)
+        Self::on(None, None, width, height).expect("the demo opens")
     }
 
     /// Starts the app as `tipp <path>` would, on a `width` by `height` terminal, and draws its
     /// first screen.
     pub fn open(path: PathBuf, width: u16, height: u16) -> Self {
-        Self::on(Some(path), width, height)
+        Self::on(Some(path), None, width, height).expect("the test's file opens")
     }
 
-    fn on(path: Option<PathBuf>, width: u16, height: u16) -> Self {
+    /// Starts the app on `path`, with the document of the recovery file `recovered` when one is
+    /// given, keeping its own files in a folder of the test's.
+    pub fn on(
+        path: Option<PathBuf>,
+        recovered: Option<&Path>,
+        width: u16,
+        height: u16,
+    ) -> Result<Self, textual_items_plus_plus::store::OpenError> {
+        let folders = tempfile::tempdir().expect("a temporary folder");
+        Self::in_folders(folders, path, recovered, width, height)
+    }
+
+    /// Starts the app as [`on`](Self::on) does, keeping its own files in `folders`.
+    pub fn in_folders(
+        folders: TempDir,
+        path: Option<PathBuf>,
+        recovered: Option<&Path>,
+        width: u16,
+        height: u16,
+    ) -> Result<Self, textual_items_plus_plus::store::OpenError> {
         let terminal =
             Terminal::new(TestBackend::new(width, height)).expect("a test backend always sets up");
-        let mut harness = Self {
-            tui: Tui::open(path, TODAY).expect("the test's file opens"),
-            terminal,
+        let (inputs, received) = mpsc::channel();
+        let edge = Edge {
+            inputs,
+            backups: Some(folders.path().join("backups")),
+            recovery: Some(folders.path().join("recovery")),
+            clock: || NOW,
         };
-        harness.draw();
-        harness
+        let tui = Tui::open(path, recovered, TODAY, &edge)?;
+        let mut harness = Self {
+            tui,
+            terminal,
+            received,
+            folders,
+            now: Duration::ZERO,
+        };
+        harness.settle();
+        Ok(harness)
     }
 
-    /// Hands the app `event` and draws what it shows after it.
+    /// Where the app keeps its backups.
+    pub fn backups(&self) -> PathBuf {
+        self.folders.path().join("backups")
+    }
+
+    /// Where the app keeps its recovery files.
+    pub fn recovery(&self) -> PathBuf {
+        self.folders.path().join("recovery")
+    }
+
+    /// Hands the app `event` and draws what it shows after it, once the disk work it asked for
+    /// is reported.
     pub fn send(&mut self, event: &Event) {
         self.tui.handle(event, TODAY);
+        self.settle();
+    }
+
+    /// Lets `millis` milliseconds pass on the app's clock.
+    pub fn wait(&mut self, millis: u64) {
+        self.now += Duration::from_millis(millis);
+        self.tui.tick(self.now, TODAY);
+        self.settle();
+    }
+
+    /// Tells the app the file may have changed, as its watcher does.
+    pub fn check(&mut self) {
+        self.tui.input(Input::Check, TODAY);
+        self.settle();
+    }
+
+    /// Hands the app what the watcher reports until `done` holds, failing when it reports nothing
+    /// for ten seconds.
+    pub fn watch_until(&mut self, done: impl Fn(&Self) -> bool) {
+        while !done(self) {
+            let input = self
+                .received
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the watcher reports");
+            self.tui.input(input, TODAY);
+            self.settle();
+        }
+    }
+
+    /// Tells the app to end, as `SIGTERM` does.
+    pub fn terminate(&mut self) {
+        self.tui.input(Input::Terminate, TODAY);
+        self.settle();
+    }
+
+    /// Hands the app every report of the disk work it asked for, and of what that asked for in
+    /// turn, then draws it.
+    pub fn settle(&mut self) {
+        loop {
+            self.tui.flush();
+            let mut reported = false;
+            while let Ok(input) = self.received.try_recv() {
+                reported = true;
+                self.tui.input(input, TODAY);
+            }
+            if !reported {
+                break;
+            }
+        }
         self.draw();
     }
 
@@ -86,5 +191,10 @@ impl Harness {
                     .collect()
             })
             .collect()
+    }
+
+    /// The screen as drawn last, its rows joined by newlines.
+    pub fn screen(&self) -> String {
+        self.rows().join("\n")
     }
 }

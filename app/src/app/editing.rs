@@ -18,13 +18,14 @@ pub enum EditInput {
 }
 
 /// A task whose title is being edited, the text edited, the selection before editing started and
-/// how the task was before it.
+/// how the task was before it, and the document's revision then.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Editing {
     id: ItemId,
     field: TextField,
     before: Selection,
     origin: Origin,
+    revision: u64,
 }
 
 /// How the edited task was before editing started.
@@ -49,6 +50,7 @@ impl Editing {
             field: TextField::new(item.title.clone()),
             before,
             origin: Origin::Existing(item.clone()),
+            revision: document.revision(),
         })
     }
 
@@ -59,6 +61,7 @@ impl Editing {
         (parent, index): (ItemId, usize),
         before: Selection,
     ) -> Self {
+        let revision = document.revision();
         let id = document.new_id();
         document
             .apply(&insert(parent, index, id, String::new()))
@@ -68,12 +71,18 @@ impl Editing {
             field: TextField::new(String::new()),
             before,
             origin: Origin::New { parent, index },
+            revision,
         }
     }
 
     /// The task edited.
     pub(super) fn id(&self) -> ItemId {
         self.id
+    }
+
+    /// The document's revision when editing started.
+    pub(super) fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// The text edited.
