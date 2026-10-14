@@ -1397,8 +1397,9 @@ impl State {
         }
     }
 
-    /// Gives the keys to the list of the pane numbered `number`, counted from 1 on the left, when
-    /// there is one, or for 0 to the sidebar, showing it when hidden (FR-PANE-02, FR-VIEW-10).
+    /// Gives the keys to the list of the pane numbered `number`, counted from 1 on the left, or to
+    /// its attachments panel while that covers the list, when there is one, or for 0 to the
+    /// sidebar, showing it when hidden (FR-PANE-02, FR-VIEW-10, D-112).
     pub(super) fn focus_pane(&mut self, number: usize) {
         let Some(index) = number.checked_sub(1) else {
             if self.sidebar.shows() {
@@ -1421,13 +1422,14 @@ impl State {
         self.in_panel = false;
     }
 
-    /// Where the keys can go, in order: the sidebar while it shows, then each pane's list,
-    /// followed by its attachments panel while that is open (FR-PANE-02, FR-ATT-01).
+    /// Where the keys can go, in order: the sidebar while it shows, then each pane's list unless
+    /// its attachments panel covers it, followed by that panel while it is open (FR-PANE-02,
+    /// FR-ATT-01, D-112).
     fn key_stops(&self) -> Vec<KeyStop> {
         let panes = self.left.iter().chain([&self.pane]).chain(&self.right);
         let panes = panes.enumerate().flat_map(|(index, pane)| {
             [
-                Some(KeyStop::List(index)),
+                (!pane.list_covered()).then_some(KeyStop::List(index)),
                 pane.panel.map(|_| KeyStop::Panel(index)),
             ]
         });

@@ -138,9 +138,23 @@ impl State {
         )
     }
 
-    /// Whether the panel of the pane with the keys has them, rather than its list.
+    /// Whether the panel of the pane with the keys has them, rather than its list, as it always
+    /// does while it covers the list (D-112).
     pub(super) fn panel_has_keys(&self) -> bool {
-        self.in_panel && self.pane.panel.is_some() && !self.sidebar.has_keys()
+        (self.in_panel || self.pane.covered)
+            && self.pane.panel.is_some()
+            && !self.sidebar.has_keys()
+    }
+
+    /// Has the pane at `index` among the [`panes`](Self::panes) know whether its panel, while
+    /// open, covers the whole of it as a frontend draws it, keeping the keys from its list; a
+    /// panel that has the keys keeps them once it no longer covers it (D-112).
+    pub fn set_covered(&mut self, index: usize, covered: bool) {
+        self.in_panel |= self.panel_has_keys();
+        let panes = self.left.iter_mut().chain([&mut self.pane]);
+        if let Some(pane) = panes.chain(&mut self.right).nth(index) {
+            pane.covered = covered;
+        }
     }
 
     /// Opens the panel of the pane with the keys on the focused item or on the container shown,
@@ -1373,6 +1387,56 @@ mod tests {
             (panels(&state), keys(&state)),
             (vec![Some(a)], Some((0, false))),
             "a pane closes with its panel, the next pane's list getting the keys"
+        );
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-PANE-02, D-112
+    #[test]
+    fn a_list_its_panel_covers_never_takes_the_keys() -> Result<(), PlacementError> {
+        let (mut state, ..) = two_tasks()?;
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::OpenInNewPane);
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        state.set_covered(1, true);
+        let stops = [None, Some((0, false)), Some((0, true)), Some((1, true))];
+        for expected in stops {
+            give(&mut state, Command::NextPane);
+            assert_eq!(keys(&state), expected, "Tab passes over the covered list");
+        }
+        for expected in stops.iter().rev().skip(1).chain(stops.last()) {
+            give(&mut state, Command::PreviousPane);
+            assert_eq!(keys(&state), *expected, "Shift+Tab too");
+        }
+        give(&mut state, Command::FocusLeft);
+        assert_eq!(keys(&state), Some((0, true)), "Ctrl+W h too");
+        give(&mut state, Command::FocusRight);
+        assert_eq!(keys(&state), Some((1, true)), "Ctrl+W l too");
+        give(&mut state, Command::FocusPane(2));
+        assert_eq!(keys(&state), Some((1, true)), "g2 gives the panel the keys");
+        give(&mut state, Command::FocusPane(0));
+        give(&mut state, Command::FocusRight);
+        assert_eq!(
+            keys(&state),
+            Some((1, true)),
+            "and so does leaving the sidebar"
+        );
+        state.set_covered(1, false);
+        assert_eq!(keys(&state), Some((1, true)), "narrowed, it keeps the keys");
+        give(&mut state, Command::FocusLeft);
+        assert_eq!(
+            keys(&state),
+            Some((1, false)),
+            "and the list is a stop again"
+        );
+        give(&mut state, Command::FocusRight);
+        state.set_covered(1, true);
+        input(&mut state, AttachmentsInput::Close);
+        assert_eq!(
+            keys(&state),
+            Some((1, false)),
+            "Esc gives the list the keys"
         );
         Ok(())
     }

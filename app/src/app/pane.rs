@@ -34,6 +34,9 @@ pub(super) struct Pane {
     pub(super) width: Option<u16>,
     /// The attachments panel open in the pane, if any (FR-ATT-01).
     pub(super) panel: Option<Panel>,
+    /// Whether its attachments panel, while open, covers the whole of it as the frontend last
+    /// drew it, which keeps the keys from its list (D-112).
+    pub(super) covered: bool,
     listing: Listing,
 }
 
@@ -85,6 +88,7 @@ impl Pane {
             query: TextField::new(String::new()),
             width: None,
             panel: None,
+            covered: false,
             listing: Listing::default(),
         };
         pane.arrive(document, today, visit);
@@ -271,6 +275,12 @@ impl Pane {
         {
             self.arrive(document, today, visit);
         }
+    }
+
+    /// Whether its list is hidden under its open panel, which then takes the keys in its place
+    /// (D-112).
+    pub(super) fn list_covered(&self) -> bool {
+        self.covered && self.panel.is_some()
     }
 
     /// Closes the panel once it no longer [stays](attachments::stays) open on its item.

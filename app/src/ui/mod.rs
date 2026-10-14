@@ -1010,11 +1010,20 @@ impl Tui {
 
     /// Draws the panes placed in `room`, a dim rule apart, scrolling each to keep its focus in
     /// view, each with its attachments panel over its right part while it is open, marking what
-    /// is selected in the one that has the keys (FR-ATT-01).
+    /// is selected in the one that has the keys (FR-ATT-01), having told the core which panels
+    /// cover their pane, a pane not on screen by its panel being full (D-112).
     fn render_panes(&mut self, room: Rect, buf: &mut Buffer) {
         let placed = self.pane_areas(room);
         if let Some(&(first, _)) = placed.first() {
             self.first = first;
+        }
+        for (index, drawn) in self.drawn.iter().enumerate() {
+            let full = drawn.panel.full;
+            let covered = placed
+                .iter()
+                .find(|&&(placed, _)| placed == index)
+                .map_or(full, |&(_, area)| panel_area(area, full) == area);
+            self.state.set_covered(index, covered);
         }
         let current = self.state.current_pane();
         let keyed = self.state.attachments().is_some();

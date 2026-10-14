@@ -339,15 +339,43 @@ fn moving_a_full_panel_to_another_item_opens_it_at_half() {
     let corner = |harness: &Harness| harness.rows()[0].chars().position(|c| c == '┌');
     harness.type_text("\\\\");
     assert_eq!(corner(&harness), Some(0), "full");
-    harness.type_text("g1j\\");
-    assert_eq!(corner(&harness), Some(50), "on the next item, at half");
-    harness.type_text("\\g1j");
-    harness.ctrl('p');
-    harness.type_text("open comments");
-    harness.key(KeyCode::Enter);
-    assert_eq!(corner(&harness), Some(50), "from the palette too");
-    harness.type_text("\\g1");
-    assert_eq!(corner(&harness), Some(0), "the keys leaving keep it full");
+    harness.type_text("g0N");
+    assert_eq!(
+        corner(&harness),
+        Some(60),
+        "on the sidebar's entry, at half beside the sidebar"
+    );
+    harness.type_text("\\");
+    assert_eq!(corner(&harness), Some(28), "full again");
+    harness.type_text("g0");
+    assert_eq!(corner(&harness), Some(28), "the keys leaving keep it full");
     harness.key(KeyCode::Tab);
-    assert_eq!(corner(&harness), Some(0), "and coming back");
+    assert_eq!(corner(&harness), Some(28), "and coming back");
+    assert_eq!(mode(&harness), "ATTACHMENTS", "to the panel, past its list");
+}
+
+// FR-ATT-01, FR-PANE-02, D-112
+#[test]
+fn the_keys_never_go_to_a_list_its_panel_covers() {
+    let mut harness = Harness::new(80, 12);
+    harness.type_text("\\\\");
+    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
+    harness.ctrl('w');
+    harness.type_text("h");
+    harness.type_text("g1");
+    assert_eq!(mode(&harness), "ATTACHMENTS", "the list is out of sight");
+    harness.type_text("\\");
+    harness.ctrl('w');
+    harness.type_text("h");
+    assert_eq!(mode(&harness), "NAVIGATE", "at half the list shows again");
+    harness.ctrl('w');
+    harness.type_text("v\\");
+    harness.type_text("g1");
+    assert_eq!(
+        mode(&harness),
+        "ATTACHMENTS",
+        "a pane narrower than 40 columns is all panel, at half too"
+    );
+    harness.key(KeyCode::Esc);
+    assert_eq!(mode(&harness), "NAVIGATE", "Esc gives the list the keys");
 }
