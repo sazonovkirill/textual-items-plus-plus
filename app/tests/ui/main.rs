@@ -13,6 +13,7 @@ mod inbox;
 mod logbook;
 mod moving;
 mod navigation;
+mod notes;
 mod quitting;
 mod rearranging;
 mod saving;

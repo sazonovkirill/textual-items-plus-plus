@@ -57,9 +57,11 @@ pub struct State {
     /// The tags every row the pane shows carries, none for every row (FR-TAG-04); per pane once
     /// there are several.
     pub(super) filter: Vec<String>,
-    /// The item whose title or description is edited, in edit mode (FR-EDIT-01), in the sidebar
-    /// while it has the keys.
+    /// The item whose title, description or note is edited, in edit mode (FR-EDIT-01), in the
+    /// sidebar while it has the keys.
     editing: Option<Editing>,
+    /// The item the attachments panel is on, while it is open (FR-ATT-01).
+    pub(super) panel: Option<ItemId>,
     sidebar: Sidebar,
     pub(super) saving: Saving,
 }
@@ -86,6 +88,7 @@ impl State {
             tags: None,
             filter: Vec::new(),
             editing: None,
+            panel: None,
             sidebar: Sidebar::default(),
             saving,
         };
@@ -219,9 +222,9 @@ impl State {
         self.sidebar.has_keys()
     }
 
-    /// The item edited, which of its texts and the text edited, in edit mode: an entry's item
-    /// while the sidebar has the keys, else a row's item or the container shown, whose title and
-    /// description head the pane.
+    /// The item edited, which of its texts and the text edited, in edit mode: the note of the
+    /// item the attachments panel is on, an entry's item while the sidebar has the keys, else a
+    /// row's item or the container shown, whose title and description head the pane.
     #[must_use]
     pub fn editing(&self) -> Option<(ItemId, Part, &TextField)> {
         self.editing
@@ -581,7 +584,7 @@ impl State {
 
     /// Enters edit mode with `editing`, if there is one, picking nothing, since what is picked
     /// is not what is edited.
-    fn start_editing(&mut self, editing: Option<Editing>) {
+    pub(super) fn start_editing(&mut self, editing: Option<Editing>) {
         if editing.is_some() {
             self.selection.clear();
         }
@@ -810,8 +813,9 @@ impl State {
     /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
     /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting,
     /// outdenting, converting and setting its dates, each one step to undo, opening Move to for
-    /// it, and opening the entry in the pane, `Enter` giving the pane the keys; a view's entry is
-    /// only opened. Quitting, undo and redo, the Navigator, the sidebar's own commands, going home, back and
+    /// it or the attachments panel on it, and opening the entry in the pane, `Enter` giving the
+    /// pane the keys; a view's entry is only opened. Quitting, undo and redo, the Navigator, the
+    /// sidebar's own commands, going home, back and
     /// forward and the conflict prompt's commands pass to the app; every other command does
     /// nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
@@ -880,6 +884,7 @@ impl State {
                 self.change(transaction);
             }
             (Command::Tags, Some(Shown::Container(id))) => self.open_tags_for(vec![id]),
+            (Command::OpenNote(_), Some(Shown::Container(id))) => self.open_panel(id),
             _ => {}
         }
         true

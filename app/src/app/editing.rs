@@ -1,7 +1,8 @@
-//! Editing in place the title of a task, section, project or area, an existing one's or one just
-//! added, or any item's description (FR-EDIT-01, FR-EDIT-02, FR-EDIT-03, FR-EDIT-05, FR-ORG-06,
-//! FR-ORG-10). The text is written to the document as it is typed, so the item is drawn like any
-//! other, and the whole session becomes one change to undo when it ends.
+//! Editing the title of a task, section, project or area in place, an existing one's or one just
+//! added, any item's description in place, or its note in the attachments panel (FR-EDIT-01,
+//! FR-EDIT-02, FR-EDIT-03, FR-EDIT-05, FR-ORG-06, FR-ORG-10, FR-ATT-03). The text is written to
+//! the document as it is typed, so the item is drawn like any other, and the whole session becomes
+//! one change to undo when it ends.
 
 use super::{Selection, TextEdit, TextField};
 use crate::domain::{
@@ -27,10 +28,12 @@ pub enum Part {
     Title,
     /// Its description, Markdown on any number of lines (FR-ORG-10).
     Description,
+    /// Its note, Markdown on any number of lines, in the attachments panel (FR-ATT-03).
+    Note,
 }
 
-/// An item whose title or description is being edited, its kind, which text is edited, the text
-/// edited, the selection before editing started and how the item was before it, and the
+/// An item whose title, description or note is being edited, its kind, which text is edited,
+/// the text edited, the selection before editing started and how the item was before it, and the
 /// document's revision then.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Editing {
@@ -82,7 +85,7 @@ impl Editing {
             id,
             kind: item.kind,
             part: Part::Title,
-            field: TextField::new(item.title.clone()),
+            field: TextField::new(text(item, Part::Title).to_owned()),
             before,
             origin: Origin::Existing(item.clone()),
             revision: document.revision(),
@@ -92,6 +95,19 @@ impl Editing {
     /// Starts editing the description of `id`, the caret at its end, unless it is a checklist
     /// item, which has none; `before` is the selection to restore when the session is undone.
     pub(super) fn description(document: &Document, id: ItemId, before: Selection) -> Option<Self> {
+        Self::lines(document, id, Part::Description, before)
+    }
+
+    /// Starts editing the note of `id`, the caret at its end, unless it is a checklist item,
+    /// which has none (FR-ATT-01); `before` is the selection to restore when the session is
+    /// undone.
+    pub(super) fn note(document: &Document, id: ItemId, before: Selection) -> Option<Self> {
+        Self::lines(document, id, Part::Note, before)
+    }
+
+    /// Starts editing `part` of `id`, its description or its note, the caret at its end, unless
+    /// it is a checklist item.
+    fn lines(document: &Document, id: ItemId, part: Part, before: Selection) -> Option<Self> {
         let item = document
             .node(id)
             .and_then(Node::item)
@@ -99,8 +115,8 @@ impl Editing {
         Some(Self {
             id,
             kind: item.kind,
-            part: Part::Description,
-            field: TextField::multi_line(&item.description),
+            part,
+            field: TextField::multi_line(text(item, part)),
             before,
             origin: Origin::Existing(item.clone()),
             revision: document.revision(),
@@ -186,12 +202,12 @@ impl Editing {
         &self.field
     }
 
-    /// Applies `edit` to the text and shows it as the item's title or description. An edit that
-    /// puts `@` at the start of a word of a title, by typing it or by deleting what stood before
-    /// it, is refused: TaskPaper has no escape for it, so the word would read back as a tag. So is
-    /// an edit that starts a section's, project's or area's title with `-` and a space, which
-    /// would read back as a task. A description's lines are guarded, so they hold any text
-    /// (FR-STORE-04).
+    /// Applies `edit` to the text and shows it as the item's title, description or note. An edit
+    /// that puts `@` at the start of a word of a title, by typing it or by deleting what stood
+    /// before it, is refused: TaskPaper has no escape for it, so the word would read back as a
+    /// tag. So is an edit that starts a section's, project's or area's title with `-` and a space,
+    /// which would read back as a task. A description's or a note's lines are guarded, so they
+    /// hold any text (FR-STORE-04, FR-STORE-05).
     ///
     /// # Errors
     ///
@@ -229,18 +245,23 @@ impl Editing {
                 description: text,
                 ..item.clone()
             },
+            Part::Note => Item {
+                note: text,
+                ..item.clone()
+            },
         }
     }
 
     /// Ends editing: puts the document back as it was before and returns the change the session
     /// made, to apply as one step, with the selection from before it. A title is trimmed: a new
     /// item left empty is not added, and an existing one emptied keeps its title, so either
-    /// makes no change. A description loses the space and empty lines at its end, which the file
-    /// does not keep, so emptying it removes it. Text left as it was makes no change.
+    /// makes no change. A description or a note loses the space and empty lines at its end,
+    /// which the file does not keep, so emptying it removes it. Text left as it was makes no
+    /// change.
     pub(super) fn finish(self, document: &mut Document) -> (Transaction, Selection) {
         let text = match self.part {
             Part::Title => self.field.text().trim(),
-            Part::Description => self.field.text().trim_end(),
+            Part::Description | Part::Note => self.field.text().trim_end(),
         };
         let transaction = match &self.origin {
             Origin::Existing(item) => {
@@ -280,6 +301,15 @@ impl Editing {
             }
         };
         (transaction, self.before)
+    }
+}
+
+/// The text of `item` that `part` names.
+fn text(item: &Item, part: Part) -> &str {
+    match part {
+        Part::Title => &item.title,
+        Part::Description => &item.description,
+        Part::Note => &item.note,
     }
 }
 

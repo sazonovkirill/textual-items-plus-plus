@@ -5,8 +5,6 @@
 //! to keep the focus in view, and the title being edited, if any, as a text field in its row, or
 //! in the heading for the container's own; a description being edited shows whole where it shows.
 
-use std::ops::Range;
-
 use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
@@ -16,7 +14,7 @@ use ratatui::{
     widgets::{Paragraph, StatefulWidget, Widget, Wrap},
 };
 
-use super::{Icon, IconSet, Theme};
+use super::{Icon, IconSet, Theme, field};
 use crate::{
     app::{
         Part, Row, Selection, State, TextField,
@@ -474,16 +472,14 @@ impl<'a> ContainerPane<'a> {
         let caret = text.get(..field.caret()).unwrap_or_default();
         Piece {
             caret: Some((0, Span::raw(caret).width())),
-            text: Paragraph::new(self.selected(field, 0..text.len())),
+            text: Paragraph::new(field::selected(field, 0..text.len(), self.theme)),
             right: self.attachments(item),
             ..self.title(item, row)
         }
     }
 
     /// The lines of `field` while it edits a description `x` columns after the gutter, wrapped
-    /// as the field wraps them in content `width`, the selected part in the selection colors,
-    /// part of the row numbered `row`, if any. A caret after spaces past the line's end stands in
-    /// its last column, so that the lines never scroll sideways.
+    /// as the field wraps them in content `width`, part of the row numbered `row`, if any.
     fn description_field(
         &self,
         field: &'a TextField,
@@ -491,47 +487,15 @@ impl<'a> ContainerPane<'a> {
         width: u16,
         row: Option<usize>,
     ) -> Piece<'a> {
-        let text = field.text();
-        let columns = field_columns(width, x);
-        let lines = field.screen_lines(columns);
-        let line = lines
-            .iter()
-            .rposition(|line| line.start <= field.caret())
-            .unwrap_or_default();
-        let column = lines
-            .get(line)
-            .and_then(|line| text.get(line.start..field.caret()))
-            .map_or(0, |before| Span::raw(before).width())
-            .min(columns);
+        let (lines, caret) = field::wrapped(field, field_columns(width, x), self.theme);
         Piece {
             x,
-            text: Paragraph::new(
-                lines
-                    .into_iter()
-                    .map(|line| self.selected(field, line))
-                    .collect::<Vec<_>>(),
-            ),
+            text: Paragraph::new(lines),
             left: Line::default(),
             right: Line::default(),
             row,
-            caret: Some((line, column)),
+            caret: Some(caret),
         }
-    }
-
-    /// The bytes `line` of `field`'s text, its selected part in the selection colors.
-    fn selected(&self, field: &'a TextField, line: Range<usize>) -> Line<'a> {
-        let text = field.text();
-        let selection = field.selection().unwrap_or(field.caret()..field.caret());
-        let start = selection.start.clamp(line.start, line.end);
-        let end = selection.end.clamp(line.start, line.end);
-        let selected = Style::new()
-            .bg(self.theme.selection)
-            .fg(self.theme.band_text);
-        Line::from(vec![
-            Span::raw(text.get(line.start..start).unwrap_or_default()),
-            Span::styled(text.get(start..end).unwrap_or_default(), selected),
-            Span::raw(text.get(end..line.end).unwrap_or_default()),
-        ])
     }
 
     /// The column after the marker and its space, where a row's title starts.

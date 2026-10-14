@@ -102,6 +102,10 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // the rows (D-43).
     (Command::EditDescription(Whose::Focused), &["m n"]),
     (Command::EditDescription(Whose::Shown), &["m N"]),
+    // taskpaper-terminal's Open Note opens the attachments panel; with `Alt`, on the container
+    // shown, since `N` is its Open Comments (FR-ATT-02).
+    (Command::OpenNote(Whose::Focused), &["n"]),
+    (Command::OpenNote(Whose::Shown), &["alt+n"]),
     // taskpaper-terminal's date prompt keys, and `t` to start today (D-23).
     (Command::SetDate(DateKind::Start), &["m s"]),
     (Command::SetDate(DateKind::Due), &["m d"]),

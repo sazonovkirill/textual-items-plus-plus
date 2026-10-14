@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::civil::Date;
 
 use super::{
-    Command, ConflictSide, DateInput, EditInput, Notice, OnDisk, PickerInput, Report, Side, State,
-    autosave::Ending,
+    AttachmentsInput, Command, ConflictSide, DateInput, EditInput, Notice, OnDisk, PickerInput,
+    Report, Side, State, autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -26,6 +26,8 @@ pub enum Message {
     Edit(EditInput),
     /// The user did something in the open date prompt (FR-DATE-02).
     DatePrompt(DateInput),
+    /// The user did something in the open attachments panel (FR-ATT-01).
+    Attachments(AttachmentsInput),
     /// The frontend's clock reads this, counted from any fixed moment, such as the start.
     Tick(Duration),
     /// The process was told to end, as by `SIGTERM` or `SIGHUP`: save first, then end anyway
@@ -142,6 +144,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::GroupIntoSection) => state.group(ItemKind::Section),
         Message::Command(Command::GroupIntoProject) => state.group(ItemKind::Project),
         Message::Command(Command::EditDescription(whose)) => state.edit_description(whose),
+        Message::Command(Command::OpenNote(whose)) => state.open_note(whose),
         Message::Command(Command::Tags) => state.open_tags(),
         Message::Command(Command::FilterTags) => state.open_tag_filter(),
         Message::Command(Command::ClearTagFilter) => state.clear_tag_filter(),
@@ -153,6 +156,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Tags(input) => state.tags_input(input),
         Message::Edit(input) => state.edit_input(input),
         Message::DatePrompt(input) => state.date_prompt_input(input),
+        Message::Attachments(input) => state.attachments_input(input),
     }
     Vec::new()
 }

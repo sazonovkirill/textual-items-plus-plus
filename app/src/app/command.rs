@@ -47,6 +47,8 @@ pub enum Command {
     NewArea(Side),
     /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
     EditDescription(Whose),
+    /// Open the attachments panel on an item's note (FR-ATT-01, FR-ATT-02).
+    OpenNote(Whose),
     /// Open the date prompt for the selected items' start or due date (FR-DATE-02, FR-OPS-06).
     SetDate(DateKind),
     /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
@@ -127,12 +129,13 @@ pub enum Go {
     View(View),
 }
 
-/// Whose description a [`Command::EditDescription`] edits.
+/// Whose description a [`Command::EditDescription`] edits, or whose note
+/// [`Command::OpenNote`] opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Whose {
-    /// The focused item's, under its row.
+    /// The focused item's, a description under its row.
     Focused,
-    /// The container's shown in the pane, under its title.
+    /// The container's shown in the pane, a description under its title.
     Shown,
 }
 
@@ -442,6 +445,16 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::OpenNote(Whose::Focused),
+        title: "Open Note",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::OpenNote(Whose::Shown),
+        title: "Open Container Note",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::SetDate(DateKind::Start),
         title: "Set Start Date",
         context: Context::Navigate,
@@ -625,7 +638,7 @@ mod tests {
         }
     }
 
-    // FR-EDIT-01, FR-EDIT-03, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-OPS-07,
+    // FR-EDIT-01, FR-EDIT-03, FR-EDIT-05, FR-ATT-02, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-OPS-07,
     // FR-OPS-08, FR-ORG-06, FR-TASK-06
     #[test]
     fn editing_adding_deleting_and_the_clipboard_are_navigate_commands() {
@@ -642,6 +655,8 @@ mod tests {
             Command::EditTitle,
             Command::EditDescription(Whose::Focused),
             Command::EditDescription(Whose::Shown),
+            Command::OpenNote(Whose::Focused),
+            Command::OpenNote(Whose::Shown),
             Command::Delete,
             Command::Restore,
             Command::EmptyTrash,

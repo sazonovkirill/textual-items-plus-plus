@@ -1,14 +1,17 @@
 //! The UI layer: the terminal frontend, which turns terminal events into app messages, carries out
 //! the app's effects and draws its state.
 
+mod attachments;
 mod clipboard;
 mod conflict;
 mod container;
 mod crumbs;
 mod date_prompt;
 mod edit_keys;
+mod field;
 mod file;
 mod keymap;
+mod markdown;
 mod picker;
 mod sidebar;
 mod status;
@@ -46,6 +49,7 @@ use crate::{
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
 };
+use attachments::{AttachmentsPanel, PanelKey};
 use clipboard::Clipboard;
 use conflict::ConflictPrompt;
 use container::ContainerPane;
@@ -80,6 +84,8 @@ pub struct Tui {
     icons: IconSet,
     /// The first line of the container pane's content on screen.
     top: usize,
+    /// The first line of the attachments panel's content on screen.
+    panel_top: usize,
     /// Where the app was last drawn.
     area: Rect,
     quit: bool,
@@ -99,6 +105,7 @@ impl Tui {
             theme: BuiltIn::default().colors(),
             icons: IconSet::default(),
             top: 0,
+            panel_top: 0,
             area: Rect::default(),
             quit: false,
             file: None,
@@ -195,9 +202,10 @@ impl Tui {
     /// it to the core, and the core's effects are carried out. While the conflict prompt is open
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
-    /// Move to picker (FR-OPS-04) and, in edit mode, the title or description being edited take
-    /// them the same way (FR-EDIT-01), and so does the date prompt (FR-DATE-02). A key that cuts a
-    /// sequence short gives the sequence's command first, then acts on its own.
+    /// Move to picker (FR-OPS-04) and, in edit mode, the title, description or note being edited
+    /// take them the same way (FR-EDIT-01), and so does the date prompt (FR-DATE-02). The open
+    /// attachments panel takes them leaving only quitting, scrolling itself (FR-ATT-01). A key
+    /// that cuts a sequence short gives the sequence's command first, then acts on its own.
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
         if let Event::Paste(text) = event {
@@ -218,9 +226,21 @@ impl Tui {
                 Part::Description => {
                     edit_keys::description_input(event, self.description_columns())
                 }
+                Part::Note => edit_keys::description_input(event, self.note_columns()),
             }
             .map(Message::Edit)
             .or_else(|| self.global(event))
+        } else if self.state.attachments().is_some() {
+            match attachments::panel_input(event) {
+                Some(PanelKey::Input(input)) => Some(Message::Attachments(input)),
+                Some(PanelKey::Scroll(scroll)) => {
+                    let [panes, ..] = self.layout(self.area);
+                    let page = AttachmentsPanel::page(AttachmentsPanel::area(panes));
+                    self.panel_top = scroll.from(self.panel_top, page);
+                    None
+                }
+                None => self.global(event),
+            }
         } else if self.state.date_prompt().is_some() {
             date_prompt::date_prompt_input(event)
                 .map(Message::DatePrompt)
@@ -238,18 +258,20 @@ impl Tui {
     }
 
     /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
-    /// it: a description being edited takes it whole; a title being edited takes a single line,
-    /// while several lines end editing and paste as items below; the query of the open Navigator,
-    /// Move to or tag picker and the open date prompt take it with its line breaks as spaces;
-    /// otherwise the items it holds paste below the focus. The conflict prompt takes none.
+    /// it: a description or a note being edited takes it whole; a title being edited takes a
+    /// single line, while several lines end editing and paste as items below; the query of the
+    /// open Navigator, Move to or tag picker and the open date prompt take it with its line breaks
+    /// as spaces; otherwise the items it holds paste below the focus. The conflict prompt takes
+    /// none, nor does the attachments panel while its note is not edited.
     fn paste(&mut self, text: &str) {
-        if self.state.conflict().is_some() {
+        let panel = self.state.attachments().is_some() && self.state.editing().is_none();
+        if self.state.conflict().is_some() || panel {
             return;
         }
         let text = text.trim_end_matches(['\r', '\n']);
         let several = text.contains(['\r', '\n']);
         let part = self.state.editing().map(|(_, part, _)| part);
-        if part == Some(Part::Description) {
+        if matches!(part, Some(Part::Description | Part::Note)) {
             for c in text.replace("\r\n", "\n").replace('\r', "\n").chars() {
                 self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
             }
@@ -310,8 +332,9 @@ impl Tui {
     }
 
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
-    /// commands and quitting, while the Navigator, Move to or the date prompt is open or in edit
-    /// mode only global ones, and otherwise any.
+    /// commands and quitting, while the attachments panel is open only quitting, while the
+    /// Navigator, Move to or the date prompt is open or in edit mode only global ones, and
+    /// otherwise any.
     fn allows(&self, command: Command) -> bool {
         let context = REGISTRY
             .iter()
@@ -319,6 +342,8 @@ impl Tui {
             .map(|entry| entry.context);
         if self.state.conflict().is_some() {
             command == Command::Quit || context == Some(Context::Conflict)
+        } else if self.state.attachments().is_some() {
+            command == Command::Quit
         } else if self.state.editing().is_some()
             || self.open_picker().is_some()
             || self.state.date_prompt().is_some()
@@ -330,6 +355,7 @@ impl Tui {
     }
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
+    /// note being edited in the attachments panel while it is open, else at the caret of the
     /// query of the Navigator or Move to while one is open, at the caret of the date prompt while
     /// it is open, at the caret of the text being edited in edit mode, in the pane or the sidebar,
     /// else hidden.
@@ -339,6 +365,10 @@ impl Tui {
             return None;
         }
         let [panes, prompt, _] = self.layout(area);
+        if let Some(view) = self.state.attachments() {
+            return AttachmentsPanel::new(view, &self.theme, self.icons)
+                .caret(AttachmentsPanel::area(panes), self.panel_top);
+        }
         if let Some(view) = self.state.date_prompt() {
             return Some(DatePromptPanel::new(&view, &self.theme).caret(prompt));
         }
@@ -367,6 +397,12 @@ impl Tui {
         ContainerPane::new(&self.state, self.today, &self.theme, self.icons)
             .description_columns(pane_layout(pane)[2])
             .unwrap_or(usize::MAX)
+    }
+
+    /// The columns the note being edited wraps in, as last drawn.
+    fn note_columns(&self) -> usize {
+        let [panes, ..] = self.layout(self.area);
+        AttachmentsPanel::columns(AttachmentsPanel::area(panes))
     }
 
     /// Carries out one effect of the core.
@@ -570,8 +606,8 @@ fn tags_popup<'a>(
 impl Widget for &mut Tui {
     /// Draws the pane, below its breadcrumbs and a rule, beside the sidebar while it shows, over
     /// the status line, scrolling the pane to keep the focus in view, the date prompt between
-    /// them while it is open, and the Navigator, Move to or the conflict prompt over them while it
-    /// is open.
+    /// them while it is open, and the Navigator, Move to, the attachments panel or the conflict
+    /// prompt over them while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
         let [panes, prompt, status] = self.layout(area);
@@ -610,6 +646,14 @@ impl Widget for &mut Tui {
         }
         if let Some(view) = self.state.tags() {
             tags_popup(&view, &self.theme, self.icons).render(panes, buf);
+        }
+        match self.state.attachments() {
+            Some(view) => AttachmentsPanel::new(view, &self.theme, self.icons).render(
+                panes,
+                buf,
+                &mut self.panel_top,
+            ),
+            None => self.panel_top = 0,
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
             let (theirs, mine) = if view.diff {

@@ -379,9 +379,9 @@ impl State {
     /// container it showed, its focus, what is picked and its history on the items they were on,
     /// as far as their text paths find them, the Navigator open on the places now listed with its
     /// query, Move to open on the destinations now listed with its query while an item it moves
-    /// is found again, and the date prompt open while an item it dates is. The tag filter stays
-    /// while the container shown is found again as it was. The undo history is cleared, since its
-    /// steps fit only the document as it was.
+    /// is found again, the date prompt open while an item it dates is, and the attachments panel
+    /// open while its item is. The tag filter stays while the container shown is found again as
+    /// it was. The undo history is cleared, since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -423,6 +423,7 @@ impl State {
             .date_prompt
             .take()
             .and_then(|prompt| prompt.rematched(exact));
+        self.panel = self.panel.and_then(exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
             let rows = view::rows(new, self.shown, self.today, self.shows_completed());
@@ -505,7 +506,7 @@ mod tests {
     use super::*;
     use crate::app::{
         Command, DateInput, EditInput, Go, History, Message, Opened, PickerInput, Side, TextEdit,
-        update, view::View,
+        Whose, update, view::View,
     };
     use crate::domain::{Item, ItemKind, Node, PlacementError, dates::DateKind};
 
@@ -805,6 +806,25 @@ mod tests {
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
         assert!(state.date_prompt().is_none(), "a, which it dates, is gone");
+        Ok(())
+    }
+
+    // F-FILE-06, FR-ATT-01
+    #[test]
+    fn a_reload_keeps_the_attachments_panel_open_while_its_item_is_found_again() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::OpenNote(Whose::Focused));
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
+        );
+        let a = titled(&state, "a").ok_or("a")?;
+        assert_eq!(state.attachments().map(|view| view.id), Some(a));
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
+        );
+        assert!(state.attachments().is_none(), "a, which it is on, is gone");
         Ok(())
     }
 
