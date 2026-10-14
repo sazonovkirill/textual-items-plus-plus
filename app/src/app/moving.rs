@@ -14,8 +14,8 @@ pub enum Direction {
     Down,
 }
 
-/// Why the hierarchy refused to indent, outdent, convert or group items, for the status line to
-/// say (FR-OPS-03, FR-TASK-06, FR-ORG-06, FR-OPS-07, FR-OPS-08).
+/// Why the hierarchy refused to indent, outdent, convert, group or move items, for the status
+/// line to say (FR-OPS-03, FR-TASK-06, FR-ORG-06, FR-OPS-07, FR-OPS-08, D-107).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
     /// No item of its kind is above it to go into.
@@ -32,6 +32,9 @@ pub enum Refusal {
     ReadsAsTask,
     /// A task has a bare `@area` or `@section` tag, so it would read back as another kind.
     KindTag,
+    /// A pinned project's entry among the pinned projects moves only past a pinned sibling
+    /// listed beside it, which the next one there is not (D-107).
+    NotPinnedSibling,
 }
 
 /// The transaction that moves `id` one step `direction` among `rows`, the rows of the container

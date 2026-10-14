@@ -1154,7 +1154,10 @@ impl State {
                 self.change(trash::delete(&self.document, [id], today));
             }
             (Command::Move(direction), Some(Shown::Container(id))) => {
-                self.change(sidebar::shift(&self.document, id, direction));
+                match self.sidebar.shift(&self.document, id, direction) {
+                    Ok(transaction) => self.change(transaction),
+                    Err(refusal) => self.notify(Notice::Refused(refusal)),
+                }
             }
             (Command::Convert, Some(Shown::Container(id))) => {
                 apply(self, converting::convert_all(&self.document, &[id]));

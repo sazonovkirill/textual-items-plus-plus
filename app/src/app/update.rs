@@ -784,6 +784,36 @@ mod tests {
         Ok(())
     }
 
+    // FR-VIEW-12, D-107
+    #[test]
+    fn a_pinned_entry_refuses_to_move_past_a_pinned_project_elsewhere() -> Result<(), PlacementError>
+    {
+        let mut document = Document::new();
+        let mut solo = Item::new(ItemKind::Project, "Solo");
+        solo.pinned = true;
+        document.push(None, Node::Item(solo.clone()))?;
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let site = Item {
+            title: "Site".into(),
+            ..solo
+        };
+        document.push(Some(work), Node::Item(site))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::First));
+        for _ in 0..=crate::app::view::REGISTRY.len() {
+            give(&mut state, Command::Focus(Focus::Next));
+        }
+        let before = state.document().clone();
+        give(&mut state, Command::Move(Direction::Down));
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::Refused(Refusal::NotPinnedSibling))
+        );
+        assert_eq!(state.document(), &before, "nothing moves");
+        Ok(())
+    }
+
     // FR-VIEW-13
     #[test]
     fn evening_is_toggled_only_in_today() -> Result<(), PlacementError> {

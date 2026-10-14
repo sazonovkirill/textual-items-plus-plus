@@ -1,7 +1,9 @@
 //! Pinned projects: pinning and unpinning a project, which the sidebar and the Navigator then
 //! list again after the views.
 
-use crossterm::event::KeyCode;
+use std::fs;
+
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Position, Rect};
 
 use crate::support::Harness;
@@ -114,5 +116,45 @@ fn only_a_project_is_pinned_and_the_navigator_lists_it_again_until_a_query_is_ty
         navigator(&harness),
         ["│ # Website  Work                                                            4 │"],
         "listed once"
+    );
+}
+
+// FR-VIEW-12, D-107, FR-UI-07
+#[test]
+fn a_pinned_entry_moves_past_the_pinned_project_beside_it_only_when_it_is_a_sibling() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let file = "Inbox:\nA: @pinned\nB:\nC: @pinned\nWork: @area\n\tD: @pinned\n";
+    fs::write(&path, file).expect("the file is written");
+    let mut harness = Harness::open(path.clone(), 80, 24);
+    harness.ctrl('b');
+    harness.type_text("jjjjjjj");
+    harness.press(KeyCode::Char('j'), KeyModifiers::ALT);
+    assert_eq!(
+        below_the_views(&harness).get(..3).unwrap_or_default(),
+        [" # C", "*# A", " # D"],
+        "past C, not the unpinned B between them"
+    );
+    harness.press(KeyCode::Char('j'), KeyModifiers::ALT);
+    assert_eq!(
+        below_the_views(&harness).get(..3).unwrap_or_default(),
+        [" # C", "*# A", " # D"]
+    );
+    let status = harness.rows().last().cloned().unwrap_or_default();
+    assert!(
+        status.ends_with("from Pinned it moves only past a pinned sibling"),
+        "D is in an area: {status:?}"
+    );
+    harness.press(KeyCode::Char('k'), KeyModifiers::ALT);
+    assert_eq!(
+        below_the_views(&harness).get(..3).unwrap_or_default(),
+        ["*# A", " # C", " # D"]
+    );
+    harness.press(KeyCode::Char('j'), KeyModifiers::ALT);
+    harness.terminate();
+    assert_eq!(
+        fs::read_to_string(&path).expect("the file is read"),
+        "Inbox:\nB:\nC: @pinned\nA: @pinned\nWork: @area\n\tD: @pinned\n",
+        "the tree changed with the group"
     );
 }

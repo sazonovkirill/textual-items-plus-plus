@@ -91,8 +91,8 @@ pub enum Notice {
     BackupFailed(String),
     /// Empty Trash asks to be given again to delete these many items for good (FR-VIEW-04).
     EmptyTrash(usize),
-    /// Indenting, outdenting, converting or grouping was refused, for this reason (FR-OPS-03,
-    /// FR-TASK-06, FR-OPS-07, FR-OPS-08).
+    /// Indenting, outdenting, converting, grouping or moving was refused, for this reason
+    /// (FR-OPS-03, FR-TASK-06, FR-OPS-07, FR-OPS-08, D-107).
     Refused(Refusal),
     /// The checklist was asked for on an item that has none: only tasks have one (FR-ATT-02).
     NoChecklist,

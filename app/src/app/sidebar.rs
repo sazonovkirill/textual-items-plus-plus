@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use super::{
-    Direction, Focus, Side, container,
+    Direction, Focus, Refusal, Side, container,
     navigator::{self, Stop},
     view::Shown,
 };
@@ -222,6 +222,49 @@ impl Sidebar {
         }
     }
 
+    /// The transaction that moves the focused entry's area or project `id` one step `direction`:
+    /// from its entry in the tree as [`shift`] does, and from its entry among the pinned projects
+    /// past the pinned project beside it there, so that both lists change together; an empty one
+    /// when it is the first or last pinned project. Refused when that project is not a sibling
+    /// [`alike`], since moving past another would leave the pinned projects as they were (D-107).
+    pub(super) fn shift(
+        &self,
+        document: &Document,
+        id: ItemId,
+        direction: Direction,
+    ) -> Result<Transaction, Refusal> {
+        if !self.focused.is_some_and(|entry| entry.in_pinned) {
+            return Ok(shift(document, id, direction));
+        }
+        let pinned: Vec<ItemId> = entries(document)
+            .into_iter()
+            .filter_map(|stop| match stop {
+                Stop::Place(place) if place.in_pinned => Some(place.id),
+                _ => None,
+            })
+            .collect();
+        let at = pinned.iter().position(|&other| other == id);
+        let beside = at.and_then(|at| match direction {
+            Direction::Up => at.checked_sub(1).and_then(|before| pinned.get(before)),
+            Direction::Down => pinned.get(at + 1),
+        });
+        let Some(&beside) = beside else {
+            return Ok(Transaction::default());
+        };
+        let sibling =
+            siblings(document, id).is_some_and(|(siblings, _)| siblings.contains(&beside));
+        if !sibling || !alike(document, id, beside) {
+            return Err(Refusal::NotPinnedSibling);
+        }
+        let to = match direction {
+            Direction::Up => Destination::Before(beside),
+            Direction::Down => Destination::After(beside),
+        };
+        Ok(document
+            .move_to(id, to)
+            .expect("a pinned project moves beside its sibling, which holds what it holds"))
+    }
+
     /// Keeps the focused entry, the one to go back to and the collapsed areas on the items
     /// `exact` finds them as in a document read again; a focused entry not found gives way to
     /// the one now where it was, and the others are dropped.
@@ -284,21 +327,11 @@ pub(super) fn entries(document: &Document) -> Vec<Stop> {
 /// next entry of its kind listed beside it, since the sidebar lists the projects in no area apart
 /// from the areas, and Later projects after the others (D-89); an empty one when it is already at
 /// that end.
-pub(super) fn shift(document: &Document, id: ItemId, direction: Direction) -> Transaction {
+fn shift(document: &Document, id: ItemId, direction: Direction) -> Transaction {
     let Some((siblings, index)) = siblings(document, id) else {
         return Transaction::default();
     };
-    let later = |id| {
-        document
-            .node(id)
-            .and_then(Node::item)
-            .is_some_and(Item::is_later)
-    };
-    let alike = |other: ItemId| {
-        listed(document, other)
-            && kind(document, other) == kind(document, id)
-            && later(other) == later(id)
-    };
+    let alike = |other: ItemId| alike(document, id, other);
     let destination = match direction {
         Direction::Up => siblings
             .get(..index)
@@ -314,6 +347,20 @@ pub(super) fn shift(document: &Document, id: ItemId, direction: Direction) -> Tr
             .move_to(id, to)
             .expect("an entry moves beside a sibling, which holds what it holds")
     })
+}
+
+/// Whether `other` is an entry the sidebar lists beside `id` among those of its kind: of the same
+/// kind, and both Later or both not (D-89).
+fn alike(document: &Document, id: ItemId, other: ItemId) -> bool {
+    let later = |id| {
+        document
+            .node(id)
+            .and_then(Node::item)
+            .is_some_and(Item::is_later)
+    };
+    listed(document, other)
+        && kind(document, other) == kind(document, id)
+        && later(other) == later(id)
 }
 
 /// Where a new item of `kind` goes from the entry `focused` among `entries`, on `side` of it, as
@@ -577,6 +624,75 @@ mod tests {
         let home = find(&document, "Home");
         assert_eq!(shift(&document, home, Direction::Up).ops(), []);
         assert_eq!(shift(&document, document.inbox(), Direction::Up).ops(), []);
+        Ok(())
+    }
+
+    // FR-VIEW-12, D-107
+    #[test]
+    fn a_pinned_entry_moves_only_past_the_pinned_sibling_beside_it() -> Result<(), PlacementError> {
+        let mut document = document();
+        let titles = ["Site", "Blog", "Docs", "Solo"].map(|title| find(&document, title));
+        for id in titles {
+            pin(&mut document, id, true)?;
+        }
+        let [site, blog, docs, solo] = titles;
+        let pinned = |id| Sidebar {
+            focused: Some(Entry {
+                shown: Shown::Container(id),
+                in_pinned: true,
+            }),
+            ..Sidebar::default()
+        };
+        for (id, direction) in [
+            (site, Direction::Down),
+            (docs, Direction::Up),
+            (docs, Direction::Down),
+        ] {
+            assert_eq!(
+                pinned(id).shift(&document, id, direction),
+                Err(Refusal::NotPinnedSibling),
+                "the pinned project beside it is no sibling"
+            );
+        }
+        assert_eq!(
+            Sidebar::open(Shown::Container(site)).shift(&document, site, Direction::Down),
+            Ok(shift(&document, site, Direction::Down)),
+            "its entry in the tree moves as an unpinned project's"
+        );
+        assert_eq!(
+            pinned(solo).shift(&document, solo, Direction::Down),
+            Ok(Transaction::default()),
+            "the last of the pinned"
+        );
+        pin(&mut document, blog, false)?;
+        let moved = |document: &Document, direction| {
+            pinned(site)
+                .shift(document, site, direction)
+                .unwrap_or_default()
+        };
+        apply(&mut document, |d| moved(d, Direction::Down))?;
+        assert_eq!(
+            tree(&document),
+            [
+                "Inbox", "Docs", "Site", "Solo", "Solo", "Work", "  Docs", "  Site", "    Blog",
+                "Home"
+            ],
+            "past its pinned sibling in both lists"
+        );
+        apply(&mut document, |d| moved(d, Direction::Up))?;
+        assert_eq!(
+            tree(&document).get(1..3),
+            Some(&["Site".to_owned(), "Docs".to_owned()][..]),
+            "and back"
+        );
+        let later = document.node(docs).and_then(Node::item).cloned();
+        let later = later.map(|it| Item { later: true, ..it });
+        document.set(docs, later.ok_or(PlacementError::NoSuchNode(docs))?)?;
+        assert_eq!(
+            pinned(site).shift(&document, site, Direction::Down),
+            Err(Refusal::NotPinnedSibling),
+            "a Later sibling is listed apart"
+        );
         Ok(())
     }
 
