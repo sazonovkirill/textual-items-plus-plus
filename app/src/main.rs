@@ -81,9 +81,12 @@ fn main() -> anyhow::Result<()> {
     forward_terminal_events(inputs);
     // The panic hook restores the terminal first; once the panic has unwound to here, or the
     // event loop has failed, as when the terminal is gone, the document is kept before anything
-    // is written to the terminal, and what cannot be shown there is dropped (N-REL-01, D-96).
+    // is written to the terminal, and what cannot be shown there is dropped (N-REL-01, D-96). A
+    // session that ended after its save failed has kept it already (D-119).
     let result = panic::catch_unwind(AssertUnwindSafe(|| run(&mut terminal, &mut tui, &received)));
-    let recovered = (!matches!(result, Ok(Ok(())))).then(|| tui.recover());
+    let recovered = tui
+        .take_recovered()
+        .or_else(|| (!matches!(result, Ok(Ok(())))).then(|| tui.recover()));
     if kitty {
         // The session is over; a terminal that cannot take this has gone already.
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);

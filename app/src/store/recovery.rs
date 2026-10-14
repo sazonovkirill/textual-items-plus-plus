@@ -170,13 +170,18 @@ impl Recovery {
 }
 
 /// What the recovery files of `file` are named after: its backup folder's name, from its
-/// canonical path, or from its folder's canonical path while the file does not exist yet.
+/// canonical path, or from its folder's canonical path while the file does not exist yet, or
+/// from its absolute path while the folder cannot be resolved either, as when it was removed or
+/// unmounted, so that the document can still be kept (D-119).
 fn name(file: &Path) -> io::Result<OsString> {
     let source = fs::canonicalize(file).or_else(|error| {
         let absolute = std::path::absolute(file)?;
         match (absolute.parent(), absolute.file_name()) {
             (Some(folder), Some(name)) if error.kind() == io::ErrorKind::NotFound => {
-                Ok(fs::canonicalize(folder)?.join(name))
+                Ok(match fs::canonicalize(folder) {
+                    Ok(folder) => folder.join(name),
+                    Err(_) => absolute.clone(),
+                })
             }
             _ => Err(error),
         }
@@ -458,8 +463,29 @@ mod tests {
         assert!(recovery(dir.path()).find(&file).is_err());
         let dir = tempfile::tempdir()?;
         recovery(dir.path()).write(None, "-", CRASH)?;
-        let missing = dir.path().join("missing/todo.taskpaper");
-        assert!(recovery(dir.path()).find(&missing).is_err());
+        fs::write(dir.path().join("todo.taskpaper"), "-")?;
+        let inside_a_file = dir.path().join("todo.taskpaper/x");
+        assert!(recovery(dir.path()).find(&inside_a_file).is_err());
+        Ok(())
+    }
+
+    // N-REL-01, D-119
+    #[test]
+    fn a_file_whose_folder_is_gone_is_recovered_and_found_by_its_absolute_path() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("gone/deeper/todo.taskpaper");
+        let recovery = recovery(dir.path());
+        assert_eq!(recovery.find(&file)?, None);
+        let written = recovery.write(Some(&file), "- unsaved\n", CRASH)?;
+        assert_eq!(
+            written.file_name(),
+            Some(OsStr::new(&format!(
+                "{}-20261005-090703.taskpaper",
+                backup::folder_name(&std::path::absolute(&file)?).to_string_lossy()
+            )))
+        );
+        assert_eq!(fs::read_to_string(&written)?, "- unsaved\n");
+        assert_eq!(recovery.find(&file)?, Some(written));
         Ok(())
     }
 

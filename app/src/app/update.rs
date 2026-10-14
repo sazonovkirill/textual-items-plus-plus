@@ -75,6 +75,9 @@ pub enum Message {
 pub enum Effect {
     /// End the session, after the effects before it.
     Quit,
+    /// Write the document to a recovery file, since its file could not take it, and say where
+    /// once the session has ended (N-REL-01, D-119).
+    Recover,
     /// Write the document as it is now to its file, unless the file on disk is no longer the
     /// version last read or written, after the file's daily backup; report how it went as
     /// [`Message::Disk`], after what is on disk as [`Message::OnDisk`] when it is refused.

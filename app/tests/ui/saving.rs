@@ -9,7 +9,7 @@ use std::{
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use tempfile::TempDir;
-use textual_items_plus_plus::ui::Input;
+use textual_items_plus_plus::{store::Recovery, ui::Input};
 
 use crate::support::{Harness, TODAY};
 
@@ -591,6 +591,52 @@ fn a_failed_save_is_shown_and_quitting_then_asks_again() {
     assert!(!harness.tui.should_quit());
     harness.ctrl('q');
     assert!(harness.tui.should_quit());
+    assert!(
+        harness.tui.take_recovered().is_none(),
+        "quitting without saving keeps nothing"
+    );
+}
+
+// N-REL-01, D-119
+#[test]
+fn terminating_after_a_failed_save_keeps_the_document_in_a_recovery_file() {
+    let (dir, path, mut harness) = on_file(TEXT);
+    fs::remove_dir_all(dir.path()).expect("removed");
+    harness.type_text("x");
+    harness.wait(1000);
+    assert!(
+        status(&harness).contains("save failed: "),
+        "{}",
+        status(&harness)
+    );
+    harness.terminate();
+    assert!(harness.tui.should_quit());
+    let recovered = harness
+        .tui
+        .take_recovered()
+        .expect("kept")
+        .expect("written")
+        .expect("there were changes");
+    assert!(
+        recovered.starts_with(harness.recovery()),
+        "{}",
+        recovered.display()
+    );
+    assert!(read(&recovered).contains("@done"));
+    assert_eq!(
+        Recovery::new(Some(harness.recovery()))
+            .find(&path)
+            .expect("looked"),
+        Some(recovered),
+        "the next launch offers it"
+    );
+    let (dir, _path, mut harness) = on_file(TEXT);
+    fs::remove_dir_all(dir.path()).expect("removed");
+    block(&harness.recovery());
+    harness.type_text("x");
+    harness.terminate();
+    assert!(harness.tui.should_quit(), "it ends anyway");
+    assert!(matches!(harness.tui.take_recovered(), Some(Err(_))));
 }
 
 // F-FILE-06

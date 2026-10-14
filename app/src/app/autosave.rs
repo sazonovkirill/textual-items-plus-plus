@@ -16,7 +16,7 @@ pub enum Ending {
     /// The user quits: save first, and ask before ending if that fails.
     Quit,
     /// The process was told to end, as by `SIGTERM` or `SIGHUP`: save first, and end even if that
-    /// fails.
+    /// fails, keeping the document in a recovery file (D-119).
     Terminate,
 }
 
@@ -29,6 +29,9 @@ pub enum Step {
     Save(u64),
     /// End the session: the file holds every change, or the session ends without them.
     End,
+    /// Keep the document in a recovery file, since its file could not take it, and end the
+    /// session.
+    Recover,
 }
 
 /// What the status line says about saving.
@@ -50,6 +53,8 @@ pub enum SaveState<'a> {
 enum Close {
     Quit,
     Terminate,
+    /// End once the document is in a recovery file.
+    Recover,
     /// End without saving.
     Discard,
 }
@@ -122,16 +127,20 @@ impl Autosave {
             && Some(revision) != self.saved
             && match self.close {
                 Some(Close::Quit | Close::Terminate) => true,
-                Some(Close::Discard) => false,
+                Some(Close::Recover | Close::Discard) => false,
                 None => !self.failed_at(revision) && now >= self.changed_at.saturating_add(DELAY),
             };
         if due {
             self.writing = Some(revision);
             return Step::Save(revision);
         }
+        if self.close == Some(Close::Recover) {
+            self.close = Some(Close::Discard);
+            return Step::Recover;
+        }
         let finished = match self.close {
             None => false,
-            Some(Close::Discard) => true,
+            Some(Close::Recover | Close::Discard) => true,
             // A save under way is of a revision newer than the saved one, so this waits for it.
             Some(Close::Quit | Close::Terminate) => !self.saveable || Some(revision) == self.saved,
         };
@@ -177,7 +186,8 @@ impl Autosave {
     }
 
     /// The save under way failed for `reason`. When it was of the latest revision, a quit
-    /// waiting for it is withdrawn and asks instead, and a termination ends anyway. A report without a save under way changes nothing.
+    /// waiting for it is withdrawn and asks instead, and a termination ends with the document in
+    /// a recovery file. A report without a save under way changes nothing.
     pub fn failed(&mut self, reason: String) {
         let Some(revision) = self.writing.take() else {
             return;
@@ -192,8 +202,8 @@ impl Autosave {
                 self.close = None;
                 self.confirm_quit = true;
             }
-            Some(Close::Terminate) => self.close = Some(Close::Discard),
-            Some(Close::Discard) | None => {}
+            Some(Close::Terminate) => self.close = Some(Close::Recover),
+            Some(Close::Recover | Close::Discard) | None => {}
         }
     }
 
@@ -558,9 +568,9 @@ mod tests {
         assert!(!autosave.confirming_quit());
     }
 
-    // F-FILE-05
+    // F-FILE-05, N-REL-01
     #[test]
-    fn terminating_saves_and_ends_even_when_the_save_fails() {
+    fn terminating_saves_and_keeps_the_document_in_a_recovery_file_when_the_save_fails() {
         let mut autosave = opened();
         autosave.end(Ending::Terminate);
         assert_eq!(autosave.step(0, ms(0)), Step::End);
@@ -581,7 +591,8 @@ mod tests {
             "quitting does not soften the end"
         );
         autosave.failed("disk full".to_owned());
-        assert_eq!(autosave.step(1, ms(0)), Step::End);
+        assert_eq!(autosave.step(1, ms(0)), Step::Recover);
+        assert_eq!(autosave.step(1, ms(0)), Step::End, "kept once");
         autosave.failed("stray".to_owned());
         assert_eq!(autosave.step(1, ms(0)), Step::End);
     }
@@ -596,7 +607,7 @@ mod tests {
         autosave.end(Ending::Terminate);
         assert_eq!(autosave.step(1, ms(0)), Step::Save(1));
         autosave.failed("disk full".to_owned());
-        assert_eq!(autosave.step(1, ms(0)), Step::End);
+        assert_eq!(autosave.step(1, ms(0)), Step::Recover);
     }
 
     #[test]

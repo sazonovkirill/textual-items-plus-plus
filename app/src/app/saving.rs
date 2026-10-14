@@ -257,6 +257,7 @@ impl State {
             Step::Wait => Vec::new(),
             Step::Save(_) => vec![Effect::Save],
             Step::End => vec![Effect::Quit],
+            Step::Recover => vec![Effect::Recover, Effect::Quit],
         }
     }
 
@@ -737,7 +738,7 @@ mod tests {
         assert_eq!(send(&mut state, Message::Terminate), [Effect::Save]);
         assert_eq!(
             send(&mut state, Message::Disk(Report::SaveFailed("full".into()))),
-            [Effect::Quit]
+            [Effect::Recover, Effect::Quit]
         );
         Ok(())
     }

@@ -115,6 +115,9 @@ pub struct Tui {
     /// Where the app was last drawn.
     area: Rect,
     quit: bool,
+    /// How keeping the document in a recovery file went, when ending after a failed save asked
+    /// for it (D-119).
+    recovered: Option<Result<Option<PathBuf>, RecoveryError>>,
     file: Option<File>,
     clipboard: Clipboard,
     /// The local date, as last given.
@@ -157,6 +160,7 @@ impl Tui {
             first: 0,
             area: Rect::default(),
             quit: false,
+            recovered: None,
             file: None,
             clipboard: Clipboard::default(),
             today,
@@ -829,6 +833,12 @@ impl Tui {
                 }
                 self.quit = true;
             }
+            Effect::Recover => {
+                self.recovered = self
+                    .file
+                    .as_ref()
+                    .map(|file| file.recover(self.state.document()));
+            }
             Effect::Save => {
                 if let Some(file) = &self.file {
                     file.save(self.state.document(), self.today);
@@ -1131,6 +1141,12 @@ impl Tui {
             }
             _ => Ok(None),
         }
+    }
+
+    /// How keeping the document in a recovery file went when the session ended after its save
+    /// failed, as [`recover`](Self::recover) reports it, once; `None` when it was not asked for.
+    pub fn take_recovered(&mut self) -> Option<Result<Option<PathBuf>, RecoveryError>> {
+        self.recovered.take()
     }
 
     /// What to say once the terminal is restored: where the document went when the session
