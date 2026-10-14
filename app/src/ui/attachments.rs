@@ -265,12 +265,12 @@ impl<'a> AttachmentsPanel<'a> {
     }
 
     /// Where the terminal's cursor goes when the panel is drawn over `area` scrolled to line
-    /// `top`: at the caret of the text being edited, while its line is in view.
+    /// `top`: at the caret of the text being edited, while it is in view.
     pub(super) fn caret(&self, area: Rect, top: usize) -> Option<Position> {
         let content = Self::content(area);
         let (line, column) = self.laid_out(area).caret?;
         let y = line.checked_sub(top)?;
-        (y < usize::from(content.height)).then(|| {
+        (y < usize::from(content.height) && column < usize::from(content.width)).then(|| {
             let offset = |n: usize| u16::try_from(n).unwrap_or(u16::MAX);
             Position::new(
                 content.x.saturating_add(offset(column)),
@@ -433,7 +433,11 @@ impl<'a> AttachmentsPanel<'a> {
         } else {
             (Icon::Task, dim)
         };
-        let prefix = format!("{}{} ", "  ".repeat(line.depth), marker.glyph(self.icons));
+        let marker = format!("{} ", marker.glyph(self.icons));
+        // An item too deep for the panel goes no further in than leaves a column for its text
+        // and one for the caret after it (FR-UI-06).
+        let depth = (2 * line.depth).min(width.saturating_sub(Span::raw(&marker).width() + 2));
+        let prefix = format!("{}{marker}", " ".repeat(depth));
         let indent = Span::raw(&prefix).width();
         let marker_style = title.remove_modifier(Modifier::CROSSED_OUT);
         if let Some(field) = self.view.editing
@@ -1231,6 +1235,44 @@ mod tests {
             "wrapping after the marker"
         );
         assert_eq!(caret, Some(Position::new(11, 8)));
+    }
+
+    // FR-CHK-01, FR-CHK-03, FR-UI-06
+    #[test]
+    fn an_item_too_deep_for_the_panel_is_edited_with_the_caret_inside_it() {
+        let task = Item::new(ItemKind::Task, "Pack");
+        let cups = Item::new(ItemKind::ChecklistItem, "Cups");
+        let field = TextField::new("Cups".to_owned());
+        let theme = BuiltIn::default().colors();
+        let selected = Selected::Checklist(Some(ItemId::new(2)));
+        let view = AttachmentsView {
+            id: ItemId::new(1),
+            item: &task,
+            selected,
+            checklist: Some(vec![line(&cups, 2, 18, false)]),
+            editing: Some(&field),
+        };
+        let area = Rect::new(0, 0, 40, 16);
+        let mut buf = Buffer::empty(area);
+        let mut scrolled = Scrolled {
+            top: 0,
+            drawn: Some(selected),
+        };
+        let panel = AttachmentsPanel::new(view, &theme, IconSet::Plain);
+        let (caret, narrow) = (panel.caret(area, 0), panel.caret(Rect::new(0, 0, 5, 60), 0));
+        panel.render(area, &mut buf, &mut scrolled);
+        assert_eq!(
+            rows(&buf)[5..9],
+            [
+                "│▌                                ☐ C  │",
+                "│▌                                  u  │",
+                "│▌                                  p  │",
+                "│▌                                  s  │",
+            ],
+            "indented as far as leaves its text a column"
+        );
+        assert_eq!(caret, Some(Position::new(37, 8)));
+        assert_eq!(narrow, None, "no room for the marker leaves no caret");
     }
 
     // FR-CHK-02
