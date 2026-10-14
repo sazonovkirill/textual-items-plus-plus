@@ -20,6 +20,25 @@ pub enum Command {
     Undo,
     /// Make the latest change taken back again (FR-EDIT-06).
     Redo,
+    /// Show another place in the pane (FR-NAV-02, FR-NAV-04).
+    Go(Go),
+    /// Open the Navigator, or close it when it is open (FR-VIEW-07).
+    Navigator,
+}
+
+/// Where a [`Command::Go`] takes the pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Go {
+    /// Into the focused section or project, which then shows its contents (FR-NAV-02).
+    Into,
+    /// Up to the container holding the one shown, focused on it (FR-NAV-02).
+    Up,
+    /// Home, to the Inbox (FR-NAV-02).
+    Home,
+    /// Back to where the pane was before (FR-NAV-04).
+    Back,
+    /// Forward again to where Back left (FR-NAV-04).
+    Forward,
 }
 
 /// Where a command can be given. Later steps add the modes and windows that take keys of their
@@ -105,6 +124,37 @@ pub const REGISTRY: &[Entry] = &[
         title: "Redo",
         context: Context::Navigate,
     },
+    Entry {
+        command: Command::Go(Go::Into),
+        title: "Open Focused Item",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Go(Go::Up),
+        title: "Go Up",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Go(Go::Home),
+        title: "Go Home",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Go(Go::Back),
+        title: "Go Back",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Go(Go::Forward),
+        title: "Go Forward",
+        context: Context::Navigate,
+    },
+    // Global, so that its key closes the Navigator too.
+    Entry {
+        command: Command::Navigator,
+        title: "Open Navigator",
+        context: Context::Global,
+    },
 ];
 
 #[cfg(test)]
@@ -144,5 +194,20 @@ mod tests {
                 "{motion:?}"
             );
         }
+    }
+
+    // FR-NAV-02, FR-NAV-04, FR-VIEW-07
+    #[test]
+    fn going_is_navigate_and_the_navigator_key_works_everywhere() {
+        let context = |command| {
+            REGISTRY
+                .iter()
+                .find(|entry| entry.command == command)
+                .map(|entry| entry.context)
+        };
+        for to in [Go::Into, Go::Up, Go::Home, Go::Back, Go::Forward] {
+            assert_eq!(context(Command::Go(to)), Some(Context::Navigate), "{to:?}");
+        }
+        assert_eq!(context(Command::Navigator), Some(Context::Global));
     }
 }

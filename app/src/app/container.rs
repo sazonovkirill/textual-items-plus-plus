@@ -69,6 +69,40 @@ pub fn rows(document: &Document, container: ItemId, show_completed: bool) -> Vec
     }
 }
 
+/// The containers from the top level down to `container`, itself last: the path its breadcrumbs
+/// show (FR-NAV-03). The Inbox's is itself alone; no node at all has none.
+#[must_use]
+pub(super) fn path(document: &Document, container: ItemId) -> Vec<ItemId> {
+    if document.node(container).is_none() {
+        return Vec::new();
+    }
+    let mut path = vec![container];
+    while let Some((Some(parent), _)) = path.last().and_then(|&id| document.position(id)) {
+        path.push(parent);
+    }
+    path.reverse();
+    path
+}
+
+/// Whether `id` is a container that can be opened: the Inbox, an area, a project or a section,
+/// neither it nor anything above it in the Trash, and not inside a completed item, whose contents
+/// are shown nowhere (FR-ORG-09). A completed container itself opens, as its row does.
+pub(super) fn opens(document: &Document, id: ItemId) -> bool {
+    let item = |id| document.node(id).and_then(Node::item);
+    item(id).is_some_and(|item| {
+        matches!(
+            item.kind,
+            ItemKind::Inbox | ItemKind::Area | ItemKind::Project | ItemKind::Section
+        )
+    }) && path(document, id)
+        .into_iter()
+        .all(|id| item(id).is_some_and(|item| item.deleted.is_none()))
+        && document
+            .position(id)
+            .and_then(|(parent, _)| parent)
+            .is_none_or(|parent| !document.conceals(parent))
+}
+
 /// How the children of one container are picked and ordered into a group of rows.
 #[derive(Clone, Copy)]
 struct Group<'a> {
@@ -340,5 +374,49 @@ mod tests {
         ] {
             assert_eq!(row.id(), id);
         }
+    }
+
+    // FR-NAV-03
+    #[test]
+    fn a_path_runs_from_the_top_level_down_to_the_container() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let project = add(&mut document, area, Project);
+        let section = add(&mut document, project, Section);
+        assert_eq!(path(&document, section), [area, project, section]);
+        assert_eq!(path(&document, area), [area]);
+        assert_eq!(path(&document, document.inbox()), [document.inbox()]);
+        assert_eq!(path(&document, ItemId::new(99)), []);
+        Ok(())
+    }
+
+    // FR-NAV-02, OQ-19
+    #[test]
+    fn only_containers_outside_the_trash_open() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let area = document.push(None, Node::Item(Item::new(Area, "a")))?;
+        let project = add(&mut document, area, Project);
+        let section = add(&mut document, project, Section);
+        let task = add(&mut document, section, Task);
+        let line = document.push(None, Node::Kept("text".to_owned()))?;
+        for id in [inbox, area, project, section] {
+            assert!(opens(&document, id), "{id:?}");
+        }
+        assert!(!opens(&document, task));
+        assert!(!opens(&document, line));
+        assert!(!opens(&document, ItemId::new(99)));
+        let mut trashed = Item::new(Project, "x");
+        trashed.deleted = Some(date(2026, 10, 1));
+        document.set(project, trashed)?;
+        assert!(!opens(&document, project));
+        assert!(!opens(&document, section), "inside the trashed project");
+        assert!(opens(&document, area));
+        let mut completed = Item::new(Project, "x");
+        completed.completed = Some(Completion::Undated);
+        document.set(project, completed)?;
+        assert!(opens(&document, project), "a completed container opens");
+        assert!(!opens(&document, section), "what it holds does not");
+        Ok(())
     }
 }

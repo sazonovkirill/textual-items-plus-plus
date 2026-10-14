@@ -2,5 +2,6 @@
 
 mod completing;
 mod container;
+mod navigation;
 mod quitting;
 mod support;

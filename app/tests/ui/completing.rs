@@ -4,13 +4,13 @@ use crossterm::event::KeyCode;
 
 use crate::support::Harness;
 
-/// The rows of the container's items between its title and the status line, each without its
-/// marker or trailing spaces, the focused one starred.
+/// The rows of the container's items between the Inbox's title and description and the status
+/// line, each without its marker or trailing spaces, the focused one starred.
 fn items(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(3)
+        .skip(5)
         .filter_map(|row| {
             let (focus, rest) = row.split_at(row.char_indices().nth(2)?.0);
             let title = rest.split_once(' ')?.1.trim_end();

@@ -3,13 +3,15 @@
 
 use jiff::civil::Date;
 
-use super::{Command, State};
+use super::{Command, PickerInput, State};
 
 /// A user intent or a result the frontend reports back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Message {
     /// The user gave a command.
     Command(Command),
+    /// The user did something in the open Navigator (FR-VIEW-07).
+    Navigator(PickerInput),
 }
 
 /// Work the frontend carries out for the core, which never does I/O itself.
@@ -29,6 +31,9 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::ShowCompleted) => state.toggle_show_completed(),
         Message::Command(Command::Undo) => state.undo(),
         Message::Command(Command::Redo) => state.redo(),
+        Message::Command(Command::Go(to)) => state.go(to),
+        Message::Command(Command::Navigator) => state.toggle_navigator(),
+        Message::Navigator(input) => state.navigator_input(input),
     }
     Vec::new()
 }
@@ -38,7 +43,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::{Focus, Opened};
+    use crate::app::{Focus, Go, Opened};
     use crate::domain::{Completion, Document, Item, ItemKind, Node, PlacementError};
 
     const TODAY: Date = date(2026, 10, 14);
@@ -155,6 +160,27 @@ mod tests {
         give(&mut state, Command::Undo);
         assert_eq!(titles(&state), ["b"]);
         assert_eq!(focused(&state), Some("b"));
+        Ok(())
+    }
+
+    // FR-NAV-02, FR-VIEW-07
+    #[test]
+    fn going_and_the_navigator_change_the_state_with_no_effect() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        let mut document = state.document().clone();
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        state = State::new(document, Opened::Demo);
+        for message in [
+            Message::Command(Command::Navigator),
+            Message::Navigator(PickerInput::Next),
+            Message::Navigator(PickerInput::Choose),
+        ] {
+            assert_eq!(update(&mut state, message, TODAY), []);
+        }
+        assert_eq!(state.container(), area);
+        let effects = update(&mut state, Message::Command(Command::Go(Go::Home)), TODAY);
+        assert_eq!(effects, []);
+        assert_eq!(state.container(), state.document().inbox());
         Ok(())
     }
 }

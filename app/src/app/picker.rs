@@ -125,6 +125,21 @@ impl<T: Clone> Picker<T> {
         }
     }
 
+    /// Focuses the first entry listed whose value satisfies `predicate`, and says whether there
+    /// is one; without one the focus stays where it was.
+    pub fn focus_where(&mut self, predicate: impl Fn(&T) -> bool) -> bool {
+        let candidates = &self.candidates;
+        let found = self.ranked.iter().position(|&index| {
+            candidates
+                .get(index)
+                .is_some_and(|candidate| predicate(&candidate.value))
+        });
+        if let Some(position) = found {
+            self.focused = position;
+        }
+        found.is_some()
+    }
+
     /// Applies `input`, and returns how it closed the picker, or `None` while it stays open.
     pub fn input(&mut self, input: PickerInput) -> Option<Picked<T>> {
         match input {
@@ -253,6 +268,18 @@ mod tests {
             view.entries.iter().next(),
             Some(&candidate(1, "Write the report"))
         );
+    }
+
+    #[test]
+    fn focusing_where_a_value_matches_focuses_the_first_listed() {
+        let mut picker = sample();
+        assert!(picker.focus_where(|&value| value > 2));
+        assert_eq!(listed(&picker).1, 2);
+        assert!(!picker.focus_where(|&value| value > 9));
+        assert_eq!(listed(&picker).1, 2, "without a match the focus stays");
+        typed(&mut picker, "rep");
+        assert!(picker.focus_where(|&value| value == 2));
+        assert_eq!(listed(&picker).1, 1, "among the matches");
     }
 
     #[test]

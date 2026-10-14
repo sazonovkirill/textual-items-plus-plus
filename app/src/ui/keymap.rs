@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
-use crate::app::{Command, Focus};
+use crate::app::{Command, Focus, Go};
 
 /// One key press: its modifiers and code, with `Shift` dropped from characters because the
 /// character already says whether it is shifted.
@@ -33,6 +33,14 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::ShowCompleted, &["ctrl+o", "g c"]),
     (Command::Undo, &["z", "ctrl+z"]),
     (Command::Redo, &["Z", "ctrl+shift+z", "ctrl+y"]),
+    // taskpaper-terminal's zoom, home and history keys; home is the Inbox, so its Go to Inbox key
+    // goes home too (D-36).
+    (Command::Go(Go::Into), &[".", "alt+l", "alt+right", "g z"]),
+    (Command::Go(Go::Up), &[">", "alt+h", "alt+left", "g u"]),
+    (Command::Go(Go::Home), &["ctrl+'", "g h", "g i"]),
+    (Command::Go(Go::Back), &["H", "alt+shift+left"]),
+    (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
+    (Command::Navigator, &["ctrl+g"]),
 ];
 
 /// The keys `text` names, as [`DEFAULT_KEYS`] writes a sequence. `None` unless each one is a
@@ -211,6 +219,47 @@ mod tests {
                     "{keys:?} starts {other:?}"
                 );
             }
+        }
+    }
+
+    // FR-NAV-02, FR-NAV-04, FR-VIEW-07, FR-KEY-02
+    #[test]
+    fn going_and_the_navigator_have_taskpaper_terminals_keys() {
+        let mut keymap = Keymap::default();
+        let none = KeyModifiers::NONE;
+        let alt = KeyModifiers::ALT;
+        let alt_shift = KeyModifiers::ALT | KeyModifiers::SHIFT;
+        let go = |to| Some(Command::Go(to));
+        for (events, command) in [
+            (vec![char('.')], go(Go::Into)),
+            (vec![press(KeyCode::Char('l'), alt)], go(Go::Into)),
+            (vec![press(KeyCode::Right, alt)], go(Go::Into)),
+            (vec![char('g'), char('z')], go(Go::Into)),
+            (vec![char('>')], go(Go::Up)),
+            (vec![press(KeyCode::Char('h'), alt)], go(Go::Up)),
+            (vec![press(KeyCode::Left, alt)], go(Go::Up)),
+            (vec![char('g'), char('u')], go(Go::Up)),
+            (
+                vec![press(KeyCode::Char('\''), KeyModifiers::CONTROL)],
+                go(Go::Home),
+            ),
+            (vec![char('g'), char('h')], go(Go::Home)),
+            (vec![char('g'), char('i')], go(Go::Home)),
+            (vec![char('H')], go(Go::Back)),
+            (vec![press(KeyCode::Left, alt_shift)], go(Go::Back)),
+            (vec![char('L')], go(Go::Forward)),
+            (vec![press(KeyCode::Right, alt_shift)], go(Go::Forward)),
+            (
+                vec![press(KeyCode::Char('g'), KeyModifiers::CONTROL)],
+                Some(Command::Navigator),
+            ),
+            (vec![press(KeyCode::Right, none)], None),
+        ] {
+            let mut given = None;
+            for event in &events {
+                given = keymap.press(event);
+            }
+            assert_eq!(given, command, "{events:?}");
         }
     }
 

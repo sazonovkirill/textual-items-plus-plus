@@ -42,7 +42,13 @@ fn main() -> anyhow::Result<()> {
 fn run(terminal: &mut ratatui::DefaultTerminal, mut tui: Tui) -> anyhow::Result<()> {
     while !tui.should_quit() {
         terminal
-            .draw(|frame| frame.render_widget(&mut tui, frame.area()))
+            .draw(|frame| {
+                let area = frame.area();
+                frame.render_widget(&mut tui, area);
+                if let Some(cursor) = tui.cursor(area) {
+                    frame.set_cursor_position(cursor);
+                }
+            })
             .context("cannot draw")?;
         let event = event::read().context("cannot read the terminal")?;
         tui.handle(&event, jiff::Zoned::now().date());

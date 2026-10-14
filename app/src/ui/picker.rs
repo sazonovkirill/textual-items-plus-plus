@@ -59,6 +59,8 @@ pub struct PickerPopup<'a, T> {
     title: &'a str,
     view: &'a PickerView<'a, T>,
     icon: &'a dyn Fn(&T) -> Icon,
+    depth: Option<&'a dyn Fn(&T) -> usize>,
+    badge: Option<&'a dyn Fn(&T) -> String>,
     icons: IconSet,
     theme: &'a Theme,
 }
@@ -78,9 +80,28 @@ impl<'a, T> PickerPopup<'a, T> {
             title,
             view,
             icon,
+            depth: None,
+            badge: None,
             icons,
             theme,
         }
+    }
+
+    /// The window of a picker whose candidates, as given, are a tree, each `depth` levels deep:
+    /// with an empty query it lists them indented two columns a level, without their details,
+    /// which the tree shows.
+    #[must_use]
+    pub fn tree(mut self, depth: &'a dyn Fn(&T) -> usize) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
+    /// The window with what `badge` gives each entry, such as a count, in the accent color at
+    /// the entry's right end; nothing for an empty one.
+    #[must_use]
+    pub fn badge(mut self, badge: &'a dyn Fn(&T) -> String) -> Self {
+        self.badge = Some(badge);
+        self
     }
 
     /// Where the window goes in `area`: centered, as wide as it can be up to 80 columns and as
@@ -148,20 +169,32 @@ impl<T> Widget for PickerPopup<'_, T> {
         let focused = self.view.focused;
         let offset = (focused + 1).saturating_sub(rows.len());
         let entries = self.view.entries.iter().enumerate().skip(offset);
+        let tree = self.depth.filter(|_| self.view.query.text().is_empty());
         for ((index, entry), row) in entries.zip(rows) {
+            let indent = tree.map_or(0, |depth| depth(&entry.value) * 2);
             let mut line = Line::from(vec![
-                Span::raw(" "),
+                Span::raw(" ".repeat(indent + 1)),
                 Span::raw((self.icon)(&entry.value).glyph(self.icons)),
                 Span::raw(" "),
                 Span::raw(entry.text.as_str()),
             ]);
-            if !entry.detail.is_empty() {
+            if tree.is_none() && !entry.detail.is_empty() {
                 line.push_span(Span::styled(format!("  {}", entry.detail), dim));
             }
             if index == focused {
                 buf.set_style(row, Style::new().bg(theme.selection).fg(theme.band_text));
             }
             line.render(row, buf);
+            let badge = self
+                .badge
+                .map(|badge| badge(&entry.value))
+                .unwrap_or_default();
+            if !badge.is_empty() {
+                let badge = Span::styled(format!(" {badge} "), Style::new().fg(theme.accent));
+                let width = u16::try_from(badge.width()).unwrap_or(u16::MAX);
+                let at = Rect::new(row.right().saturating_sub(width), row.y, width, 1);
+                badge.render(at.intersection(row), buf);
+            }
         }
     }
 }
@@ -398,5 +431,56 @@ mod tests {
         let colors = theme();
         let popup = PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &colors);
         assert_eq!(popup.caret(Rect::new(0, 0, 100, 30)), Position::new(88, 14));
+    }
+
+    // FR-VIEW-07
+    #[test]
+    fn a_tree_is_indented_while_the_query_is_empty_and_badges_stand_at_the_right() {
+        let mut picker = Picker::new(vec![
+            candidate(2, "Work", ""),
+            candidate(1, "Site", "Work"),
+            candidate(3, "Blog", "Work › Site"),
+        ]);
+        let depth = |value: &u8| usize::from(*value) / 2 + usize::from(*value == 3);
+        let badge = |value: &u8| match value {
+            1 => String::new(),
+            value => value.to_string(),
+        };
+        let draw = |picker: &Picker<u8>| {
+            let view = picker.view();
+            let area = Rect::new(0, 0, 26, 6);
+            let mut buf = Buffer::empty(area);
+            PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &theme())
+                .tree(&depth)
+                .badge(&badge)
+                .render(area, &mut buf);
+            buf
+        };
+        // The entries' rows, below the query.
+        let rows = |buf: &Buffer| -> Vec<String> {
+            (0..6)
+                .map(|y| (0..26).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .skip_while(|row| !row.starts_with("│›"))
+                .skip(1)
+                .take_while(|row| !row.starts_with('└'))
+                .collect()
+        };
+        let buf = draw(&picker);
+        assert_eq!(
+            rows(&buf),
+            [
+                "│   ◆ Work             2 │",
+                "│ ○ Site                 │",
+                "│     ○ Blog           3 │",
+            ]
+        );
+        assert_eq!(buf[(22, 2)].fg, theme().accent);
+        assert_eq!(buf[(22, 2)].bg, theme().selection, "on the focused row");
+        typed(&mut picker, [TextEdit::Insert('o')]);
+        assert_eq!(
+            rows(&draw(&picker)),
+            ["│ ◆ Work               2 │", "│ ○ Blog  Work › Site  3 │",],
+            "matches show their details and no tree"
+        );
     }
 }
