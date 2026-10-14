@@ -7,7 +7,7 @@ use std::{collections::HashMap, time::Duration};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::{
-    app::{Command, Direction, End, Focus, Go, Side, Whose, view::View},
+    app::{Command, Direction, End, Focus, Go, Prefill, Side, Whose, view::View},
     domain::dates::DateKind,
 };
 
@@ -71,6 +71,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // `p` a top-level project and `i`, for **i**nside, a project in the focused area; in the
     // pane `i` adds a project as `p` does (owner, D-75).
     (Command::EditTitle, &["enter"]),
+    // taskpaper-terminal's Quick Add keys: `q` alone starts the others, so plain Quick Add is
+    // `qq`; `qt` starts the task today and `qi` adds it to the Inbox (owner, D-97).
+    (Command::QuickAdd(Prefill::Nothing), &["q q"]),
+    (Command::QuickAdd(Prefill::StartToday), &["q t"]),
+    (Command::QuickAdd(Prefill::Inbox), &["q i"]),
     (Command::NewLike(Side::Below), &["o"]),
     (Command::NewLike(Side::Above), &["O"]),
     (Command::AddTask(End::Bottom), &["a"]),

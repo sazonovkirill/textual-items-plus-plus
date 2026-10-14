@@ -15,6 +15,7 @@ mod keymap;
 mod markdown;
 mod panes;
 mod picker;
+mod quick_add;
 mod save_as;
 mod search;
 mod settings;
@@ -49,9 +50,9 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput,
-        Effect, Focus, Message, Opened, PaneView, Part, PickerInput, Place, Report, SaveAsInput,
-        SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol, TagEntry,
-        TagMark, TagsFor, TagsView, TextEdit, view::View,
+        Effect, Focus, Message, Opened, PaneView, Part, PickerInput, Place, QuickAddInput, Report,
+        SaveAsInput, SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol,
+        TagEntry, TagMark, TagsFor, TagsView, TextEdit, view::View,
     },
     domain::ItemKind,
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
@@ -63,6 +64,7 @@ use conflict::ConflictPrompt;
 use container::{ContainerPane, Top};
 use date_prompt::DatePromptPanel;
 use file::File;
+use quick_add::QuickAddPanel;
 use save_as::SaveAsPanel;
 use settings::SettingsWindow;
 use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
@@ -393,6 +395,10 @@ impl Tui {
             picker_input(event)
                 .map(to_picker)
                 .or_else(|| self.global(event))
+        } else if self.state.quick_add().is_some() {
+            quick_add::quick_add_input(event)
+                .map(Message::QuickAdd)
+                .or_else(|| self.global(event))
         } else {
             self.keymap.press(event).map(Message::Command)
         };
@@ -448,9 +454,9 @@ impl Tui {
     /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
     /// it: a description or a note being edited takes it whole; a title being edited takes a
     /// single line, while several lines end editing and paste as items below; a comment being
-    /// edited, the query of the open Navigator, Move to or tag picker, the open date prompt and
-    /// the open Save As prompt take it with its line breaks as spaces; otherwise the items it holds paste below the
-    /// focus, or, in the checklist of the attachments panel, one item for each line below the
+    /// edited, the query of the open Navigator, Move to or tag picker, the open date prompt, Quick
+    /// Add and the open Save As prompt take it with its line breaks as spaces; otherwise the items
+    /// it holds paste below the focus, or, in the checklist of the attachments panel, one item for each line below the
     /// item selected (FR-CHK-03). The conflict prompt and the settings window take none, nor does
     /// the attachments panel while nothing in it is edited and no checklist entry is selected.
     fn paste(&mut self, text: &str) {
@@ -490,9 +496,14 @@ impl Tui {
     }
 
     /// How an edit of the one-line text that has the keys reaches the core, if one does: the
-    /// open date prompt's or Save As prompt's, the words searched for, or the open picker's query.
+    /// open date prompt's, Save As prompt's or Quick Add's, which passes it to its picker while
+    /// that is open, the words searched for, or the open picker's query.
     fn line_field(&self) -> Option<Box<dyn Fn(TextEdit) -> Message>> {
-        if self.state.date_prompt().is_some() {
+        if self.state.quick_add().is_some() {
+            Some(Box::new(|edit| {
+                Message::QuickAdd(QuickAddInput::Edit(edit))
+            }))
+        } else if self.state.date_prompt().is_some() {
             Some(Box::new(|edit| Message::DatePrompt(DateInput::Edit(edit))))
         } else if self.state.save_as().is_some() {
             Some(Box::new(|edit| Message::SaveAs(SaveAsInput::Edit(edit))))
@@ -564,6 +575,8 @@ impl Tui {
             Some(Message::MoveTo)
         } else if self.state.tags().is_some() {
             Some(Message::Tags)
+        } else if self.state.quick_add_picker().is_some() {
+            Some(Message::QuickAddPicker)
         } else {
             None
         }
@@ -584,9 +597,10 @@ impl Tui {
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
     /// note being edited in the attachments panel while it is open, else at the caret of the
-    /// query of the Navigator, the command palette, Go to Symbol or Move to while one is open, at
-    /// the caret of the date prompt or the Save As prompt while one is open, at the caret of the
-    /// text being edited in edit mode, in the pane or the sidebar, else hidden; the weather
+    /// query of the Navigator, the command palette, Go to Symbol, Move to or Quick Add's picker
+    /// while one is open, at the caret of the date prompt, the Save As prompt or the Quick Add
+    /// panel while one is open, at the caret of the text being edited in edit mode, in the pane or
+    /// the sidebar, else hidden; the weather
     /// covers it while it plays.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
@@ -619,6 +633,12 @@ impl Tui {
         }
         if let Some(view) = self.state.tags() {
             return tags_popup(&view, &self.theme, self.icons()).caret(panes);
+        }
+        if let Some(view) = self.state.quick_add_picker() {
+            return destination_popup("Add to", &view, &self.theme, self.icons()).caret(panes);
+        }
+        if let Some(view) = self.state.quick_add() {
+            return QuickAddPanel::new(&view, &self.theme).caret(prompt);
         }
         let sidebar = self.state.sidebar();
         let [side, room] = split(self.strip(panes), sidebar.is_some());
@@ -789,6 +809,8 @@ impl Tui {
             DatePromptPanel::HEIGHT
         } else if self.state.save_as().is_some() {
             SaveAsPanel::HEIGHT
+        } else if self.state.quick_add().is_some() {
+            QuickAddPanel::HEIGHT
         } else {
             0
         };
@@ -843,6 +865,8 @@ impl Tui {
             Some(Window::Search)
         } else if self.open_picker().is_some() {
             Some(Window::Picker)
+        } else if self.state.quick_add().is_some() {
+            Some(Window::QuickAdd)
         } else {
             None
         }
@@ -1093,8 +1117,19 @@ fn view_icon(view: View) -> Icon {
     }
 }
 
-/// The Move to window, each destination after its kind's icon, in a tree (FR-OPS-04).
+/// The Move to window (FR-OPS-04).
 fn move_to_popup<'a>(
+    view: &'a app::PickerView<'a, Destination>,
+    theme: &'a Theme,
+    icons: IconSet,
+) -> PickerPopup<'a, Destination> {
+    destination_popup("Move to", view, theme, icons)
+}
+
+/// A window titled `title` choosing a place, each after its kind's icon, in a tree: Move to's
+/// and Quick Add's (FR-OPS-04, FR-EDIT-07).
+fn destination_popup<'a>(
+    title: &'a str,
     view: &'a app::PickerView<'a, Destination>,
     theme: &'a Theme,
     icons: IconSet,
@@ -1108,7 +1143,7 @@ fn move_to_popup<'a>(
             _ => Icon::Project,
         },
     };
-    PickerPopup::new("Move to", view, icon, icons, theme)
+    PickerPopup::new(title, view, icon, icons, theme)
         .tree(&|destination| match destination {
             Destination::Home => 0,
             Destination::Container { depth, .. } => *depth,
@@ -1185,6 +1220,12 @@ impl Widget for &mut Tui {
         }
         if let Some(view) = self.state.save_as() {
             SaveAsPanel::new(&view, &self.theme).render(prompt, buf);
+        }
+        if let Some(view) = self.state.quick_add() {
+            QuickAddPanel::new(&view, &self.theme).render(prompt, buf);
+        }
+        if let Some(view) = self.state.quick_add_picker() {
+            destination_popup("Add to", &view, &self.theme, icons).render(panes, buf);
         }
         if let Some(view) = self.state.tags() {
             tags_popup(&view, &self.theme, icons).render(panes, buf);

@@ -21,6 +21,7 @@ use super::{
     moving,
     navigator::{self, Stop},
     pane::{self, Pane, PaneView, listed},
+    quick_add::QuickAdd,
     save_as::SaveAs,
     saving::Saving,
     settings::{Setting, Settings},
@@ -66,6 +67,8 @@ pub struct State {
     pub(super) move_to: Option<MoveTo>,
     /// The date prompt, while it is open (FR-DATE-02).
     pub(super) date_prompt: Option<DatePrompt>,
+    /// Quick Add, while it is open (FR-EDIT-07).
+    pub(super) quick_add: Option<QuickAdd>,
     /// The tag picker, while it is open (FR-TAG-02, FR-TAG-04).
     pub(super) tags: Option<TagPicker>,
     /// The item whose title, description or note is edited, in edit mode (FR-EDIT-01), in the
@@ -119,6 +122,7 @@ impl State {
             go_to_symbol: None,
             move_to: None,
             date_prompt: None,
+            quick_add: None,
             tags: None,
             editing: None,
             panel: None,
@@ -1432,8 +1436,8 @@ impl State {
     }
 
     /// Opens the Navigator on where the pane is, closing the command palette, Go to Symbol, Move
-    /// to, the date prompt, the tag picker, the settings window and the Save As prompt unless it
-    /// is writing the file, or closes it when it is open.
+    /// to, the date prompt, Quick Add, the tag picker, the settings window and the Save As prompt
+    /// unless it is writing the file, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         if !self.saving_as() {
             self.save_as = None;
@@ -1443,6 +1447,7 @@ impl State {
         self.settings_window = None;
         self.move_to = None;
         self.date_prompt = None;
+        self.quick_add = None;
         self.tags = None;
         self.navigator = match self.navigator {
             Some(_) => None,
@@ -1488,9 +1493,10 @@ impl State {
 }
 
 /// Whether the sidebar passes `command` to the app while it has the keys: quitting, undo and
-/// redo, the Navigator, Go to Symbol, the command palette, searching, the sidebar's own commands,
-/// focusing a pane, going to the Inbox, a view, back and forward, the shortcuts panel, the
-/// settings window, Save As, the weather and the conflict prompt's commands (D-86, D-90).
+/// redo, the Navigator, Go to Symbol, the command palette, searching, Quick Add, the sidebar's
+/// own commands, focusing a pane, going to the Inbox, a view, back and forward, the shortcuts
+/// panel, the settings window, Save As, the weather and the conflict prompt's commands (D-86,
+/// D-90).
 fn sidebar_passes(command: Command) -> bool {
     matches!(
         command,
@@ -1501,6 +1507,7 @@ fn sidebar_passes(command: Command) -> bool {
             | Command::GoToSymbol
             | Command::Palette
             | Command::Search
+            | Command::QuickAdd(_)
             | Command::Sidebar
             | Command::FocusLeft
             | Command::FocusRight

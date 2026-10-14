@@ -69,6 +69,7 @@ impl KeyGroup {
             | Command::GoToSymbol
             | Command::Search => Self::Going,
             Command::EditTitle
+            | Command::QuickAdd(_)
             | Command::NewLike(_)
             | Command::AddTask(_)
             | Command::AddSection(_)
@@ -134,9 +135,9 @@ impl State {
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
     /// commands and quitting, while the attachments panel is open quitting and, while nothing in
     /// it is edited, the commands it acts on (FR-CHK-03), while a picker, the command palette, Go
-    /// to Symbol, the date prompt or the settings window is open, in edit mode or while the words
-    /// to search for are typed only global ones, while the sidebar has the keys those it takes,
-    /// and otherwise any.
+    /// to Symbol, the date prompt, Quick Add or the settings window is open, in edit mode or
+    /// while the words to search for are typed only global ones, while the sidebar has the keys
+    /// those it takes, and otherwise any.
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -154,6 +155,7 @@ impl State {
             || self.move_to.is_some()
             || self.tags.is_some()
             || self.date_prompt.is_some()
+            || self.quick_add.is_some()
             || self.settings_window.is_some()
             || self.save_as.is_some()
             || self.searching

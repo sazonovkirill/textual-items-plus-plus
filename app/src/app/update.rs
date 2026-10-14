@@ -7,8 +7,8 @@ use jiff::civil::Date;
 
 use super::{
     AttachmentsInput, Command, ConflictSide, CopyId, DateInput, Direction, EditInput, Notice,
-    OnDisk, PickerInput, Report, SaveAsInput, SearchInput, Selected, Setting, SettingsInput, Side,
-    State, autosave::Ending,
+    OnDisk, PickerInput, QuickAddInput, Report, SaveAsInput, SearchInput, Selected, Setting,
+    SettingsInput, Side, State, autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -31,6 +31,10 @@ pub enum Message {
     Edit(EditInput),
     /// The user did something in the open date prompt (FR-DATE-02).
     DatePrompt(DateInput),
+    /// The user did something in the open Quick Add panel (FR-EDIT-07).
+    QuickAdd(QuickAddInput),
+    /// The user did something in Quick Add's open picker of places (FR-EDIT-07).
+    QuickAddPicker(PickerInput),
     /// The user did something while typing the words to search for (FR-SRCH-01).
     Search(SearchInput),
     /// The user did something in the open attachments panel (FR-ATT-01).
@@ -178,6 +182,8 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Tags(input) => state.tags_input(input),
         Message::Edit(input) => state.edit_input(input),
         Message::DatePrompt(input) => state.date_prompt_input(input),
+        Message::QuickAdd(input) => state.quick_add_input(input),
+        Message::QuickAddPicker(input) => state.quick_add_picker_input(input),
         Message::Search(input) => state.search_input(input),
         Message::Attachments(input) => state.attachments_input(input),
         Message::Settings(input) => return state.settings_input(input),
@@ -212,6 +218,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::Palette => state.open_palette(),
         Command::GoToSymbol => state.open_go_to_symbol(),
         Command::Search => state.open_search(),
+        Command::QuickAdd(prefill) => state.open_quick_add(prefill, today),
         Command::EditTitle => state.edit_title(),
         Command::NewLike(side) => state.new_like(side),
         Command::AddTask(end) => state.add(ItemKind::Task, end),

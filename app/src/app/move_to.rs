@@ -160,6 +160,26 @@ fn destinations(document: &Document, items: &[ItemId]) -> Vec<Candidate<Destinat
                 .iter()
                 .all(|&item| document.position(item).map(|(parent, _)| parent) == Some(id))
     };
+    places(document, items, &takes)
+}
+
+/// Every place a new task can go, as Move to lists them (FR-EDIT-07): the Inbox, then each area,
+/// project and section in file order, each followed by the containers inside it, leaving out
+/// items in the Trash and completed ones with what they hold.
+pub(super) fn task_places(document: &Document) -> Vec<Candidate<Destination>> {
+    places(document, &[], &|container, _| {
+        ItemKind::Task.goes_in(container)
+    })
+}
+
+/// The places `takes` says take what goes there, in the order of the tree: the top level, then
+/// the Inbox, then each area, project and section in file order, each followed by the
+/// containers inside it, leaving out `items` and what they hold.
+fn places(
+    document: &Document,
+    items: &[ItemId],
+    takes: &dyn Fn(Option<ItemKind>, Option<ItemId>) -> bool,
+) -> Vec<Candidate<Destination>> {
     let mut destinations = Vec::new();
     if takes(None, None) {
         destinations.push(Candidate {
@@ -174,7 +194,7 @@ fn destinations(document: &Document, items: &[ItemId]) -> Vec<Candidate<Destinat
             document,
             id,
             items,
-            &takes,
+            takes,
             &mut Vec::new(),
             &mut destinations,
         );

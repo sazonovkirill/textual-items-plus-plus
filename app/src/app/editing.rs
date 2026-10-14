@@ -428,7 +428,7 @@ fn text(item: &Item, part: Part) -> &str {
 }
 
 /// How many words of `text` start with `@`.
-fn word_starts(text: &str) -> usize {
+pub(super) fn word_starts(text: &str) -> usize {
     text.char_indices()
         .filter(|&(at, c)| {
             c == '@'

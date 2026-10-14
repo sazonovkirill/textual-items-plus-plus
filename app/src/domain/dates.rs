@@ -1,6 +1,7 @@
 //! The date expressions users type, such as `tomorrow`, `next fri` or `+3d`, resolved against a
-//! given day, and the words that name a date relative to a given day, such as `tomorrow` or
-//! `in 15 days`, as taskpaper-terminal reads and names them (FR-DATE-02,
+//! given day, alone or found among the words of a longer text, and the words that name a date
+//! relative to a given day, such as `tomorrow` or `in 15 days`, as taskpaper-terminal reads and
+//! names them (FR-DATE-02, FR-EDIT-07,
 //! [search.md §4](../../../specs/reference/taskpaper-terminal/specs/search.md#4-dates-must-fr-tag-03-d-6),
 //! [ui.md §2](../../../specs/reference/taskpaper-terminal/specs/ui.md#2-blocks)). Hides their
 //! grammar.

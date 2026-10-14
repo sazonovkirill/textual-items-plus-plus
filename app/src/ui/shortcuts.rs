@@ -20,11 +20,11 @@ use super::{
     date_prompt,
     edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
     keymap::{Key, key_label},
-    picker, save_as, search, settings, text_keys,
+    picker, quick_add, save_as, search, settings, text_keys,
 };
 use crate::app::{
-    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, REGISTRY,
-    SaveAsInput, SearchInput, SettingsInput, TextEdit,
+    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, QuickAddInput,
+    REGISTRY, SaveAsInput, SearchInput, SettingsInput, TextEdit,
 };
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
@@ -48,6 +48,8 @@ pub(super) enum Window {
     DatePrompt,
     /// The Save As prompt.
     SaveAs,
+    /// The Quick Add panel, while its picker is closed.
+    QuickAdd,
     /// The settings window.
     Settings,
     /// Typing the words to search for.
@@ -64,6 +66,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
         Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
         Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
         Window::SaveAs => ("Save As", named(save_as::KEYS, save_as_name)),
+        Window::QuickAdd => ("Quick Add", named(quick_add::KEYS, quick_add_name)),
         Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
         Window::Search => ("Search", named(search::KEYS, search_name)),
         Window::Attachments => (
@@ -166,6 +169,15 @@ fn picker_name(input: PickerInput) -> String {
         PickerInput::Choose => "Choose".to_owned(),
         PickerInput::ChooseInNewPane => "Open in New Pane".to_owned(),
         PickerInput::Dismiss => "Close".to_owned(),
+    }
+}
+
+/// What a key of the Quick Add panel does, as the panel names it.
+fn quick_add_name(input: QuickAddInput) -> String {
+    match input {
+        QuickAddInput::Edit(edit) => text_name(edit),
+        QuickAddInput::Add => "Add Task".to_owned(),
+        QuickAddInput::Cancel => "Cancel".to_owned(),
     }
 }
 
@@ -498,6 +510,7 @@ mod tests {
         let edit = TextEdit::SelectAll;
         assert_eq!(picker_name(PickerInput::Edit(edit)), "Select All");
         assert_eq!(date_name(DateInput::Edit(edit)), "Select All");
+        assert_eq!(quick_add_name(QuickAddInput::Edit(edit)), "Select All");
         assert_eq!(search_name(SearchInput::Edit(edit)), "Select All");
         assert_eq!(save_as_name(SaveAsInput::Edit(edit)), "Select All");
     }
@@ -523,6 +536,19 @@ mod tests {
                     "Save As",
                     vec![
                         ("Save".to_owned(), "Enter".to_owned()),
+                        ("Cancel".to_owned(), "Esc".to_owned())
+                    ]
+                ),
+                window_keys(Window::DatePrompt)[1].clone(),
+            ]
+        );
+        assert_eq!(
+            window_keys(Window::QuickAdd),
+            [
+                (
+                    "Quick Add",
+                    vec![
+                        ("Add Task".to_owned(), "Enter".to_owned()),
                         ("Cancel".to_owned(), "Esc".to_owned())
                     ]
                 ),

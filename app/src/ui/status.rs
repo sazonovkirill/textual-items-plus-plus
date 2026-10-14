@@ -122,6 +122,7 @@ fn kept(state: &State) -> String {
         Notice::Settings(problem) => format!("config.toml: {problem}"),
         Notice::NoWeather => "no weather in summer".to_owned(),
         Notice::SavedAs(path) => format!("saved as {}", path.display()),
+        Notice::QuickAdded(place) => format!("added to {place}"),
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()

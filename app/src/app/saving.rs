@@ -117,6 +117,8 @@ pub enum Notice {
     /// The document was written to the file at this path, which saving follows from now on
     /// (FR-STORE-11).
     SavedAs(PathBuf),
+    /// Quick Add added a task to the place with this path (FR-EDIT-07).
+    QuickAdded(String),
 }
 
 impl Notice {
@@ -466,11 +468,12 @@ impl State {
     /// as far as their text paths find them, the Navigator open on the places now listed with its
     /// query, Go to Symbol open on the items now listed with its query, Move to open on the
     /// destinations now listed with its query while an item it moves is found again, the date
-    /// prompt open while an item it dates is, and the attachments panel open while its item is,
-    /// on what it selected as far as that is found again, and the sidebar on its entry and its
-    /// collapsed areas as they are found again. The tag filter stays while the container shown is
-    /// found again as it was. The undo history is cleared, since its steps fit only the document
-    /// as it was.
+    /// prompt open while an item it dates is, Quick Add open on its place while that is found
+    /// again, else on the Inbox, and the attachments panel open while its item is, on what it
+    /// selected as far as that is found again, and the sidebar on its entry and its collapsed
+    /// areas as they are found again. The tag filter stays while the container shown is found
+    /// again as it was. The undo history is cleared, since its steps fit only the document as it
+    /// was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -503,6 +506,9 @@ impl State {
             .date_prompt
             .take()
             .and_then(|prompt| prompt.rematched(exact));
+        if let Some(quick_add) = &mut self.quick_add {
+            quick_add.rematch(exact);
+        }
         self.panel = self.rematched_panel(&old, &exact);
         self.sidebar.rematch(exact);
         if let Some(tags) = &self.tags {
@@ -595,7 +601,7 @@ mod tests {
     use super::*;
     use crate::app::{
         AttachmentsInput, Command, DateInput, EditInput, Focus, Go, History, Message, Opened,
-        PickerInput, Selected, Side, TextEdit, Whose,
+        PickerInput, Prefill, QuickAddInput, Selected, Side, TextEdit, Whose,
         navigator::Stop,
         update,
         view::{Shown, View},
@@ -1115,6 +1121,33 @@ mod tests {
             Some(state.document().inbox()),
             "back where it was"
         );
+        Ok(())
+    }
+
+    // F-FILE-06, FR-EDIT-07
+    #[test]
+    fn a_reload_keeps_quick_add_open_on_its_place_found_again_and_closes_its_picker() -> TestResult
+    {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::QuickAdd(Prefill::Nothing));
+        for c in "/P".chars() {
+            send(
+                &mut state,
+                Message::QuickAdd(QuickAddInput::Edit(TextEdit::Insert(c))),
+            );
+        }
+        send(&mut state, Message::QuickAddPicker(PickerInput::Choose));
+        send(
+            &mut state,
+            Message::QuickAdd(QuickAddInput::Edit(TextEdit::Insert('/'))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["x"])?)),
+        );
+        assert!(state.quick_add_picker().is_none());
+        let place = state.quick_add().map(|view| view.place);
+        assert_eq!(place, Some(vec!["P".to_owned()]));
         Ok(())
     }
 
