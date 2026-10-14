@@ -88,13 +88,14 @@ fn list<'a>(
     above.pop();
 }
 
-/// How many tasks not completed `id` holds, at any depth, leaving out the Trash and what
-/// completed items hold (FR-ORG-09).
+/// How many tasks not completed `id` holds, at any depth, leaving out the Trash, what completed
+/// items hold (FR-ORG-09) and, as its view does, the Inbox's scheduled tasks (FR-VIEW-01).
 fn open_tasks(document: &Document, id: ItemId) -> usize {
     document
         .children(id)
         .iter()
         .filter_map(|&child| Some((child, shown(document, child)?)))
+        .filter(|(_, item)| !container::scheduled_out_of_inbox(document, id, item))
         .map(|(child, item)| match item.kind {
             ItemKind::Task => 1,
             // Only tasks hold checklist items, so below a task there are no tasks to count.
@@ -177,13 +178,16 @@ mod tests {
         Ok(())
     }
 
-    // FR-VIEW-07, OQ-19
+    // FR-VIEW-07, FR-VIEW-01, OQ-19
     #[test]
-    fn counts_open_tasks_at_any_depth_leaving_out_the_trash_and_completed_items()
+    fn counts_open_tasks_at_any_depth_leaving_out_the_trash_completed_and_inbox_scheduled_items()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
         let inbox = document.inbox();
         add(&mut document, Some(inbox), Task, "a")?;
+        let mut scheduled = Item::new(Task, "later");
+        scheduled.start = Some(date(2026, 10, 20));
+        document.push(Some(inbox), Node::Item(scheduled))?;
         let work = add(&mut document, None, Area, "Work")?;
         let task = add(&mut document, Some(work), Task, "b")?;
         add(&mut document, Some(task), ChecklistItem, "not a task")?;

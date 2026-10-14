@@ -7,6 +7,7 @@ mod containers;
 mod converting;
 mod descriptions;
 mod editing;
+mod inbox;
 mod moving;
 mod navigation;
 mod quitting;

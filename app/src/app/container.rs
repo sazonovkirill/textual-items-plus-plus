@@ -1,7 +1,7 @@
 //! The container view: which rows an opened area, project, section or the Inbox shows, and in
 //! what arrangement (FR-VIEW-05, D-26). Hides how the arrangement follows from the document.
 
-use crate::domain::{Document, ItemId, ItemKind, Node};
+use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 
 /// One row of a container view, the items the focus moves through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +33,8 @@ impl Row {
 /// sections as a heading with the section's tasks below it, then its child projects, each group
 /// in file order whatever order the file mixes them in (FR-VIEW-05, FR-ORG-08). Within each group
 /// completed items come after the others, and are left out unless `show_completed` (FR-VIEW-11).
-/// The Inbox and a section hold only tasks. Content kept as read, items in the Trash and the
+/// The Inbox and a section hold only tasks, and the Inbox leaves out its scheduled ones
+/// (FR-VIEW-01). Content kept as read, items in the Trash and the
 /// contents of a completed item are not shown (FR-ORG-09); an item that is not a container, or
 /// no item at all, shows nothing.
 #[must_use]
@@ -133,6 +134,12 @@ pub(super) fn opens(document: &Document, id: ItemId) -> bool {
             .is_none_or(|parent| !document.conceals(parent))
 }
 
+/// Whether `item`, a child of `parent`, is an Inbox task with a start date, which the Inbox view
+/// leaves out as scheduling does in Things 3; the file keeps it under the Inbox (FR-VIEW-01).
+pub(super) fn scheduled_out_of_inbox(document: &Document, parent: ItemId, item: &Item) -> bool {
+    parent == document.inbox() && item.start.is_some()
+}
+
 /// How the children of one container are picked and ordered into a group of rows.
 #[derive(Clone, Copy)]
 struct Group<'a> {
@@ -147,8 +154,8 @@ impl<'a> Group<'a> {
             .map(move |id| Row::Task { id, section })
     }
 
-    /// The children of `parent` of kind `kind` that are not in the Trash, the uncompleted ones
-    /// first and then, if shown, the completed ones, each in file order.
+    /// The children of `parent` of kind `kind` that are not in the Trash or scheduled out of the
+    /// Inbox, the uncompleted ones first and then, if shown, the completed ones, each in file order.
     fn shown(self, parent: ItemId, kind: ItemKind) -> impl Iterator<Item = ItemId> + 'a {
         let children = |completed: bool| {
             self.document
@@ -163,6 +170,7 @@ impl<'a> Group<'a> {
                             item.kind == kind
                                 && item.deleted.is_none()
                                 && item.completed.is_some() == completed
+                                && !scheduled_out_of_inbox(self.document, parent, item)
                         })
                 })
         };
@@ -176,7 +184,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::domain::{Completion, Item, PlacementError};
+    use crate::domain::{Completion, PlacementError};
     use ItemKind::{Area, ChecklistItem, Project, Section, Task};
 
     fn add(document: &mut Document, parent: ItemId, kind: ItemKind) -> ItemId {
@@ -205,6 +213,31 @@ mod tests {
                 }
             ]
         );
+    }
+
+    // FR-VIEW-01
+    #[test]
+    fn scheduled_tasks_leave_the_inbox_but_not_a_project() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let project = document.push(None, Node::Item(Item::new(Project, "p")))?;
+        let mut scheduled = Item::new(Task, "later");
+        scheduled.start = Some(date(2026, 10, 20));
+        let mut started = Item::new(Task, "done");
+        started.start = Some(date(2026, 10, 1));
+        started.completed = Some(Completion::Undated);
+        let mut shown = |parent| -> Result<(Vec<ItemId>, Vec<ItemId>), PlacementError> {
+            let open = add(&mut document, parent, Task);
+            let scheduled = document.push(Some(parent), Node::Item(scheduled.clone()))?;
+            let started = document.push(Some(parent), Node::Item(started.clone()))?;
+            let ids = rows(&document, parent, true).into_iter().map(Row::id);
+            Ok((ids.collect(), vec![open, scheduled, started]))
+        };
+        let (in_inbox, added) = shown(inbox)?;
+        assert_eq!(in_inbox, added[..1], "completed or not");
+        let (in_project, added) = shown(project)?;
+        assert_eq!(in_project, added);
+        Ok(())
     }
 
     // FR-VIEW-05, FR-ORG-08, D-26

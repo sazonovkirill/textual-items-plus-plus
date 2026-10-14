@@ -2,7 +2,8 @@ Inbox:
 	Everything not sorted yet lands here.
 	- Call the bank about the card @due({today+2})
 	- Buy coffee beans @errands
-	- Read the article Sam sent @start({today+3})
+	- Plan the weekend trip @start({today+3})
+	- Read the article Sam sent
 Work: @area
 	Everything for the day job.
 	- Answer the recruiter's email @due({today-1})
