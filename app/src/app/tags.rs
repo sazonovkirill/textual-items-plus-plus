@@ -67,8 +67,9 @@ pub(super) struct TagPicker {
 }
 
 impl TagPicker {
-    /// The picker that tags `items`, listing every tag of the user's in the document, each
-    /// marked by how many of the items carry it; `None` without an item.
+    /// The picker that tags `items`, listing every tag of the user's in the document but those
+    /// only a completed item hides (FR-ORG-09), each marked by how many of the items carry it;
+    /// `None` without an item.
     pub(super) fn for_items(document: &Document, items: Vec<ItemId>) -> Option<Self> {
         let items: Vec<ItemId> = items
             .into_iter()
@@ -96,10 +97,14 @@ impl TagPicker {
     }
 
     /// The picker that chooses the tags `filter` holds, listing the tags of the user's carried by
-    /// the items in `rows` and those inside them, and those `filter` holds, which it marks.
+    /// the items in `rows`, inherited by them and carried by those shown inside them, and those
+    /// `filter` holds, which it marks.
     pub(super) fn for_filter(document: &Document, rows: &[Row], filter: &[String]) -> Self {
         let mut names = filter.to_vec();
         for row in rows {
+            let path = container::path(document, row.id());
+            let above = path.iter().filter_map(|&id| item(document, id));
+            names.extend(above.flat_map(users_tags).map(|tag| tag.name.clone()));
             gather(document, row.id(), &mut names);
         }
         let listed = listed(names, |name| {
@@ -278,8 +283,12 @@ fn inherits(document: &Document, id: ItemId, filter: &[String]) -> bool {
     })
 }
 
-/// Whether an open item inside `id`, outside the Trash, carries every tag of `filter`.
+/// Whether an open item inside `id`, outside the Trash and not hidden by a completed item
+/// (FR-ORG-09), carries every tag of `filter`.
 fn holds(document: &Document, id: ItemId, filter: &[String]) -> bool {
+    if document.conceals(id) {
+        return false;
+    }
     document
         .children(id)
         .iter()
@@ -292,13 +301,16 @@ fn holds(document: &Document, id: ItemId, filter: &[String]) -> bool {
         })
 }
 
-/// Adds the names of the user's tags carried by `id` and the items inside it, outside the Trash,
-/// to `names`.
+/// Adds the names of the user's tags carried by `id` and the items inside it, outside the Trash
+/// and not hidden by a completed item (FR-ORG-09), to `names`.
 fn gather(document: &Document, id: ItemId, names: &mut Vec<String>) {
     let Some(item) = item(document, id).filter(|item| item.deleted.is_none()) else {
         return;
     };
     names.extend(users_tags(item).map(|tag| tag.name.clone()));
+    if item.completion().is_some() {
+        return;
+    }
     for &child in document.children(id) {
         gather(document, child, names);
     }
@@ -668,6 +680,64 @@ mod tests {
             picker.input(document, PickerInput::Choose),
             Some(Picked::Chosen(Choice::Filter("work".to_owned())))
         );
+        Ok(())
+    }
+
+    // FR-TAG-04, D-50
+    #[test]
+    fn the_filter_picker_lists_the_tags_rows_inherit() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = add(&mut document, None, Project, "work", &["work"])?;
+        add(&mut document, Some(work), Task, "plan", &[])?;
+        let rows = rows(&document, work, false);
+        let picker = TagPicker::for_filter(&document, &rows, &[]);
+        assert_eq!(listed(&picker), [entry("work", TagMark::Off)]);
+        let kept = filtered(&document, rows, &filter(&["work"]));
+        assert_eq!(titles(&document, &kept), ["plan"]);
+        Ok(())
+    }
+
+    // FR-TAG-04, FR-ORG-09
+    #[test]
+    fn what_a_completed_item_hides_neither_offers_nor_matches_a_tag() -> Result<(), PlacementError>
+    {
+        let mut document = Document::new();
+        let area = add(&mut document, None, Area, "home", &[])?;
+        let project = add(&mut document, Some(area), Project, "house", &[])?;
+        let section = Item {
+            completed: Some(Completion::Undated),
+            ..Item::new(Section, "repairs")
+        };
+        let section = document.push(Some(project), Node::Item(section))?;
+        add(&mut document, Some(section), Task, "safe", &["secret"])?;
+        let rows = rows(&document, area, false);
+        assert_eq!(titles(&document, &rows), ["house"]);
+        let picker = TagPicker::for_filter(&document, &rows, &[]);
+        assert_eq!(listed(&picker), []);
+        let kept = filtered(&document, rows, &filter(&["secret"]));
+        assert_eq!(titles(&document, &kept), Vec::<String>::new());
+        let picker =
+            TagPicker::for_items(&document, vec![project]).ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(listed(&picker), []);
+        Ok(())
+    }
+
+    // FR-TAG-04, FR-ORG-09
+    #[test]
+    fn a_completed_project_row_does_not_match_by_what_it_hides() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let project = add(&mut document, None, Project, "p", &[])?;
+        add(&mut document, Some(project), Task, "a", &["x"])?;
+        let done = Item {
+            completed: Some(Completion::Undated),
+            ..Item::new(Project, "done")
+        };
+        let done = document.push(Some(project), Node::Item(done))?;
+        add(&mut document, Some(done), Task, "t", &["x"])?;
+        let rows = rows(&document, project, true);
+        assert_eq!(titles(&document, &rows), ["a", "done"]);
+        let kept = filtered(&document, rows, &filter(&["x"]));
+        assert_eq!(titles(&document, &kept), ["a"]);
         Ok(())
     }
 
