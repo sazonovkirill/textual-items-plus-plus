@@ -213,6 +213,29 @@ fn a_reload_closes_the_context_menu() {
     );
 }
 
+// F-FILE-06, FR-NAV-06, D-116
+#[test]
+fn a_reload_closes_the_command_palette() {
+    let (_dir, path, mut harness) = on_file("Inbox:\n\t- Added ext\n\t- Buy milk\n\t- Call mom\n");
+    harness.type_text("G");
+    harness.press(KeyCode::Char('p'), KeyModifiers::CONTROL);
+    harness.type_text("delete");
+    assert!(harness.screen().contains("Command Palette"));
+    fs::write(&path, "Inbox:\n\t- Added ext\n\t- Buy milk\n").expect("written");
+    harness.check();
+    assert!(
+        !harness.screen().contains("Command Palette"),
+        "{}",
+        harness.screen()
+    );
+    harness.press(KeyCode::Enter, KeyModifiers::NONE);
+    let screen = harness.screen();
+    assert!(
+        screen.contains("☐ Added ext") && screen.contains("☐ Buy milk"),
+        "nothing deleted: {screen}"
+    );
+}
+
 // F-FILE-06
 #[test]
 fn the_watcher_sees_a_change_made_elsewhere() {

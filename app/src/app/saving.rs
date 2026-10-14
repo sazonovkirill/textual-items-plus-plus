@@ -480,9 +480,9 @@ impl State {
     /// again, else on the Inbox, and each pane's attachments panel open while its item is and
     /// [stays](attachments::stays) open, on what it selected as far as that is found again, and
     /// the sidebar on its entry and its collapsed areas as they are found again. The tag filter
-    /// stays while the container shown is found again as it was. The context menu closes, since
-    /// what it offers was worked out from the document as it was (D-110). The undo history is
-    /// cleared, since its steps fit only the document as it was.
+    /// stays while the container shown is found again as it was. The context menu and the command
+    /// palette close, since what they offer was worked out from the document as it was (D-110,
+    /// D-116). The undo history is cleared, since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -525,6 +525,7 @@ impl State {
         self.edit_dialog =
             (self.edit_dialog.take()).and_then(|dialog| dialog.rematched(new, exact));
         self.context_menu = None;
+        self.palette = None;
         self.sidebar.rematch(exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
