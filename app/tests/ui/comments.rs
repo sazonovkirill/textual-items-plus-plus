@@ -46,15 +46,19 @@ fn comment_on_a_task() {
         panel(&harness)[1..9],
         [
             "│ 󱇗 Note                               │",
-            "│▌No note                              │",
+            "│ No note                              │",
             "│                                      │",
             "│ \u{f0756} Checklist                          │",
             "│ No checklist                         │",
             "│                                      │",
             "│ 󰆉 Comments                           │",
-            "│ No comments                          │",
+            "│▌No comments                          │",
         ],
-        "a task's checklist comes between"
+        "a task's checklist comes between, and its comments, none yet, are selected"
+    );
+    assert_eq!(
+        panel(&harness)[13],
+        "│ a comment · \\ full · Esc close       │"
     );
     harness.type_text("aPhotos: done");
     assert_eq!(

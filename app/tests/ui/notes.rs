@@ -181,24 +181,26 @@ fn a_long_note_scrolls() {
     assert_eq!(
         panel(&harness)[1..7],
         [
+            "│ line 12                              │",
+            "│ end                                  │",
             "│                                      │",
             "│ \u{f0756} Checklist                          │",
             "│▌No checklist                         │",
             "│                                      │",
-            "│ 󰆉 Comments                           │",
-            "│ No comments                          │",
         ],
         "and the next goes on to the task's empty checklist"
     );
     harness.type_text("gG");
     assert_eq!(
-        panel(&harness)[3..7],
+        panel(&harness)[3..8],
         [
-            "│▌No checklist                         │",
+            "│ \u{f0756} Checklist                          │",
+            "│ No checklist                         │",
             "│                                      │",
             "│ 󰆉 Comments                           │",
-            "│ No comments                          │",
-        ]
+            "│▌No comments                          │",
+        ],
+        "the last is the empty comments"
     );
     harness.key(KeyCode::Esc);
     harness.type_text("\\");

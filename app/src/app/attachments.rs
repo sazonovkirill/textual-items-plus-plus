@@ -6,6 +6,8 @@
 //! checklist item and a comment are edited as an item's description and title are, so a session
 //! is one step to undo and is saved like any edit.
 
+use std::mem;
+
 use jiff::civil::{Date, DateTime};
 
 use super::{
@@ -40,8 +42,9 @@ pub enum Selected {
     Note,
     /// One item of a task's checklist, or `None` for a checklist with no items (FR-CHK-02).
     Checklist(Option<ItemId>),
-    /// The comment at this index, newest first.
-    Comment(usize),
+    /// The comment at this index, newest first, or `None` for an item with no comments, so that
+    /// a comment can be added from there as from any entry (FR-ATT-04).
+    Comment(Option<usize>),
 }
 
 /// The open panel: the item it is on, what is selected and what was selected before a checklist
@@ -160,7 +163,9 @@ impl State {
                     Selected::Checklist(item) => {
                         item.and_then(|item| Editing::existing(&self.document, item, before))
                     }
-                    Selected::Comment(index) => Editing::comment(&self.document, id, index, before),
+                    Selected::Comment(index) => {
+                        index.and_then(|index| Editing::comment(&self.document, id, index, before))
+                    }
                 };
                 self.start_editing(editing);
             }
@@ -171,13 +176,13 @@ impl State {
                 let editing =
                     Editing::new_comment(&mut self.document, id, comments::stamp(now), before);
                 self.start_editing(editing);
-                self.panel = Some(Panel::new(id, Selected::Comment(0)));
+                self.panel = Some(Panel::new(id, Selected::Comment(Some(0))));
             }
             AttachmentsInput::Delete => {
                 let transaction = match selected {
                     Selected::Checklist(Some(item)) => checklist::delete(&self.document, item),
-                    Selected::Comment(index) => without_comment(&self.document, id, index),
-                    Selected::Note | Selected::Checklist(None) => return,
+                    Selected::Comment(Some(index)) => without_comment(&self.document, id, index),
+                    Selected::Note | Selected::Checklist(None) | Selected::Comment(None) => return,
                 };
                 let before = entries(&self.document, id);
                 self.change(transaction);
@@ -314,7 +319,7 @@ impl State {
                 Some(again) => Selected::Checklist(Some(again)),
                 None => first_of_checklist(&self.document, found),
             },
-            Selected::Comment(index) => {
+            Selected::Comment(Some(index)) => {
                 let line = old
                     .node(id)
                     .and_then(Node::item)
@@ -326,9 +331,9 @@ impl State {
                     .map(|item| item.comments.as_slice())
                     .unwrap_or_default();
                 let again = comments.iter().position(|comment| Some(comment) == line);
-                Selected::Comment(again.unwrap_or(index))
+                Selected::Comment(Some(again.unwrap_or(index)))
             }
-            Selected::Note => Selected::Note,
+            selected @ (Selected::Note | Selected::Comment(None)) => selected,
         };
         Some(Panel::new(found, selected))
     }
@@ -351,21 +356,23 @@ pub(super) fn acts_on(command: Command) -> bool {
     )
 }
 
-/// `selected` as far as `item` has it: a comment past the last is the last, and with no
-/// comments the note.
+/// `selected` as far as `item` has it: a comment past the last is the last, with no comments
+/// the empty comments, and the empty comments once there are some the first.
 fn kept(item: &Item, selected: Selected) -> Selected {
     match selected {
-        Selected::Comment(index) if index >= item.comments.len() => item
-            .comments
-            .len()
-            .checked_sub(1)
-            .map_or(Selected::Note, Selected::Comment),
+        Selected::Comment(index) => {
+            let last = item.comments.len().checked_sub(1);
+            Selected::Comment(
+                index.map_or(last.and(Some(0)), |index| last.map(|last| index.min(last))),
+            )
+        }
         selected => selected,
     }
 }
 
 /// What the panel on `id` has to select, in the order it shows them: the note, then a task's
-/// checklist items, or its empty checklist when it has none, then the comments.
+/// checklist items, or its empty checklist when it has none, then the comments, or its empty
+/// comments when it has none.
 fn entries(document: &Document, id: ItemId) -> Vec<Selected> {
     let mut entries = vec![Selected::Note];
     if is_task(document, id) {
@@ -379,19 +386,29 @@ fn entries(document: &Document, id: ItemId) -> Vec<Selected> {
         .node(id)
         .and_then(Node::item)
         .map_or(0, |item| item.comments.len());
-    entries.extend((0..comments).map(Selected::Comment));
+    if comments == 0 {
+        entries.push(Selected::Comment(None));
+    }
+    entries.extend((0..comments).map(|index| Selected::Comment(Some(index))));
     entries
 }
 
 /// `panel` with its selection kept on what `document` has once what it had, `before`, changed
-/// and what was selected is gone: what is now where it was takes its place, else the last.
+/// and what was selected is gone: what is now where it was takes its place while it is of the
+/// same section, else the one before it, so that the selection stays in its section, which keeps
+/// an entry, if only the one saying it is empty.
 fn settled(document: &Document, panel: Panel, before: &[Selected]) -> Panel {
     let now = entries(document, panel.id);
     let at = before
         .iter()
         .position(|&entry| entry == panel.selected)
         .unwrap_or_default();
-    let selected = now.get(at).or(now.last()).copied();
+    let section = mem::discriminant(&panel.selected);
+    let selected = now
+        .get(at)
+        .filter(|&entry| mem::discriminant(entry) == section)
+        .or_else(|| now.get(at.checked_sub(1)?))
+        .copied();
     Panel {
         selected: selected.unwrap_or(Selected::Note),
         ..panel
@@ -563,10 +580,17 @@ mod tests {
     fn comments_are_added_newest_first_edited_and_deleted_each_one_step_to_undo()
     -> Result<(), PlacementError> {
         let (mut state, a, _) = state()?;
-        state.open_attachments(Whose::Focused, Selected::Comment(0));
-        assert_eq!(selected(&state), Some(Selected::Note), "there is none yet");
+        state.open_attachments(Whose::Focused, Selected::Comment(Some(0)));
+        assert_eq!(
+            selected(&state),
+            Some(Selected::Comment(None)),
+            "there is none yet"
+        );
+        state.attachments_input(AttachmentsInput::Edit);
+        state.attachments_input(AttachmentsInput::Delete);
+        assert_eq!(state.editing(), None, "nothing to edit");
         state.attachments_input(AttachmentsInput::AddComment(TODAY.at(9, 5, 0, 0)));
-        assert_eq!(selected(&state), Some(Selected::Comment(0)));
+        assert_eq!(selected(&state), Some(Selected::Comment(Some(0))));
         type_text(&mut state, " Called ");
         assert_eq!(comments(&state, a), ["[2026-10-14 09:05]  Called "]);
         let view = state.attachments().ok_or(PlacementError::DoesNotFit)?;
@@ -598,11 +622,19 @@ mod tests {
         assert_eq!(comments(&state, a), ["[2026-10-14 17:30] Again"]);
         assert_eq!(
             selected(&state),
-            Some(Selected::Comment(0)),
+            Some(Selected::Comment(Some(0))),
             "the last left"
+        );
+        state.attachments_input(AttachmentsInput::Delete);
+        assert_eq!(comments(&state, a), Vec::<String>::new());
+        assert_eq!(
+            selected(&state),
+            Some(Selected::Comment(None)),
+            "the last gone, there are none"
         );
         state.attachments_input(AttachmentsInput::Close);
         let before_each = [
+            vec!["[2026-10-14 17:30] Again"],
             vec!["[2026-10-14 17:30] Again", "[2026-10-14 09:05] Called!"],
             vec!["[2026-10-14 17:30] Again", "[2026-10-14 09:05] Called"],
             vec!["[2026-10-14 09:05] Called"],
@@ -669,16 +701,16 @@ mod tests {
         item.comments = vec!["new".to_owned(), "middle".to_owned(), "old".to_owned()];
         document.set(a, item)?;
         state = State::new(document, Opened::Demo, TODAY);
-        state.open_attachments(Whose::Focused, Selected::Comment(0));
-        assert_eq!(selected(&state), Some(Selected::Comment(0)));
+        state.open_attachments(Whose::Focused, Selected::Comment(Some(0)));
+        assert_eq!(selected(&state), Some(Selected::Comment(Some(0))));
         for (motion, expected) in [
             (Focus::Previous, Selected::Checklist(Some(c))),
             (Focus::Previous, Selected::Note),
             (Focus::Previous, Selected::Note),
             (Focus::Next, Selected::Checklist(Some(c))),
-            (Focus::Next, Selected::Comment(0)),
-            (Focus::Last, Selected::Comment(2)),
-            (Focus::Next, Selected::Comment(2)),
+            (Focus::Next, Selected::Comment(Some(0))),
+            (Focus::Last, Selected::Comment(Some(2))),
+            (Focus::Next, Selected::Comment(Some(2))),
             (Focus::First, Selected::Note),
         ] {
             state.attachments_input(AttachmentsInput::Select(motion));
@@ -832,8 +864,9 @@ mod tests {
             (Focus::Next, Some(entry(b))),
             (Focus::Next, Some(entry(d))),
             (Focus::Previous, Some(entry(b))),
-            (Focus::Last, Some(entry(c))),
-            (Focus::Next, Some(entry(c))),
+            (Focus::Last, Some(Selected::Comment(None))),
+            (Focus::Next, Some(Selected::Comment(None))),
+            (Focus::Previous, Some(entry(c))),
             (Focus::First, Some(Selected::Note)),
             (Focus::Previous, Some(Selected::Note)),
         ];
@@ -855,8 +888,8 @@ mod tests {
         input(&mut state, AttachmentsInput::Select(Focus::Next));
         assert_eq!(
             selected(&state),
-            Some(Selected::Note),
-            "what is not a task has only its note"
+            Some(Selected::Comment(None)),
+            "what is not a task has its note and comments"
         );
         Ok(())
     }
@@ -941,6 +974,7 @@ mod tests {
         assert_eq!(checklist(&state), nested);
         give(&mut state, Command::Outdent);
         give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::Focus(Focus::Previous));
         give(&mut state, Command::Delete);
         assert_eq!(
             selected(&state),
@@ -988,7 +1022,7 @@ mod tests {
             TODAY,
         );
         assert_eq!(state.document(), &before, "nothing pastes on the note");
-        input(&mut state, AttachmentsInput::Select(Focus::Last));
+        input(&mut state, AttachmentsInput::Select(Focus::Next));
         give(&mut state, Command::AddProject(End::Bottom));
         assert_eq!(state.document(), &before);
         let effects = update(

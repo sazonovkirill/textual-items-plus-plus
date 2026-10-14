@@ -1142,7 +1142,7 @@ impl State {
                 self.open_panel(id, Selected::Note);
             }
             (Command::OpenComments(_), Some(Shown::Container(id))) => {
-                self.open_panel(id, Selected::Comment(0));
+                self.open_panel(id, Selected::Comment(Some(0)));
             }
             (Command::OpenChecklist, Some(_)) => self.notify(Notice::NoChecklist),
             _ => {}

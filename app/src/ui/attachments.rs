@@ -405,7 +405,9 @@ impl<'a> AttachmentsPanel<'a> {
         let mut start = height(&lines);
         lines.push(self.heading(Icon::Comments, "Comments"));
         if item.comments.is_empty() {
+            let own = height(&lines);
             lines.push(Line::styled("No comments", dim));
+            entries.push(Entry(Selected::Comment(None), start, own..height(&lines)));
         }
         for (index, comment) in item.comments.iter().enumerate() {
             let own = height(&lines);
@@ -414,7 +416,7 @@ impl<'a> AttachmentsPanel<'a> {
             }
             let (_, text) = comments::split(comment);
             let stamp = comments::time(comment).map(|time| self.stamp(time));
-            if let Some((field, (line, column))) = editing(Selected::Comment(index)) {
+            if let Some((field, (line, column))) = editing(Selected::Comment(Some(index))) {
                 lines.extend(stamp.map(|stamp| Line::styled(stamp, dim)));
                 caret = Some((height(&lines) + line, *column));
                 lines.extend(field.iter().cloned());
@@ -425,7 +427,11 @@ impl<'a> AttachmentsPanel<'a> {
                 line.spans.extend(self.formatted(text, Style::new()));
                 lines.push(line);
             }
-            entries.push(Entry(Selected::Comment(index), start, own..height(&lines)));
+            entries.push(Entry(
+                Selected::Comment(Some(index)),
+                start,
+                own..height(&lines),
+            ));
         }
         Content {
             total: height(&lines),
@@ -608,7 +614,8 @@ impl<'a> AttachmentsPanel<'a> {
                 &["e edit", "o add", "x check", "d del", "a comment"]
             }
             (None, Selected::Checklist(None)) => &["o add", "a comment"],
-            (None, Selected::Comment(_)) => &["e edit", "d del", "a comment"],
+            (None, Selected::Comment(Some(_))) => &["e edit", "d del", "a comment"],
+            (None, Selected::Comment(None)) => &["a comment"],
         };
         let width_key = if self.full { "\\ half" } else { "\\ full" };
         let rest: &[&str] = if self.view.editing.is_some() {
@@ -1181,7 +1188,7 @@ mod tests {
                 "[2025-12-30 18:02] Called",
             ],
         );
-        let (buf, top, caret) = draw_item(&item, Selected::Comment(1), None, (40, 12), 0);
+        let (buf, top, caret) = draw_item(&item, Selected::Comment(Some(1)), None, (40, 12), 0);
         assert_eq!((top, caret), (0, None));
         assert_eq!(
             rows(&buf),
@@ -1208,7 +1215,7 @@ mod tests {
         );
         assert!((1..39).all(|x| buf[(x, 6)].bg == theme.current_line));
         assert_eq!(banded(&buf), [6]);
-        let (buf, ..) = draw_item(&item, Selected::Comment(0), None, (40, 12), 0);
+        let (buf, ..) = draw_item(&item, Selected::Comment(Some(0)), None, (40, 12), 0);
         assert_eq!(banded(&buf), [5], "the heading is not the comment's");
         let (buf, ..) = draw_item(&item, Selected::Note, None, (40, 12), 0);
         assert_eq!(banded(&buf), [2], "nor the blank line after the note");
@@ -1219,7 +1226,8 @@ mod tests {
     fn a_comment_edited_shows_its_timestamp_above_its_text_as_typed() {
         let item = commented("", &["[2026-10-05 09:30] Called", "by hand"]);
         let field = TextField::new("Called them".to_owned());
-        let (buf, _, caret) = draw_item(&item, Selected::Comment(0), Some(&field), (40, 11), 0);
+        let (buf, _, caret) =
+            draw_item(&item, Selected::Comment(Some(0)), Some(&field), (40, 11), 0);
         assert_eq!(
             rows(&buf)[4..8].to_vec(),
             [
@@ -1231,7 +1239,8 @@ mod tests {
         );
         assert_eq!(rows(&buf)[9], "│ Enter done · Esc cancel              │");
         assert_eq!(caret, Some(Position::new(13, 6)));
-        let (buf, _, caret) = draw_item(&item, Selected::Comment(1), Some(&field), (40, 11), 0);
+        let (buf, _, caret) =
+            draw_item(&item, Selected::Comment(Some(1)), Some(&field), (40, 11), 0);
         assert_eq!(
             rows(&buf)[6],
             "│▌Called them                          │",
@@ -1246,7 +1255,7 @@ mod tests {
         let lines = (1..=10).map(|n| format!("c{n}")).collect::<Vec<_>>();
         let comments: Vec<&str> = lines.iter().map(String::as_str).collect();
         let item = commented("", &comments);
-        let (_, top, _) = draw_item(&item, Selected::Comment(9), None, (40, 9), 0);
+        let (_, top, _) = draw_item(&item, Selected::Comment(Some(9)), None, (40, 9), 0);
         assert_eq!(top, 10, "the last comment is the last line in view");
         let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 9), 10);
         assert_eq!(top, 0);
@@ -1267,7 +1276,7 @@ mod tests {
         let mut buf = Buffer::empty(area);
         let mut scrolled = Scrolled {
             top: 10,
-            drawn: Some(Selected::Comment(0)),
+            drawn: Some(Selected::Comment(Some(0))),
         };
         AttachmentsPanel::new(view(Selected::Note), &theme, IconSet::Plain, TODAY).render(
             AttachmentsPanel::area(area),
@@ -1287,8 +1296,12 @@ mod tests {
         assert_eq!(scrolled.top, 5, "scrolling through it stays");
         let (_, top, _) = draw_item(&item, Selected::Note, None, (40, 9), 20);
         assert_eq!(top, 10, "in view");
-        let panel =
-            AttachmentsPanel::new(view(Selected::Comment(0)), &theme, IconSet::Plain, TODAY);
+        let panel = AttachmentsPanel::new(
+            view(Selected::Comment(Some(0))),
+            &theme,
+            IconSet::Plain,
+            TODAY,
+        );
         assert_eq!(panel.selected_lines(area), (12, 14));
     }
 
@@ -1502,14 +1515,45 @@ mod tests {
         assert_eq!(buf[(2, 5)].bg, theme.current_line);
         assert_eq!(
             AttachmentsPanel::new(view, &theme, IconSet::Plain, TODAY).selected_lines(area),
-            (3, 8),
-            "its heading and line, running to the end with no comments after it"
+            (3, 6),
+            "its heading and line, running to the empty comments after it"
         );
         assert_eq!(
             banded(&buf),
             [5],
             "its heading and the blank line after it off the band"
         );
+    }
+
+    // FR-ATT-04
+    #[test]
+    fn empty_comments_are_selected_as_an_entry() {
+        let task = Item::new(ItemKind::Task, "Pack");
+        let theme = BuiltIn::default().colors();
+        let view = AttachmentsView {
+            id: ItemId::new(1),
+            item: &task,
+            selected: Selected::Comment(None),
+            checklist: Some(Vec::new()),
+            editing: None,
+        };
+        let area = Rect::new(0, 0, 40, 13);
+        let mut buf = Buffer::empty(area);
+        let panel = AttachmentsPanel::new(view, &theme, IconSet::Plain, TODAY);
+        assert_eq!(
+            panel.selected_lines(area),
+            (6, 8),
+            "its heading and line, to the end"
+        );
+        panel.render(
+            AttachmentsPanel::area(area),
+            &mut buf,
+            &mut Scrolled::default(),
+        );
+        let rows = rows(&buf);
+        assert_eq!(rows[8], "│▌No comments                          │");
+        assert_eq!(banded(&buf), [8], "its heading off the band");
+        assert_eq!(rows[11], "│ a comment · \\ full · Esc close       │");
     }
 
     /// The rows of `buf` on the current-line band.

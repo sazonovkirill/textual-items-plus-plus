@@ -978,22 +978,39 @@ mod tests {
             Message::Attachments(AttachmentsInput::Select(Focus::Last)),
         );
         let selected = |state: &State| state.attachments().map(|view| view.selected);
-        assert_eq!(selected(&state), Some(Selected::Comment(1)));
+        assert_eq!(selected(&state), Some(Selected::Comment(Some(1))));
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(commented(&["new", "x", "y"])?)),
         );
-        assert_eq!(selected(&state), Some(Selected::Comment(2)), "y again");
+        assert_eq!(
+            selected(&state),
+            Some(Selected::Comment(Some(2))),
+            "y again"
+        );
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(commented(&["new", "x", "z"])?)),
         );
-        assert_eq!(selected(&state), Some(Selected::Comment(2)), "y is gone");
+        assert_eq!(
+            selected(&state),
+            Some(Selected::Comment(Some(2))),
+            "y is gone"
+        );
         send(
             &mut state,
             Message::OnDisk(OnDisk::Changed(commented(&[])?)),
         );
-        assert_eq!(selected(&state), Some(Selected::Note));
+        assert_eq!(selected(&state), Some(Selected::Comment(None)), "none left");
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(commented(&["back"])?)),
+        );
+        assert_eq!(
+            selected(&state),
+            Some(Selected::Comment(Some(0))),
+            "one again"
+        );
         Ok(())
     }
 

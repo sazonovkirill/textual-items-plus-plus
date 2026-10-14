@@ -250,7 +250,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
             state.open_attachments(whose, Selected::Note);
         }
         Command::OpenComments(whose) => {
-            state.open_attachments(whose, Selected::Comment(0));
+            state.open_attachments(whose, Selected::Comment(Some(0)));
         }
         Command::OpenChecklist => state.open_checklist(),
         Command::Tags => state.open_tags(),
