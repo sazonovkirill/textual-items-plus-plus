@@ -119,7 +119,7 @@ impl<'a> SidebarPane<'a> {
             Some((id, field)) if stop.shown() == Shown::Container(id) => {
                 let caret = Span::raw(field.text().get(..field.caret()).unwrap_or_default());
                 let room = usize::from(content.right().saturating_sub(x));
-                (caret.width() + 1).saturating_sub(room).min(caret.width())
+                super::field::shift(field.text(), caret.width(), room)
             }
             _ => 0,
         };
@@ -540,6 +540,30 @@ mod tests {
         assert_eq!(caret, Some(Position::new(18, 0)), "scrolled into view");
         let (_, _, caret) = draw(&state, 3, 3);
         assert_eq!(caret, None, "too narrow");
+        Ok(())
+    }
+
+    // FR-VIEW-10, FR-EDIT-02, N-PORT-04
+    #[test]
+    fn a_title_of_wide_characters_scrolls_sideways_by_whole_characters()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
+            give(&mut state, Command::Focus(motion));
+        }
+        give(&mut state, Command::RenameContainer);
+        update(
+            &mut state,
+            Message::Edit(crate::app::EditInput::Text(TextEdit::SelectAll)),
+            jiff::civil::date(2026, 10, 14),
+        );
+        for c in "日本日本日本日本日".chars() {
+            let typed = Message::Edit(crate::app::EditInput::Text(TextEdit::Insert(c)));
+            update(&mut state, typed, jiff::civil::date(2026, 10, 14));
+        }
+        let (rows, _, caret) = draw(&state, 20, 3);
+        assert_eq!(rows[2], "▌# 日 本 日 本 日 本 日   │");
+        assert_eq!(caret, Some(Position::new(17, 2)));
         Ok(())
     }
 

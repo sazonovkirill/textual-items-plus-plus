@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::Theme;
-use crate::app::TextField;
+use crate::app::{TextField, grapheme_columns};
 
 /// The bytes `line` of `field`'s text, its selected part in the selection colors of `theme`.
 pub(super) fn selected<'a>(field: &'a TextField, line: Range<usize>, theme: &Theme) -> Line<'a> {
@@ -49,4 +49,15 @@ pub(super) fn wrapped<'a>(
         .map(|line| selected(field, line, theme))
         .collect();
     (lines, (line, column))
+}
+
+/// The display columns `text` is scrolled sideways to keep its caret, `caret` columns into it,
+/// in view in `columns`: none while it fits, else the fewest whole graphemes that keep it in the
+/// last column, and never past the caret.
+pub(super) fn shift(text: &str, caret: usize, columns: usize) -> usize {
+    let needed = (caret + 1).saturating_sub(columns);
+    grapheme_columns(text)
+        .map(|(_, before)| before)
+        .find(|&before| before >= needed)
+        .map_or(caret, |before| before.min(caret))
 }

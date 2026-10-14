@@ -178,12 +178,17 @@ impl Piece<'_> {
             .max(1)
     }
 
-    /// The columns a text field is scrolled sideways in content `width`: none while its caret
-    /// fits, else as many as keep the caret in the last column, and never past the caret.
+    /// The columns a text field is scrolled sideways in content `width`, as [`field::shift`]
+    /// scrolls the caret's line.
     fn shift(&self, width: u16) -> usize {
-        let columns = usize::from(self.text_width(width));
-        self.caret.map_or(0, |(_, caret)| {
-            (caret + 1).saturating_sub(columns).min(caret)
+        self.caret.map_or(0, |(line, caret)| {
+            let text: String = self
+                .text
+                .lines
+                .get(line)
+                .map(|line| line.spans.iter().map(|span| &*span.content).collect())
+                .unwrap_or_default();
+            field::shift(&text, caret, usize::from(self.text_width(width)))
         })
     }
 }
@@ -1699,6 +1704,18 @@ mod tests {
         assert_eq!(buf[(8, 6)].bg, theme.selection, "the selected word");
         assert_eq!(buf[(7, 6)].bg, theme.current_line, "the space before it");
         assert_eq!(caret, Some(Position::new(8, 6)));
+    }
+
+    // FR-EDIT-02, N-PORT-04
+    #[test]
+    fn a_title_of_wide_characters_scrolls_sideways_by_whole_characters() {
+        let field = TextField::new("日本日本日本日本日".to_owned());
+        let (buf, caret) = draw_editing("Call the bank about the card", &field, 20);
+        assert_eq!(
+            lines(&buf).get(5).map(String::as_str),
+            Some("▌ ☐ 日 本 日 本 日 本 日   ")
+        );
+        assert_eq!(caret, Some(Position::new(18, 5)));
     }
 
     // FR-EDIT-02

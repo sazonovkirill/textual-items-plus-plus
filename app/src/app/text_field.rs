@@ -289,7 +289,8 @@ impl TextField {
                     lines
                         .get(index)
                         .and_then(|line| self.text.get(line.start..self.caret))
-                        .map_or(0, |before| before.graphemes(true).count())
+                        .and_then(|before| grapheme_columns(before).last())
+                        .map_or(0, |(_, column)| column)
                 });
                 goal = Some(column);
                 let target = match motion {
@@ -389,21 +390,29 @@ impl TextField {
     }
 }
 
-/// The offset `column` graphemes into `line`, a screen line of `text`, or the end of the line
-/// when it is shorter; the start of its last grapheme when the text `wraps` after it, since its
-/// end is where the next line starts.
+/// The last grapheme boundary of `line`, a screen line of `text`, at most `column` display
+/// columns into it; never its end when the text `wraps` after it, since that is where the next
+/// line starts.
 fn in_line(text: &str, line: Range<usize>, wraps: bool, column: usize) -> usize {
-    let starts: Vec<usize> = text
-        .get(line.clone())
-        .unwrap_or_default()
-        .grapheme_indices(true)
-        .map(|(at, _)| line.start + at)
-        .collect();
-    match starts.get(column) {
-        Some(&at) => at,
-        None if wraps => starts.last().copied().unwrap_or(line.end),
-        None => line.end,
+    let mut stops: Vec<_> = grapheme_columns(text.get(line.clone()).unwrap_or_default()).collect();
+    if wraps {
+        stops.pop();
     }
+    stops
+        .into_iter()
+        .take_while(|&(_, before)| before <= column)
+        .last()
+        .map_or(line.start, |(at, _)| line.start + at)
+}
+
+/// Each grapheme boundary of `text`, from its start to its end, as its byte offset and the
+/// display columns before it (N-PORT-04).
+pub fn grapheme_columns(text: &str) -> impl Iterator<Item = (usize, usize)> {
+    let mut column = 0;
+    iter::once((0, 0)).chain(text.grapheme_indices(true).map(move |(at, grapheme)| {
+        column += grapheme.width();
+        (at + grapheme.len(), column)
+    }))
 }
 
 /// `text` with each line break as `\n`.
@@ -657,10 +666,25 @@ mod tests {
         check_area("a|bc\ndef", go(DOWN), "abc\nd|ef");
         check_area("abc\ndef|", go(UP), "abc|\ndef");
         check_area(
-            &format!("{FAMILY}a\nb|c"),
+            &format!("{FAMILY}a\nbc|"),
             go(UP),
             &format!("{FAMILY}|a\nbc"),
         );
+    }
+
+    // FR-EDIT-04, N-PORT-04
+    #[test]
+    fn moves_up_and_down_to_the_same_display_column() {
+        check_area("日|a\nabcd", go(DOWN), "日a\nab|cd");
+        check_area("ab|cd\n日日", go(DOWN), "abcd\n日|日");
+        check_area("a|bcd\n日日", go(DOWN), "abcd\n|日日");
+        assert_eq!(
+            edited_area("日日|\na\nabcde", &[go(DOWN), go(DOWN)]),
+            "日日\na\nabcd|e",
+            "the display column holds past a shorter line"
+        );
+        let down = Motion::Down { width: 4 };
+        check_area("abcd|\n日日日", go(down), "abcd\n日|日日");
     }
 
     // FR-EDIT-04
