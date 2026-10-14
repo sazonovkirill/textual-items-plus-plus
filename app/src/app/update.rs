@@ -214,7 +214,7 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Direction, End, Focus, Go, Notice, Opened, Refusal, Side, Stop, TextEdit,
+        Direction, End, Focus, Go, Notice, Opened, Part, Refusal, Side, Stop, TextEdit, Whose,
         view::{Shown, View},
     };
     use crate::domain::{
@@ -603,6 +603,26 @@ mod tests {
         Ok(())
     }
 
+    // FR-ORG-10, FR-VIEW-10, D-68
+    #[test]
+    fn the_sidebar_opens_its_project_to_edit_its_description() -> Result<(), PlacementError> {
+        let mut document = state()?.document().clone();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Project, "Work")))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::EditDescription(Whose::Focused));
+        assert!(state.editing().is_none(), "not the Inbox's");
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::EditDescription(Whose::Focused));
+        assert_eq!(
+            state.editing().map(|(id, part, _)| (id, part)),
+            Some((work, Part::Description))
+        );
+        assert_eq!(state.container(), Some(work));
+        assert!(!state.sidebar_has_keys());
+        Ok(())
+    }
+
     // FR-VIEW-10, FR-EDIT-05, FR-ORG-06, FR-OPS-05
     #[test]
     fn the_sidebar_adds_renames_and_deletes_without_moving_the_pane() -> Result<(), PlacementError>
@@ -976,6 +996,13 @@ mod tests {
         assert_eq!(titles(&state), ["a", "b", "c"], "one step to undo");
         give(&mut state, Command::ClearSelection);
         give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::Convert);
+        assert_eq!(
+            titles(&state),
+            ["a", "b", "c"],
+            "the heading does not convert"
+        );
+        give(&mut state, Command::Focus(Focus::Next));
         give(&mut state, Command::Convert);
         assert_eq!(titles(&state), ["b", "c", "a"]);
         assert_eq!(focused(&state), Some("a"));

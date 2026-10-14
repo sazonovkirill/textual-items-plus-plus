@@ -18,7 +18,7 @@ use super::{
     move_to::{Destination, MoveTo},
     moving,
     navigator::{self, Stop},
-    pane::{Pane, PaneView, listed},
+    pane::{self, Pane, PaneView, listed},
     saving::Saving,
     settings::{Setting, Settings},
     sidebar::{self, Sidebar},
@@ -285,13 +285,14 @@ impl State {
             Direction::Up => Focus::Previous,
             Direction::Down => Focus::Next,
         };
-        let target = focus::target(&rows, self.pane().selection.focused(), motion);
+        let target = focus::target(&rows, None, self.pane().selection.focused(), motion);
         self.pane_mut().selection.extend(&rows, target);
     }
 
     /// Picks the focused row, or unpicks it when it is picked (FR-OPS-01).
     pub(super) fn toggle_picked(&mut self) {
-        self.pane_mut().selection.toggle();
+        let rows = self.rows();
+        self.pane_mut().selection.toggle(&rows);
     }
 
     /// Picks every row (FR-OPS-01).
@@ -319,10 +320,25 @@ impl State {
         self.change(transaction);
     }
 
+    /// The selected items, or the container shown while its heading has the focus, which the
+    /// commands that edit an item's own details act on (owner, D-68).
+    fn described(&self) -> Vec<ItemId> {
+        let selection = &self.pane().selection;
+        let items = selection.items(&self.rows());
+        if !items.is_empty() {
+            return items;
+        }
+        let heading = self.pane().heading(&self.document);
+        heading
+            .filter(|&id| selection.focused() == Some(id))
+            .into_iter()
+            .collect()
+    }
+
     /// Opens the date prompt for the `kind` date of the selected items, resolving what is typed
     /// against `today`. Nothing opens when none of them takes a date.
     pub(super) fn open_date_prompt(&mut self, kind: DateKind, today: Date) {
-        let items = self.pane().selection.items(&self.rows());
+        let items = self.described();
         let focused = self.pane().selection.focused();
         self.date_prompt = DatePrompt::open(&self.document, items, kind, today, focused);
     }
@@ -348,7 +364,7 @@ impl State {
 
     /// Sets the start date of the selected items to `today`, as one step to undo.
     pub(super) fn start_today(&mut self, today: Date) {
-        let items = self.pane().selection.items(&self.rows());
+        let items = self.described();
         let transaction = date_prompt::set(&self.document, items, DateKind::Start, Some(today));
         self.change(transaction);
     }
@@ -473,7 +489,7 @@ impl State {
     /// Opens the tag picker for the selected items, closing the Navigator and Move to (FR-TAG-02,
     /// FR-OPS-06). Nothing opens with nothing selected.
     pub(super) fn open_tags(&mut self) {
-        let items = self.pane().selection.items(&self.rows());
+        let items = self.described();
         self.open_tags_for(items);
     }
 
@@ -634,8 +650,8 @@ impl State {
         }
     }
 
-    /// Starts editing the focused row's title, picking nothing. Nothing happens unless a row is
-    /// focused.
+    /// Starts editing the focused row's or the heading's title, picking nothing. Nothing happens
+    /// when nothing is focused.
     pub(super) fn edit_title(&mut self) {
         let selection = &self.pane().selection;
         let editing = selection
@@ -679,7 +695,12 @@ impl State {
             self.pane().selection.focused(),
             side,
         );
-        let (parent, index) = place;
+        self.new_task_at(place);
+    }
+
+    /// Adds an empty task at `place`, as its parent and its index there, focuses it and starts
+    /// editing its title.
+    fn new_task_at(&mut self, (parent, index): (ItemId, usize)) {
         let item = self.new_item(ItemKind::Task);
         let selection = self.pane().selection.clone();
         let editing = Editing::new_item(&mut self.document, item, (Some(parent), index), selection);
@@ -710,9 +731,18 @@ impl State {
 
     /// Adds an item of the focused row's kind on `side` of it, or a task when no row is focused,
     /// as [`new_task`](Self::new_task) and [`new_container`](Self::new_container) add each kind
-    /// (D-40).
+    /// (D-40). Below the heading it adds the container's first task, as below a section heading,
+    /// and above it nothing, which no row of the container shown stands above (D-68).
     pub(super) fn new_like(&mut self, side: Side) {
         let focused = self.pane().selection.focused();
+        if let Some(heading) = self.pane().heading(&self.document)
+            && focused == Some(heading)
+        {
+            if side == Side::Below && !self.document.conceals(heading) {
+                self.new_task_at((heading, 0));
+            }
+            return;
+        }
         let kind = focused
             .and_then(|id| self.document.node(id))
             .and_then(Node::item)
@@ -882,7 +912,8 @@ impl State {
         self.history
             .commit(&mut self.document, transaction, selection, |document| {
                 let rows = listed(document, (shown, today), show_completed, &filter);
-                after.focus(focus::kept(listed_before, &rows, focused));
+                let heading = pane::heading(document, shown);
+                after.focus(focus::kept(listed_before, &rows, heading, focused));
                 after
             })
             .expect("a transaction made from the document as it is fits it");
@@ -909,14 +940,14 @@ impl State {
     }
 
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
-    /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
-    /// `o` and `O` do since it lists no tasks, collapsing it, deleting, moving, indenting,
-    /// outdenting, converting and setting its dates, each one step to undo, opening Move to for
-    /// it or the attachments panel on it, and opening the entry in the pane, `Enter` giving the
-    /// pane the keys, or in a new pane, which gets them; a view's entry is only opened. Quitting,
-    /// undo and redo, the Navigator, the sidebar's own commands, focusing a pane, going home, back
-    /// and forward and the conflict prompt's commands pass to the app; every other command does
-    /// nothing.
+    /// took it. It acts on its focused entry: moving the focus, renaming, editing its description
+    /// in the pane, adding a project, as `o` and `O` do since it lists no tasks, collapsing it,
+    /// deleting, moving, indenting, outdenting, converting and setting its dates, each one step to
+    /// undo, opening Move to for it or the attachments panel on it, and opening the entry in the
+    /// pane, `Enter` giving the pane the keys, or in a new pane, which gets them; a view's entry is
+    /// only opened. Quitting, undo and redo, the Navigator, the sidebar's own commands, focusing a
+    /// pane, going home, back and forward and the conflict prompt's commands pass to the app;
+    /// every other command does nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
         let passes = matches!(
             command,
@@ -959,6 +990,15 @@ impl State {
             (Command::EditTitle, Some(shown)) => {
                 self.show(shown, None);
                 self.sidebar.focus(false);
+            }
+            // The sidebar shows no descriptions, so the pane opens the project to edit its own
+            // (owner, D-68).
+            (Command::EditDescription(_), Some(shown @ Shown::Container(id)))
+                if id != self.document.inbox() =>
+            {
+                self.show(shown, Some(id));
+                self.sidebar.focus(false);
+                self.edit_description(Whose::Shown);
             }
             (Command::Go(Go::Into), Some(shown)) => self.show(shown, None),
             (Command::OpenInNewPane, Some(shown)) => {
@@ -1555,12 +1595,60 @@ mod tests {
         document.push(None, Node::Item(Item::new(ItemKind::Project, "Empty")))?;
         state = State::new(document, Opened::Demo, TODAY);
         navigate(&mut state, "Empty");
-        assert_eq!(state.selection().focused(), None);
+        let empty = state.container();
+        assert_eq!(
+            state.selection().focused(),
+            empty,
+            "its heading, with no row"
+        );
         state.edit_title();
+        assert_eq!(state.editing().map(|(id, ..)| id), empty, "D-68");
+        state.edit_input(EditInput::Done);
+        let mut nothing = State::new(Document::new(), Opened::Demo, TODAY);
+        nothing.edit_title();
         assert!(
-            state.editing().is_none(),
+            nothing.editing().is_none(),
             "with nothing focused nothing is edited"
         );
+        Ok(())
+    }
+
+    // FR-NAV-01, FR-EDIT-05, FR-DATE-01, FR-TAG-02, D-68
+    #[test]
+    fn the_heading_takes_the_focus_and_the_commands_on_its_own_item() -> Result<(), PlacementError>
+    {
+        let Fixture {
+            mut state, work, ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::First);
+        assert_eq!(state.selection().focused(), Some(work));
+        state.toggle_picked();
+        state.toggle_completed(TODAY);
+        let done = state
+            .document()
+            .node(work)
+            .and_then(Node::item)
+            .map(|it| it.completed);
+        assert_eq!(done, Some(None), "nothing picked, nothing completed");
+        state.open_tags();
+        assert!(state.tags().is_some());
+        state.tags = None;
+        state.start_today(TODAY);
+        let start = state
+            .document()
+            .node(work)
+            .and_then(Node::item)
+            .map(|it| it.start);
+        assert_eq!(start, Some(Some(TODAY)));
+        state.new_like(Side::Above);
+        assert!(
+            state.editing().is_none(),
+            "nothing stands above the heading"
+        );
+        state.new_like(Side::Below);
+        let new = state.editing().map(|(id, ..)| id);
+        assert_eq!(state.document().children(work).first().copied(), new);
         Ok(())
     }
 
@@ -1946,7 +2034,7 @@ mod tests {
 
     // FR-EDIT-05, FR-ORG-06
     #[test]
-    fn a_new_area_opens_with_its_title_edited_and_left_empty_the_pane_goes_back()
+    fn a_new_top_level_project_opens_with_its_title_edited_and_left_empty_the_pane_goes_back()
     -> Result<(), PlacementError> {
         let Fixture {
             mut state,
@@ -1957,7 +2045,7 @@ mod tests {
         let inbox = state.document().inbox();
         state.new_container(ItemKind::Project, Side::Below);
         let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
-        assert_eq!(at(&state), (Some(area), None));
+        assert_eq!(at(&state), (Some(area), Some(area)), "its heading focused");
         assert_eq!(state.document().top_level(), [area, work]);
         type_text(&mut state, " ");
         state.edit_input(EditInput::Next);
@@ -1973,7 +2061,7 @@ mod tests {
         type_text(&mut state, "Home");
         state.edit_input(EditInput::Done);
         let home = state.document().top_level()[0];
-        assert_eq!(at(&state), (Some(home), None));
+        assert_eq!(at(&state), (Some(home), Some(home)));
         assert_eq!(title(&state, home), Some("Home"));
         state.go(Go::Back);
         assert_eq!(at(&state), (Some(inbox), Some(inbox_task)));

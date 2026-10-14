@@ -176,7 +176,7 @@ fn a_long_note_scrolls() {
 
 // FR-ATT-01, FR-VIEW-10
 #[test]
-fn an_area_gets_its_note_from_the_sidebar() {
+fn a_top_level_project_gets_its_note_from_the_sidebar() {
     let mut harness = Harness::new(80, 12);
     harness.ctrl('g');
     harness.type_text("Home");

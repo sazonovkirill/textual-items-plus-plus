@@ -59,6 +59,11 @@ impl Pane {
         }
     }
 
+    /// The container shown when its title takes the focus as a row above the others (D-68).
+    pub(super) fn heading(&self, document: &Document) -> Option<ItemId> {
+        heading(document, self.shown)
+    }
+
     /// The containers from the top level down to the one shown; none for a view.
     pub(super) fn path(&self, document: &Document) -> Vec<ItemId> {
         self.container()
@@ -95,6 +100,7 @@ impl Pane {
     pub(super) fn move_focus(&mut self, document: &Document, today: Date, motion: Focus) {
         let target = focus::target(
             &self.rows(document, today),
+            self.heading(document),
             self.selection.focused(),
             motion,
         );
@@ -124,17 +130,19 @@ impl Pane {
         }
     }
 
-    /// Shows what `visit` showed, focused on its item when that is a row there and on the first
-    /// row otherwise, with nothing picked and no tag filter.
+    /// Shows what `visit` showed, focused on its item when that is a row there or the heading,
+    /// and on the first row otherwise, else the heading, with nothing picked and no tag filter.
     pub(super) fn arrive(&mut self, document: &Document, today: Date, visit: Visit) {
         self.selection.clear();
         self.filter.clear();
         self.shown = visit.shown;
         let rows = self.rows(document, today);
+        let heading = self.heading(document);
         let focused = visit
             .focused
-            .filter(|&id| rows.iter().any(|row| row.id() == id))
-            .or_else(|| rows.first().map(|row| row.id()));
+            .filter(|&id| Some(id) == heading || rows.iter().any(|row| row.id() == id))
+            .or_else(|| rows.first().map(|row| row.id()))
+            .or(heading);
         self.selection.focus(focused);
     }
 
@@ -184,7 +192,12 @@ impl Pane {
             return;
         }
         let rows = self.rows(document, today);
-        let focused = focus::kept(before, &rows, self.selection.focused());
+        let focused = focus::kept(
+            before,
+            &rows,
+            self.heading(document),
+            self.selection.focused(),
+        );
         if focused != self.selection.focused() {
             self.selection.focus(focused);
         }
@@ -214,15 +227,29 @@ impl Pane {
         }
         let focused = self.selection.focused();
         let rows = self.rows(document, today);
+        let heading = self.heading(document);
         let row = |id: ItemId| rows.iter().any(|row| row.id() == id).then_some(id);
+        // The nearest of a row gone may be the container holding it: its first row, not its
+        // heading, takes the focus then.
         let focus = focused
             .and_then(&exact)
-            .and_then(row)
+            .and_then(|id| (Some(id) == heading).then_some(id).or_else(|| row(id)))
             .or_else(|| focused.and_then(&nearest).and_then(row))
-            .or_else(|| rows.first().map(|row| row.id()));
+            .or_else(|| rows.first().map(|row| row.id()))
+            .or(heading);
         self.selection.focus(focus);
         self.selection.keep(&rows, &exact);
         self.visits.rematch(|id| nearest(id).and_then(opens), exact);
+    }
+}
+
+/// The container `shown` when its title takes the focus as a row above the others: a project's
+/// or a section's, so that the commands on the focused item reach the container shown, but not
+/// the Inbox's, which takes none of them, nor a view's (owner, D-68).
+pub(super) fn heading(document: &Document, shown: Shown) -> Option<ItemId> {
+    match shown {
+        Shown::Container(id) if id != document.inbox() => Some(id),
+        Shown::Container(_) | Shown::View(_) => None,
     }
 }
 
@@ -267,6 +294,12 @@ impl<'a> PaneView<'a> {
     #[must_use]
     pub fn groups(&self) -> Vec<Group> {
         self.pane.groups(self.document, self.today)
+    }
+
+    /// The container shown when its title takes the focus as a row above the others (D-68).
+    #[must_use]
+    pub fn heading(&self) -> Option<ItemId> {
+        self.pane.heading(self.document)
     }
 
     /// The items the next command in the pane acts on.

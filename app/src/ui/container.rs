@@ -29,6 +29,10 @@ const GUTTER: u16 = 2;
 /// The glyph marking the focused row (D-30 of taskpaper-terminal).
 const FOCUS_MARKER: &str = "▌";
 
+/// The number standing for the heading among the rows, which the focus takes as a row above the
+/// first (D-68).
+const HEADING: usize = usize::MAX;
+
 /// The pane showing a container of a document with its rows, or a view with its groups. Its state
 /// is the first line of the content shown, which it moves only as far as it takes to keep the
 /// focused row in view.
@@ -36,6 +40,8 @@ pub(super) struct ContainerPane<'a> {
     document: &'a Document,
     shown: Shown,
     rows: Vec<Row>,
+    /// The container shown when its title is a row the focus takes.
+    heading: Option<ItemId>,
     groups: Vec<Group>,
     selection: &'a Selection,
     editing: Option<(ItemId, Part, &'a TextField)>,
@@ -66,6 +72,7 @@ impl<'a> ContainerPane<'a> {
             document: state.document(),
             shown: pane.shown(),
             rows: pane.rows(),
+            heading: pane.heading(),
             groups: pane.groups(),
             selection: pane.selection(),
             editing: state.editing().filter(|_| keys),
@@ -295,9 +302,12 @@ impl<'a> ContainerPane<'a> {
         (pieces, lines, y)
     }
 
-    /// The index of the focused row among the state's rows.
+    /// The index of the focused row among the state's rows, or [`HEADING`] for the heading.
     fn focused_row(&self) -> Option<usize> {
         let focused = self.selection.focused()?;
+        if Some(focused) == self.heading {
+            return Some(HEADING);
+        }
         self.rows.iter().position(|row| row.id() == focused)
     }
 
@@ -323,12 +333,13 @@ impl<'a> ContainerPane<'a> {
         match self.shown {
             Shown::Container(id) => {
                 if let Some(container) = self.item(id) {
+                    let row = self.heading.map(|_| HEADING);
                     pieces.push(match self.edited(id, Part::Title) {
-                        Some(field) => self.field(container, field, None),
-                        None => self.title(container, None),
+                        Some(field) => self.field(container, field, row),
+                        None => self.title(container, row),
                     });
                     if let Some(field) = self.edited(id, Part::Description) {
-                        pieces.push(self.description_field(field, 0, width, None));
+                        pieces.push(self.description_field(field, 0, width, row));
                     } else if !container.description.is_empty() {
                         pieces.push(Piece {
                             x: 0,
@@ -339,7 +350,7 @@ impl<'a> ContainerPane<'a> {
                             fit: self.fit(),
                             left: Line::default(),
                             right: Line::default(),
-                            row: None,
+                            row,
                             caret: None,
                         });
                     }
@@ -817,6 +828,7 @@ mod tests {
             shown: Shown::Container(container),
             groups: Vec::new(),
             rows: app::rows(document, container, true),
+            heading: (container != document.inbox()).then_some(container),
             selection: &selection,
             editing: None,
             keys: true,
@@ -843,6 +855,7 @@ mod tests {
             shown: Shown::Container(document.inbox()),
             groups: Vec::new(),
             rows: app::rows(&document, document.inbox(), false),
+            heading: None,
             selection: &selection,
             editing: Some((id, Part::Title, field)),
             keys: true,
@@ -870,6 +883,7 @@ mod tests {
             shown: Shown::Container(document.inbox()),
             groups: Vec::new(),
             rows: app::rows(&document, document.inbox(), false),
+            heading: None,
             selection: &selection,
             editing: Some((document.inbox(), Part::Title, &field)),
             keys: true,
@@ -904,6 +918,7 @@ mod tests {
             shown: Shown::Container(document.inbox()),
             groups: Vec::new(),
             rows: app::rows(&document, document.inbox(), false),
+            heading: None,
             selection: &selection,
             editing: Some((id, Part::Description, field)),
             keys: true,
@@ -1288,6 +1303,26 @@ mod tests {
                 ]
             )
         );
+    }
+
+    // FR-NAV-01, D-68
+    #[test]
+    fn the_heading_takes_the_focus_as_a_row_with_its_description() {
+        let document = demo();
+        let website = find(&document, "Website");
+        let buf = draw_pane(&document, website, Some("Website"), (50, 4), &mut 0);
+        assert_eq!(
+            lines(&buf),
+            [
+                "▌ # Website                    ≡ ❞ 2 ⇥ in 20 days ",
+                "▌ The new marketing site, built with the design   ",
+                "▌ team.                                           ",
+                "                                                  ",
+            ]
+        );
+        let theme = BuiltIn::default().colors();
+        assert_eq!(buf[(4, 2)].bg, theme.current_line);
+        assert_ne!(buf[(4, 3)].bg, theme.current_line);
     }
 
     // FR-VIEW-05, D-26

@@ -44,10 +44,14 @@ impl Selection {
     }
 
     /// The items a command acts on, in the order of `rows`: the picked ones, or the focused one
-    /// when none is picked.
+    /// when none is picked and it is one of `rows`, not the container's heading.
     pub(super) fn items(&self, rows: &[Row]) -> Vec<ItemId> {
         if self.picked.is_empty() {
-            return self.focused.into_iter().collect();
+            return self
+                .focused
+                .filter(|&id| rows.iter().any(|row| row.id() == id))
+                .into_iter()
+                .collect();
         }
         rows.iter()
             .map(|row| row.id())
@@ -59,11 +63,17 @@ impl Selection {
     /// extensions began to it, on top of what was picked before the run, so that moving back
     /// shrinks the run. A run begins at the focus unless the focus is still where the latest run
     /// ended. A `target` that is the focus, as at the first or last row, picks the focused row.
+    /// From a focus that is no row, as the container's heading, it only moves the focus.
     pub(super) fn extend(&mut self, rows: &[Row], target: Option<ItemId>) {
         let at = |id: ItemId| rows.iter().position(|row| row.id() == id);
         let (Some(focused), Some(target)) = (self.focused, target) else {
             return;
         };
+        if at(focused).is_none() {
+            self.focused = Some(target);
+            self.run = None;
+            return;
+        }
         let run = match self.run.take() {
             Some(run) if run.end == focused => run,
             _ => Run {
@@ -88,9 +98,12 @@ impl Selection {
         self.run = Some(Run { end: target, ..run });
     }
 
-    /// Picks the focused row, or unpicks it when it is picked.
-    pub(super) fn toggle(&mut self) {
-        let Some(focused) = self.focused else {
+    /// Picks the focused row among `rows`, or unpicks it when it is picked.
+    pub(super) fn toggle(&mut self, rows: &[Row]) {
+        let Some(focused) = self
+            .focused
+            .filter(|&id| rows.iter().any(|row| row.id() == id))
+        else {
             return;
         };
         if let Some(at) = self.picked.iter().position(|&id| id == focused) {
@@ -255,17 +268,31 @@ mod tests {
     fn rows_are_picked_one_by_one_and_all_at_once() {
         let rows = rows();
         let mut selection = focused_on(4);
-        selection.toggle();
+        selection.toggle(&rows);
         selection.focus(Some(id(2)));
-        selection.toggle();
+        selection.toggle(&rows);
         assert_eq!(items(&selection), [2, 4], "in the order of the rows");
-        selection.toggle();
+        selection.toggle(&rows);
         assert_eq!(items(&selection), [4]);
         selection.select_all(&rows);
         assert_eq!(items(&selection), [1, 2, 3, 4, 5]);
         selection.clear();
         assert_eq!(items(&selection), [2], "the focused row again");
-        Selection::default().toggle();
+        Selection::default().toggle(&rows);
+    }
+
+    // FR-OPS-01, D-68
+    #[test]
+    fn a_focus_on_no_row_is_not_picked_nor_acted_on_and_extending_from_it_only_moves() {
+        let rows = rows();
+        let mut heading = focused_on(99);
+        heading.toggle(&rows);
+        assert_eq!(items(&heading), Vec::<u64>::new());
+        heading.extend(&rows, Some(id(1)));
+        assert_eq!(heading.focused(), Some(id(1)));
+        assert_eq!(items(&heading), [1], "nothing picked");
+        heading.extend(&rows, Some(id(2)));
+        assert_eq!(items(&heading), [1, 2], "a run from the first row");
     }
 
     // FR-OPS-01
@@ -297,7 +324,7 @@ mod tests {
     fn an_item_unpicked_for_leaving_the_rows_stays_unpicked_as_the_run_goes_on() {
         let rows = rows();
         let mut selection = focused_on(1);
-        selection.toggle();
+        selection.toggle(&rows);
         selection.focus(Some(id(3)));
         selection.extend(&rows, Some(id(4)));
         let fewer: Vec<Row> = rows.into_iter().filter(|row| row.id() != id(1)).collect();

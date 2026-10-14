@@ -100,3 +100,64 @@ fn new_containers_are_saved_with_their_kind_tags() {
         "Inbox:\nHome:\n\tGarden:\n\t\tSpring: @section\n"
     );
 }
+
+// FR-NAV-01, FR-EDIT-02, FR-EDIT-03, FR-DATE-01, FR-TAG-02, FR-ATT-02, D-68
+#[test]
+fn the_title_of_the_project_shown_is_a_row_its_own_commands_act_on() {
+    let mut harness = Harness::new(60, 16);
+    harness.ctrl('g');
+    harness.type_text("blog");
+    harness.key(KeyCode::Enter);
+    harness.type_text("k");
+    assert_eq!(
+        pane(&harness)[..2],
+        ["▌ # Blog", "▌ A project inside a project."],
+        "the title and the description are one row"
+    );
+    harness.key(KeyCode::Enter);
+    harness.type_text(" posts");
+    harness.key(KeyCode::Enter);
+    harness.type_text("mn");
+    harness.ctrl('a');
+    harness.type_text("Weekly.");
+    harness.key(KeyCode::Esc);
+    harness.type_text("md");
+    harness.type_text("tomorrow");
+    harness.key(KeyCode::Enter);
+    harness.type_text("mg");
+    harness.type_text("web");
+    harness.key(KeyCode::Enter);
+    let heading = pane(&harness);
+    assert!(
+        heading[0].starts_with("▌ # Blog posts @web") && heading[0].ends_with("tomorrow"),
+        "{heading:?}"
+    );
+    assert_eq!(heading[1], "▌ Weekly.");
+    harness.type_text("o");
+    harness.type_text("Draft");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        pane(&harness)[3..5],
+        ["▌ - Draft", "  - Pick the first three topics"],
+        "below the title, the first task"
+    );
+    harness.type_text("kn");
+    assert!(harness.screen().contains("┌ Blog posts ─"), "its notes");
+}
+
+// FR-ORG-10, FR-VIEW-10, D-68
+#[test]
+fn describe_a_project_from_the_sidebar() {
+    let mut harness = Harness::new(60, 16);
+    harness.ctrl('b');
+    harness.type_text("G");
+    harness.type_text("mn");
+    harness.ctrl('a');
+    harness.type_text("Ownership first.");
+    harness.key(KeyCode::Esc);
+    assert!(
+        harness.rows()[0].contains("Learn Rust"),
+        "the pane opens the project"
+    );
+    assert!(harness.screen().contains("▌ Ownership first."));
+}

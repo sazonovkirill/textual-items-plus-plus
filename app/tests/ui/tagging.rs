@@ -177,7 +177,7 @@ fn an_at_sign_typed_in_a_title_points_to_the_tag_picker() {
 
 // FR-TAG-01, FR-STORE-10
 #[test]
-fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_areas() {
+fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_projects() {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
     fs::write(&path, "Inbox:\nWork:\n\tSite:\n\t\t- Ship it\n").expect("written");
