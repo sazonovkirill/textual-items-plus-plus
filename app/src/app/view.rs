@@ -6,6 +6,7 @@ use jiff::civil::Date;
 use super::{
     container::{self, Row},
     today,
+    upcoming::{self, Period},
 };
 use crate::domain::{Document, ItemId};
 
@@ -14,6 +15,8 @@ use crate::domain::{Document, ItemId};
 pub enum View {
     /// The open items whose start or due date has come (FR-VIEW-06).
     Today,
+    /// The open items dated after today, by day and then by month (FR-VIEW-02).
+    Upcoming,
 }
 
 /// A view with what the Navigator shows of it.
@@ -26,10 +29,16 @@ pub struct Entry {
 }
 
 /// Every view, in the order the Navigator lists them.
-pub const REGISTRY: &[Entry] = &[Entry {
-    view: View::Today,
-    title: View::Today.title(),
-}];
+pub const REGISTRY: &[Entry] = &[
+    Entry {
+        view: View::Today,
+        title: View::Today.title(),
+    },
+    Entry {
+        view: View::Upcoming,
+        title: View::Upcoming.title(),
+    },
+];
 
 impl View {
     /// Its name as a user reads it.
@@ -37,6 +46,7 @@ impl View {
     pub const fn title(self) -> &'static str {
         match self {
             Self::Today => "Today",
+            Self::Upcoming => "Upcoming",
         }
     }
 }
@@ -54,10 +64,19 @@ pub enum Shown {
 /// focus and the selection pass over it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
-    /// The area or project the rows are listed under, if any.
-    pub heading: Option<ItemId>,
+    /// What the rows are listed under, if anything.
+    pub heading: Option<Heading>,
     /// The rows, in order.
     pub rows: Vec<Row>,
+}
+
+/// What a group of a view's rows is listed under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Heading {
+    /// The area or project they are in.
+    Item(ItemId),
+    /// The days they are dated in.
+    Period(Period),
 }
 
 /// The groups `view` shows of `document` on `today`, completed items among them only when
@@ -71,6 +90,7 @@ pub(super) fn groups(
 ) -> Vec<Group> {
     match view {
         View::Today => today::groups(document, today, show_completed),
+        View::Upcoming => upcoming::groups(document, today, show_completed),
     }
 }
 

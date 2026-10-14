@@ -20,7 +20,7 @@ use super::{Icon, IconSet, Theme};
 use crate::{
     app::{
         Part, Row, Selection, State, TextField,
-        view::{Group, Shown, View},
+        view::{Group, Heading, Shown, View},
     },
     domain::{Document, Item, ItemId, ItemKind, Node, dates},
 };
@@ -319,11 +319,7 @@ impl<'a> ContainerPane<'a> {
                 let mut indexes = 0..;
                 for group in &self.groups {
                     pieces.push(Piece::blank());
-                    let heading = group.heading.and_then(|id| self.item(id));
-                    pieces.extend(heading.map(|heading| Piece {
-                        right: Line::default(),
-                        ..self.title(heading, None)
-                    }));
+                    pieces.extend(group.heading.and_then(|heading| self.heading(heading)));
                     let shown = group
                         .rows
                         .iter()
@@ -395,6 +391,21 @@ impl<'a> ContainerPane<'a> {
             right: Line::default(),
             row: None,
             caret: None,
+        }
+    }
+
+    /// The line naming what a view's group is listed under: an area or project as its title
+    /// line without chips, or a period of days in bold; none for an item that is not one.
+    fn heading(&self, heading: Heading) -> Option<Piece<'a>> {
+        match heading {
+            Heading::Item(id) => self.item(id).map(|item| Piece {
+                right: Line::default(),
+                ..self.title(item, None)
+            }),
+            Heading::Period(period) => Some(Piece {
+                text: wrapped(Text::styled(period.heading(self.today), Modifier::BOLD)),
+                ..Piece::blank()
+            }),
         }
     }
 

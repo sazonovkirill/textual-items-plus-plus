@@ -54,6 +54,7 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
     // FR-KEY-06's go-to keys for the views (D-23).
     (Command::Go(Go::View(View::Today)), &["g t"]),
+    (Command::Go(Go::View(View::Upcoming)), &["g U"]),
     (Command::Navigator, &["ctrl+g"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37), with its type
     // letters after the creation keys, and `a` for an area (D-40).
@@ -373,6 +374,7 @@ mod tests {
             (vec![char('L')], go(Go::Forward)),
             (vec![press(KeyCode::Right, alt_shift)], go(Go::Forward)),
             (vec![char('g'), char('t')], go(Go::View(View::Today))),
+            (vec![char('g'), char('U')], go(Go::View(View::Upcoming))),
             (
                 vec![press(KeyCode::Char('g'), KeyModifiers::CONTROL)],
                 Some(Command::Navigator),

@@ -494,6 +494,7 @@ fn navigator_popup<'a>(
 fn view_icon(view: View) -> Icon {
     match view {
         View::Today => Icon::Today,
+        View::Upcoming => Icon::Upcoming,
     }
 }
 

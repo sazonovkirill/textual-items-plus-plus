@@ -1071,7 +1071,10 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::{TagMark, TextEdit, view::View};
+    use crate::app::{
+        TagMark, TextEdit,
+        view::{Heading, View},
+    };
     use crate::domain::{Item, ItemKind, Node, PlacementError};
 
     // FR-NAV-02, FR-STORE-01
@@ -2042,7 +2045,7 @@ mod tests {
                 .iter()
                 .map(|group| group.heading)
                 .collect::<Vec<_>>(),
-            [None, Some(work), Some(site)]
+            [None, Some(Heading::Item(work)), Some(Heading::Item(site))]
         );
         assert_eq!(state.selection().focused(), Some(inbox_task));
         state.move_focus(Focus::Next);
@@ -2219,7 +2222,7 @@ mod tests {
         assert_eq!(
             state.groups(),
             [Group {
-                heading: Some(work),
+                heading: Some(Heading::Item(work)),
                 rows: vec![Row::Task {
                     id: overdue,
                     section: None

@@ -86,6 +86,43 @@ pub fn relative(date: Date, today: Date) -> String {
     }
 }
 
+/// The heading of a view's group of items for the day `date` on `today`: the day named as
+/// [`relative`] names it, capitalized, then ` · ` and the date, such as `Tomorrow · Thu 15 Oct`;
+/// only the date, `Fri 16 Oct`, when that name is just its weekday, which the date repeats. The
+/// date names its year when it is not `today`'s, `Thu 25 Dec 2025` (taskpaper-terminal's D-80,
+/// D-111).
+#[must_use]
+pub fn day_heading(date: Date, today: Date) -> String {
+    let format = if date.year() == today.year() {
+        "%a %-d %b"
+    } else {
+        "%a %-d %b %Y"
+    };
+    let day = date.strftime(format).to_string();
+    let name = relative(date, today);
+    if day.starts_with(&format!("{name} ")) {
+        return day;
+    }
+    let mut letters = name.chars();
+    let capitalized: String = letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
+        .unwrap_or_default();
+    format!("{capitalized} · {day}")
+}
+
+/// The name of the month holding `date` on `today`, such as `November`, with its year when it is
+/// not `today`'s, `January 2027`.
+#[must_use]
+pub fn month_name(date: Date, today: Date) -> String {
+    let format = if date.year() == today.year() {
+        "%B"
+    } else {
+        "%B %Y"
+    };
+    date.strftime(format).to_string()
+}
+
 /// One part of a date expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind<'a> {
@@ -385,6 +422,36 @@ mod tests {
 
     /// A Wednesday in ISO week 41, whose Monday is 2026-10-05.
     const TODAY: Date = date(2026, 10, 7);
+
+    // OQ-8
+    #[test]
+    fn a_day_heading_names_the_day_capitalized_then_the_date() {
+        assert_eq!(day_heading(TODAY, TODAY), "Today · Wed 7 Oct");
+        assert_eq!(
+            day_heading(date(2026, 10, 8), TODAY),
+            "Tomorrow · Thu 8 Oct"
+        );
+        assert_eq!(day_heading(date(2026, 10, 9), TODAY), "Fri 9 Oct");
+        assert_eq!(
+            day_heading(date(2026, 10, 14), TODAY),
+            "Next Wed · Wed 14 Oct"
+        );
+        assert_eq!(
+            day_heading(date(2026, 10, 4), TODAY),
+            "3 days ago · Sun 4 Oct"
+        );
+        assert_eq!(
+            day_heading(date(2027, 1, 2), TODAY),
+            "In 87 days · Sat 2 Jan 2027"
+        );
+    }
+
+    // OQ-8
+    #[test]
+    fn a_month_is_named_with_its_year_only_when_not_this_one() {
+        assert_eq!(month_name(date(2026, 11, 30), TODAY), "November");
+        assert_eq!(month_name(date(2027, 1, 1), TODAY), "January 2027");
+    }
 
     #[track_caller]
     fn check_on(today: Date, text: &str, expected: Date) {

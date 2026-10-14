@@ -4,7 +4,10 @@
 
 use jiff::civil::Date;
 
-use super::{container::Row, view::Group};
+use super::{
+    container::Row,
+    view::{Group, Heading},
+};
 use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 
 /// The groups Today shows of `document` on `today`: the tasks, sections, projects and areas whose
@@ -41,7 +44,10 @@ pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> 
                 .filter(|entry| entry.heading == heading)
                 .map(|entry| entry.row)
                 .collect();
-            (!rows.is_empty()).then_some(Group { heading, rows })
+            (!rows.is_empty()).then_some(Group {
+                heading: heading.map(Heading::Item),
+                rows,
+            })
         })
         .collect()
 }
@@ -192,11 +198,11 @@ mod tests {
                     rows: vec![task(in_inbox), Row::Project(dated_area)],
                 },
                 Group {
-                    heading: Some(work),
+                    heading: Some(Heading::Item(work)),
                     rows: vec![task(overdue), task(started), Row::Project(site)],
                 },
                 Group {
-                    heading: Some(site),
+                    heading: Some(Heading::Item(site)),
                     rows: vec![task(in_launch), task(in_site), Row::Project(launch)],
                 },
             ]
@@ -231,7 +237,7 @@ mod tests {
             .push(Some(project), Node::Kept("- @due(2026-10-14)".to_owned()))
             .expect("kept text goes anywhere");
         let open_group = Group {
-            heading: Some(project),
+            heading: Some(Heading::Item(project)),
             rows: vec![task(open)],
         };
         assert_eq!(

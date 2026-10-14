@@ -19,3 +19,4 @@ mod sidebar;
 mod support;
 mod tagging;
 mod today;
+mod upcoming;

@@ -26,6 +26,7 @@ mod text_field;
 mod text_path;
 mod today;
 mod trash;
+mod upcoming;
 mod update;
 pub mod view;
 mod visits;
