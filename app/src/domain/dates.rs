@@ -136,9 +136,6 @@ pub struct Found {
     pub date: Date,
 }
 
-/// The most words a date found in a text spans, as in `last fri +2 weeks`.
-const MOST_WORDS: usize = 4;
-
 /// The dates that count in `text`, resolved against `today`, in the order they stand: a run of
 /// whole words the grammar reads is a start date, or a due date right after the word `due`; the
 /// longest run at each word wins, a run starting with a bare number does not count, nor a start
@@ -207,15 +204,17 @@ fn longest_run(
     if after_digits.len() < word.len() && !after_digits.starts_with(['-', '/']) {
         return None;
     }
-    words
-        .iter()
-        .take(MOST_WORDS)
-        .enumerate()
-        .rev()
-        .find_map(|(last, word)| {
-            let date = parse(&text[first.start..word.end], today, kind).ok()?;
-            Some((last + 1, word.end, date))
-        })
+    let mut longest = None;
+    for (taken, word) in (1..).zip(words) {
+        let run = &text[first.start..word.end];
+        match parse(run, today, kind) {
+            Ok(date) => longest = Some((taken, word.end, date)),
+            // Only a run that ends before the grammar is done reads as a date with more words.
+            Err(DateError::Unexpected { offset }) if offset == run.len() => {}
+            Err(_) => break,
+        }
+    }
+    longest
 }
 
 /// One part of a date expression.
@@ -995,6 +994,18 @@ mod tests {
         assert_eq!(
             found("last fri +2 weeks"),
             [("last fri +2 weeks", DateKind::Start, date(2026, 10, 16))]
+        );
+        assert_eq!(
+            found("Plan in a month +1 day"),
+            [("in a month +1 day", DateKind::Start, date(2026, 11, 8))]
+        );
+        assert_eq!(
+            found("Ship next fri +1 w -2 d +1 m"),
+            [(
+                "next fri +1 w -2 d +1 m",
+                DateKind::Start,
+                date(2026, 11, 21)
+            )]
         );
         assert_eq!(found("tomorrowland friday's due"), []);
         assert_eq!(

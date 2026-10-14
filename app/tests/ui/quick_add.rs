@@ -107,6 +107,18 @@ fn next_week_is_the_start_and_due_in_a_month_the_due_date() {
 
 // FR-EDIT-07
 #[test]
+fn a_date_of_more_than_four_words_is_read_whole() {
+    let (_dir, path, mut harness) = on_file(FILE);
+    harness.type_text("qqPlan in a month +1 day");
+    assert_eq!(panel(&harness)[2], " Start Fri 6 Nov 2026");
+    harness.key(KeyCode::Enter);
+    assert!(
+        saved(&mut harness, &path).starts_with("Inbox:\n\t- Old\n\t- Plan @start(2026-11-06)\n")
+    );
+}
+
+// FR-EDIT-07
+#[test]
 fn qt_starts_the_task_today_unless_another_start_is_typed_and_qi_adds_to_the_inbox() {
     let (_dir, path, mut harness) = on_file(FILE);
     harness.type_text("qtCall mom");
