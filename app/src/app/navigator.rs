@@ -64,6 +64,8 @@ pub struct Place {
     /// Whether it is listed among the pinned projects, which list a pinned project again, apart
     /// from the tree, at depth 0 (FR-VIEW-12).
     pub in_pinned: bool,
+    /// Whether it is a flagged project (FR-ORG-12).
+    pub flagged: bool,
 }
 
 /// The Navigator over `document`, focused on the entry of what the pane shows: a view's own, or
@@ -184,6 +186,7 @@ fn list<'a>(
             open_tasks: 0,
             later: document.defers(id),
             in_pinned: false,
+            flagged: item.flagged,
         },
         text: item.title.clone(),
         detail: above.join(" › "),
@@ -285,6 +288,7 @@ mod tests {
             open_tasks: 0,
             later: false,
             in_pinned: false,
+            flagged: false,
         };
         assert_eq!(
             listed(&document),
@@ -395,6 +399,7 @@ mod tests {
                 open_tasks: 0,
                 later: false,
                 in_pinned: false,
+                flagged: false,
             })
         };
         let mut expected = vec![("Inbox".to_owned(), place(document.inbox(), ItemKind::Inbox))];
@@ -409,14 +414,14 @@ mod tests {
         Ok(())
     }
 
-    // FR-VIEW-12
+    // FR-VIEW-12, FR-ORG-12
     #[test]
     fn lists_the_pinned_projects_after_the_views_and_once_while_a_query_is_typed()
     -> Result<(), PlacementError> {
         let mut document = Document::new();
         let work = add(&mut document, None, Area, "Work")?;
         let mut site = Item::new(Project, "Site");
-        site.pinned = true;
+        (site.pinned, site.flagged) = (true, true);
         let site = document.push(Some(work), Node::Item(site))?;
         add(&mut document, Some(site), Task, "t")?;
         let mut done = Item::new(Project, "Done");
@@ -435,6 +440,7 @@ mod tests {
                 open_tasks: 1,
                 later: false,
                 in_pinned,
+                flagged: kind == Project,
             })
         };
         let after_views = listed.get(view::REGISTRY.len() + 1..);

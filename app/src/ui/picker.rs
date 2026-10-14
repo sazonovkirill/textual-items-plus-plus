@@ -61,6 +61,9 @@ const SIZE: (u16, u16) = (80, 20);
 /// What stands before the query.
 const PROMPT: &str = "› ";
 
+/// What gives an entry an icon in a color before its text, if any, such as a flag.
+type Mark<T> = fn(&Theme, &T) -> Option<(Icon, Color)>;
+
 /// An open picker titled with what it chooses, such as Navigator: the query, its selection in the
 /// selection colors, then each matching entry's icon and text and, dimmed after it, its detail,
 /// the focused one in the selection colors and kept in view, or a dimmed line saying nothing
@@ -73,6 +76,7 @@ pub struct PickerPopup<'a, T> {
     badge: Option<&'a dyn Fn(&T) -> String>,
     color: Option<fn(&Theme, &T) -> Color>,
     icon_color: Option<fn(&Theme, &T) -> Color>,
+    mark: Option<Mark<T>>,
     icons: IconSet,
     theme: &'a Theme,
 }
@@ -96,6 +100,7 @@ impl<'a, T> PickerPopup<'a, T> {
             badge: None,
             color: None,
             icon_color: None,
+            mark: None,
             icons,
             theme,
         }
@@ -123,6 +128,14 @@ impl<'a, T> PickerPopup<'a, T> {
     #[must_use]
     pub fn icon_color(mut self, icon_color: fn(&Theme, &T) -> Color) -> Self {
         self.icon_color = Some(icon_color);
+        self
+    }
+
+    /// The window with the icon `mark` gives an entry, if any, such as a flag, in its color
+    /// before the entry's text.
+    #[must_use]
+    pub fn mark(mut self, mark: Mark<T>) -> Self {
+        self.mark = Some(mark);
         self
     }
 
@@ -214,8 +227,14 @@ impl<T> Widget for PickerPopup<'_, T> {
                 Span::raw(" ".repeat(indent + 1)),
                 Span::styled((self.icon)(&entry.value).glyph(self.icons), icon_style),
                 Span::raw(" "),
-                Span::styled(entry.text.as_str(), style),
             ]);
+            if let Some((icon, color)) = self.mark.and_then(|mark| mark(theme, &entry.value)) {
+                line.push_span(Span::styled(
+                    format!("{} ", icon.glyph(self.icons)),
+                    Style::new().fg(color),
+                ));
+            }
+            line.push_span(Span::styled(entry.text.as_str(), style));
             if tree.is_none() && !entry.detail.is_empty() {
                 line.push_span(Span::styled(format!("  {}", entry.detail), dim));
             }

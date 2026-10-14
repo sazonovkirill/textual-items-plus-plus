@@ -149,8 +149,8 @@ impl<'a> SidebarPane<'a> {
         }
     }
 
-    /// The line of the title of `stop`, the entry at `index`: its text, an area's in capitals as
-    /// a header, or the text edited with the selected part in the selection colors.
+    /// The line of the title of `stop`, the entry at `index`: its text after a flagged project's
+    /// flag, an area's in capitals as a header, or the text edited with the selected part in the selection colors.
     fn title_line(&self, index: usize, stop: Stop) -> Line<'a> {
         let style = self.title_style(stop);
         match (self.edited(index), stop) {
@@ -172,11 +172,15 @@ impl<'a> SidebarPane<'a> {
                     .node(place.id)
                     .and_then(Node::item)
                     .map_or("", |item| item.title.as_str());
-                if place.kind == ItemKind::Area {
-                    Line::styled(title.to_uppercase(), style)
+                let flag = super::stop_flag(self.theme, &stop).map(|(icon, color)| {
+                    Span::styled(format!("{} ", icon.glyph(self.icons)), color)
+                });
+                let title = if place.kind == ItemKind::Area {
+                    Span::styled(title.to_uppercase(), style)
                 } else {
-                    Line::styled(title, style)
-                }
+                    Span::styled(title, style)
+                };
+                Line::from_iter(flag.into_iter().chain([title]))
             }
             (_, Stop::View(view)) => Line::styled(view.title(), style),
         }

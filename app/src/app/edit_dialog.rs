@@ -32,6 +32,8 @@ pub enum EditField {
     Due,
     /// Whether a project is pinned (FR-VIEW-12).
     Pinned,
+    /// Whether a project or a task is flagged (FR-ORG-12).
+    Flagged,
 }
 
 /// What the user does in the open dialog.
@@ -44,7 +46,8 @@ pub enum EditDialogInput {
     /// A text key on the focused field: it edits the title, the description or a date; moving up
     /// from the description's first line or down from its last focuses the field before or
     /// after it; on the tags a space opens the tag picker, another character opens it with the
-    /// character typed and deleting removes the last tag; on Pinned a space pins or unpins.
+    /// character typed and deleting removes the last tag; on Pinned a space pins or unpins, and
+    /// on Flagged flags or unflags.
     Edit(TextEdit),
     /// Apply the changes and close, unless the title is empty or a date field holds no date.
     Accept,
@@ -84,6 +87,8 @@ pub struct EditDialogView<'a> {
     pub due: DatePromptView<'a>,
     /// Whether the draft is pinned.
     pub pinned: bool,
+    /// Whether the draft is flagged.
+    pub flagged: bool,
     /// The tag picker open over the dialog, if any.
     pub picker: Option<TagsView<'a>>,
     /// Why the last try to apply did not, until the next input.
@@ -103,6 +108,7 @@ pub(super) struct EditDialog {
     start: TextField,
     due: TextField,
     pinned: bool,
+    flagged: bool,
     today: Date,
     picker: Option<TagPicker>,
     problem: Option<EditProblem>,
@@ -111,11 +117,11 @@ pub(super) struct EditDialog {
 /// The fields an item of kind `kind` has in the dialog (FR-EDIT-08), in the order of Things 3's
 /// task window: none for the Inbox and a checklist item, which it does not edit.
 fn fields(kind: ItemKind) -> &'static [EditField] {
-    use EditField::{Description, Due, Pinned, Start, Tags, Title};
+    use EditField::{Description, Due, Flagged, Pinned, Start, Tags, Title};
     match kind {
         ItemKind::Area | ItemKind::Section => &[Title, Description],
-        ItemKind::Project => &[Title, Description, Tags, Start, Due, Pinned],
-        ItemKind::Task => &[Title, Description, Tags, Start, Due],
+        ItemKind::Project => &[Title, Description, Tags, Start, Due, Pinned, Flagged],
+        ItemKind::Task => &[Title, Description, Tags, Start, Due, Flagged],
         ItemKind::Inbox | ItemKind::ChecklistItem => &[],
     }
 }
@@ -144,6 +150,7 @@ impl EditDialog {
             start: date_field(item.start),
             due: date_field(item.due),
             pinned: item.pinned,
+            flagged: item.flagged,
             today,
             picker: None,
             problem: None,
@@ -168,6 +175,7 @@ impl EditDialog {
             start: self.date_view(DateKind::Start),
             due: self.date_view(DateKind::Due),
             pinned: self.pinned,
+            flagged: self.flagged,
             picker: self.picker.as_ref().map(TagPicker::view),
             problem: self.problem,
         }
@@ -243,6 +251,11 @@ impl EditDialog {
             EditField::Pinned => {
                 if edit == TextEdit::Insert(' ') {
                     self.pinned = !self.pinned;
+                }
+            }
+            EditField::Flagged => {
+                if edit == TextEdit::Insert(' ') {
+                    self.flagged = !self.flagged;
                 }
             }
         }
@@ -331,6 +344,9 @@ impl EditDialog {
         }
         if has(EditField::Pinned) {
             after.pinned = self.pinned;
+        }
+        if has(EditField::Flagged) {
+            after.flagged = self.flagged;
         }
         Ok(after)
     }
@@ -503,18 +519,24 @@ mod tests {
         }
     }
 
-    // FR-EDIT-08
+    // FR-EDIT-08, FR-ORG-12
     #[test]
     fn each_kind_has_the_owners_fields_and_the_inbox_and_checklists_none() -> TestResult {
-        use EditField::{Description, Due, Pinned, Start, Tags, Title};
+        use EditField::{Description, Due, Flagged, Pinned, Start, Tags, Title};
         let mut sample = sample()?;
         let check = Node::Item(Item::new(ItemKind::ChecklistItem, "c"));
         let check = sample.document.push(Some(sample.call), check)?;
         for (id, fields) in [
             (sample.work, &[Title, Description][..]),
-            (sample.site, &[Title, Description, Tags, Start, Due, Pinned]),
+            (
+                sample.site,
+                &[Title, Description, Tags, Start, Due, Pinned, Flagged],
+            ),
             (sample.launch, &[Title, Description]),
-            (sample.call, &[Title, Description, Tags, Start, Due]),
+            (
+                sample.call,
+                &[Title, Description, Tags, Start, Due, Flagged],
+            ),
         ] {
             let open = dialog(&sample.document, id)?;
             let view = open.view();
@@ -566,8 +588,8 @@ mod tests {
         assert_eq!(open.start.selection(), Some(0..10), "typing replaces it");
         open.step(1);
         assert_eq!(open.due.selection(), None, "an empty one selects nothing");
-        open.step(1);
-        assert_eq!(open.focus, EditField::Due, "the last stays");
+        open.step(2);
+        assert_eq!(open.focus, EditField::Flagged, "the last stays");
         Ok(())
     }
 
@@ -702,9 +724,9 @@ mod tests {
         Ok(())
     }
 
-    // FR-EDIT-08, FR-VIEW-12
+    // FR-EDIT-08, FR-VIEW-12, FR-ORG-12
     #[test]
-    fn space_pins_a_project_and_other_keys_do_nothing_there() -> TestResult {
+    fn space_pins_and_flags_a_project_and_other_keys_do_nothing_there() -> TestResult {
         let sample = sample()?;
         let mut open = dialog(&sample.document, sample.site)?;
         open.step(5);
@@ -715,6 +737,14 @@ mod tests {
         open.edit(&sample.document, TextEdit::Insert(' '))
             .map_err(|_| "refused")?;
         assert!(open.view().pinned);
+        open.step(1);
+        assert_eq!(open.focus, EditField::Flagged);
+        open.edit(&sample.document, TextEdit::Insert('x'))
+            .map_err(|_| "refused")?;
+        assert!(!open.view().flagged);
+        open.edit(&sample.document, TextEdit::Insert(' '))
+            .map_err(|_| "refused")?;
+        assert!(open.view().flagged);
         Ok(())
     }
 
@@ -729,7 +759,7 @@ mod tests {
         }
     }
 
-    // FR-EDIT-08, FR-EDIT-06, FR-DATE-02
+    // FR-EDIT-08, FR-EDIT-06, FR-DATE-02, FR-ORG-12
     #[test]
     fn accepting_applies_every_change_as_one_step_to_undo() -> TestResult {
         let sample = sample()?;
@@ -750,6 +780,8 @@ mod tests {
         type_into(&mut state, "tomorrow");
         input(&mut state, EditDialogInput::Next);
         type_into(&mut state, "fri");
+        input(&mut state, EditDialogInput::Next);
+        type_into(&mut state, " ");
         input(&mut state, EditDialogInput::Accept);
         assert_eq!(state.edit_dialog(), None);
         let after = item(state.document(), buy);
@@ -761,6 +793,7 @@ mod tests {
         assert_eq!(after.tags, []);
         assert_eq!(after.start, Some(date(2026, 10, 6)));
         assert_eq!(after.due, Some(date(2026, 10, 9)));
+        assert!(after.flagged);
         state.undo();
         assert_eq!(item(state.document(), buy), &before, "one step");
         Ok(())

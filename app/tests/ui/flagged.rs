@@ -101,3 +101,33 @@ fn mf_flags_tasks_and_projects_which_the_flagged_view_lists_projects_first() {
         "dimmed"
     );
 }
+
+// FR-ORG-12, FR-VIEW-10, FR-VIEW-07
+#[test]
+fn the_sidebar_and_the_navigator_show_a_flagged_projects_flag() {
+    let text = "Inbox:\nWork: @area\n\tSite: @flagged\n\tDocs:\n";
+    let (_dir, _path, mut harness) = on_file(text);
+    harness.ctrl('b');
+    let rows = harness.rows();
+    let site = rows
+        .iter()
+        .position(|row| row.contains("Site"))
+        .expect("listed");
+    let sidebar = |row: &str| {
+        row.chars()
+            .take(20)
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+    };
+    assert_eq!(sidebar(&rows[site]), " # 󰈻 Site");
+    assert_eq!(sidebar(&rows[site + 1]), " # Docs");
+    let y = u16::try_from(site).expect("on screen");
+    let flag = &harness.terminal.backend().buffer()[(3, y)];
+    assert_eq!(flag.fg, ratatui::style::Color::LightRed);
+    harness.ctrl('g');
+    harness.type_text("s");
+    let screen = harness.screen();
+    assert!(screen.contains("# 󰈻 Site"), "{screen}");
+    assert!(!screen.contains("󰈻 Docs"), "{screen}");
+}

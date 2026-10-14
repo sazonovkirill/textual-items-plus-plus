@@ -18,7 +18,7 @@ fn dialog(harness: &Harness) -> Vec<String> {
         .collect()
 }
 
-// FR-EDIT-08, FR-DATE-02, FR-TAG-02, FR-EDIT-06
+// FR-EDIT-08, FR-DATE-02, FR-TAG-02, FR-EDIT-06, FR-ORG-12
 #[test]
 fn edit_every_field_of_a_task_and_save_them_as_one_step_to_undo() {
     let mut harness = Harness::new(80, 24);
@@ -36,6 +36,8 @@ fn edit_every_field_of_a_task_and_save_them_as_one_step_to_undo() {
     harness.type_text("tomorrow");
     harness.key(KeyCode::Tab);
     harness.type_text("fri");
+    harness.key(KeyCode::Tab);
+    harness.type_text(" ");
     assert_eq!(
         dialog(&harness),
         [
@@ -45,12 +47,13 @@ fn edit_every_field_of_a_task_and_save_them_as_one_step_to_undo() {
             "│               and the limit                                                  │",
             "│  Tags         @errands                                                       │",
             "│  Start        󱙭 Tue 6 Oct 2026 · tomorrow                                    │",
-            "│▌ Due          fri  → Fri 9 Oct 2026 · Fri                                    │",
+            "│  Due          󱙬 Fri 9 Oct 2026 · Fri                                         │",
+            "│▌ Flagged      󰈻 Flagged                                                      │",
             "│                                                                              │",
-            "│ Type a date: tomorrow, fri, +3d · Enter save · Esc cancel                    │",
+            "│ Space flags or unflags · Enter save · Esc cancel                             │",
             "└──────────────────────────────────────────────────────────────────────────────┘",
         ],
-        "the tag picked from the matches, the dates typed in words"
+        "the tag picked from the matches, the dates typed in words, flagged"
     );
     harness.key(KeyCode::Enter);
     assert_eq!(dialog(&harness), Vec::<String>::new());
@@ -94,7 +97,7 @@ fn m_i_opens_it_too_escape_closes_it_unchanged_and_pasting_types_into_the_field(
     );
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
-        Some(Position::new(57, 15)),
+        Some(Position::new(57, 14)),
         "after the title"
     );
     harness.key(KeyCode::Esc);
@@ -106,7 +109,7 @@ fn m_i_opens_it_too_escape_closes_it_unchanged_and_pasting_types_into_the_field(
     }
     harness.key(KeyCode::Enter);
     assert_eq!(
-        dialog(&harness).get(7),
+        dialog(&harness).get(8),
         Some(
             &"│ A title can't be empty                                                       │"
                 .to_owned()
@@ -138,6 +141,7 @@ fn the_sidebar_opens_a_projects_dialog_which_pins_it_and_an_areas_without_tags_o
             "│  Start        None                                                           │",
             "│  Due          None                                                           │",
             "│  Pinned       ☐ Not pinned                                                   │",
+            "│  Flagged      ☐ Not flagged                                                  │",
             "│                                                                              │",
             "│ Tab next field · Enter save · Esc cancel                                     │",
             "└──────────────────────────────────────────────────────────────────────────────┘",

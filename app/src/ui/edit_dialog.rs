@@ -165,7 +165,7 @@ impl<'a> EditDialogPanel<'a> {
     }
 
     /// Where the terminal's cursor goes when the panel is drawn over `area`: at the caret of the
-    /// focused title, description or date; nowhere on the tags or Pinned.
+    /// focused title, description or date; nowhere on the tags, Pinned or Flagged.
     pub(super) fn caret(&self, area: Rect) -> Option<Position> {
         let inner = Block::bordered().inner(area);
         let (_, row) = self
@@ -186,7 +186,7 @@ impl<'a> EditDialogPanel<'a> {
             }
             EditField::Start => (column(self.view.start.field), 0),
             EditField::Due => (column(self.view.due.field), 0),
-            EditField::Tags | EditField::Pinned => return None,
+            EditField::Tags | EditField::Pinned | EditField::Flagged => return None,
         };
         let at = |base: u16, offset: usize| {
             base.saturating_add(u16::try_from(offset).unwrap_or(u16::MAX))
@@ -204,6 +204,7 @@ impl<'a> EditDialogPanel<'a> {
             EditField::Start => "Start",
             EditField::Due => "Due",
             EditField::Pinned => "Pinned",
+            EditField::Flagged => "Flagged",
         }
     }
 
@@ -241,6 +242,14 @@ impl<'a> EditDialogPanel<'a> {
             )],
             EditField::Pinned => vec![Line::styled(
                 format!("{} Not pinned", Icon::Task.glyph(self.icons)),
+                Style::new().fg(self.theme.dim_text),
+            )],
+            EditField::Flagged if self.view.flagged => vec![Line::styled(
+                format!("{} Flagged", Icon::Flag.glyph(self.icons)),
+                Style::new().fg(self.theme.flag),
+            )],
+            EditField::Flagged => vec![Line::styled(
+                format!("{} Not flagged", Icon::Task.glyph(self.icons)),
                 Style::new().fg(self.theme.dim_text),
             )],
         }
@@ -339,6 +348,7 @@ impl<'a> EditDialogPanel<'a> {
                 " Type a date: tomorrow, fri, +3d · Enter save · Esc cancel"
             }
             EditField::Pinned => " Space pins or unpins · Enter save · Esc cancel",
+            EditField::Flagged => " Space flags or unflags · Enter save · Esc cancel",
         };
         Line::styled(keys, Style::new().fg(self.theme.dim_text))
     }
@@ -425,6 +435,7 @@ mod tests {
         EditField::Start,
         EditField::Due,
         EditField::Pinned,
+        EditField::Flagged,
     ];
 
     /// The fields of an area's dialog.
@@ -474,6 +485,7 @@ mod tests {
                     date: due,
                 },
                 pinned: false,
+                flagged: false,
                 picker: None,
                 problem: None,
             }
@@ -565,6 +577,7 @@ mod tests {
         let mut view = fields.view(EditField::Start, Ok(Some(date(2026, 10, 6))), not_a_date);
         view.tags = vec!["web", "q4"];
         view.pinned = true;
+        view.flagged = true;
         assert_eq!(
             drawn(&view, 60),
             [
@@ -575,6 +588,7 @@ mod tests {
                 "│▌ Start        tomorrow  → Tue 6 Oct 2026 · tomorrow      │",
                 "│  Due          soon  Not a date from “soon”               │",
                 "│  Pinned       ✔ Pinned                                   │",
+                "│  Flagged      ⚑ Flagged                                  │",
                 "│                                                          │",
                 "│ Type a date: tomorrow, fri, +3d · Enter save · Esc cancel│",
                 "└──────────────────────────────────────────────────────────┘",
@@ -594,20 +608,20 @@ mod tests {
             Some("│  Start        None                                       │")
         );
         assert_eq!(
-            lines.get(8).map(String::as_str),
+            lines.get(9).map(String::as_str),
             Some("│ Not a date from “soon”                                   │")
         );
         view.start.date = Err(DateError::Empty);
         view.problem = Some(EditProblem::NotADate(DateKind::Start));
         let lines = drawn(&view, 60);
         assert_eq!(
-            lines.get(8).map(String::as_str),
+            lines.get(9).map(String::as_str),
             Some("│ Not a date: something is missing                         │")
         );
         view.problem = Some(EditProblem::EmptyTitle);
         let lines = drawn(&view, 60);
         assert_eq!(
-            lines.get(8).map(String::as_str),
+            lines.get(9).map(String::as_str),
             Some("│ A title can't be empty                                   │")
         );
     }
@@ -622,7 +636,7 @@ mod tests {
                 let view = fields.view(focus, Ok(None), Ok(None));
                 let lines = drawn(&view, 64);
                 lines
-                    .get(8)
+                    .get(9)
                     .map(|line| line.trim_matches('│').trim().to_owned())
                     .unwrap_or_default()
             })
@@ -636,6 +650,7 @@ mod tests {
                 "Type a date: tomorrow, fri, +3d · Enter save · Esc cancel",
                 "Type a date: tomorrow, fri, +3d · Enter save · Esc cancel",
                 "Space pins or unpins · Enter save · Esc cancel",
+                "Space flags or unflags · Enter save · Esc cancel",
             ]
         );
     }
@@ -700,6 +715,7 @@ mod tests {
         assert_eq!(at(EditField::Due), Some(Position::new(18, 15)));
         assert_eq!(at(EditField::Tags), None);
         assert_eq!(at(EditField::Pinned), None);
+        assert_eq!(at(EditField::Flagged), None);
         let view = fields.view(EditField::Title, Ok(None), Ok(None));
         let lines = drawn(&view, 30);
         assert_eq!(

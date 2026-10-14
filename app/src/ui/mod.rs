@@ -1096,6 +1096,7 @@ fn navigator_popup<'a>(
         .tree(&|_| 0)
         .color(|theme, &stop| stop_title_color(theme, stop))
         .icon_color(|theme, &stop| stop_icon_color(theme, stop))
+        .mark(stop_flag)
         .badge(&|stop| match stop {
             Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
             Stop::Place(place) => place.open_tasks.to_string(),
@@ -1156,6 +1157,12 @@ fn stop_icon_color(theme: &Theme, stop: Stop) -> Color {
         // Search is opened by searching, never listed as a stop.
         Stop::View(View::Trash | View::Search) => theme.trash_icon,
     }
+}
+
+/// The flag in front of the title of `stop` in the Navigator and the sidebar, in the flag's
+/// color, when it is a flagged project (FR-ORG-12).
+fn stop_flag(theme: &Theme, stop: &Stop) -> Option<(Icon, Color)> {
+    matches!(stop, Stop::Place(place) if place.flagged).then_some((Icon::Flag, theme.flag))
 }
 
 /// The color of the title of `stop` in the Navigator and the sidebar: an area's kind's, which
