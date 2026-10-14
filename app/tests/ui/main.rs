@@ -11,6 +11,7 @@ mod containers;
 mod converting;
 mod dates;
 mod descriptions;
+mod edit_dialog;
 mod editing;
 mod go_to_symbol;
 mod inbox;

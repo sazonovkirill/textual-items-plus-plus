@@ -81,7 +81,7 @@ impl<'a> DatePromptPanel<'a> {
 }
 
 /// Why `text` is not a date, quoting where it stops being one.
-fn not_a_date(text: &str, error: DateError) -> String {
+pub(super) fn not_a_date(text: &str, error: DateError) -> String {
     let from = |offset: usize| text.get(offset..).unwrap_or_default();
     match error {
         DateError::Unexpected { offset } if !from(offset).is_empty() => {

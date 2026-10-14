@@ -79,6 +79,7 @@ impl KeyGroup {
             | Command::AddProject(_)
             | Command::AddProjectInArea(_)
             | Command::EditDescription(_)
+            | Command::EditItem
             | Command::OpenNote(_)
             | Command::OpenComments(_)
             | Command::OpenChecklist
@@ -160,6 +161,7 @@ impl State {
             || self.tags.is_some()
             || self.date_prompt.is_some()
             || self.quick_add.is_some()
+            || self.edit_dialog.is_some()
             || self.settings_window.is_some()
             || self.save_as.is_some()
             || self.searching

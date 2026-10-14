@@ -66,6 +66,9 @@ pub enum Command {
     AddProjectInArea(End),
     /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
     EditDescription(Whose),
+    /// Open the edit dialog on the focused item, which changes all its properties but its
+    /// attachments (FR-EDIT-08).
+    EditItem,
     /// Open the attachments panel on an item's note (FR-ATT-01, FR-ATT-02).
     OpenNote(Whose),
     /// Open the attachments panel on an item's newest comment (FR-ATT-02, FR-ATT-04).
@@ -517,6 +520,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::GroupIntoProject,
         title: "Group into Project",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::EditItem,
+        title: "Edit Item",
         context: Context::Navigate,
     },
     Entry {

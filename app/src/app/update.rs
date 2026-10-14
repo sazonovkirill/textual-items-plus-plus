@@ -6,9 +6,9 @@ use std::time::Duration;
 use jiff::civil::Date;
 
 use super::{
-    AttachmentsInput, Command, ConflictSide, CopyId, DateInput, Direction, EditInput, Notice,
-    OnDisk, PickerInput, QuickAddInput, Report, SaveAsInput, SearchInput, Selected, Setting,
-    SettingsInput, Side, State, autosave::Ending,
+    AttachmentsInput, Command, ConflictSide, CopyId, DateInput, Direction, EditDialogInput,
+    EditInput, Notice, OnDisk, PickerInput, QuickAddInput, Report, SaveAsInput, SearchInput,
+    Selected, Setting, SettingsInput, Side, State, autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -35,6 +35,8 @@ pub enum Message {
     QuickAdd(QuickAddInput),
     /// The user did something in Quick Add's open picker of places (FR-EDIT-07).
     QuickAddPicker(PickerInput),
+    /// The user did something in the open edit dialog (FR-EDIT-08).
+    EditDialog(EditDialogInput),
     /// The user did something while typing the words to search for (FR-SRCH-01).
     Search(SearchInput),
     /// The user did something in the open attachments panel (FR-ATT-01).
@@ -184,6 +186,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::DatePrompt(input) => state.date_prompt_input(input),
         Message::QuickAdd(input) => state.quick_add_input(input),
         Message::QuickAddPicker(input) => state.quick_add_picker_input(input),
+        Message::EditDialog(input) => state.edit_dialog_input(input),
         Message::Search(input) => state.search_input(input),
         Message::Attachments(input) => state.attachments_input(input),
         Message::Settings(input) => return state.settings_input(input),
@@ -227,6 +230,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
             state.add(ItemKind::Project, end);
         }
         Command::SetDate(kind) => state.open_date_prompt(kind, today),
+        Command::EditItem => state.open_edit_dialog(),
         Command::StartToday => state.start_today(today),
         Command::ToggleLater => state.toggle_later(),
         Command::ToggleEvening => state.toggle_evening(),

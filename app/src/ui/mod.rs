@@ -8,6 +8,7 @@ mod conflict;
 mod container;
 mod cut;
 mod date_prompt;
+mod edit_dialog;
 mod edit_keys;
 mod field;
 mod file;
@@ -49,10 +50,11 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
     app::{
-        self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput,
-        Effect, Focus, Message, Opened, PaneView, Part, PickerInput, Place, QuickAddInput, Report,
-        SaveAsInput, SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol,
-        TagEntry, TagMark, TagsFor, TagsView, TextEdit, view::View,
+        self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction,
+        EditDialogInput, EditDialogView, EditField, EditInput, Effect, Focus, Message, Opened,
+        PaneView, Part, PickerInput, Place, QuickAddInput, Report, SaveAsInput, SaveAsReport,
+        SearchInput, Selected, Settings, Side, State, Stop, Symbol, TagEntry, TagMark, TagsFor,
+        TagsView, TextEdit, view::View,
     },
     domain::ItemKind,
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
@@ -63,6 +65,7 @@ use clipboard::Clipboard;
 use conflict::ConflictPrompt;
 use container::{ContainerPane, Top};
 use date_prompt::DatePromptPanel;
+use edit_dialog::EditDialogPanel;
 use file::File;
 use quick_add::QuickAddPanel;
 use save_as::SaveAsPanel;
@@ -375,6 +378,14 @@ impl Tui {
                     .map(|motion| Message::Attachments(AttachmentsInput::Select(motion))),
                 None => self.global(event),
             }
+        } else if let Some((picker, focus)) = self.dialog_keys() {
+            if picker {
+                picker_input(event).map(|input| Message::EditDialog(EditDialogInput::Tags(input)))
+            } else {
+                edit_dialog::edit_dialog_input(event, focus, self.dialog_columns())
+                    .map(Message::EditDialog)
+            }
+            .or_else(|| self.global(event))
         } else if self.state.date_prompt().is_some() {
             date_prompt::date_prompt_input(event)
                 .map(Message::DatePrompt)
@@ -455,7 +466,8 @@ impl Tui {
     /// it: a description or a note being edited takes it whole; a title being edited takes a
     /// single line, while several lines end editing and paste as items below; a comment being
     /// edited, the query of the open Navigator, Move to or tag picker, the open date prompt, Quick
-    /// Add and the open Save As prompt take it with its line breaks as spaces; otherwise the items
+    /// Add and the open Save As prompt take it with its line breaks as spaces, and the open edit
+    /// dialog as [`paste_into_dialog`](Self::paste_into_dialog) says; otherwise the items
     /// it holds paste below the focus, or, in the checklist of the attachments panel, one item for each line below the
     /// item selected (FR-CHK-03). The conflict prompt and the settings window take none, nor does
     /// the attachments panel while nothing in it is edited and no checklist entry is selected.
@@ -481,6 +493,8 @@ impl Tui {
             for c in text.chars() {
                 self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
             }
+        } else if let Some((picker, focus)) = self.dialog_keys() {
+            self.paste_into_dialog(text, picker, focus);
         } else if let Some(to_field) = self.line_field() {
             for c in text.chars() {
                 let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
@@ -492,6 +506,25 @@ impl Tui {
         } else {
             let branches = store::taskpaper::read_branches(text);
             self.update(Message::Paste(Side::Below, branches));
+        }
+    }
+
+    /// Takes in `text` pasted into the open edit dialog: its tag picker's query while it is open,
+    /// else the focused field's text, a description's with its line breaks and a title's or a
+    /// date's with them as spaces; the tags and Pinned take none.
+    fn paste_into_dialog(&mut self, text: &str, picker: bool, focus: EditField) {
+        let lines = picker || focus != EditField::Description;
+        if !picker && matches!(focus, EditField::Tags | EditField::Pinned) {
+            return;
+        }
+        for c in text.replace("\r\n", "\n").replace('\r', "\n").chars() {
+            let c = if lines && c == '\n' { ' ' } else { c };
+            let edit = TextEdit::Insert(c);
+            self.update(Message::EditDialog(if picker {
+                EditDialogInput::Tags(PickerInput::Edit(edit))
+            } else {
+                EditDialogInput::Edit(edit)
+            }));
         }
     }
 
@@ -562,6 +595,23 @@ impl Tui {
         }
     }
 
+    /// Whether the open edit dialog has its tag picker open, and the field it focuses, while it is
+    /// open.
+    fn dialog_keys(&self) -> Option<(bool, EditField)> {
+        let view = self.state.edit_dialog()?;
+        Some((view.picker.is_some(), view.focus))
+    }
+
+    /// The columns the description of the open edit dialog wraps in, as it is drawn.
+    fn dialog_columns(&self) -> usize {
+        EditDialogPanel::columns(self.area.width)
+    }
+
+    /// The edit dialog's panel showing `view`.
+    fn dialog_panel<'a>(&'a self, view: &'a EditDialogView<'a>) -> EditDialogPanel<'a> {
+        EditDialogPanel::new(view, &self.theme, self.icons(), self.today)
+    }
+
     /// What carries an input to the open picker, the Navigator, the command palette, Go to
     /// Symbol, Move to or the tag picker, while one is open.
     fn open_picker(&self) -> Option<fn(PickerInput) -> Message> {
@@ -612,6 +662,12 @@ impl Tui {
             return AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
                 .full(self.panel_full)
                 .caret(self.panel_area(panes), self.panel.top);
+        }
+        if let Some(view) = self.state.edit_dialog() {
+            return match &view.picker {
+                Some(picker) => tags_popup(picker, &self.theme, self.icons()).caret(panes),
+                None => self.dialog_panel(&view).caret(prompt),
+            };
         }
         if let Some(view) = self.state.date_prompt() {
             return DatePromptPanel::new(&view, &self.theme).caret(prompt);
@@ -805,7 +861,10 @@ impl Tui {
     /// rather than lie under it, so that the focus scrolls into view above it, as in
     /// taskpaper-terminal.
     fn layout(&self, area: Rect) -> [Rect; 3] {
-        let panel = if self.state.date_prompt().is_some() {
+        let panel = if let Some(view) = self.state.edit_dialog() {
+            let room = area.height.saturating_sub(2);
+            self.dialog_panel(&view).height(area.width).min(room)
+        } else if self.state.date_prompt().is_some() {
             DatePromptPanel::HEIGHT
         } else if self.state.save_as().is_some() {
             SaveAsPanel::HEIGHT
@@ -855,6 +914,12 @@ impl Tui {
             Some(Window::Editing(part))
         } else if self.state.attachments().is_some() {
             Some(Window::Attachments)
+        } else if let Some((picker, _)) = self.dialog_keys() {
+            Some(if picker {
+                Window::Picker
+            } else {
+                Window::EditDialog
+            })
         } else if self.state.date_prompt().is_some() {
             Some(Window::DatePrompt)
         } else if self.state.save_as().is_some() {
@@ -1162,7 +1227,7 @@ fn tags_popup<'a>(
     icons: IconSet,
 ) -> PickerPopup<'a, TagEntry> {
     let title = match view.tags_for {
-        TagsFor::Items => "Tags",
+        TagsFor::Items | TagsFor::Draft => "Tags",
         TagsFor::Filter => "Filter by tags",
     };
     PickerPopup::new(title, &view.picker, &|_| Icon::Tag, icons, theme).badge(&|entry| {
@@ -1214,6 +1279,12 @@ impl Widget for &mut Tui {
         }
         if let Some(view) = self.state.move_to() {
             move_to_popup(&view, &self.theme, icons).render(panes, buf);
+        }
+        if let Some(view) = self.state.edit_dialog() {
+            self.dialog_panel(&view).render(prompt, buf);
+            if let Some(picker) = &view.picker {
+                tags_popup(picker, &self.theme, icons).render(panes, buf);
+            }
         }
         if let Some(view) = self.state.date_prompt() {
             DatePromptPanel::new(&view, &self.theme).render(prompt, buf);

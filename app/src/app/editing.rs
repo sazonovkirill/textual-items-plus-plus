@@ -290,13 +290,7 @@ impl Editing {
     pub(super) fn input(&mut self, document: &mut Document, edit: TextEdit) -> Result<(), Refused> {
         let edited = self.field.edited(edit);
         if self.part == Part::Title {
-            if word_starts(edited.text()) > word_starts(self.field.text()) {
-                return Err(Refused::Tag);
-            }
-            let line_of_a_task = matches!(self.kind, ItemKind::Task | ItemKind::ChecklistItem);
-            if !line_of_a_task && reads_as_task(edited.text()) {
-                return Err(Refused::Task);
-            }
+            title_edit(self.kind, self.field.text(), edited.text())?;
         }
         self.field = edited;
         self.show(document);
@@ -425,6 +419,24 @@ fn text(item: &Item, part: Part) -> &str {
             .get(index)
             .map_or("", |line| comments::split(line).1),
     }
+}
+
+/// Whether a title of an item of kind `kind` may go from `before` to `after`.
+///
+/// # Errors
+///
+/// Why not, when `after` puts `@` at the start of a word, which would read back as a tag, or
+/// starts a section's, project's or area's title with `-` and a space, which would read back as a
+/// task.
+pub(super) fn title_edit(kind: ItemKind, before: &str, after: &str) -> Result<(), Refused> {
+    if word_starts(after) > word_starts(before) {
+        return Err(Refused::Tag);
+    }
+    let line_of_a_task = matches!(kind, ItemKind::Task | ItemKind::ChecklistItem);
+    if !line_of_a_task && reads_as_task(after) {
+        return Err(Refused::Task);
+    }
+    Ok(())
 }
 
 /// How many words of `text` start with `@`.

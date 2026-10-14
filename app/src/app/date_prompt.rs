@@ -105,11 +105,16 @@ impl DatePrompt {
 
     /// The date the text resolves to, or `None` for a blank text, which removes the date.
     fn date(&self) -> Result<Option<Date>, DateError> {
-        match dates::parse(self.field.text(), self.today, self.kind) {
-            Ok(date) => Ok(Some(date)),
-            Err(DateError::Empty) => Ok(None),
-            Err(error) => Err(error),
-        }
+        resolve(self.field.text(), self.today, self.kind)
+    }
+}
+
+/// The `kind` date `text` names on `today`, or `None` for a blank text, which removes the date.
+pub(super) fn resolve(text: &str, today: Date, kind: DateKind) -> Result<Option<Date>, DateError> {
+    match dates::parse(text, today, kind) {
+        Ok(date) => Ok(Some(date)),
+        Err(DateError::Empty) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 

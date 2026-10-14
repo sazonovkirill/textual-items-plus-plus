@@ -13,6 +13,7 @@ use super::{
     container::{self, Row},
     converting,
     date_prompt::{self, DatePrompt},
+    edit_dialog::EditDialog,
     editing::{Editing, Refused},
     focus::{self, Focus},
     go_to_symbol::Symbol,
@@ -71,6 +72,8 @@ pub struct State {
     pub(super) quick_add: Option<QuickAdd>,
     /// The tag picker, while it is open (FR-TAG-02, FR-TAG-04).
     pub(super) tags: Option<TagPicker>,
+    /// The edit dialog, while it is open (FR-EDIT-08).
+    pub(super) edit_dialog: Option<EditDialog>,
     /// The item whose title, description or note is edited, in edit mode (FR-EDIT-01), in the
     /// sidebar while it has the keys.
     editing: Option<Editing>,
@@ -124,6 +127,7 @@ impl State {
             date_prompt: None,
             quick_add: None,
             tags: None,
+            edit_dialog: None,
             editing: None,
             panel: None,
             sidebar,
@@ -666,7 +670,7 @@ impl State {
                 }
                 self.set_filter(filter);
             }
-            Picked::Dismissed => {}
+            Picked::Chosen(Choice::Draft(_)) | Picked::Dismissed => {}
         }
     }
 
@@ -1136,6 +1140,7 @@ impl State {
                 self.nudge_date_for(vec![id], kind, 1, today);
             }
             (Command::Tags, Some(Shown::Container(id))) => self.open_tags_for(vec![id]),
+            (Command::EditItem, Some(Shown::Container(id))) => self.open_edit_dialog_on(id),
             (Command::TogglePinned, Some(Shown::Container(id))) => self.toggle_pinned_for(&[id]),
             (Command::TogglePinned, Some(Shown::View(_))) => self.notify(Notice::NotAProject),
             (Command::OpenNote(_), Some(Shown::Container(id))) => {
@@ -1449,6 +1454,7 @@ impl State {
         self.date_prompt = None;
         self.quick_add = None;
         self.tags = None;
+        self.edit_dialog = None;
         self.navigator = match self.navigator {
             Some(_) => None,
             None => Some(navigator::open(&self.document, self.pane().shown)),
@@ -1540,6 +1546,7 @@ pub(super) fn sidebar_takes(command: Command) -> bool {
             | Command::AddProjectInArea(_)
             | Command::EditTitle
             | Command::EditDescription(_)
+            | Command::EditItem
             | Command::OpenInNewPane
             | Command::RenameContainer
             | Command::Delete

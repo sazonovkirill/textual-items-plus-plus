@@ -509,6 +509,8 @@ impl State {
         if let Some(quick_add) = &mut self.quick_add {
             quick_add.rematch(exact);
         }
+        self.edit_dialog =
+            (self.edit_dialog.take()).and_then(|dialog| dialog.rematched(new, exact));
         self.panel = self.rematched_panel(&old, &exact);
         self.sidebar.rematch(exact);
         if let Some(tags) = &self.tags {
@@ -600,8 +602,8 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        AttachmentsInput, Command, DateInput, EditInput, Focus, Go, History, Message, Opened,
-        PickerInput, Prefill, QuickAddInput, Selected, Side, TextEdit, Whose,
+        AttachmentsInput, Command, DateInput, EditDialogInput, EditInput, Focus, Go, History,
+        Message, Opened, PickerInput, Prefill, QuickAddInput, Selected, Side, TextEdit, Whose,
         navigator::Stop,
         update,
         view::{Shown, View},
@@ -928,6 +930,51 @@ mod tests {
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
         assert!(state.date_prompt().is_none(), "a, which it dates, is gone");
+        Ok(())
+    }
+
+    // F-FILE-06, FR-EDIT-08
+    #[test]
+    fn a_reload_keeps_the_edit_dialog_open_while_its_item_is_found_again() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::EditItem);
+        send(
+            &mut state,
+            Message::EditDialog(EditDialogInput::Edit(TextEdit::Insert('!'))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
+        );
+        send(&mut state, Message::EditDialog(EditDialogInput::Accept));
+        assert!(
+            titled(&state, "a!").is_some(),
+            "the draft applies to a found again"
+        );
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::EditItem);
+        for input in [EditDialogInput::Next, EditDialogInput::Next] {
+            send(&mut state, Message::EditDialog(input));
+        }
+        send(
+            &mut state,
+            Message::EditDialog(EditDialogInput::Edit(TextEdit::Insert(' '))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
+        );
+        assert!(
+            state.edit_dialog().ok_or("open")?.picker.is_some(),
+            "with its tag picker"
+        );
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::EditItem);
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
+        );
+        assert!(state.edit_dialog().is_none(), "a, which it edits, is gone");
         Ok(())
     }
 

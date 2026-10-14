@@ -17,14 +17,14 @@ use unicode_width::UnicodeWidthStr;
 use super::{
     Theme,
     attachments::{self, PanelKey, Scroll},
-    date_prompt,
+    date_prompt, edit_dialog,
     edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
     keymap::{Key, key_label},
     picker, quick_add, save_as, search, settings, text_keys,
 };
 use crate::app::{
-    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, QuickAddInput,
-    REGISTRY, SaveAsInput, SearchInput, SettingsInput, TextEdit,
+    AttachmentsInput, DateInput, Direction, EditDialogInput, EditInput, Motion, Part, PickerInput,
+    QuickAddInput, REGISTRY, SaveAsInput, SearchInput, SettingsInput, TextEdit,
 };
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
@@ -46,6 +46,8 @@ pub(super) enum Window {
     Picker,
     /// The date prompt.
     DatePrompt,
+    /// The edit dialog, while its tag picker is closed.
+    EditDialog,
     /// The Save As prompt.
     SaveAs,
     /// The Quick Add panel, while its picker is closed.
@@ -65,6 +67,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
     let (heading, mut own): (_, Vec<(Key, String)>) = match window {
         Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
         Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
+        Window::EditDialog => ("Edit Dialog", named(edit_dialog::KEYS, dialog_name)),
         Window::SaveAs => ("Save As", named(save_as::KEYS, save_as_name)),
         Window::QuickAdd => ("Quick Add", named(quick_add::KEYS, quick_add_name)),
         Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
@@ -188,6 +191,18 @@ fn date_name(input: DateInput) -> String {
         DateInput::Apply => "Set Date".to_owned(),
         DateInput::Cancel => "Cancel".to_owned(),
     }
+}
+
+/// What a key of the edit dialog does, as the panel names it.
+fn dialog_name(input: EditDialogInput) -> String {
+    match input {
+        EditDialogInput::Next => "Next Field",
+        EditDialogInput::Previous => "Previous Field",
+        EditDialogInput::Accept => "Save",
+        // The dialog's table binds no other input to a key of its own.
+        EditDialogInput::Cancel | EditDialogInput::Edit(_) | EditDialogInput::Tags(_) => "Cancel",
+    }
+    .to_owned()
 }
 
 /// What a key of the Save As prompt does, as the panel names it.
@@ -515,7 +530,7 @@ mod tests {
         assert_eq!(save_as_name(SaveAsInput::Edit(edit)), "Select All");
     }
 
-    // FR-KEY-03, FR-ATT-04
+    // FR-KEY-03, FR-ATT-04, FR-EDIT-08
     #[test]
     fn each_window_lists_its_own_keys_then_the_text_keys_it_leaves() {
         let headings = |window| -> Vec<_> {
@@ -576,6 +591,10 @@ mod tests {
         assert_eq!(headings(Window::Attachments), [("Attachments Panel", 13)]);
         assert_eq!(headings(Window::Settings), [("Settings", 6)]);
         assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 19)]);
+        assert_eq!(
+            headings(Window::EditDialog),
+            [("Edit Dialog", 4), ("Text", 19)]
+        );
     }
 
     // FR-KEY-03

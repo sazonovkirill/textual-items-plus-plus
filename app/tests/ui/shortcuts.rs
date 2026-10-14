@@ -409,3 +409,25 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
         "{lines:#?}"
     );
 }
+
+// FR-KEY-03, FR-EDIT-08
+#[test]
+fn the_edit_dialog_lists_its_own_keys_and_the_text_keys() {
+    let mut harness = Harness::new(160, 40);
+    harness.type_text("?e");
+    let lines = panel(&harness, 40);
+    assert_eq!(
+        lines.get(1..8).unwrap_or_default(),
+        [
+            "│ Edit Dialog",
+            "│  Next Field                    Tab, ↓",
+            "│  Previous Field          Shift+Tab, ↑",
+            "│  Save                           Enter",
+            "│  Cancel                           Esc",
+            "│ Text",
+            "│  Left                               ←",
+        ]
+    );
+    harness.key(KeyCode::Esc);
+    assert_eq!(panel(&harness, 40).get(1), Some(&"│ Moving".to_owned()));
+}

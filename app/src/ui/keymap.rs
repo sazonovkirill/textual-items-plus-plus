@@ -110,6 +110,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Convert, &["m y"]),
     (Command::GroupIntoSection, &["g S"]),
     (Command::GroupIntoProject, &["g G"]),
+    // taskpaper-terminal's keys for its Edit Node dialog, `m` modifying and **i**tem (D-100).
+    (Command::EditItem, &["e", "m i"]),
     // `m` modifies the focused item (FR-KEY-06); `n` for the notes, as TaskPaper calls the lines a
     // description is stored as, and shifted for the container shown, whose title stands above
     // the rows (D-43).

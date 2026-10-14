@@ -35,6 +35,9 @@ pub enum TagsFor {
     Items,
     /// Choosing the tags the pane is filtered by.
     Filter,
+    /// Adding a tag to the item the edit dialog edits or removing it, in the dialog's draft
+    /// (FR-EDIT-08).
+    Draft,
 }
 
 /// The tag picker as a frontend shows it.
@@ -53,6 +56,9 @@ pub(super) enum Choice {
     Items(Transaction),
     /// The filter, which now has this tag when it lacked it and lacks it when it had it.
     Filter(String),
+    /// The edit dialog's draft, which now carries this tag when it lacked it and lacks it when it
+    /// carried it.
+    Draft(String),
 }
 
 /// The tag picker while it is open: what it is for and the tags it lists.
@@ -96,6 +102,29 @@ impl TagPicker {
         Some(Self::new(items, TagsFor::Items, listed))
     }
 
+    /// The picker that adds a tag to the edit dialog's draft `tags` or removes it, listing every
+    /// tag of the user's in the document but those only a completed item hides (FR-ORG-09) and
+    /// those of the draft, each marked when the draft carries it (FR-EDIT-08).
+    pub(super) fn for_draft(document: &Document, tags: &[Tag]) -> Self {
+        let carried: Vec<String> = tags
+            .iter()
+            .filter(|tag| tag.is_users())
+            .map(|tag| tag.name.clone())
+            .collect();
+        let mut names = carried.clone();
+        for id in document.top_level().iter().chain([&document.inbox()]) {
+            gather(document, *id, &mut names);
+        }
+        let listed = listed(names, |name| {
+            if carried.iter().any(|carried| carried == name) {
+                TagMark::All
+            } else {
+                TagMark::Off
+            }
+        });
+        Self::new(Vec::new(), TagsFor::Draft, listed)
+    }
+
     /// The picker that chooses the tags `filter` holds, listing the tags of the user's carried by
     /// the items in `rows`, inherited by them and carried by those shown inside them, and those
     /// `filter` holds, which it marks.
@@ -118,7 +147,8 @@ impl TagPicker {
     }
 
     /// The picker `self` was, made again for `document` with `items` and `rows`, and the query
-    /// typed again, as after a reload; `None` when it tagged items and none is left.
+    /// typed again, as after a reload, a draft's carrying the tags it marked; `None` when it
+    /// tagged items and none is left.
     pub(super) fn reopen(
         &self,
         document: &Document,
@@ -129,6 +159,16 @@ impl TagPicker {
         let mut picker = match self.tags_for {
             TagsFor::Items => Self::for_items(document, items)?,
             TagsFor::Filter => Self::for_filter(document, rows, filter),
+            TagsFor::Draft => {
+                let carried = self
+                    .listed
+                    .iter()
+                    .filter(|listed| listed.value.mark == TagMark::All);
+                let tags: Vec<Tag> = carried
+                    .map(|listed| Tag::plain(&*listed.value.name))
+                    .collect();
+                Self::for_draft(document, &tags)
+            }
         };
         for c in self.picker.view().query.text().chars() {
             picker.input(document, PickerInput::Edit(TextEdit::Insert(c)));
@@ -175,13 +215,15 @@ impl TagPicker {
             Picked::Chosen(entry) => Picked::Chosen(match self.tags_for {
                 TagsFor::Items => Choice::Items(toggle(document, &self.items, &entry)),
                 TagsFor::Filter => Choice::Filter(entry.name),
+                TagsFor::Draft => Choice::Draft(entry.name),
             }),
             Picked::Dismissed => Picked::Dismissed,
         })
     }
 
     /// The candidates to list now that the query changed from `before`, the name it types first
-    /// when that is a new tag; `None` while the query is as it was.
+    /// when that is a new tag, unless the picker chooses the filter; `None` while the query is as
+    /// it was.
     fn offered(&self, before: &str) -> Option<Vec<Candidate<TagEntry>>> {
         let query = self.picker.view().query.text();
         if query == before || self.tags_for == TagsFor::Filter {
