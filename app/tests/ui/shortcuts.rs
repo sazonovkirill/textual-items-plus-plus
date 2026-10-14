@@ -26,7 +26,7 @@ fn question_mark_shows_the_keys_of_every_command_grouped_at_the_right() {
     harness.type_text("?");
     let lines = panel(&harness, 40);
     assert_eq!(
-        lines.get(..10).unwrap_or_default(),
+        lines.get(..7).unwrap_or_default(),
         [
             "│Shortcuts",
             "│ Moving",
@@ -34,9 +34,6 @@ fn question_mark_shows_the_keys_of_every_command_grouped_at_the_right() {
             "│  Previous Item                   k, ↑",
             "│  First Item                  gg, Home",
             "│  Last Item                     G, End",
-            "│  Section Heading                    #",
-            "│  Next Section                       }",
-            "│  Previous Section                   {",
             "│ Selection",
         ]
     );
@@ -75,7 +72,7 @@ fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
         lines.get(1..3).unwrap_or_default(),
         [
             "│ ↑ more                              (",
-            "│  Go to All                         ga"
+            "│  Go to Symbol                       /"
         ]
     );
     harness.type_text("))))))))");

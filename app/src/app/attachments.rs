@@ -399,41 +399,18 @@ fn settled(document: &Document, panel: Panel, before: &[Selected]) -> Panel {
 }
 
 /// What `motion` selects in `panel` on `document` from what is selected: the next or previous,
-/// the first or the last, the checklist item holding the one selected, or the first of the next
-/// or previous section. Where there is none, what is selected.
+/// or the first or the last. Where there is none, what is selected.
 fn moved(document: &Document, panel: Panel, motion: Focus) -> Selected {
     let entries = entries(document, panel.id);
     let at = entries
         .iter()
         .position(|&entry| entry == panel.selected)
         .unwrap_or_default();
-    let section = |entry: &Selected| std::mem::discriminant(entry);
-    let holder = match panel.selected {
-        Selected::Checklist(Some(item)) => document
-            .position(item)
-            .and_then(|(parent, _)| parent)
-            .filter(|&parent| parent != panel.id),
-        Selected::Note | Selected::Checklist(None) | Selected::Comment(_) => None,
-    };
     let moved = match motion {
         Focus::Next => entries.get(at + 1),
         Focus::Previous => at.checked_sub(1).and_then(|before| entries.get(before)),
         Focus::First => entries.first(),
         Focus::Last => entries.last(),
-        Focus::Parent => holder
-            .map(|holder| Selected::Checklist(Some(holder)))
-            .and_then(|holder| entries.iter().find(|&&entry| entry == holder)),
-        Focus::NextSection => entries
-            .iter()
-            .skip(at)
-            .find(|entry| section(entry) != section(&panel.selected)),
-        Focus::PreviousSection => entries
-            .get(..at)
-            .unwrap_or_default()
-            .iter()
-            .rev()
-            .find(|entry| section(entry) != section(&panel.selected))
-            .and_then(|last| entries.iter().find(|entry| section(entry) == section(last))),
     };
     moved.copied().unwrap_or(panel.selected)
 }
@@ -702,7 +679,6 @@ mod tests {
             (Focus::Next, Selected::Comment(0)),
             (Focus::Last, Selected::Comment(2)),
             (Focus::Next, Selected::Comment(2)),
-            (Focus::Parent, Selected::Comment(2)),
             (Focus::First, Selected::Note),
         ] {
             state.attachments_input(AttachmentsInput::Select(motion));
@@ -839,16 +815,11 @@ mod tests {
         let steps = [
             (Focus::Next, Some(entry(b))),
             (Focus::Next, Some(entry(d))),
-            (Focus::Parent, Some(entry(b))),
-            (Focus::Parent, Some(entry(b))),
+            (Focus::Previous, Some(entry(b))),
             (Focus::Last, Some(entry(c))),
             (Focus::Next, Some(entry(c))),
-            (Focus::PreviousSection, Some(Selected::Note)),
-            (Focus::Previous, Some(Selected::Note)),
-            (Focus::NextSection, Some(entry(b))),
-            (Focus::NextSection, Some(entry(b))),
             (Focus::First, Some(Selected::Note)),
-            (Focus::Parent, Some(Selected::Note)),
+            (Focus::Previous, Some(Selected::Note)),
         ];
         for (motion, entry) in steps {
             input(&mut state, AttachmentsInput::Select(motion));

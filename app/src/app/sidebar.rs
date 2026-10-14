@@ -102,24 +102,19 @@ impl Sidebar {
         }
     }
 
-    /// Moves the focus among `entries` as `motion` says: to the next or previous entry, the first
-    /// or last, the area or project holding it, or the next or previous one at the top level.
+    /// Moves the focus among `entries` as `motion` says: to the next or previous entry, or the
+    /// first or last.
     pub(super) fn move_focus(&mut self, entries: &[Stop], motion: Focus) {
         let Some(at) = self.at(entries) else {
             return;
         };
-        let depth = |index: usize| entries.get(index).map_or(0, |stop| stop.depth());
-        let earlier = (0..at).rev();
         let target = match motion {
-            Focus::Next => Some((at + 1).min(entries.len() - 1)),
-            Focus::Previous => Some(at.saturating_sub(1)),
-            Focus::First => Some(0),
-            Focus::Last => Some(entries.len() - 1),
-            Focus::Parent => earlier.clone().find(|&index| depth(index) < depth(at)),
-            Focus::NextSection => (at + 1..entries.len()).find(|&index| depth(index) == 0),
-            Focus::PreviousSection => earlier.clone().find(|&index| depth(index) == 0),
+            Focus::Next => (at + 1).min(entries.len() - 1),
+            Focus::Previous => at.saturating_sub(1),
+            Focus::First => 0,
+            Focus::Last => entries.len() - 1,
         };
-        if let Some(stop) = target.and_then(|index| entries.get(index)) {
+        if let Some(stop) = entries.get(target) {
             self.focused = Some(stop.shown());
         }
     }
@@ -659,18 +654,9 @@ mod tests {
         assert_eq!(go(Focus::Next).as_deref(), Some("Work"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Site"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Blog"));
-        assert_eq!(go(Focus::Parent).as_deref(), Some("Site"));
-        assert_eq!(go(Focus::Parent).as_deref(), Some("Work"));
-        assert_eq!(
-            go(Focus::Parent).as_deref(),
-            Some("Work"),
-            "nothing holds it"
-        );
-        assert_eq!(go(Focus::NextSection).as_deref(), Some("Home"));
+        assert_eq!(go(Focus::Previous).as_deref(), Some("Site"));
         assert_eq!(go(Focus::Last).as_deref(), Some("Home"));
         assert_eq!(go(Focus::Next).as_deref(), Some("Home"));
-        assert_eq!(go(Focus::NextSection).as_deref(), Some("Home"));
-        assert_eq!(go(Focus::PreviousSection).as_deref(), Some("Work"));
         assert_eq!(go(Focus::First).as_deref(), Some("Inbox"));
         let view = sidebar.view(&document);
         assert_eq!(

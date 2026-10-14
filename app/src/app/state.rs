@@ -1559,7 +1559,7 @@ mod tests {
         state.edit_title();
         assert_eq!(edited(&state), Some(loose), "a task is edited");
         state.edit_input(EditInput::Done);
-        state.move_focus(Focus::NextSection);
+        state.move_focus(Focus::Next);
         state.edit_title();
         assert_eq!(edited(&state), Some(section), "so is a section");
         state.edit_input(EditInput::Done);
@@ -1612,7 +1612,7 @@ mod tests {
         } = fixture()?;
         let inbox = state.document().inbox();
         navigate(&mut state, "Work");
-        state.move_focus(Focus::NextSection);
+        state.move_focus(Focus::Next);
         navigate(&mut state, "Site");
         state.go(Go::Back);
         assert_eq!(at(&state), (Some(work), Some(section)));
@@ -1697,7 +1697,7 @@ mod tests {
             mut state, section, ..
         } = fixture()?;
         navigate(&mut state, "Work");
-        state.move_focus(Focus::NextSection);
+        state.move_focus(Focus::Next);
         state.edit_title();
         assert_eq!(state.editing().map(|(id, ..)| id), Some(section));
         type_text(&mut state, "ection");
@@ -2415,7 +2415,7 @@ mod tests {
             ..
         } = fixture()?;
         navigate(&mut state, "Work");
-        state.move_focus(Focus::NextSection);
+        state.move_focus(Focus::Next);
         state.extend_selection(Direction::Down);
         assert_eq!(picked(&state), [section, in_section]);
         state.delete(TODAY);

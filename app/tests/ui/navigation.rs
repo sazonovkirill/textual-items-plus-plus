@@ -183,7 +183,7 @@ fn enter_opens_a_project_row_and_gi_goes_to_the_inbox() {
     harness.ctrl('g');
     harness.type_text("website");
     harness.key(KeyCode::Enter);
-    harness.type_text("jj#");
+    harness.type_text("j");
     assert_eq!(focused(&harness).as_deref(), Some("/ Launch"));
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Esc);
@@ -205,7 +205,7 @@ fn enter_opens_a_project_row_and_gi_goes_to_the_inbox() {
 fn back_and_forward_return_with_the_focus_where_it_was() {
     let mut harness = Harness::new(80, 24);
     open_website(&mut harness);
-    harness.type_text("jj#");
+    harness.type_text("j");
     harness.ctrl('g');
     harness.type_text("blog");
     harness.key(KeyCode::Enter);

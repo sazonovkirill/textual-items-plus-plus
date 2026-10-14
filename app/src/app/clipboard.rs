@@ -283,7 +283,7 @@ mod tests {
     -> Result<(), PlacementError> {
         let Fixture { mut state, s, .. } = fixture()?;
         open(&mut state, "Work");
-        give(&mut state, Command::Focus(Focus::NextSection));
+        give(&mut state, Command::Focus(Focus::Next));
         give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(give(&mut state, Command::Duplicate), []);
         assert_eq!(titles(&state), ["loose", "Soon", "s", "s", "Site"]);
@@ -304,7 +304,7 @@ mod tests {
             mut state, section, ..
         } = fixture()?;
         open(&mut state, "Work");
-        give(&mut state, Command::Focus(Focus::NextSection));
+        give(&mut state, Command::Focus(Focus::Next));
         let before = state.document().clone();
         let branches = state.document().branch(section).into_iter().collect();
         assert_eq!(
@@ -466,7 +466,7 @@ mod tests {
         // Inside a completed section nothing shows, so nothing goes.
         open(&mut state, "Work");
         give(&mut state, Command::ShowCompleted);
-        give(&mut state, Command::Focus(Focus::NextSection));
+        give(&mut state, Command::Focus(Focus::Next));
         give(&mut state, Command::ToggleCompleted);
         assert_eq!(focused(&state), "Soon");
         let before = tree(&state);

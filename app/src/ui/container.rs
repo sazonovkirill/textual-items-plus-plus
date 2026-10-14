@@ -1049,14 +1049,13 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// How `item`'s title is drawn: a task in the text color, struck through and faded once
-    /// completed; containers bold, each kind in its color, a section also in italics.
+    /// completed; containers bold, each kind in its color (D-82).
     fn title_style(&self, item: &Item) -> Style {
         let theme = self.theme;
         let style = match item.kind {
-            ItemKind::Inbox | ItemKind::Project | ItemKind::Area => {
+            ItemKind::Inbox | ItemKind::Project | ItemKind::Area | ItemKind::Section => {
                 Style::new().fg(theme.kind(item.kind)).bold()
             }
-            ItemKind::Section => Style::new().fg(theme.kind(item.kind)).bold().italic(),
             ItemKind::Task | ItemKind::ChecklistItem => Style::new(),
         };
         if item.completion().is_some() {
@@ -1069,7 +1068,7 @@ impl<'a> ContainerPane<'a> {
     /// How `item`'s marker is drawn: in its title's color, faded once completed.
     fn marker_style(&self, item: &Item) -> Style {
         let style = self.title_style(item);
-        style.remove_modifier(Modifier::CROSSED_OUT | Modifier::ITALIC)
+        style.remove_modifier(Modifier::CROSSED_OUT)
     }
 
     /// How `item`'s tags are drawn: dimmed after its title (FR-TAG-03).
@@ -1878,11 +1877,10 @@ mod tests {
             "the project's description"
         );
         let section = at(4, 6);
-        assert_eq!(section.fg, Some(theme.sections));
-        assert!(
-            section
-                .add_modifier
-                .contains(Modifier::BOLD | Modifier::ITALIC)
+        assert_eq!(
+            (section.fg, section.add_modifier),
+            (Some(theme.sections), Modifier::BOLD),
+            "a section's title, upright"
         );
         let focus = at(0, 8);
         assert_eq!(

@@ -24,16 +24,12 @@ pub(super) type Key = (KeyModifiers, KeyCode);
 /// key only while no binding is complete. A feature binds its commands here.
 const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Quit, &["ctrl+q"]),
-    // The motions of taskpaper-terminal (FR-KEY-02), and vim's paragraph motions for the next and
-    // previous section heading, since its next and previous sibling browse the sidebar (D-34,
-    // D-79).
+    // The motions of taskpaper-terminal (FR-KEY-02), without its parent and sibling motions
+    // (D-82).
     (Command::Focus(Focus::Next), &["j", "down"]),
     (Command::Focus(Focus::Previous), &["k", "up"]),
     (Command::Focus(Focus::First), &["g g", "home"]),
     (Command::Focus(Focus::Last), &["G", "end"]),
-    (Command::Focus(Focus::Parent), &["#"]),
-    (Command::Focus(Focus::NextSection), &["}"]),
-    (Command::Focus(Focus::PreviousSection), &["{"]),
     // taskpaper-terminal's selection keys: `Shift` with a motion extends (D-24).
     (Command::Extend(Direction::Down), &["J", "shift+down"]),
     (Command::Extend(Direction::Up), &["K", "shift+up"]),
@@ -576,9 +572,6 @@ mod tests {
                 focus(Focus::Last),
             ),
             (press(KeyCode::End, none), focus(Focus::Last)),
-            (char('#'), focus(Focus::Parent)),
-            (char('}'), focus(Focus::NextSection)),
-            (char('{'), focus(Focus::PreviousSection)),
         ] {
             assert_eq!(keymap.press(&event), command, "{event:?}");
         }
@@ -739,12 +732,9 @@ mod tests {
     fn a_key_that_continues_no_sequence_cancels_it_and_does_nothing_else() {
         let mut keymap = Keymap::default();
         keymap.press(&char('g'));
-        assert_eq!(keymap.press(&char('#')), None);
+        assert_eq!(keymap.press(&char('x')), None);
         assert_eq!(keymap.pending(), "");
-        assert_eq!(
-            keymap.press(&char('#')),
-            Some(Command::Focus(Focus::Parent))
-        );
+        assert_eq!(keymap.press(&char('x')), Some(Command::ToggleCompleted));
     }
 
     // FR-EDIT-05, FR-ORG-06, FR-KEY-02, D-40
@@ -782,10 +772,7 @@ mod tests {
         assert_eq!(keymap.pending(), "g");
         keymap.tick(Duration::from_secs(6));
         assert_eq!((keymap.pending(), keymap.deadline()), ("", None));
-        assert_eq!(
-            keymap.press(&char('#')),
-            Some(Command::Focus(Focus::Parent))
-        );
+        assert_eq!(keymap.press(&char('x')), Some(Command::ToggleCompleted));
     }
 
     #[test]

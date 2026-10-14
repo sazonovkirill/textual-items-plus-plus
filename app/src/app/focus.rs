@@ -15,12 +15,6 @@ pub enum Focus {
     First,
     /// The last row.
     Last,
-    /// The heading of the section the focused task is listed under.
-    Parent,
-    /// The next section heading.
-    NextSection,
-    /// The section heading above.
-    PreviousSection,
 }
 
 /// The row `motion` focuses when `focused` has the focus among `rows`, below `heading`, the
@@ -33,20 +27,13 @@ pub(super) fn target(
     focused: Option<ItemId>,
     motion: Focus,
 ) -> Option<ItemId> {
-    let is_section = |row: &&Row| matches!(row, Row::Section(_));
     let Some(at) = focused.and_then(|id| rows.iter().position(|row| row.id() == id)) else {
         let first = rows.first().copied().map(Row::id);
         return match motion {
             _ if heading.is_none() || focused != heading => first.or(heading),
             Focus::Next => first.or(focused),
             Focus::Last => rows.last().copied().map(Row::id).or(focused),
-            Focus::NextSection => rows
-                .iter()
-                .find(is_section)
-                .copied()
-                .map(Row::id)
-                .or(focused),
-            Focus::Previous | Focus::First | Focus::Parent | Focus::PreviousSection => focused,
+            Focus::Previous | Focus::First => focused,
         };
     };
     let row = match motion {
@@ -54,17 +41,6 @@ pub(super) fn target(
         Focus::Previous => at.checked_sub(1).and_then(|before| rows.get(before)),
         Focus::First => rows.first().filter(|_| heading.is_none()),
         Focus::Last => rows.last(),
-        Focus::Parent => {
-            return match rows.get(at) {
-                Some(&Row::Task {
-                    section: Some(section),
-                    ..
-                }) => Some(section),
-                _ => heading.or(focused),
-            };
-        }
-        Focus::NextSection => rows.iter().skip(at + 1).find(is_section),
-        Focus::PreviousSection => rows.iter().take(at).rfind(is_section),
     };
     match (row, motion) {
         (None, Focus::Previous | Focus::First) => heading.or(focused),
@@ -157,32 +133,9 @@ mod tests {
         check(7, Focus::Last, 7);
     }
 
-    // FR-NAV-01
-    #[test]
-    fn parent_goes_from_a_task_to_its_section_heading() {
-        check(5, Focus::Parent, 3);
-        check(1, Focus::Parent, 1);
-        check(3, Focus::Parent, 3);
-        check(7, Focus::Parent, 7);
-    }
-
-    // FR-NAV-01
-    #[test]
-    fn next_and_previous_section_go_to_the_nearest_heading_that_way() {
-        check(1, Focus::NextSection, 3);
-        check(3, Focus::NextSection, 6);
-        check(4, Focus::NextSection, 6);
-        check(6, Focus::NextSection, 6);
-        check(7, Focus::PreviousSection, 6);
-        check(6, Focus::PreviousSection, 3);
-        check(5, Focus::PreviousSection, 3);
-        check(3, Focus::PreviousSection, 3);
-        check(2, Focus::PreviousSection, 2);
-    }
-
     #[test]
     fn without_a_focused_row_every_motion_focuses_the_first() {
-        for motion in [Focus::Next, Focus::Previous, Focus::Last, Focus::Parent] {
+        for motion in [Focus::Next, Focus::Previous, Focus::Last] {
             assert_eq!(
                 target(&rows(), None, None, motion),
                 Some(id(1)),
@@ -235,26 +188,13 @@ mod tests {
         let go = |from: Option<u64>, motion| target(&rows(), HEADING, from.map(id), motion);
         assert_eq!(go(Some(1), Focus::Previous), HEADING);
         assert_eq!(go(Some(4), Focus::First), HEADING);
-        assert_eq!(
-            go(Some(2), Focus::Parent),
-            HEADING,
-            "a task under no section"
-        );
-        assert_eq!(go(Some(3), Focus::Parent), HEADING, "a section heading");
-        assert_eq!(go(Some(5), Focus::Parent), Some(id(3)));
         assert_eq!(go(Some(0), Focus::Next), Some(id(1)));
         assert_eq!(go(Some(0), Focus::Last), Some(id(7)));
-        assert_eq!(go(Some(0), Focus::NextSection), Some(id(3)));
-        for motion in [
-            Focus::Previous,
-            Focus::First,
-            Focus::Parent,
-            Focus::PreviousSection,
-        ] {
+        for motion in [Focus::Previous, Focus::First] {
             assert_eq!(go(Some(0), motion), HEADING, "{motion:?}");
         }
         assert_eq!(go(None, Focus::Next), Some(id(1)));
-        for motion in [Focus::Next, Focus::Last, Focus::NextSection] {
+        for motion in [Focus::Next, Focus::Last] {
             assert_eq!(target(&[], HEADING, HEADING, motion), HEADING, "{motion:?}");
         }
         assert_eq!(target(&[], HEADING, None, Focus::Next), HEADING);

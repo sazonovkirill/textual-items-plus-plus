@@ -237,21 +237,6 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::Focus(Focus::Parent),
-        title: "Section Heading",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::Focus(Focus::NextSection),
-        title: "Next Section",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::Focus(Focus::PreviousSection),
-        title: "Previous Section",
-        context: Context::Navigate,
-    },
-    Entry {
         command: Command::Extend(Direction::Down),
         title: "Extend Selection Down",
         context: Context::Navigate,
@@ -737,15 +722,7 @@ mod tests {
     // FR-NAV-01
     #[test]
     fn every_motion_is_a_navigate_command() {
-        let motions = [
-            Focus::Next,
-            Focus::Previous,
-            Focus::First,
-            Focus::Last,
-            Focus::Parent,
-            Focus::NextSection,
-            Focus::PreviousSection,
-        ];
+        let motions = [Focus::Next, Focus::Previous, Focus::First, Focus::Last];
         for motion in motions {
             let entry = REGISTRY
                 .iter()

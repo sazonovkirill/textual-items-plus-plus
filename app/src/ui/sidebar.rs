@@ -497,10 +497,9 @@ mod tests {
         give(&mut state, Command::Focus(crate::app::Focus::Last));
         let (rows, _, _) = draw(&state, 20, 2);
         assert_eq!(rows, [" # Website        3│", "▌# Blog            │"]);
-        give(
-            &mut state,
-            Command::Focus(crate::app::Focus::PreviousSection),
-        );
+        for _ in 0..2 {
+            give(&mut state, Command::Focus(crate::app::Focus::Previous));
+        }
         let (rows, _, _) = draw(&state, 20, 2);
         assert_eq!(rows, ["                   │", "▌◆ WORK           3│"]);
         let mut new = State::new(Document::new(), Opened::Demo, TODAY);

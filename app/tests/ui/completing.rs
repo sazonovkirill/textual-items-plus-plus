@@ -74,7 +74,7 @@ fn dot_completes_a_task_a_section_and_a_project_as_x_does() {
     harness.key(KeyCode::Enter);
     harness.type_text("G.");
     assert!(!harness.screen().contains("# Blog"), "{}", harness.screen());
-    harness.type_text("gg}.");
+    harness.type_text("ggjj.");
     assert!(
         !harness.screen().contains("Review two portfolios"),
         "{}",

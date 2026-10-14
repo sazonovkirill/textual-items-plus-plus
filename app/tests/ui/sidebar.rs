@@ -73,8 +73,7 @@ fn reorder_areas_in_the_sidebar() {
         Some("*# Learn Rust           2"),
         "no other project in no area to change places with"
     );
-    harness.type_text("G");
-    harness.type_text("#");
+    harness.type_text("Gk");
     harness.press(KeyCode::Char('k'), KeyModifiers::ALT);
     let moved = entries(&harness);
     assert_eq!(
