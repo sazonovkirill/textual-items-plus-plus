@@ -75,6 +75,8 @@ pub enum Notice {
     CopyFailed(String),
     /// The daily backup failed, for this reason.
     BackupFailed(String),
+    /// Empty Trash asks to be given again to delete these many items for good (FR-VIEW-04).
+    EmptyTrash(usize),
     /// Indenting, outdenting, converting or grouping was refused, for this reason (FR-OPS-03,
     /// FR-TASK-06, FR-OPS-07, FR-OPS-08).
     Refused(Refusal),

@@ -6,7 +6,7 @@ use std::time::Duration;
 use jiff::civil::Date;
 
 use super::{
-    Command, ConflictSide, DateInput, EditInput, OnDisk, PickerInput, Report, Side, State,
+    Command, ConflictSide, DateInput, EditInput, Notice, OnDisk, PickerInput, Report, Side, State,
     autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
@@ -83,6 +83,7 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
 
 /// Applies `message` to `state` by the module that owns it.
 fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
+    let emptying = matches!(state.notice(), Some(Notice::EmptyTrash(_)));
     if let Message::Command(_) | Message::Paste(..) = message {
         state.finish_editing();
         state.clear_notice();
@@ -124,6 +125,8 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::SetDate(kind)) => state.open_date_prompt(kind, today),
         Message::Command(Command::StartToday) => state.start_today(today),
         Message::Command(Command::Delete) => state.delete(today),
+        Message::Command(Command::Restore) => state.restore_selected(),
+        Message::Command(Command::EmptyTrash) => state.empty_trash(emptying),
         Message::Command(Command::MoveTo) => state.open_move_to(),
         Message::Command(Command::Duplicate) => state.duplicate(),
         Message::Command(Command::Copy) => return state.copy(),

@@ -6,7 +6,7 @@ use jiff::civil::Date;
 use super::{
     all,
     container::{self, Row},
-    logbook, today,
+    logbook, today, trash,
     upcoming::{self, Period},
 };
 use crate::domain::{Document, ItemId};
@@ -22,6 +22,8 @@ pub enum View {
     All,
     /// Every completed item, by the day it was completed (FR-VIEW-03).
     Logbook,
+    /// The deleted items (FR-VIEW-04).
+    Trash,
 }
 
 /// A view with what the Navigator shows of it.
@@ -51,6 +53,10 @@ pub const REGISTRY: &[Entry] = &[
         view: View::Logbook,
         title: View::Logbook.title(),
     },
+    Entry {
+        view: View::Trash,
+        title: View::Trash.title(),
+    },
 ];
 
 impl View {
@@ -62,14 +68,15 @@ impl View {
             Self::Upcoming => "Upcoming",
             Self::All => "All",
             Self::Logbook => "Logbook",
+            Self::Trash => "Trash",
         }
     }
 
-    /// Whether each row says where its item is, as the Logbook's rows from every list do
-    /// (FR-VIEW-03).
+    /// Whether each row says where its item is, as the rows of the Logbook and the Trash, from
+    /// every list, do (FR-VIEW-03, FR-VIEW-04).
     #[must_use]
     pub const fn locates(self) -> bool {
-        matches!(self, Self::Logbook)
+        matches!(self, Self::Logbook | Self::Trash)
     }
 }
 
@@ -117,6 +124,7 @@ pub(super) fn groups(
         View::Upcoming => upcoming::groups(document, today, show_completed),
         View::All => all::groups(document, show_completed),
         View::Logbook => logbook::groups(document),
+        View::Trash => trash::groups(document),
     }
 }
 

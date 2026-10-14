@@ -51,8 +51,13 @@ pub enum Command {
     SetDate(DateKind),
     /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
     StartToday,
-    /// Move the selected items to the Trash (FR-OPS-05, OQ-19).
+    /// Move the selected items to the Trash, or in the Trash delete them for good (FR-OPS-05,
+    /// FR-VIEW-04, OQ-19).
     Delete,
+    /// In the Trash, put the selected items back where they were (FR-VIEW-04).
+    Restore,
+    /// In the Trash, delete everything in it for good, once asked again (FR-VIEW-04).
+    EmptyTrash,
     /// Open the picker that moves the selected items to another container (FR-OPS-04).
     MoveTo,
     /// Put a copy of each selected item, with its contents, right after it (FR-OPS-05).
@@ -287,6 +292,11 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::Go(Go::View(View::Trash)),
+        title: "Go to Trash",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::EditTitle,
         title: "Edit Title",
         context: Context::Navigate,
@@ -334,6 +344,16 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Delete,
         title: "Delete",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Restore,
+        title: "Restore",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::EmptyTrash,
+        title: "Empty Trash",
         context: Context::Navigate,
     },
     Entry {
@@ -567,6 +587,7 @@ mod tests {
             Go::View(View::Upcoming),
             Go::View(View::All),
             Go::View(View::Logbook),
+            Go::View(View::Trash),
         ] {
             assert_eq!(context(Command::Go(to)), Some(Context::Navigate), "{to:?}");
         }
@@ -622,6 +643,8 @@ mod tests {
             Command::EditDescription(Whose::Focused),
             Command::EditDescription(Whose::Shown),
             Command::Delete,
+            Command::Restore,
+            Command::EmptyTrash,
             Command::MoveTo,
             Command::RenameContainer,
             Command::DeleteContainer,

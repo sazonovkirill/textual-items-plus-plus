@@ -57,6 +57,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::View(View::Upcoming)), &["g U"]),
     (Command::Go(Go::View(View::All)), &["g a"]),
     (Command::Go(Go::View(View::Logbook)), &["g L"]),
+    // `d` as `dd` deletes into it (D-55).
+    (Command::Go(Go::View(View::Trash)), &["g d"]),
     (Command::Navigator, &["ctrl+g"]),
     // taskpaper-terminal's keys to edit, add below and above, and delete (D-37), with its type
     // letters after the creation keys, and `a` for an area (D-40).
@@ -70,6 +72,9 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::NewArea(Side::Below), &["o a"]),
     (Command::NewArea(Side::Above), &["O a"]),
     (Command::Delete, &["d d", "delete"]),
+    // In the Trash, `u` undeletes, as vim's undo would the deletion, and `de` empties it (D-55).
+    (Command::Restore, &["u"]),
+    (Command::EmptyTrash, &["d e"]),
     // taskpaper-terminal's Move to key.
     (Command::MoveTo, &["g m"]),
     // taskpaper-terminal's clipboard keys (its D-53).
@@ -379,6 +384,7 @@ mod tests {
             (vec![char('g'), char('U')], go(Go::View(View::Upcoming))),
             (vec![char('g'), char('a')], go(Go::View(View::All))),
             (vec![char('g'), char('L')], go(Go::View(View::Logbook))),
+            (vec![char('g'), char('d')], go(Go::View(View::Trash))),
             (
                 vec![press(KeyCode::Char('g'), KeyModifiers::CONTROL)],
                 Some(Command::Navigator),

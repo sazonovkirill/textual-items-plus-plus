@@ -4,6 +4,7 @@ Inbox:
 	- Buy coffee beans @errands
 	- Plan the weekend trip @start({today+3})
 	- Read the article Sam sent
+	- Cancel the newspaper @deleted({today-1})
 Work: @area
 	Everything for the day job.
 	- Answer the recruiter's email @due({today-1})
@@ -46,6 +47,7 @@ Home: @area
 			- Fiction
 			- Cookbooks
 		- Hand back the old keys @due({today+12})
+		- Paint the hallway @deleted({today-3})
 		Paperwork: @section
 			- Change the address at the bank
 			- Register at the town hall @start({today+7})

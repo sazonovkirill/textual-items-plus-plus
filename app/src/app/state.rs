@@ -20,7 +20,7 @@ use super::{
     sidebar::{self, Sidebar},
     tags::{self, Choice, TagPicker, TagsView},
     trash,
-    view::{self, Group, Shown},
+    view::{self, Group, Shown, View},
     visits::{Visit, Visits},
 };
 use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Tag, Transaction, dates::DateKind};
@@ -310,11 +310,38 @@ impl State {
         self.change(transaction);
     }
 
-    /// Moves the selected items to the Trash on `today`, as one step to undo, moving the focus on
-    /// from the rows that leave.
+    /// Moves the selected items to the Trash on `today`, or in the Trash deletes them for good,
+    /// as one step to undo, moving the focus on from the rows that leave (FR-VIEW-04).
     pub(super) fn delete(&mut self, today: Date) {
-        let transaction = trash::delete(&self.document, self.targets(), today);
+        let transaction = if self.shown == Shown::View(View::Trash) {
+            // Taking items out of the document is what cutting does once they are copied.
+            clipboard::cut(&self.document, &self.selection.items(&self.rows()))
+        } else {
+            trash::delete(&self.document, self.targets(), today)
+        };
         self.change(transaction);
+    }
+
+    /// Puts the selected items in the Trash back where they were, as one step to undo, moving the
+    /// focus on from the rows that leave; nothing selected elsewhere is in the Trash (FR-VIEW-04).
+    pub(super) fn restore_selected(&mut self) {
+        let items = self.selection.items(&self.rows());
+        self.change(trash::restore(&self.document, items));
+    }
+
+    /// In the Trash, when `asked` the status line has just asked to confirm, deletes everything
+    /// in it for good, as one step to undo; otherwise asks to confirm, unless the Trash is empty
+    /// (FR-VIEW-04).
+    pub(super) fn empty_trash(&mut self, asked: bool) {
+        if self.shown != Shown::View(View::Trash) {
+            return;
+        }
+        let items = trash::items(&self.document);
+        if asked {
+            self.change(clipboard::cut(&self.document, &items));
+        } else if !items.is_empty() {
+            self.notify(Notice::EmptyTrash(items.len()));
+        }
     }
 
     /// Puts a copy of each selected item, with its contents, right after it, as one step to undo,
@@ -950,7 +977,11 @@ impl State {
                     .into_iter()
                     .find(|row| Some(row.id()) == focused);
                 match row {
-                    Some(Row::Section(id) | Row::Project(id)) => self.open(id, None),
+                    Some(Row::Section(id) | Row::Project(id)) => {
+                        if container::opens(document, id) {
+                            self.open(id, None);
+                        }
+                    }
                     Some(Row::Task { id, .. }) if self.container().is_none() => {
                         if let Some(listing) = container::listing(document, id) {
                             self.open(listing, Some(id));
@@ -2287,6 +2318,77 @@ mod tests {
             ],
             "the picker lists the tags of every row Today lists, filtered or not"
         );
+        Ok(())
+    }
+
+    // FR-VIEW-04, FR-NAV-02
+    #[test]
+    fn the_trash_lists_deleted_items_and_none_opens() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            inbox_task,
+            section,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        state.go(Go::View(View::Trash));
+        assert_eq!(state.rows(), []);
+        state.empty_trash(false);
+        assert_eq!(state.notice(), None, "nothing to ask about");
+        state.go(Go::Home);
+        state.delete(TODAY);
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::Last);
+        state.delete(TODAY);
+        state.go(Go::View(View::Trash));
+        assert_eq!(
+            state.rows(),
+            [
+                Row::Task {
+                    id: inbox_task,
+                    section: None
+                },
+                Row::Project(site)
+            ]
+        );
+        state.move_focus(Focus::Last);
+        state.go(Go::Into);
+        assert_eq!(
+            state.shown(),
+            Shown::View(View::Trash),
+            "a deleted project does not open"
+        );
+        state.restore_selected();
+        assert_eq!(
+            state.rows(),
+            [Row::Task {
+                id: inbox_task,
+                section: None
+            }]
+        );
+        navigate(&mut state, "Site");
+        assert_eq!(state.selection().focused(), Some(in_site));
+        // Outside the Trash, nothing is restored or emptied.
+        state.restore_selected();
+        state.empty_trash(true);
+        state.empty_trash(false);
+        assert_eq!(state.notice(), None);
+        assert_eq!(
+            trash::items(state.document()),
+            [inbox_task],
+            "only the Trash empties"
+        );
+        assert!(state.document().node(section).is_some());
+        state.go(Go::View(View::Trash));
+        state.delete(TODAY);
+        assert_eq!(state.rows(), []);
+        assert_eq!(state.document().node(inbox_task), None, "gone for good");
+        state.undo();
+        state.empty_trash(false);
+        assert_eq!(state.notice(), Some(&Notice::EmptyTrash(1)));
+        state.empty_trash(true);
+        assert_eq!(state.document().node(inbox_task), None, "emptied");
         Ok(())
     }
 }

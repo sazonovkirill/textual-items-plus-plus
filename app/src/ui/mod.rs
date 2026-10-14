@@ -507,6 +507,7 @@ fn view_icon(view: View) -> Icon {
         View::Upcoming => Icon::Upcoming,
         View::All => Icon::All,
         View::Logbook => Icon::Logbook,
+        View::Trash => Icon::Trash,
     }
 }
 

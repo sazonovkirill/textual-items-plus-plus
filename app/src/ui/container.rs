@@ -942,6 +942,32 @@ mod tests {
         );
     }
 
+    // FR-VIEW-04
+    #[test]
+    fn the_trash_shows_where_each_item_was_after_it() {
+        let mut state = app::State::new(demo(), app::Opened::Demo, TODAY);
+        let trash = app::Command::Go(app::Go::View(View::Trash));
+        app::update(&mut state, app::Message::Command(trash), TODAY);
+        let theme = BuiltIn::default().colors();
+        let pane = ContainerPane::new(&state, TODAY, &theme, IconSet::Plain);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 6));
+        pane.render(buf.area, &mut buf, &mut 0);
+        assert_eq!(
+            lines(&buf)
+                .iter()
+                .map(|line| line.trim_end())
+                .collect::<Vec<_>>(),
+            [
+                "  ✕ Trash",
+                "",
+                "▌ - Cancel the newspaper · Inbox",
+                "  - Paint the hallway · Home › Move to",
+                "    the new flat",
+                "",
+            ]
+        );
+    }
+
     // FR-OPS-01
     #[test]
     fn picked_rows_get_the_focus_marker_dimmed() {

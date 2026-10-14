@@ -103,6 +103,11 @@ fn kept(state: &State) -> String {
         Notice::CannotTakeTheirs => "cannot take theirs: the file on disk is not UTF-8".to_owned(),
         Notice::CopyFailed(reason) => format!("{quit_again}conflict copy failed: {reason}"),
         Notice::BackupFailed(reason) => format!("backup failed: {reason}"),
+        Notice::EmptyTrash(count) => format!(
+            "press {} again to delete {count} {} for good",
+            keymap::written(Command::EmptyTrash).unwrap_or_default(),
+            if *count == 1 { "item" } else { "items" }
+        ),
         Notice::Refused(Refusal::DoesNotNest) => {
             "only projects and checklist items nest".to_owned()
         }

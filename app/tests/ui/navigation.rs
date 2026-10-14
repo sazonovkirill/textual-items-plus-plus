@@ -64,6 +64,7 @@ fn the_navigator_lists_the_inbox_views_areas_and_projects_as_a_tree_with_open_ta
             " 󱄵 Upcoming",
             " 󰉹 All",
             " 󱓳 Logbook",
+            " 󰩺 Trash",
             " 󰆧 Work                                                                     7",
             "   󰉖 Website                                                                5",
             "     󰉖 Blog                                                                 1",
@@ -74,7 +75,7 @@ fn the_navigator_lists_the_inbox_views_areas_and_projects_as_a_tree_with_open_ta
     );
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
-        Some(Position::new(3, 6)),
+        Some(Position::new(3, 5)),
         "the cursor stands in the query"
     );
 }
@@ -267,6 +268,7 @@ fn a_place_without_open_tasks_shows_no_count() {
             " 󱄵 Upcoming",
             " 󰉹 All",
             " 󱓳 Logbook",
+            " 󰩺 Trash",
             " 󰉖 Someday"
         ]
     );
