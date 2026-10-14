@@ -43,7 +43,7 @@ fn a_long_list_item_in_a_note_wraps_under_its_text() {
     harness.ctrl('g');
     harness.type_text("Blog");
     harness.key(KeyCode::Enter);
-    harness.press(KeyCode::Char('n'), KeyModifiers::ALT);
+    harness.press(KeyCode::Char('\\'), KeyModifiers::ALT);
     harness.type_text("e- a list item long enough to wrap onto a second line");
     assert_eq!(
         panel(&harness)[2..4],
@@ -74,7 +74,7 @@ fn write_a_note_on_a_project() {
     harness.ctrl('g');
     harness.type_text("Blog");
     harness.key(KeyCode::Enter);
-    harness.press(KeyCode::Char('n'), KeyModifiers::ALT);
+    harness.press(KeyCode::Char('\\'), KeyModifiers::ALT);
     assert_eq!(
         panel(&harness)[..3],
         [
@@ -113,7 +113,7 @@ fn write_a_note_on_a_project() {
     harness.key(KeyCode::Esc);
     assert!(!harness.screen().contains("┌ Blog"), "Esc closes the panel");
     harness.type_text("z");
-    harness.press(KeyCode::Char('n'), KeyModifiers::ALT);
+    harness.press(KeyCode::Char('\\'), KeyModifiers::ALT);
     assert_eq!(
         panel(&harness)[2],
         "│▌No note                              │",
@@ -126,13 +126,13 @@ fn write_a_note_on_a_project() {
 fn the_panel_takes_the_keys_until_it_closes() {
     let mut harness = Harness::new(80, 12);
     let before = harness.rows();
-    harness.type_text("n");
+    harness.type_text("\\");
     assert!(panel(&harness)[0].starts_with("┌ Call the bank about the card"));
     harness.type_text("jxdd");
     harness.ctrl('g');
     harness.key(KeyCode::Esc);
     assert_eq!(harness.rows(), before, "nothing behind it moved or changed");
-    harness.type_text("n");
+    harness.type_text("\\");
     harness.ctrl('q');
     assert!(harness.tui.should_quit(), "quitting still quits");
 }
@@ -141,7 +141,7 @@ fn the_panel_takes_the_keys_until_it_closes() {
 #[test]
 fn a_long_note_scrolls() {
     let mut harness = Harness::new(80, 12);
-    harness.type_text("ne");
+    harness.type_text("\\e");
     for n in 1..=12 {
         harness.type_text(&format!("line {n}"));
         harness.key(KeyCode::Enter);
@@ -194,7 +194,7 @@ fn a_long_note_scrolls() {
         ]
     );
     harness.key(KeyCode::Esc);
-    harness.type_text("n");
+    harness.type_text("\\");
     assert_eq!(
         panel(&harness)[1..3],
         [
@@ -215,7 +215,7 @@ fn a_top_level_project_gets_its_note_from_the_sidebar() {
     harness.ctrl('b');
     let marked = |harness: &Harness| harness.rows().iter().any(|row| row.starts_with('▌'));
     assert!(marked(&harness), "the sidebar marks its focus");
-    harness.type_text("n");
+    harness.type_text("\\");
     let title = panel(&harness)[0].clone();
     assert!(title.starts_with("┌ Home ─"), "{title}");
     assert!(!marked(&harness), "but not while the panel has the keys");
@@ -232,7 +232,7 @@ fn a_top_level_project_gets_its_note_from_the_sidebar() {
 fn text_pasted_goes_into_the_note_edited_with_its_lines() {
     let mut harness = Harness::new(80, 12);
     let before = harness.rows();
-    harness.type_text("n");
+    harness.type_text("\\");
     harness.send(&crossterm::event::Event::Paste("- x\n".to_owned()));
     harness.key(KeyCode::Esc);
     assert_eq!(
@@ -240,7 +240,7 @@ fn text_pasted_goes_into_the_note_edited_with_its_lines() {
         before,
         "nothing pastes while the note is not edited"
     );
-    harness.type_text("ne");
+    harness.type_text("\\e");
     harness.send(&crossterm::event::Event::Paste("one\ntwo\n".to_owned()));
     assert_eq!(
         panel(&harness)[2..4],
@@ -258,7 +258,7 @@ fn a_note_is_saved_as_guarded_lines_and_reads_back() {
     let path = dir.path().join("todo.taskpaper");
     fs::write(&path, "Inbox:\n\t- Renew the passport\n").expect("the fixture is written");
     let mut harness = Harness::open(path.clone(), 80, 12);
-    harness.type_text("ne");
+    harness.type_text("\\e");
     harness.type_text("- bring photos");
     harness.key(KeyCode::Enter);
     harness.type_text("Steps:  ");
@@ -277,7 +277,7 @@ fn a_note_is_saved_as_guarded_lines_and_reads_back() {
         "space and empty lines at the end are dropped"
     );
     let mut reopened = Harness::open(path, 80, 12);
-    reopened.type_text("n");
+    reopened.type_text("\\");
     assert_eq!(
         panel(&reopened)[2..4],
         [

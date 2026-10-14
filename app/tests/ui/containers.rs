@@ -152,7 +152,7 @@ fn the_title_of_the_project_shown_is_a_row_its_own_commands_act_on() {
         ["▌ ☐ Draft", "  ☐ Pick the first three topics"],
         "below the title, the first task"
     );
-    harness.type_text("kn");
+    harness.type_text("k\\");
     assert!(harness.screen().contains("┌ Blog posts ─"), "its notes");
 }
 

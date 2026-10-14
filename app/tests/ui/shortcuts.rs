@@ -362,7 +362,7 @@ fn the_panel_shows_beside_the_sidebar_and_its_key_works_there() {
 #[test]
 fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
     let mut harness = Harness::new(160, 40);
-    harness.type_text("?n");
+    harness.type_text("?\\");
     let lines = panel(&harness, 40);
     assert_eq!(
         lines.get(1..4).unwrap_or_default(),

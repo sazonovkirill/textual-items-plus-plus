@@ -110,10 +110,10 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // the rows (D-43).
     (Command::EditDescription(Whose::Focused), &["m n"]),
     (Command::EditDescription(Whose::Shown), &["m N"]),
-    // taskpaper-terminal's Open Note and Open Comments open the attachments panel; with `Alt`,
-    // on the container shown, since the shifted key is taken (FR-ATT-02).
-    (Command::OpenNote(Whose::Focused), &["n"]),
-    (Command::OpenNote(Whose::Shown), &["alt+n"]),
+    // The owner's key opens the attachments panel on the note, and taskpaper-terminal's Open
+    // Comments on the comments; with `Alt`, on the container shown (FR-ATT-02, D-94).
+    (Command::OpenNote(Whose::Focused), &["\\"]),
+    (Command::OpenNote(Whose::Shown), &["alt+\\"]),
     (Command::OpenComments(Whose::Focused), &["N"]),
     (Command::OpenComments(Whose::Shown), &["alt+N"]),
     // `c` for the checklist, which only a task has, so it has no key for the container shown.
@@ -695,15 +695,25 @@ mod tests {
 
     // FR-ATT-02
     #[test]
-    fn n_opens_the_note_and_shift_n_the_comments_with_alt_for_the_container_shown() {
+    fn backslash_opens_the_note_and_shift_n_the_comments_with_alt_for_the_container_shown() {
         let mut keymap = Keymap::default();
         let shift = KeyModifiers::SHIFT;
         let alt = KeyModifiers::ALT;
+        assert_eq!(keymap.press(&char('n')), None);
+        assert_eq!(keymap.press(&press(KeyCode::Char('n'), alt)), None);
         for (event, command) in [
-            (char('n'), Command::OpenNote(Whose::Focused)),
+            (char('\\'), Command::OpenNote(Whose::Focused)),
             (
-                press(KeyCode::Char('n'), alt),
+                press(KeyCode::Char('\\'), alt),
                 Command::OpenNote(Whose::Shown),
+            ),
+            (
+                press(KeyCode::Char('\\'), KeyModifiers::CONTROL),
+                Command::OpenInNewPane,
+            ),
+            (
+                press(KeyCode::Char('4'), KeyModifiers::CONTROL),
+                Command::OpenInNewPane,
             ),
             (
                 press(KeyCode::Char('n'), shift),

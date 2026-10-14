@@ -76,7 +76,7 @@ fn every_window_opens_on_every_size() {
         "\x06the bank",
         "\x02",
         "\x02j'",
-        "n",
+        "\\",
         "N",
         "c",
         "md",
