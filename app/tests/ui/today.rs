@@ -297,3 +297,38 @@ fn today_s_order_is_not_kept_in_the_file() {
         "a restart forgets the order"
     );
 }
+
+// FR-VIEW-06, FR-VIEW-11, D-108, D-118
+#[test]
+fn a_completed_item_given_a_place_shows_after_the_open_ones() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text =
+        "Inbox:\n\t- a @start(2026-10-05)\n\t- b @start(2026-10-05)\n\t- c @start(2026-10-05)\n";
+    std::fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path, 60, 12);
+    harness.type_text("gt");
+    harness.press(KeyCode::Down, KeyModifiers::ALT);
+    harness.type_text("x");
+    harness.ctrl('o');
+    let listed = |harness: &Harness| -> Vec<String> {
+        trimmed(harness)
+            .into_iter()
+            .filter_map(|row| {
+                let row = row.strip_suffix(" today")?.trim_end_matches('\u{f166d}');
+                Some(row.trim_end().to_owned())
+            })
+            .collect()
+    };
+    assert_eq!(
+        listed(&harness),
+        ["  ☐ b", "▌ ☐ c", "  ✔ a"],
+        "the completed one after the open ones"
+    );
+    harness.press(KeyCode::Down, KeyModifiers::ALT);
+    assert_eq!(
+        listed(&harness),
+        ["  ☐ b", "▌ ☐ c", "  ✔ a"],
+        "an open item does not pass a completed one"
+    );
+}

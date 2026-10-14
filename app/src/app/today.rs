@@ -16,8 +16,8 @@ use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 /// The one group Today shows of `document` on `today`, without a heading: the tasks, sections
 /// and projects whose start or due date is `today` or earlier, those the user put in order first,
 /// in that order (D-108), then the overdue ones, due before `today` (FR-DATE-04), then the
-/// others, each in file order, then, only when `show_completed`, the completed ones
-/// (FR-VIEW-11). A container's dates are its own (OQ-20).
+/// others, each in file order, then, only when `show_completed`, the completed ones, those put in
+/// order first (FR-VIEW-11, D-118). A container's dates are its own (OQ-20).
 /// A Later item, or one inside a Later project, shows only once it is due (D-92).
 /// Items in the Trash and the contents of a completed item are not shown (FR-ORG-09). The items
 /// put in the Evening on `today` follow in a group of their own under the Evening heading, in the
@@ -37,6 +37,7 @@ pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> 
     walk.entries.sort_by_key(|entry| {
         (
             entry.evening,
+            entry.bucket == Bucket::Completed,
             entry.place.is_none(),
             entry.place,
             entry.bucket,
@@ -57,8 +58,9 @@ pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> 
 /// The transaction that moves `items` one step `direction` in the order of Today, whose groups
 /// a pane shows as `shown`, without changing the file (D-108). In each group, each of them goes
 /// past the row next to it that is not one of them, so that a run of them moves together, and one
-/// at the end it moves toward stays. The rows shown take the places in Today's order that they
-/// held, so that the items a pane hides, and those no longer listed, keep theirs.
+/// at the end it moves toward stays; an open item and a completed one never pass each other
+/// (D-42, D-118). The rows shown take the places in Today's order that they held, so that the
+/// items a pane hides, and those no longer listed, keep theirs.
 #[must_use]
 pub(super) fn reorder(
     document: &Document,
@@ -73,7 +75,17 @@ pub(super) fn reorder(
         .collect();
     let after: Vec<Vec<ItemId>> = before
         .iter()
-        .map(|ids| stepped(ids, &items, direction))
+        .map(|ids| {
+            let completed = |id: &ItemId| {
+                document
+                    .node(*id)
+                    .and_then(Node::item)
+                    .is_some_and(|item| item.completion().is_some())
+            };
+            ids.chunk_by(|a, b| completed(a) == completed(b))
+                .flat_map(|run| stepped(run, &items, direction))
+                .collect()
+        })
         .collect();
     if before == after {
         return Transaction::default();
@@ -513,17 +525,23 @@ mod tests {
     fn hidden_items_keep_their_places_and_new_ones_come_last() {
         let mut document = Document::new();
         let inbox = Some(document.inbox());
-        let [a, done, b, c] = [0; 4].map(|_| add(&mut document, inbox, Task, Some(0), None));
-        change(&mut document, done, |item| {
-            item.completed = Some(Completion::On(TODAY));
-        });
+        let [a, b, first, second, c] =
+            [0; 5].map(|_| add(&mut document, inbox, Task, Some(0), None));
+        for id in [first, second] {
+            change(&mut document, id, |item| {
+                item.completed = Some(Completion::On(TODAY));
+            });
+        }
         change(&mut document, c, |item| item.evening = Some(TODAY));
-        step(&mut document, &[done], Direction::Up, true);
+        step(&mut document, &[second], Direction::Up, true);
         step(&mut document, &[a], Direction::Down, false);
         assert_eq!(
             listed(&document, true),
-            [vec![task(b), task(done), task(a)], vec![task(c)]],
-            "the completed one, hidden, kept its place between them, and the Evening its own part"
+            [
+                vec![task(b), task(a), task(second), task(first)],
+                vec![task(c)]
+            ],
+            "the completed ones, hidden, kept their order, and the Evening its own part"
         );
         let shown = groups(&document, TODAY, false);
         assert!(
@@ -537,6 +555,47 @@ mod tests {
             listed(&document, false)[0],
             [task(b), task(a), task(new)],
             "a new item, overdue as it is, comes after those given a place"
+        );
+    }
+
+    // FR-VIEW-06, FR-VIEW-11, FR-VIEW-13, D-42, D-118
+    #[test]
+    fn completed_items_given_a_place_still_follow_the_open_ones() {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let [a, b, c, late, early] = [0; 5].map(|_| add(&mut document, inbox, Task, Some(0), None));
+        for id in [late, early] {
+            change(&mut document, id, |item| item.evening = Some(TODAY));
+        }
+        step(&mut document, &[a], Direction::Down, true);
+        step(&mut document, &[early], Direction::Up, true);
+        for id in [a, early] {
+            change(&mut document, id, |item| {
+                item.completed = Some(Completion::On(TODAY));
+            });
+        }
+        assert_eq!(
+            listed(&document, true),
+            [
+                vec![task(b), task(c), task(a)],
+                vec![task(late), task(early)]
+            ],
+            "in each part the open ones first, then the completed ones"
+        );
+        for (items, direction) in [(&[c][..], Direction::Down), (&[a], Direction::Up)] {
+            let shown = groups(&document, TODAY, true);
+            assert!(
+                reorder(&document, &shown, items, direction)
+                    .ops()
+                    .is_empty(),
+                "an open item and a completed one never pass each other"
+            );
+        }
+        step(&mut document, &[b, a], Direction::Down, true);
+        assert_eq!(
+            listed(&document, true)[0],
+            [task(c), task(b), task(a)],
+            "a run of both moves each within its own"
         );
     }
 }
