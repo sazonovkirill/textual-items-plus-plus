@@ -13,8 +13,7 @@ use super::{
     tags::{Choice, TagPicker},
 };
 use crate::domain::{
-    Document, Item, ItemId, ItemKind, Node, Op, Tag, Transaction,
-    dates::{DateError, DateKind},
+    Document, Item, ItemId, ItemKind, Node, Op, Tag, Transaction, dates::DateKind,
 };
 
 /// A field of the dialog, which the focus can be on.
@@ -129,6 +128,13 @@ fn fields(kind: ItemKind) -> &'static [EditField] {
 /// The text a date field opens with: `date` as the file writes it, or nothing.
 fn date_field(date: Option<Date>) -> TextField {
     TextField::new(date.map(|date| date.to_string()).unwrap_or_default())
+}
+
+/// Item `id` of `document`, which the edit dialog edits.
+fn edited(document: &Document, id: ItemId) -> &Item {
+    (document.node(id))
+        .and_then(Node::item)
+        .expect("a reload closes the dialog unless it finds its item")
 }
 
 impl EditDialog {
@@ -318,34 +324,52 @@ impl EditDialog {
     ///
     /// Why the draft cannot apply: the title is empty or a date field holds no date.
     fn applied(&self, item: &Item) -> Result<Item, EditProblem> {
-        let title = self.title.text().trim();
-        if title.is_empty() {
+        let has = |field| fields(self.kind).contains(&field);
+        let date_problem = |kind| {
+            self.date_view(kind)
+                .date
+                .err()
+                .map(|_| EditProblem::NotADate(kind))
+        };
+        if self.title.text().trim().is_empty() {
             return Err(EditProblem::EmptyTitle);
         }
-        let date = |kind| {
-            let view = self.date_view(kind);
-            view.date
-                .map_err(|_: DateError| EditProblem::NotADate(kind))
-        };
+        for (field, kind) in [
+            (EditField::Start, DateKind::Start),
+            (EditField::Due, DateKind::Due),
+        ] {
+            if let Some(problem) = date_problem(kind).filter(|_| has(field)) {
+                return Err(problem);
+            }
+        }
+        Ok(self.kept(item))
+    }
+
+    /// The item as the draft makes `item`, as [`Self::applied`] does, except that a field it
+    /// would refuse keeps its value from `item`, as quitting keeps a draft (D-109).
+    fn kept(&self, item: &Item) -> Item {
         let has = |field| fields(self.kind).contains(&field);
+        let title = self.title.text().trim();
         let mut after = Item {
-            title: title.to_owned(),
+            title: if title.is_empty() { &item.title } else { title }.to_owned(),
             description: self.description.text().trim_end().to_owned(),
             ..item.clone()
         };
         if has(EditField::Tags) {
             after.tags.clone_from(&self.tags);
         }
-        if has(EditField::Start) {
-            let start = date(DateKind::Start)?;
+        if has(EditField::Start)
+            && let Ok(start) = self.date_view(DateKind::Start).date
             // Only a new start date takes it out of Later, so a file's `@start @later` survives
             // an edit of its other fields.
-            if start != item.start {
-                after.set_start(start);
-            }
+            && start != item.start
+        {
+            after.set_start(start);
         }
-        if has(EditField::Due) {
-            after.due = date(DateKind::Due)?;
+        if has(EditField::Due)
+            && let Ok(due) = self.date_view(DateKind::Due).date
+        {
+            after.due = due;
         }
         if has(EditField::Pinned) {
             after.pinned = self.pinned;
@@ -353,7 +377,7 @@ impl EditDialog {
         if has(EditField::Flagged) {
             after.flagged = self.flagged;
         }
-        Ok(after)
+        after
     }
 
     /// The dialog on the item of a reloaded document that `exact` finds for its own, with its
@@ -415,36 +439,46 @@ impl State {
             }
             EditDialogInput::Tags(input) => dialog.tags_input(&self.document, input),
             EditDialogInput::Cancel => self.edit_dialog = None,
-            EditDialogInput::Accept => {
-                let before = (self.document.node(dialog.id))
-                    .and_then(Node::item)
-                    .expect("a reload closes the dialog unless it finds its item");
-                match dialog.applied(before) {
-                    Ok(after) => {
-                        let id = dialog.id;
-                        let transaction = if after == *before {
-                            Transaction::default()
-                        } else {
-                            Transaction::new(vec![Op::Set {
-                                id,
-                                before: before.clone(),
-                                after,
-                            }])
-                        };
-                        self.edit_dialog = None;
-                        self.change(transaction);
-                    }
-                    Err(problem) => {
-                        dialog.focus = match problem {
-                            EditProblem::EmptyTitle => EditField::Title,
-                            EditProblem::NotADate(DateKind::Start) => EditField::Start,
-                            EditProblem::NotADate(DateKind::Due) => EditField::Due,
-                        };
-                        dialog.problem = Some(problem);
-                    }
+            EditDialogInput::Accept => match dialog.applied(edited(&self.document, dialog.id)) {
+                Ok(after) => {
+                    let id = dialog.id;
+                    self.edit_dialog = None;
+                    self.set_edited(id, after);
                 }
-            }
+                Err(problem) => {
+                    dialog.focus = match problem {
+                        EditProblem::EmptyTitle => EditField::Title,
+                        EditProblem::NotADate(DateKind::Start) => EditField::Start,
+                        EditProblem::NotADate(DateKind::Due) => EditField::Due,
+                    };
+                    dialog.problem = Some(problem);
+                }
+            },
         }
+    }
+
+    /// Closes the edit dialog, applying its draft as one step to undo, a field it would refuse
+    /// keeping its value, as quitting does (D-109).
+    pub(super) fn keep_edit_dialog(&mut self) {
+        if let Some(dialog) = self.edit_dialog.take() {
+            let after = dialog.kept(edited(&self.document, dialog.id));
+            self.set_edited(dialog.id, after);
+        }
+    }
+
+    /// Makes item `id` `after` as one step to undo, or no step when that changes nothing.
+    fn set_edited(&mut self, id: ItemId, after: Item) {
+        let before = edited(&self.document, id);
+        let transaction = if after == *before {
+            Transaction::default()
+        } else {
+            Transaction::new(vec![Op::Set {
+                id,
+                before: before.clone(),
+                after,
+            }])
+        };
+        self.change(transaction);
     }
 }
 
@@ -801,6 +835,50 @@ mod tests {
         assert!(after.flagged);
         state.undo();
         assert_eq!(item(state.document(), buy), &before, "one step");
+        Ok(())
+    }
+
+    // FR-EDIT-08, FR-STORE-03
+    #[test]
+    fn quitting_or_terminating_applies_the_draft_but_what_it_would_refuse() -> TestResult {
+        for ending in [Message::Command(Command::Quit), Message::Terminate] {
+            let Sample { document, buy, .. } = sample()?;
+            let before = item(&document, buy).clone();
+            let mut state = State::new(document.clone(), Opened::Demo, TODAY);
+            state.open_edit_dialog();
+            type_into(&mut state, " and rice");
+            input(&mut state, EditDialogInput::Next);
+            type_into(&mut state, "Two bags");
+            for _ in 0..2 {
+                input(&mut state, EditDialogInput::Next);
+            }
+            type_into(&mut state, "soon");
+            input(&mut state, EditDialogInput::Next);
+            type_into(&mut state, "fri");
+            update(&mut state, ending.clone(), TODAY);
+            assert_eq!(state.edit_dialog(), None);
+            let after = item(state.document(), buy);
+            assert_eq!(
+                (after.title.as_str(), after.description.as_str()),
+                ("Buy beans and rice", "Two bags")
+            );
+            assert_eq!((after.start, after.due), (None, Some(date(2026, 10, 9))));
+            state.undo();
+            assert_eq!(item(state.document(), buy), &before, "one step");
+            let mut state = State::new(document, Opened::Demo, TODAY);
+            state.open_edit_dialog();
+            input(&mut state, EditDialogInput::Edit(TextEdit::SelectAll));
+            input(&mut state, EditDialogInput::Edit(TextEdit::DeleteBackward));
+            input(&mut state, EditDialogInput::Next);
+            type_into(&mut state, "Oat");
+            update(&mut state, ending, TODAY);
+            let after = item(state.document(), buy);
+            assert_eq!(
+                (after.title.as_str(), after.description.as_str()),
+                ("Buy beans", "Oat"),
+                "an empty title keeps the old one"
+            );
+        }
         Ok(())
     }
 

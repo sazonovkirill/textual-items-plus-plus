@@ -280,9 +280,10 @@ impl State {
     /// Asks to end the session, saving first. With the conflict prompt open, the file on disk is
     /// left as it is and the document goes to a conflict copy instead, so that neither is lost,
     /// in place of a choice waiting for its copy; a quit after that copy failed ends without it.
-    /// An edit under way is kept first.
+    /// An edit under way is kept first, as is the edit dialog's draft (D-109).
     pub(super) fn end(&mut self, ending: Ending) -> Vec<Effect> {
         self.finish_editing();
+        self.keep_edit_dialog();
         let saving = &mut self.saving;
         let Some(conflict) = &mut saving.conflict else {
             saving.autosave.end(ending);

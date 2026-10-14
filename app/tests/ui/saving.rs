@@ -83,6 +83,29 @@ fn quitting_saves_first() {
     assert!(read(&path).contains("@done"));
 }
 
+// F-FILE-05, FR-EDIT-08, D-109
+#[test]
+fn quitting_with_the_edit_dialog_open_saves_its_draft() {
+    for terminate in [false, true] {
+        let (_dir, path, mut harness) = on_file(TEXT);
+        harness.type_text("e");
+        harness.key(KeyCode::End);
+        harness.type_text(" now");
+        harness.key(KeyCode::Tab);
+        harness.type_text("By post");
+        if terminate {
+            harness.terminate();
+        } else {
+            harness.ctrl('q');
+        }
+        assert!(harness.tui.should_quit());
+        assert_eq!(
+            read(&path),
+            "Inbox:\n\t- Renew the passport now\n\t\tBy post\n\t- Book flights\n"
+        );
+    }
+}
+
 // FR-STORE-01, D-29
 #[test]
 fn the_demo_is_never_saved() {
