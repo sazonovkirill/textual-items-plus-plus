@@ -275,6 +275,28 @@ fn quitting_with_the_prompt_open_leaves_theirs_and_keeps_mine_in_a_copy() {
 
 // F-FILE-05, F-FILE-06
 #[test]
+fn ending_once_a_save_is_due_with_the_prompt_open_still_leaves_theirs() {
+    for terminate in [false, true] {
+        let (_dir, path, mut harness) = conflicted();
+        harness.wait(5000);
+        if terminate {
+            harness.terminate();
+        } else {
+            harness.ctrl('q');
+        }
+        assert!(harness.tui.should_quit());
+        harness.wait(5000);
+        assert_eq!(
+            read(&path),
+            "Inbox:\n\t- Renew the passport\n\t- Book trains\n",
+            "terminate: {terminate}"
+        );
+        assert!(read(&conflict_copies(&harness)[0]).contains("@done"));
+    }
+}
+
+// F-FILE-05, F-FILE-06
+#[test]
 fn quitting_before_a_choice_is_reported_still_quits_keeping_mine_in_a_copy() {
     for choice in ['e', 'r'] {
         let (_dir, path, mut harness) = conflicted();

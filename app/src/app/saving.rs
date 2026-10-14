@@ -310,19 +310,19 @@ impl State {
     }
 
     /// The conflict copy `id` was written to `copy`, so its choice goes ahead if it still stands.
+    /// Leaving keeps the prompt open as the session ends, so that nothing saves mine over theirs.
     fn copied(&mut self, id: CopyId, copy: PathBuf) -> Vec<Effect> {
-        let Some(Conflict {
-            choosing: Some((_, choice)),
-            ..
-        }) = self.saving.conflict.take_if(|conflict| {
-            conflict
-                .choosing
-                .as_ref()
-                .is_some_and(|(asked, _)| *asked == id)
-        })
+        let Some((_, choice)) = self
+            .saving
+            .conflict
+            .as_mut()
+            .and_then(|conflict| conflict.choosing.take_if(|(asked, _)| *asked == id))
         else {
             return Vec::new();
         };
+        if !matches!(choice, Choice::Leave(_)) {
+            self.saving.conflict = None;
+        }
         match choice {
             Choice::KeepMine => {
                 self.saving.autosave.overwrite();
@@ -1378,6 +1378,26 @@ mod tests {
                 [Effect::Quit]
             );
             assert_eq!(state.left_in(), Some(copy.as_path()));
+        }
+        Ok(())
+    }
+
+    // F-FILE-05, F-FILE-06
+    #[test]
+    fn ending_with_the_prompt_open_never_saves_mine_over_theirs() -> TestResult {
+        for ending in [Message::Command(Command::Quit), Message::Terminate] {
+            let mut state = conflicted()?;
+            send(&mut state, Message::Tick(secs(5)));
+            send(&mut state, ending);
+            assert_eq!(
+                send(
+                    &mut state,
+                    Message::Disk(Report::Copied(CopyId(1), "mine".into()))
+                ),
+                [Effect::Quit],
+                "mine is in its copy, so theirs stays on disk"
+            );
+            assert_eq!(send(&mut state, Message::Tick(secs(10))), []);
         }
         Ok(())
     }
