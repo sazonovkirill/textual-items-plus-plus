@@ -2,7 +2,7 @@
 //! given in. A frontend binds its own keys to these commands and lists them in its palette and
 //! shortcuts panel.
 
-use super::{Direction, Focus, Side, view::View};
+use super::{Direction, End, Focus, Side, view::View};
 use crate::domain::dates::DateKind;
 
 /// A command: one user intent, whatever key, menu or palette gives it.
@@ -36,15 +36,17 @@ pub enum Command {
     Navigator,
     /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
     EditTitle,
-    /// Add a task beside the focused row and edit its title (FR-EDIT-05).
-    NewTask(Side),
-    /// Add a section on this side of the focus and edit its title (FR-EDIT-05, FR-ORG-06).
-    NewSection(Side),
-    /// Add a project on this side of the focus and edit its title (FR-EDIT-05, FR-ORG-06).
-    NewProject(Side),
-    /// Add an area on this side of the one holding the container shown and edit its title
-    /// (FR-EDIT-05, FR-ORG-06).
-    NewArea(Side),
+    /// Add an item of the focused row's kind on this side of it, a task in a pane without rows,
+    /// and edit its title (FR-EDIT-05, FR-ORG-06, D-40).
+    NewLike(Side),
+    /// Add a task at this end of the container shown and edit its title (FR-EDIT-05, D-40).
+    AddTask(End),
+    /// Add a section at this end of the container shown and edit its title (FR-EDIT-05,
+    /// FR-ORG-06, D-40).
+    AddSection(End),
+    /// Add a project at this end of the container shown and edit its title (FR-EDIT-05,
+    /// FR-ORG-06, D-40).
+    AddProject(End),
     /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
     EditDescription(Whose),
     /// Open the attachments panel on an item's note (FR-ATT-01, FR-ATT-02).
@@ -325,43 +327,43 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewTask(Side::Below),
-        title: "New Task Below",
+        command: Command::NewLike(Side::Below),
+        title: "New Item Below",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewTask(Side::Above),
-        title: "New Task Above",
+        command: Command::NewLike(Side::Above),
+        title: "New Item Above",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewSection(Side::Below),
-        title: "New Section Below",
+        command: Command::AddTask(End::Bottom),
+        title: "New Task at Bottom",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewSection(Side::Above),
-        title: "New Section Above",
+        command: Command::AddTask(End::Top),
+        title: "New Task at Top",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewProject(Side::Below),
-        title: "New Project Below",
+        command: Command::AddSection(End::Bottom),
+        title: "New Section at Bottom",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewProject(Side::Above),
-        title: "New Project Above",
+        command: Command::AddSection(End::Top),
+        title: "New Section at Top",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewArea(Side::Below),
-        title: "New Area Below",
+        command: Command::AddProject(End::Bottom),
+        title: "New Project at Bottom",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewArea(Side::Above),
-        title: "New Area Above",
+        command: Command::AddProject(End::Top),
+        title: "New Project at Top",
         context: Context::Navigate,
     },
     Entry {
@@ -762,15 +764,13 @@ mod tests {
     // FR-OPS-08, FR-ORG-06, FR-TASK-06
     #[test]
     fn editing_adding_deleting_and_the_clipboard_are_navigate_commands() {
-        let added = [
-            Command::NewTask,
-            Command::NewSection,
-            Command::NewProject,
-            Command::NewArea,
-            Command::Paste,
-        ]
-        .into_iter()
-        .flat_map(|new| [new(Side::Below), new(Side::Above)]);
+        let beside = [Command::NewLike, Command::Paste]
+            .into_iter()
+            .flat_map(|new| [new(Side::Below), new(Side::Above)]);
+        let at_ends = [Command::AddTask, Command::AddSection, Command::AddProject]
+            .into_iter()
+            .flat_map(|add| [add(End::Bottom), add(End::Top)]);
+        let added = beside.chain(at_ends);
         let others = [
             Command::EditTitle,
             Command::EditDescription(Whose::Focused),

@@ -48,11 +48,11 @@ const READ: &str = "Read the article Sam sent";
 fn add_and_rename_a_task() {
     let mut harness = Harness::new(60, 12);
     harness.key(KeyCode::Char('o'));
-    assert_eq!(mode(&harness), "NAVIGATE", "o waits for a type letter");
-    harness.wait(999);
-    assert_eq!(mode(&harness), "NAVIGATE");
-    harness.wait(1);
-    assert_eq!(mode(&harness), "EDIT", "and adds a task after a second");
+    assert_eq!(
+        mode(&harness),
+        "EDIT",
+        "o adds a task beside the focused one at once"
+    );
     harness.type_text("Pay rent");
     assert_eq!(
         items(&harness),
@@ -105,6 +105,20 @@ fn shift_o_adds_above_and_keys_type_while_editing() {
     );
 }
 
+// FR-EDIT-01, D-40
+#[test]
+fn a_and_shift_a_add_a_task_at_the_bottom_and_top_of_the_container() {
+    let mut harness = Harness::new(60, 12);
+    harness.type_text("aLast");
+    harness.key(KeyCode::Esc);
+    harness.type_text("AFirst");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        items(&harness),
+        ["*First", CALL, COFFEE, READ, "Last"].map(String::from)
+    );
+}
+
 // FR-OPS-05, OQ-19
 #[test]
 fn dd_and_delete_move_tasks_to_the_trash_and_undo_brings_them_back() {
@@ -136,7 +150,7 @@ fn ctrl_q_quits_while_editing() {
 #[test]
 fn a_terminal_too_narrow_for_the_title_hides_the_cursor() {
     let mut harness = Harness::new(4, 12);
-    harness.type_text("ot");
+    harness.type_text("o");
     assert_eq!(harness.tui.cursor(Rect::new(0, 0, 4, 12)), None);
     harness.terminal.backend_mut().resize(6, 12);
     harness.draw();

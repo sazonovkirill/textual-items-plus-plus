@@ -142,7 +142,8 @@ fn the_container_shown_and_a_sidebar_entry_open_their_comments() {
     harness.ctrl('g');
     harness.type_text("Home");
     harness.key(KeyCode::Enter);
-    harness.type_text("MN");
+    harness.ctrl('b');
+    harness.type_text("N");
     let title = panel(&harness)[0].clone();
     assert!(title.starts_with("┌ Home ─"), "{title}");
 }

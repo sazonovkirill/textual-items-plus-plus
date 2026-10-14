@@ -210,7 +210,7 @@ mod tests {
         let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         app::update(
             &mut state,
-            app::Message::Command(app::Command::NewTask(app::Side::Below)),
+            app::Message::Command(app::Command::NewLike(app::Side::Below)),
             jiff::civil::date(2026, 10, 14),
         );
         check_state(&state, "", 36, " ✎ EDIT · Demo data · not saved     ");

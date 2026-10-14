@@ -164,7 +164,7 @@ fn a_change_made_elsewhere_to_unsaved_changes_opens_the_prompt() {
         "{screen}"
     );
     assert!(
-        screen.contains("Ctrl+K Keep mine  Ctrl+R Take theirs  Ctrl+L Show diff  Ctrl+Q Quit"),
+        screen.contains("Ctrl+E Keep mine  Ctrl+R Take theirs  Ctrl+L Show diff  Ctrl+Q Quit"),
         "{screen}"
     );
     harness.wait(5000);
@@ -207,7 +207,7 @@ fn conflict_copies(harness: &Harness) -> Vec<PathBuf> {
 #[test]
 fn keep_mine_keeps_theirs_in_a_conflict_copy_and_overwrites_the_file() {
     let (_dir, path, mut harness) = conflicted();
-    harness.ctrl('k');
+    harness.ctrl('e');
     assert!(!harness.screen().contains("Changed on disk"));
     let copies = conflict_copies(&harness);
     assert_eq!(copies.len(), 1);
@@ -292,7 +292,7 @@ fn a_file_made_unreadable_elsewhere_asks_and_cannot_be_taken() {
     );
     harness.ctrl('l');
     assert!(harness.screen().contains("+     - Book flights"));
-    harness.ctrl('k');
+    harness.ctrl('e');
     harness.wait(1000);
     assert_eq!(read(&path), TEXT);
     assert_eq!(
@@ -440,7 +440,7 @@ fn a_failed_save_is_shown_and_quitting_then_asks_again() {
 fn a_conflict_copy_that_fails_leaves_the_prompt_open() {
     let (_dir, _path, mut harness) = conflicted();
     block(&harness.backups());
-    harness.ctrl('k');
+    harness.ctrl('e');
     assert!(harness.screen().contains("Changed on disk"));
     assert!(
         status(&harness).contains("conflict copy failed: "),

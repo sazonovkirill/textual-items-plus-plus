@@ -126,7 +126,7 @@ fn the_date_prompt_lists_its_own_keys_and_the_text_keys_without_scroll_keys() {
     );
     assert!(lines.contains(&"│ Going".to_owned()), "{lines:#?}");
     assert!(
-        lines.contains(&"│  Open Navigator                Ctrl+G".to_owned()),
+        lines.contains(&"│  Open Navigator    Ctrl+G, Ctrl+K, gn".to_owned()),
         "{lines:#?}"
     );
     assert!(!lines.contains(&"│ Moving".to_owned()), "{lines:#?}");
@@ -238,7 +238,8 @@ fn a_narrow_screen_draws_the_panel_over_the_pane_and_a_tiny_one_has_no_room() {
 #[test]
 fn the_panel_shows_beside_the_sidebar_and_its_key_works_there() {
     let mut harness = Harness::new(160, 30);
-    harness.type_text("M?");
+    harness.ctrl('b');
+    harness.type_text("?");
     let rows = harness.rows();
     assert!(
         rows.first().is_some_and(|row| row.contains("│Shortcuts")),

@@ -64,10 +64,10 @@ impl KeyGroup {
             | Command::ClearSelection => Self::Selection,
             Command::Go(_) | Command::Navigator => Self::Going,
             Command::EditTitle
-            | Command::NewTask(_)
-            | Command::NewSection(_)
-            | Command::NewProject(_)
-            | Command::NewArea(_)
+            | Command::NewLike(_)
+            | Command::AddTask(_)
+            | Command::AddSection(_)
+            | Command::AddProject(_)
             | Command::EditDescription(_)
             | Command::OpenNote(_)
             | Command::OpenComments(_)

@@ -36,7 +36,7 @@ mod update;
 pub mod view;
 mod visits;
 
-pub use adding::Side;
+pub use adding::{End, Side};
 pub use attachments::{AttachmentsInput, AttachmentsView, Selected};
 pub use command::{Command, Context, Entry, Go, REGISTRY, Whose};
 pub use container::{Row, rows};

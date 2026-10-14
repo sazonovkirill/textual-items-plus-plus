@@ -94,7 +94,8 @@ fn filter_today_by_a_tag() {
 #[test]
 fn open_today_from_the_sidebar() {
     let mut harness = Harness::new(80, 16);
-    harness.type_text("Mj");
+    harness.ctrl('b');
+    harness.type_text("j");
     harness.key(KeyCode::Enter);
     let rows = trimmed(&harness);
     assert!(

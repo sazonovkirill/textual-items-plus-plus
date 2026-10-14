@@ -1,6 +1,7 @@
 //! Where a new item goes: a task below or above the focused row, among the tasks it is shown
-//! with, and a section, project or area as near the focus as its kind can go (FR-EDIT-05,
-//! FR-ORG-06). Hides how a place in the rows maps to a place in the document.
+//! with, a section, project or area as near the focus as its kind can go, or any of them first or
+//! last among its kind in the container shown (FR-EDIT-05, FR-ORG-06, D-40). Hides how a place in
+//! the rows maps to a place in the document.
 
 use super::container::{self, Row};
 use crate::domain::{Document, ItemId, ItemKind, Node};
@@ -12,6 +13,15 @@ pub enum Side {
     Below,
     /// Right before it.
     Above,
+}
+
+/// Which end of its kind's items in a container a new item goes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum End {
+    /// Before the first of them.
+    Top,
+    /// After the last of them.
+    Bottom,
 }
 
 /// The parent and the index among its children where a task added on `side` of `focused` goes,
@@ -108,6 +118,36 @@ pub(super) fn container_place(
         }
         anchor = parent?;
     }
+}
+
+/// The parent, `None` for the top level, and the index among its children where a new item of
+/// `kind` goes at `end` of the items of its kind in `container`: first or last among them, or
+/// with none, as the arrangement of FR-VIEW-05 lists it whatever its index, last. When
+/// `container` cannot hold it, it goes the same way in the nearest container above that can, or
+/// at the top level; `None` when nothing can, as a section from the Inbox.
+pub(super) fn end_place(
+    document: &Document,
+    container: ItemId,
+    kind: ItemKind,
+    end: End,
+) -> Option<(Option<ItemId>, usize)> {
+    let mut parent = Some(container);
+    while !fits(document, kind, parent) {
+        // The Inbox has no place among the others, but stands for the top level.
+        parent = document.position(parent?).and_then(|(parent, _)| parent);
+    }
+    let children = parent.map_or(document.top_level(), |parent| document.children(parent));
+    let of_kind = |id: &ItemId| {
+        document
+            .node(*id)
+            .and_then(Node::item)
+            .is_some_and(|item| item.kind == kind)
+    };
+    let index = match end {
+        End::Top => children.iter().position(of_kind),
+        End::Bottom => children.iter().rposition(of_kind).map(|at| at + 1),
+    };
+    Some((parent, index.unwrap_or(children.len())))
 }
 
 /// Whether a new item of `kind` goes in `parent`, or at the top level for `None`.

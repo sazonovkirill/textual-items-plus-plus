@@ -32,16 +32,20 @@ fn crumbs(harness: &Harness) -> String {
         .unwrap_or_default()
 }
 
-// FR-ORG-06, FR-EDIT-05
+// FR-ORG-06, FR-EDIT-05, D-40
 #[test]
 fn add_an_area_with_a_project_and_a_section() {
     let mut harness = Harness::new(60, 16);
-    harness.type_text("oaHome");
+    harness.ctrl('b');
+    harness.type_text("aHome");
+    harness.key(KeyCode::Enter);
+    harness.key(KeyCode::Enter);
+    harness.ctrl('b');
+    harness.ctrl('b');
     assert_eq!(crumbs(&harness), "  󰋜 Home");
+    harness.type_text("pGarden");
     harness.key(KeyCode::Esc);
-    harness.type_text("opGarden");
-    harness.key(KeyCode::Esc);
-    harness.type_text("OsChores");
+    harness.type_text("SChores");
     harness.key(KeyCode::Enter);
     harness.type_text("Sweep");
     harness.key(KeyCode::Esc);
@@ -81,12 +85,14 @@ fn new_containers_are_saved_with_their_kind_tags() {
     let path = dir.path().join("todo.taskpaper");
     fs::write(&path, "Inbox:\n").expect("written");
     let mut harness = Harness::open(path.clone(), 60, 16);
-    harness.type_text("oaHome");
-    harness.key(KeyCode::Esc);
-    harness.type_text("opGarden");
+    harness.ctrl('b');
+    harness.type_text("aHome");
+    harness.key(KeyCode::Enter);
+    harness.key(KeyCode::Enter);
+    harness.type_text("pGarden");
     harness.key(KeyCode::Esc);
     harness.key(KeyCode::Char('.'));
-    harness.type_text("osSpring");
+    harness.type_text("sSpring");
     harness.key(KeyCode::Esc);
     harness.wait(1000);
     assert_eq!(

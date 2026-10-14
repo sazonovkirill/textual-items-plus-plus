@@ -71,7 +71,8 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
         "the copy goes right after and takes the focus"
     );
     harness.type_text("z");
-    harness.type_text("yjP");
+    harness.type_text("yj");
+    harness.press(KeyCode::Char('v'), KeyModifiers::ALT);
     assert_eq!(
         tasks(&harness),
         [
@@ -125,7 +126,7 @@ fn copy_to_and_paste_a_list_from_the_system_clipboard() {
         Some("- Call the bank about the card @due(2026-10-07)\n")
     );
     shared.put("Milk\nEggs @errands\n");
-    harness.type_text("p");
+    harness.ctrl('v');
     assert_eq!(
         tasks(&harness),
         [

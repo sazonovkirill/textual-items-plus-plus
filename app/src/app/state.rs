@@ -5,9 +5,9 @@ use std::{mem, path::PathBuf};
 use jiff::civil::Date;
 
 use super::{
-    Command, DateInput, DatePromptView, Direction, EditInput, Effect, Go, History, Notice, Part,
-    Picked, Picker, PickerInput, PickerView, Selected, Selection, Side, SidebarView, TextField,
-    Whose, adding,
+    Command, DateInput, DatePromptView, Direction, EditInput, Effect, End, Go, History, Notice,
+    Part, Picked, Picker, PickerInput, PickerView, Selected, Selection, Side, SidebarView,
+    TextField, Whose, adding,
     attachments::Panel,
     clipboard, completion,
     container::{self, Row},
@@ -26,7 +26,9 @@ use super::{
     view::{self, Group, Shown, View},
     visits::Visit,
 };
-use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Tag, Transaction, dates::DateKind};
+use crate::domain::{
+    Branch, Document, Item, ItemId, ItemKind, Node, Tag, Transaction, dates::DateKind,
+};
 
 /// Where the document came from, which decides whether changes to it can be kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -686,12 +688,48 @@ impl State {
         ) else {
             return;
         };
+        self.add_at(container, kind, (parent, index));
+    }
+
+    /// Adds an item of the focused row's kind on `side` of it, or a task when no row is focused,
+    /// as [`new_task`](Self::new_task) and [`new_container`](Self::new_container) add each kind
+    /// (D-40).
+    pub(super) fn new_like(&mut self, side: Side) {
+        let focused = self.pane().selection.focused();
+        let kind = focused
+            .and_then(|id| self.document.node(id))
+            .and_then(Node::item)
+            .map_or(ItemKind::Task, |item| item.kind);
+        match kind {
+            ItemKind::Task => self.new_task(side),
+            kind => self.new_container(kind, side),
+        }
+    }
+
+    /// Adds an empty task, section or project, as `kind` says, at `end` of the items of its kind
+    /// in the container shown, or in the nearest container above that can hold it, and starts
+    /// editing its title as [`new_container`](Self::new_container) does (D-40). Nothing is added
+    /// from a view, where the kind can go nowhere near, or inside a completed container.
+    pub(super) fn add(&mut self, kind: ItemKind, end: End) {
+        let Some(container) = self.container() else {
+            return;
+        };
+        if let Some(place) = adding::end_place(&self.document, container, kind, end) {
+            self.add_at(container, kind, place);
+        }
+    }
+
+    /// Adds an empty item of `kind` at `place` and starts editing its title: in its row when
+    /// `container`, the container shown, holds it, else in the pane's heading, the new item
+    /// opened. Nothing is added inside a completed container (FR-ORG-09).
+    fn add_at(&mut self, container: ItemId, kind: ItemKind, place: (Option<ItemId>, usize)) {
+        let (parent, _) = place;
         if parent.is_some_and(|parent| self.document.conceals(parent)) {
             return;
         }
         let item = self.new_item(kind);
         let selection = self.pane().selection.clone();
-        let editing = Editing::new_item(&mut self.document, item, (parent, index), selection);
+        let editing = Editing::new_item(&mut self.document, item, place, selection);
         let id = editing.id();
         if parent == Some(container) {
             self.pane_mut().selection.focus(Some(id));
@@ -882,10 +920,23 @@ impl State {
         };
         match (command, focused) {
             (Command::Focus(motion), _) => self.sidebar.move_focus(&entries, motion),
-            (Command::NewTask(side) | Command::NewProject(side), _) => {
-                self.sidebar_new(&entries, ItemKind::Project, side);
+            // The sidebar lists no tasks or sections, so `o` beside a view or the Inbox adds a
+            // project, and the task key adds an area (D-45).
+            (Command::NewLike(side), _) => {
+                let area = |id| {
+                    self.document
+                        .node(id)
+                        .and_then(Node::item)
+                        .is_some_and(|item| item.kind == ItemKind::Area)
+                };
+                let kind = match focused {
+                    Some(Shown::Container(id)) if area(id) => ItemKind::Area,
+                    _ => ItemKind::Project,
+                };
+                self.sidebar_new(&entries, kind, side);
             }
-            (Command::NewArea(side), _) => self.sidebar_new(&entries, ItemKind::Area, side),
+            (Command::AddTask(end), _) => self.sidebar_add(ItemKind::Area, end),
+            (Command::AddProject(end), _) => self.sidebar_add(ItemKind::Project, end),
             (Command::EditTitle, Some(shown)) => {
                 self.show(shown, None);
                 self.sidebar.focus(false);
@@ -946,6 +997,25 @@ impl State {
         let focused = self.sidebar.focused();
         let place = sidebar::place(&self.document, entries, focused, kind, side)
             .expect("the sidebar focuses one of its entries, beside which a project or area goes");
+        self.sidebar_add_at(kind, place);
+    }
+
+    /// Adds an empty project or area, as `kind` says, at `end` of its kind where the sidebar's
+    /// focused entry is: in the area it focuses or that holds the project it focuses, else at
+    /// the top level, focuses it and starts editing its title in the sidebar (D-45).
+    fn sidebar_add(&mut self, kind: ItemKind, end: End) {
+        let container = match self.sidebar.focused() {
+            Some(Shown::Container(id)) => id,
+            _ => self.document.inbox(),
+        };
+        let place = adding::end_place(&self.document, container, kind, end)
+            .expect("a project or an area goes at the top level when nowhere nearer");
+        self.sidebar_add_at(kind, place);
+    }
+
+    /// Adds an empty item of `kind` at `place` from the sidebar, focuses it and starts editing
+    /// its title there.
+    fn sidebar_add_at(&mut self, kind: ItemKind, place: (Option<ItemId>, usize)) {
         let selection = self.pane().selection.clone();
         let editing = Editing::new_item(&mut self.document, Item::new(kind, ""), place, selection);
         self.sidebar.focus_new(editing.id());
@@ -1923,6 +1993,71 @@ mod tests {
         state.new_container(ItemKind::Area, Side::Below);
         let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(state.document().top_level(), [work, area]);
+        Ok(())
+    }
+
+    // FR-EDIT-05, FR-ORG-06, D-40
+    #[test]
+    fn new_items_take_the_focused_rows_kind_or_go_at_either_end_of_their_kind()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            section,
+            ..
+        } = fixture()?;
+        let add = |state: &mut State, kind, end, title| {
+            state.add(kind, end);
+            type_text(state, title);
+            state.edit_input(EditInput::Done);
+        };
+        let titles = |state: &State| -> Vec<String> {
+            state
+                .document()
+                .children(work)
+                .iter()
+                .filter_map(|&id| title(state, id).map(str::to_owned))
+                .collect()
+        };
+        let before = state.clone();
+        state.add(ItemKind::Section, End::Top);
+        assert_eq!(
+            state, before,
+            "the Inbox holds no section, nor does the top level"
+        );
+        state.go(Go::View(View::Today));
+        let before = state.clone();
+        state.add(ItemKind::Task, End::Top);
+        assert_eq!(state, before, "a view has no container to add to");
+        navigate(&mut state, "Work");
+        add(&mut state, ItemKind::Task, End::Top, "first");
+        add(&mut state, ItemKind::Section, End::Bottom, "T");
+        add(&mut state, ItemKind::Project, End::Top, "Plan");
+        assert_eq!(
+            titles(&state),
+            ["first", "loose", "S", "T", "Plan", "Site"],
+            "each first or last among its kind"
+        );
+        state.pane_mut().selection.focus(Some(section));
+        state.new_like(Side::Below);
+        type_text(&mut state, "U");
+        state.edit_input(EditInput::Done);
+        assert_eq!(
+            titles(&state),
+            ["first", "loose", "S", "U", "T", "Plan", "Site"],
+            "a section beside the focused section"
+        );
+        navigate(&mut state, "Site");
+        add(&mut state, ItemKind::Project, End::Bottom, "Next");
+        assert_eq!(
+            titles(&state).last().map(String::as_str),
+            Some("Next"),
+            "a project goes into the area holding the one shown, and opens"
+        );
+        assert_eq!(
+            state.container().and_then(|id| title(&state, id)),
+            Some("Next")
+        );
         Ok(())
     }
 

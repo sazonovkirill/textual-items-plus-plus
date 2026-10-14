@@ -7,7 +7,7 @@ use std::{collections::HashMap, time::Duration};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::{
-    app::{Command, Direction, Focus, Go, Side, Whose, view::View},
+    app::{Command, Direction, End, Focus, Go, Side, Whose, view::View},
     domain::dates::DateKind,
 };
 
@@ -59,30 +59,34 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::View(View::Logbook)), &["g L"]),
     // `d` as `dd` deletes into it (D-55).
     (Command::Go(Go::View(View::Trash)), &["g d"]),
-    (Command::Navigator, &["ctrl+g"]),
-    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37), with its type
-    // letters after the creation keys, and `a` for an area (D-40).
+    // taskpaper-terminal's Navigator key, with the owner's `Ctrl+K` and **g**o **n**avigate
+    // (D-36).
+    (Command::Navigator, &["ctrl+g", "ctrl+k", "g n"]),
+    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o` and `O` add
+    // the focused row's kind, and the lower and upper case of a kind's letter add one at the
+    // bottom and the top of the container shown (owner, D-40).
     (Command::EditTitle, &["enter"]),
-    (Command::NewTask(Side::Below), &["o", "o t"]),
-    (Command::NewTask(Side::Above), &["O", "O t"]),
-    (Command::NewSection(Side::Below), &["o s"]),
-    (Command::NewSection(Side::Above), &["O s"]),
-    (Command::NewProject(Side::Below), &["o p"]),
-    (Command::NewProject(Side::Above), &["O p"]),
-    (Command::NewArea(Side::Below), &["o a"]),
-    (Command::NewArea(Side::Above), &["O a"]),
+    (Command::NewLike(Side::Below), &["o"]),
+    (Command::NewLike(Side::Above), &["O"]),
+    (Command::AddTask(End::Bottom), &["a"]),
+    (Command::AddTask(End::Top), &["A"]),
+    (Command::AddSection(End::Bottom), &["s"]),
+    (Command::AddSection(End::Top), &["S"]),
+    (Command::AddProject(End::Bottom), &["p"]),
+    (Command::AddProject(End::Top), &["P"]),
     (Command::Delete, &["d d", "delete"]),
     // In the Trash, `u` undeletes, as vim's undo would the deletion, and `de` empties it (D-55).
     (Command::Restore, &["u"]),
     (Command::EmptyTrash, &["d e"]),
-    // taskpaper-terminal's Move to key.
-    (Command::MoveTo, &["g m"]),
-    // taskpaper-terminal's clipboard keys (its D-53).
+    // The owner's Move to key, beside taskpaper-terminal's (D-39).
+    (Command::MoveTo, &["M", "g m"]),
+    // taskpaper-terminal's clipboard keys (its D-53), without `p` and `P`, which add projects
+    // (D-44).
     (Command::Duplicate, &["D"]),
     (Command::Copy, &["y", "ctrl+c"]),
     (Command::Cut, &["ctrl+x"]),
-    (Command::Paste(Side::Below), &["p", "ctrl+v"]),
-    (Command::Paste(Side::Above), &["P", "alt+v"]),
+    (Command::Paste(Side::Below), &["ctrl+v"]),
+    (Command::Paste(Side::Above), &["alt+v"]),
     // The container shown, which no row of its own shows (D-40).
     (Command::RenameContainer, &["R"]),
     (Command::DeleteContainer, &["d c"]),
@@ -117,10 +121,10 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Tags, &["m g"]),
     (Command::FilterTags, &["g f"]),
     (Command::ClearTagFilter, &["g F"]),
-    // Todoist's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends
+    // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends
     // `Ctrl+\` as `Ctrl+4`, and `g` with a digit reaches a pane where `Alt` with it is taken
     // (D-60).
-    (Command::Sidebar, &["M"]),
+    (Command::Sidebar, &["ctrl+b"]),
     (
         Command::FocusLeft,
         &["ctrl+w h", "ctrl+w left", "ctrl+shift+left", "g l"],
@@ -147,8 +151,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::ScrollShortcuts(Direction::Down), &[")"]),
     (Command::ScrollShortcuts(Direction::Up), &["("]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
-    // while the user types (its D-115, D-38).
-    (Command::KeepMine, &["ctrl+k"]),
+    // while the user types (its D-115, D-38); k**e**ep mine, since `Ctrl+K` opens the Navigator.
+    (Command::KeepMine, &["ctrl+e"]),
     (Command::TakeTheirs, &["ctrl+r"]),
     (Command::ShowDiff, &["ctrl+l"]),
 ];
@@ -327,8 +331,7 @@ impl Default for Keymap {
 impl Keymap {
     /// The command `event` completes, if it is a key press. A press that starts or continues a
     /// sequence waits for the next key; one that continues none cancels the keys pressed so far
-    /// and does nothing else, unless [`cut_short`](Self::cut_short) took it first. Releases,
-    /// repeats and other events change nothing.
+    /// and does nothing else. Releases, repeats and other events change nothing.
     pub fn press(&mut self, event: &Event) -> Option<Command> {
         let key = key_press(event)?;
         let mut keys = std::mem::take(&mut self.pending);
@@ -365,32 +368,13 @@ impl Keymap {
             .join(", ")
     }
 
-    /// The command of the keys pressed so far, when they are a binding of their own and `event`
-    /// presses a key that continues no binding from them; the keys are then dropped, so that
-    /// `event` acts after the command as a key pressed alone, as taskpaper-terminal's `o` then
-    /// `B` starts a new item with `B` (its keybindings.md §1). `None`, changing nothing,
-    /// otherwise.
-    pub fn cut_short(&mut self, event: &Event) -> Option<Command> {
-        let command = self.command(&self.pending)?;
-        let mut keys = self.pending.clone();
-        keys.push(key_press(event)?);
-        if self.prefixes.contains_key(&keys) || self.command(&keys).is_some() {
-            return None;
-        }
-        self.pending.clear();
-        Some(command)
-    }
-
     /// Takes the clock's reading `now`, counted from any fixed moment. A sequence pressed
-    /// [`TIMEOUT`] or more before ends: its keys are dropped, and their command, when they are
-    /// a binding of their own, is returned.
-    pub fn tick(&mut self, now: Duration) -> Option<Command> {
+    /// [`TIMEOUT`] or more before ends, its keys dropped.
+    pub fn tick(&mut self, now: Duration) {
         self.now = now;
-        if self.pending.is_empty() || now < self.since + TIMEOUT {
-            return None;
+        if now >= self.since + TIMEOUT {
+            self.pending.clear();
         }
-        let keys = std::mem::take(&mut self.pending);
-        self.command(&keys)
     }
 
     /// When the sequence pressed so far ends without another key, if one is pending.
@@ -437,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn only_a_single_key_binding_starts_another() {
+    fn no_binding_starts_another() {
         let bound: Vec<Vec<Key>> = DEFAULT_KEYS
             .iter()
             .flat_map(|(_, keys)| keys.iter().filter_map(|key| parse_sequence(key)))
@@ -445,7 +429,7 @@ mod tests {
         for keys in &bound {
             for other in &bound {
                 assert!(
-                    keys == other || keys.len() == 1 || !other.starts_with(keys),
+                    keys == other || !other.starts_with(keys),
                     "{keys:?} starts {other:?}"
                 );
             }
@@ -695,48 +679,25 @@ mod tests {
         );
     }
 
-    // FR-EDIT-05, FR-ORG-06, FR-KEY-02
+    // FR-EDIT-05, FR-ORG-06, FR-KEY-02, D-40
     #[test]
-    fn creation_keys_take_taskpaper_terminals_type_letters() {
+    fn adding_keys_act_at_once() {
         let mut keymap = Keymap::default();
-        for (first, side) in [('o', Side::Below), ('O', Side::Above)] {
-            for (second, command) in [
-                ('t', Command::NewTask(side)),
-                ('s', Command::NewSection(side)),
-                ('p', Command::NewProject(side)),
-                ('a', Command::NewArea(side)),
-            ] {
-                assert_eq!(keymap.press(&char(first)), None);
-                assert_eq!(keymap.pending(), first.to_string());
-                assert_eq!(keymap.cut_short(&char(second)), None);
-                assert_eq!(
-                    keymap.press(&char(second)),
-                    Some(command),
-                    "{first}{second}"
-                );
-            }
+        for (key, command) in [
+            ('o', Command::NewLike(Side::Below)),
+            ('O', Command::NewLike(Side::Above)),
+            ('a', Command::AddTask(End::Bottom)),
+            ('A', Command::AddTask(End::Top)),
+            ('s', Command::AddSection(End::Bottom)),
+            ('S', Command::AddSection(End::Top)),
+            ('p', Command::AddProject(End::Bottom)),
+            ('P', Command::AddProject(End::Top)),
+        ] {
+            assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
         }
         assert_eq!(keymap.press(&char('R')), Some(Command::RenameContainer));
         keymap.press(&char('d'));
         assert_eq!(keymap.press(&char('c')), Some(Command::DeleteContainer));
-    }
-
-    // FR-EDIT-05, FR-KEY-02
-    #[test]
-    fn a_key_that_continues_no_sequence_cuts_a_binding_short_and_then_acts_alone() {
-        let mut keymap = Keymap::default();
-        assert_eq!(keymap.cut_short(&char('o')), None, "nothing pending");
-        keymap.press(&char('o'));
-        assert_eq!(keymap.cut_short(&Event::Resize(80, 24)), None);
-        assert_eq!(
-            keymap.cut_short(&char('j')),
-            Some(Command::NewTask(Side::Below))
-        );
-        assert_eq!(keymap.pending(), "");
-        assert_eq!(keymap.press(&char('j')), Some(Command::Focus(Focus::Next)));
-        keymap.press(&char('g'));
-        assert_eq!(keymap.cut_short(&char('#')), None, "g alone is no binding");
-        assert_eq!(keymap.pending(), "g");
     }
 
     // FR-KEY-02
@@ -744,19 +705,13 @@ mod tests {
     fn a_sequence_ends_a_second_after_its_first_key() {
         let mut keymap = Keymap::default();
         assert_eq!(keymap.deadline(), None);
-        assert_eq!(keymap.tick(Duration::from_secs(5)), None);
-        keymap.press(&char('O'));
-        assert_eq!(keymap.deadline(), Some(Duration::from_secs(6)));
-        assert_eq!(keymap.tick(Duration::from_millis(5999)), None);
-        assert_eq!(keymap.pending(), "O");
-        assert_eq!(
-            keymap.tick(Duration::from_secs(6)),
-            Some(Command::NewTask(Side::Above))
-        );
-        assert_eq!((keymap.pending(), keymap.deadline()), ("", None));
+        keymap.tick(Duration::from_secs(5));
         keymap.press(&char('g'));
-        assert_eq!(keymap.tick(Duration::from_secs(7)), None);
-        assert_eq!(keymap.pending(), "");
+        assert_eq!(keymap.deadline(), Some(Duration::from_secs(6)));
+        keymap.tick(Duration::from_millis(5999));
+        assert_eq!(keymap.pending(), "g");
+        keymap.tick(Duration::from_secs(6));
+        assert_eq!((keymap.pending(), keymap.deadline()), ("", None));
         assert_eq!(
             keymap.press(&char('#')),
             Some(Command::Focus(Focus::Parent))

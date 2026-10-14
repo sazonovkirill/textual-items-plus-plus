@@ -188,7 +188,8 @@ fn tags_on_any_item_are_saved_as_taskpaper_tags_and_the_sidebar_tags_areas() {
     choose(&mut harness, "mg", "web");
     harness.key(KeyCode::Char('.'));
     choose(&mut harness, "mg", "launch");
-    harness.type_text("Mk");
+    harness.ctrl('b');
+    harness.type_text("k");
     choose(&mut harness, "mg", "home");
     harness.wait(1000);
     assert_eq!(

@@ -128,14 +128,10 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::Go(to)) => state.go(to),
         Message::Command(Command::Navigator) => state.toggle_navigator(),
         Message::Command(Command::EditTitle) => state.edit_title(),
-        Message::Command(Command::NewTask(side)) => state.new_task(side),
-        Message::Command(Command::NewSection(side)) => {
-            state.new_container(ItemKind::Section, side);
-        }
-        Message::Command(Command::NewProject(side)) => {
-            state.new_container(ItemKind::Project, side);
-        }
-        Message::Command(Command::NewArea(side)) => state.new_container(ItemKind::Area, side),
+        Message::Command(Command::NewLike(side)) => state.new_like(side),
+        Message::Command(Command::AddTask(end)) => state.add(ItemKind::Task, end),
+        Message::Command(Command::AddSection(end)) => state.add(ItemKind::Section, end),
+        Message::Command(Command::AddProject(end)) => state.add(ItemKind::Project, end),
         Message::Command(Command::SetDate(kind)) => state.open_date_prompt(kind, today),
         Message::Command(Command::StartToday) => state.start_today(today),
         Message::Command(Command::Delete) => state.delete(today),
@@ -194,7 +190,7 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Direction, Focus, Go, Notice, Opened, Refusal, Side, Stop, TextEdit,
+        Direction, End, Focus, Go, Notice, Opened, Refusal, Side, Stop, TextEdit,
         view::{Shown, View},
     };
     use crate::domain::{
@@ -324,7 +320,7 @@ mod tests {
     fn editing_adding_and_deleting_change_the_state_and_a_command_ends_editing_first()
     -> Result<(), PlacementError> {
         let mut state = state()?;
-        give(&mut state, Command::NewTask(Side::Above));
+        give(&mut state, Command::NewLike(Side::Above));
         for message in [
             Message::Edit(EditInput::Text(TextEdit::Insert('n'))),
             Message::Command(Command::Focus(Focus::Last)),
@@ -341,6 +337,24 @@ mod tests {
         let effects = update(&mut state, Message::Command(Command::Quit), TODAY);
         assert_eq!(effects, [Effect::Quit]);
         assert!(state.editing().is_none(), "quitting keeps the edit");
+        Ok(())
+    }
+
+    // FR-EDIT-01
+    #[test]
+    fn the_adding_keys_add_at_either_end_of_the_items_kind() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::AddTask(End::Top));
+        type_into(&mut state, "t");
+        edit(&mut state, EditInput::Done);
+        give(&mut state, Command::AddTask(End::Bottom));
+        type_into(&mut state, "u");
+        edit(&mut state, EditInput::Done);
+        assert_eq!(titles(&state), ["t", "a", "b", "u"]);
+        give(&mut state, Command::AddSection(End::Bottom));
+        assert!(state.editing().is_none(), "the Inbox holds no sections");
+        give(&mut state, Command::AddProject(End::Top));
+        assert!(state.editing().is_some());
         Ok(())
     }
 
@@ -488,7 +502,7 @@ mod tests {
         assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
         let before = state.document().clone();
         for command in [
-            Command::NewSection(Side::Below),
+            Command::AddSection(End::Bottom),
             Command::ShowCompleted,
             Command::ToggleCompleted,
             Command::Go(Go::Up),
@@ -558,7 +572,7 @@ mod tests {
         assert!(state.editing().is_none(), "Enter only ends editing");
         assert_eq!(sidebar(&state).1, ["Works"]);
         assert_eq!(state.selection(), &pane, "the pane keeps its focus");
-        give(&mut state, Command::NewTask(Side::Below));
+        give(&mut state, Command::AddProject(End::Bottom));
         assert_eq!(
             sidebar(&state),
             (Some(String::new()), vec!["Works".into(), "  ".into()])
@@ -568,7 +582,7 @@ mod tests {
             sidebar(&state),
             (Some("Works".into()), vec!["Works".into()])
         );
-        give(&mut state, Command::NewArea(Side::Above));
+        give(&mut state, Command::AddTask(End::Top));
         type_into(&mut state, "Home");
         give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(
@@ -576,6 +590,16 @@ mod tests {
             (Some("Works".into()), vec!["Home".into(), "Works".into()])
         );
         assert_eq!(state.selection(), &pane);
+        give(&mut state, Command::NewLike(Side::Below));
+        assert_eq!(
+            sidebar(&state),
+            (
+                Some(String::new()),
+                vec!["Home".into(), "Works".into(), String::new()]
+            ),
+            "`o` beside an area adds an area"
+        );
+        edit(&mut state, EditInput::Done);
         give(&mut state, Command::Go(Go::Into));
         give(&mut state, Command::Delete);
         assert_eq!(sidebar(&state), (Some("Home".into()), vec!["Home".into()]));
@@ -634,7 +658,7 @@ mod tests {
         }
         assert_eq!(state.document(), &before, "the Inbox stays as it is");
         assert!(state.editing().is_none() && state.move_to().is_none());
-        give(&mut state, Command::NewProject(Side::Above));
+        give(&mut state, Command::AddProject(End::Top));
         type_into(&mut state, "P");
         edit(&mut state, EditInput::Done);
         assert_eq!(sidebar(&state), (Some("P".into()), vec!["P".into()]));
@@ -815,7 +839,7 @@ mod tests {
         assert_eq!(focused(&state), Some("due"));
         assert!(!state.sidebar_has_keys(), "Enter gives the pane the keys");
         give(&mut state, Command::Sidebar);
-        give(&mut state, Command::NewProject(Side::Below));
+        give(&mut state, Command::NewLike(Side::Below));
         type_into(&mut state, "P");
         edit(&mut state, EditInput::Done);
         assert_eq!(

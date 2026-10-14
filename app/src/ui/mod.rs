@@ -198,14 +198,11 @@ impl Tui {
     }
 
     /// The frontend's clock reads `now`, counted from the start of the session, on `today`, the
-    /// local date: a save that is due starts, and a key sequence waiting too long ends, giving
-    /// its command when it is a binding of its own.
+    /// local date: a save that is due starts, and a key sequence waiting too long ends.
     pub fn tick(&mut self, now: Duration, today: Date) {
         self.today = today;
         self.update(Message::Tick(now));
-        if let Some(command) = self.keymap.tick(now) {
-            self.give(command);
-        }
+        self.keymap.tick(now);
     }
 
     /// Waits until the disk work asked for so far is done and its reports are among the inputs.
@@ -242,9 +239,6 @@ impl Tui {
             .is_some_and(|(modifiers, _)| modifiers.contains(KeyModifiers::ALT))
         {
             self.keyboard.alt_seen = true;
-        }
-        if let Some(command) = self.keymap.cut_short(event) {
-            self.give(command);
         }
         let message = if self.state.conflict().is_some() {
             self.keymap
@@ -403,13 +397,6 @@ impl Tui {
             .press(event)
             .filter(|&command| self.allows(command))
             .map(Message::Command)
-    }
-
-    /// Gives `command` to the core when the app takes it now.
-    fn give(&mut self, command: Command) {
-        if self.allows(command) {
-            self.update(Message::Command(command));
-        }
     }
 
     /// Whether the app takes `command` now.

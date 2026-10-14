@@ -172,7 +172,8 @@ fn an_area_gets_its_note_from_the_sidebar() {
     harness.ctrl('g');
     harness.type_text("Home");
     harness.key(KeyCode::Enter);
-    harness.type_text("Mn");
+    harness.ctrl('b');
+    harness.type_text("n");
     let title = panel(&harness)[0].clone();
     assert!(title.starts_with("┌ Home ─"), "{title}");
     harness.type_text("eHome matters");

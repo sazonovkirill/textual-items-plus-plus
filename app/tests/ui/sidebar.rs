@@ -41,7 +41,8 @@ fn status(harness: &Harness) -> String {
 /// Inbox and the views.
 fn sidebar() -> Harness {
     let mut harness = Harness::new(80, 24);
-    harness.type_text("Mjjjjj");
+    harness.ctrl('b');
+    harness.type_text("jjjjj");
     harness
 }
 
@@ -100,7 +101,7 @@ fn reorder_areas_in_the_sidebar() {
         entries(&harness).get(9).map(String::as_str),
         Some("*󰆧 Home                 5")
     );
-    harness.type_text("M");
+    harness.ctrl('b');
     assert!(
         harness.rows()[0].starts_with("  󰋜 Inbox"),
         "hidden, the pane takes the screen: {:?}",
@@ -113,7 +114,7 @@ fn reorder_areas_in_the_sidebar() {
 fn add_rename_and_open_entries_in_the_sidebar() {
     let mut harness = sidebar();
     harness.type_text("gg");
-    harness.type_text("op");
+    harness.type_text("o");
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
         Some(Position::new(3, 7)),
@@ -138,7 +139,7 @@ fn add_rename_and_open_entries_in_the_sidebar() {
         entries(&harness).get(5).map(String::as_str),
         Some("*󰉖 Gardens")
     );
-    harness.type_text("Oa");
+    harness.type_text("A");
     harness.type_text("Errands");
     harness.key(KeyCode::Enter);
     assert_eq!(
@@ -232,7 +233,7 @@ fn the_keys_go_to_the_pane_and_back_to_the_sidebar() {
 #[test]
 fn up_and_down_in_a_description_follow_its_lines_beside_the_sidebar() {
     let mut harness = Harness::new(80, 24);
-    harness.type_text("M");
+    harness.ctrl('b');
     harness.ctrl('w');
     harness.type_text("l");
     harness.type_text("mn");
