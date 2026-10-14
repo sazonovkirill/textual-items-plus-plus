@@ -18,7 +18,7 @@ use super::{Icon, IconSet, Theme, field};
 use crate::{
     app::{
         Part, Row, Selection, State, TextField,
-        view::{self, Group, Heading, Shown, View},
+        view::{self, Group, Heading, Locating, Shown, View},
     },
     domain::{Document, Item, ItemId, ItemKind, Node, dates},
 };
@@ -332,22 +332,29 @@ impl<'a> ContainerPane<'a> {
         pieces
     }
 
-    /// Where item `id` is, dimmed after ` · `, when the view shown says so of its rows
-    /// (FR-VIEW-03): the containers holding it from the top level down; nothing otherwise.
-    fn location(&self, id: ItemId) -> Option<Span<'a>> {
+    /// Where item `id` is, when the view shown says so of its rows, and how: the containers
+    /// holding it from the top level down, joined by ` › ` (FR-VIEW-03), or under the title by
+    /// ` / `, and by ` › ` before a section, as `Work / Website › Launch` (D-51); nothing for an
+    /// item at the top level, or in a container's rows.
+    fn location(&self, id: ItemId) -> Option<(Locating, String)> {
         let Shown::View(view) = self.shown else {
             return None;
         };
-        let titles: Vec<&str> = view::location(self.document, id)
+        let locating = view.locates()?;
+        let mut text = String::new();
+        let containers = view::location(self.document, id)
             .into_iter()
-            .filter_map(|id| Some(self.item(id)?.title.as_str()))
-            .collect();
-        (view.locates() && !titles.is_empty()).then(|| {
-            Span::styled(
-                format!(" · {}", titles.join(" › ")),
-                self.description_style(),
-            )
-        })
+            .filter_map(|id| self.item(id));
+        for container in containers {
+            if !text.is_empty() {
+                text.push_str(match (locating, container.kind) {
+                    (Locating::Under, ItemKind::Section) | (Locating::After, _) => " › ",
+                    (Locating::Under, _) => " / ",
+                });
+            }
+            text.push_str(&container.title);
+        }
+        (!text.is_empty()).then_some((locating, text))
     }
 
     /// The item numbered `id`, if it is one.
@@ -366,8 +373,8 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// Adds to `pieces` the lines of `row`, numbered `index`, showing `shown`, in content
-    /// `width`: its title, or the field editing it, and the first line of its description, or the
-    /// field editing it.
+    /// `width`: its title, or the field editing it, where it is when the view says so under the
+    /// title, and the first line of its description, or the field editing it.
     fn row_pieces(
         &self,
         index: usize,
@@ -376,11 +383,28 @@ impl<'a> ContainerPane<'a> {
         width: u16,
         pieces: &mut Vec<Piece<'a>>,
     ) {
+        let location = self.location(row.id());
+        let after = match &location {
+            Some((Locating::After, text)) => {
+                Some(Span::styled(format!(" · {text}"), self.description_style()))
+            }
+            _ => None,
+        };
         pieces.push(match self.edited(row.id(), Part::Title) {
             Some(field) => self.field(shown, field, Some(index)),
-            None => self.title_then(shown, Some(index), self.location(row.id())),
+            None => self.title_then(shown, Some(index), after),
         });
         let x = self.title_column(shown);
+        if let Some((Locating::Under, text)) = location {
+            pieces.push(Piece {
+                x,
+                text: wrapped(Text::styled(text, self.description_style())),
+                left: Line::default(),
+                right: Line::default(),
+                row: Some(index),
+                caret: None,
+            });
+        }
         if let Some(field) = self.edited(row.id(), Part::Description) {
             pieces.push(self.description_field(field, x, width, Some(index)));
         } else if let Some(first) = shown.description.lines().next() {
@@ -878,9 +902,9 @@ mod tests {
         assert_eq!(caret, Some(Position::new(3, 2)));
     }
 
-    // FR-VIEW-06
+    // FR-VIEW-06, D-51
     #[test]
-    fn a_view_shows_its_name_then_each_group_under_its_heading() {
+    fn today_lists_its_rows_without_headings_each_saying_where_it_is_under_its_title() {
         let mut state = app::State::new(demo(), app::Opened::Demo, TODAY);
         let today = app::Command::Go(app::Go::View(View::Today));
         app::update(&mut state, app::Message::Command(today), TODAY);
@@ -896,14 +920,15 @@ mod tests {
             [
                 "  ☼ Today",
                 "",
-                "  ◆ Work",
                 "▌ - Answer the recruiter's  ! yesterday",
                 "▌   email",
-                "  - Review two portfolios       ⇥ today",
-                "",
-                "  ○ Website",
+                "▌   Work",
+                "  - Write the             ≡ ❞ 1 ↦ today",
+                "    announcement @writing",
+                "    Work / Website › Launch",
             ]
         );
+        assert_eq!(buf[(4, 4)].fg, theme.dim_text, "where it is, dimmed");
     }
 
     // FR-VIEW-04

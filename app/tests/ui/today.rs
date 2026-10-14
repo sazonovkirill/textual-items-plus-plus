@@ -1,4 +1,5 @@
-//! The Today view: what is due or has started, grouped by area and project, overdue first.
+//! The Today view: what is due or has started, in one list, overdue first, each row saying where
+//! it is.
 
 use crossterm::event::KeyCode;
 
@@ -13,7 +14,7 @@ fn trimmed(harness: &Harness) -> Vec<String> {
         .collect()
 }
 
-// FR-VIEW-06, FR-KEY-06, FR-DATE-04, FR-NAV-03
+// FR-VIEW-06, FR-KEY-06, FR-DATE-04, FR-NAV-03, D-51
 #[test]
 fn open_today() {
     let mut harness = Harness::new(60, 16);
@@ -23,23 +24,23 @@ fn open_today() {
         "────────────────────────────────────────────────────────────",
         "  \u{f0599} Today",
         "",
-        "  \u{f01a7} Work",
         "▌ - Answer the recruiter's email                \u{f0a31} yesterday",
-        "  - Review two portfolios                           \u{f166c} today",
-        "",
-        "  \u{f0256} Website",
+        "▌   Work",
         "  - Write the announcement @writing           \u{f11d7} \u{f0189} 1 \u{f166d} today",
+        "    Work / Website › Launch",
         "    Keep it under 300 words.",
-        "",
-        "  \u{f01a7} Home",
+        "  - Review two portfolios                           \u{f166c} today",
+        "    Work › Hiring",
         "  - Water the plants                            \u{f166d} yesterday",
+        "    Home",
+        "",
         "",
         " \u{f01bf} NAVIGATE · Demo data · not saved",
     ];
     assert_eq!(
         trimmed(&harness),
         today,
-        "the overdue task first in Work, the section's task under its project, headings no rows"
+        "one list, the overdue task first, each row saying where it is under its title (D-51)"
     );
 }
 
@@ -47,7 +48,7 @@ fn open_today() {
 #[test]
 fn going_into_a_task_in_today_shows_it_where_it_lives_and_back_returns() {
     let mut harness = Harness::new(60, 16);
-    harness.type_text("gtj.");
+    harness.type_text("gtjj.");
     let rows = trimmed(&harness);
     assert_eq!(rows[0], "  \u{f02dc} Work");
     assert!(
@@ -59,7 +60,7 @@ fn going_into_a_task_in_today_shows_it_where_it_lives_and_back_returns() {
     let rows = trimmed(&harness);
     assert_eq!(rows[0], "  \u{f0599} Today");
     assert!(
-        rows[6].starts_with("▌ - Review two portfolios"),
+        rows[9].starts_with("▌ - Review two portfolios"),
         "{rows:#?}"
     );
 }
@@ -76,8 +77,8 @@ fn filter_today_by_a_tag() {
         "────────────────────────────────────────────────────────────",
         "  \u{f0599} Today",
         "",
-        "  \u{f0256} Website",
         "▌ - Write the announcement @writing           \u{f11d7} \u{f0189} 1 \u{f166d} today",
+        "▌   Work / Website › Launch",
         "▌   Keep it under 300 words.",
     ];
     filtered.resize(15, "");
@@ -85,7 +86,7 @@ fn filter_today_by_a_tag() {
     assert_eq!(
         trimmed(&harness),
         filtered,
-        "the crumbs name the view and the filter, and only the group with a tagged row is left"
+        "the crumbs name the view and the filter, and only the tagged row is left"
     );
 }
 

@@ -1017,10 +1017,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::{
-        TagMark, TextEdit,
-        view::{Heading, View},
-    };
+    use crate::app::{TagMark, TextEdit, view::View};
     use crate::domain::{Item, ItemKind, Node, PlacementError};
 
     // FR-NAV-02, FR-STORE-01
@@ -1995,7 +1992,6 @@ mod tests {
         let Dated {
             mut state,
             inbox_task,
-            work,
             overdue,
             site,
             in_launch,
@@ -2007,21 +2003,22 @@ mod tests {
         assert_eq!(state.container(), None);
         assert_eq!(state.path(), []);
         let ids: Vec<ItemId> = state.rows().into_iter().map(Row::id).collect();
-        assert_eq!(ids, [inbox_task, overdue, site, in_launch]);
+        assert_eq!(ids, [overdue, inbox_task, site, in_launch]);
         assert_eq!(
             state
                 .groups()
                 .iter()
                 .map(|group| group.heading)
                 .collect::<Vec<_>>(),
-            [None, Some(Heading::Item(work)), Some(Heading::Item(site))]
+            [None],
+            "one list without headings (D-51)"
         );
-        assert_eq!(state.selection().focused(), Some(inbox_task));
+        assert_eq!(state.selection().focused(), Some(overdue));
         state.move_focus(Focus::Next);
         state.go(Go::View(View::Today));
         assert_eq!(
             state.selection().focused(),
-            Some(overdue),
+            Some(inbox_task),
             "showing it again changes nothing"
         );
         state.go(Go::Back);
@@ -2033,7 +2030,7 @@ mod tests {
         assert_eq!(state.groups(), [], "a container has no groups");
         state.go(Go::Forward);
         assert_eq!(state.shown(), Shown::View(View::Today));
-        assert_eq!(state.selection().focused(), Some(overdue));
+        assert_eq!(state.selection().focused(), Some(inbox_task));
         state.toggle_navigator();
         state.navigator_input(PickerInput::Choose);
         assert_eq!(
@@ -2101,20 +2098,22 @@ mod tests {
         let Dated {
             mut state,
             inbox_task,
-            overdue,
+            site,
             ..
         } = dated()?;
         state.go(Go::View(View::Today));
+        state.pane_mut().selection.focus(Some(inbox_task));
         state.toggle_completed(TODAY);
-        assert_eq!(state.selection().focused(), Some(overdue));
+        assert_eq!(state.selection().focused(), Some(site));
         assert!(!state.rows().iter().any(|row| row.id() == inbox_task));
         state.toggle_show_completed();
         assert_eq!(
-            state.groups()[0].rows,
-            [Row::Task {
+            state.rows().last(),
+            Some(&Row::Task {
                 id: inbox_task,
                 section: None
-            }]
+            }),
+            "a completed item comes last"
         );
         state.toggle_show_completed();
         state.undo();
@@ -2149,6 +2148,7 @@ mod tests {
             ..
         } = dated()?;
         state.go(Go::View(View::Today));
+        state.pane_mut().selection.focus(Some(inbox_task));
         let before = state.document().clone();
         state.new_task(Side::Below);
         for kind in [ItemKind::Section, ItemKind::Project, ItemKind::Area] {
@@ -2181,25 +2181,22 @@ mod tests {
 
     // FR-VIEW-06, FR-TAG-04
     #[test]
-    fn a_tag_filter_in_today_hides_the_groups_it_empties() -> Result<(), PlacementError> {
+    fn a_tag_filter_in_today_hides_the_rows_without_the_tag() -> Result<(), PlacementError> {
         let Dated {
-            mut state,
-            work,
-            overdue,
-            ..
+            mut state, overdue, ..
         } = dated()?;
         state.go(Go::View(View::Today));
         state.set_filter(vec!["home".to_owned()]);
         assert_eq!(
             state.groups(),
             [Group {
-                heading: Some(Heading::Item(work)),
+                heading: None,
                 rows: vec![Row::Task {
                     id: overdue,
                     section: None
                 }]
             }],
-            "the groups with no row carrying the tag are dropped"
+            "the rows without the tag are dropped"
         );
         let flattened: Vec<Row> = state.groups().into_iter().flat_map(|g| g.rows).collect();
         assert_eq!(state.rows(), flattened);

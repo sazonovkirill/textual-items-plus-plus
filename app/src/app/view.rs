@@ -72,12 +72,26 @@ impl View {
         }
     }
 
-    /// Whether each row says where its item is, as the rows of the Logbook and the Trash, from
-    /// every list, do (FR-VIEW-03, FR-VIEW-04).
+    /// How each row says where its item is, if it does: the rows of the Logbook and the Trash,
+    /// from every list, after their titles (FR-VIEW-03, FR-VIEW-04), and Today's, from no one
+    /// container, under them (D-51).
     #[must_use]
-    pub const fn locates(self) -> bool {
-        matches!(self, Self::Logbook | Self::Trash)
+    pub const fn locates(self) -> Option<Locating> {
+        match self {
+            Self::Logbook | Self::Trash => Some(Locating::After),
+            Self::Today => Some(Locating::Under),
+            Self::Upcoming | Self::All => None,
+        }
     }
+}
+
+/// Where a view's row says where its item is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Locating {
+    /// After its title and tags.
+    After,
+    /// On the line under its title.
+    Under,
 }
 
 /// What a pane shows.
