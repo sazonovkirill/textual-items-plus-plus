@@ -1,21 +1,39 @@
-//! Key events to commands: the terminal frontend's default key for each command and the lookup
-//! that turns a pressed key into one, alike under the kitty keyboard protocol and legacy key
-//! reporting (N-PORT-03).
+//! Key events to commands: the terminal frontend's default keys for each command and the lookup
+//! that turns pressed keys into one, alike under the kitty keyboard protocol and legacy key
+//! reporting (N-PORT-03), single keys and sequences such as `gg` alike.
 
 use std::collections::HashMap;
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
-use crate::app::Command;
+use crate::app::{Command, Focus};
 
 /// One key press: its modifiers and code, with `Shift` dropped from characters because the
 /// character already says whether it is shifted.
 pub(super) type Key = (KeyModifiers, KeyCode);
 
 /// Each command's default keys, written `mod+mod+key` in lower case for a key with `ctrl`, `alt`
-/// or `shift`, and the character or key name alone for a key without them. A feature binds its
-/// commands here.
-const DEFAULT_KEYS: &[(Command, &[&str])] = &[(Command::Quit, &["ctrl+q"])];
+/// or `shift`, and the character or key name alone for a key without them; the keys of a
+/// sequence are separated by spaces. No binding starts another, so a sequence waits for its next
+/// key only while no binding is complete. A feature binds its commands here.
+const DEFAULT_KEYS: &[(Command, &[&str])] = &[
+    (Command::Quit, &["ctrl+q"]),
+    // The motions of taskpaper-terminal (FR-KEY-02); a section heading is the nearest thing this
+    // app has to its next and previous sibling (D-34).
+    (Command::Focus(Focus::Next), &["j", "down"]),
+    (Command::Focus(Focus::Previous), &["k", "up"]),
+    (Command::Focus(Focus::First), &["g g", "home"]),
+    (Command::Focus(Focus::Last), &["G", "end"]),
+    (Command::Focus(Focus::Parent), &["#"]),
+    (Command::Focus(Focus::NextSection), &["g j", "ctrl+down"]),
+    (Command::Focus(Focus::PreviousSection), &["g k", "ctrl+up"]),
+];
+
+/// The keys `text` names, as [`DEFAULT_KEYS`] writes a sequence. `None` unless each one is a
+/// key.
+fn parse_sequence(text: &str) -> Option<Vec<Key>> {
+    text.split(' ').map(parse_key).collect()
+}
 
 /// The key `text` names, as [`DEFAULT_KEYS`] writes keys; `shift+` with a character is that
 /// character shifted. `None` for anything else.
@@ -80,37 +98,68 @@ pub(super) fn key_press(event: &Event) -> Option<Key> {
     Some(pressed(key.modifiers, key.code))
 }
 
-/// The commands the keys give.
+/// The commands the keys give, and the keys of a sequence pressed so far.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keymap {
-    #[expect(
-        clippy::zero_sized_map_values,
-        reason = "Quit is the only command until the container view adds more"
-    )]
-    commands: HashMap<Key, Command>,
+    commands: HashMap<Vec<Key>, Command>,
+    /// Every sequence that is the start of a longer binding, with its keys as written.
+    prefixes: HashMap<Vec<Key>, String>,
+    pending: Vec<Key>,
 }
 
 impl Default for Keymap {
     /// The default keys of every command.
     fn default() -> Self {
-        let commands = DEFAULT_KEYS
-            .iter()
-            .flat_map(|&(command, keys)| keys.iter().map(move |&key| (key, command)))
-            .map(|(key, command)| {
-                let key = parse_key(key).expect("every default key is written as parse_key reads");
-                (key, command)
+        let written = || {
+            DEFAULT_KEYS
+                .iter()
+                .flat_map(|&(command, keys)| keys.iter().map(move |&keys| (keys, command)))
+        };
+        let commands = written()
+            .map(|(keys, command)| {
+                let keys = parse_sequence(keys)
+                    .expect("every default key is written as parse_sequence reads");
+                (keys, command)
             })
             .collect();
-        Self { commands }
+        let prefixes = written()
+            .flat_map(|(keys, _)| {
+                keys.match_indices(' ').map(move |(end, _)| {
+                    let prefix = keys.get(..end).unwrap_or_default();
+                    let parsed = parse_sequence(prefix)
+                        .expect("every default key is written as parse_sequence reads");
+                    (parsed, prefix.to_owned())
+                })
+            })
+            .collect();
+        Self {
+            commands,
+            prefixes,
+            pending: Vec::new(),
+        }
     }
 }
 
 impl Keymap {
-    /// The command `event` gives, if it is the press of a bound key; releases and repeats give
-    /// none.
+    /// The command `event` completes, if it is a key press. A press that starts or continues a
+    /// sequence waits for the next key; one that continues none cancels the keys pressed so far
+    /// and does nothing else. Releases, repeats and other events change nothing.
+    pub fn press(&mut self, event: &Event) -> Option<Command> {
+        let key = key_press(event)?;
+        let mut keys = std::mem::take(&mut self.pending);
+        keys.push(key);
+        if self.prefixes.contains_key(&keys) {
+            self.pending = keys;
+            return None;
+        }
+        self.commands.get(&keys).copied()
+    }
+
+    /// The keys of an unfinished sequence, as the status line shows them, such as `g`; empty
+    /// when none is pending.
     #[must_use]
-    pub fn command(&self, event: &Event) -> Option<Command> {
-        self.commands.get(&key_press(event)?).copied()
+    pub fn pending(&self) -> &str {
+        self.prefixes.get(&self.pending).map_or("", String::as_str)
     }
 }
 
@@ -126,13 +175,17 @@ mod tests {
         Event::Key(KeyEvent::new(code, modifiers))
     }
 
+    fn char(c: char) -> Event {
+        press(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
     #[test]
     fn every_default_key_parses_and_belongs_to_one_command() {
         let mut seen = HashSet::new();
         for (_, keys) in DEFAULT_KEYS {
             for key in *keys {
                 assert!(
-                    parse_key(key).is_some_and(|parsed| seen.insert(parsed)),
+                    parse_sequence(key).is_some_and(|parsed| seen.insert(parsed)),
                     "{key} does not parse or is bound twice"
                 );
             }
@@ -140,34 +193,127 @@ mod tests {
     }
 
     #[test]
+    fn no_binding_starts_another() {
+        let bound: Vec<Vec<Key>> = DEFAULT_KEYS
+            .iter()
+            .flat_map(|(_, keys)| keys.iter().filter_map(|key| parse_sequence(key)))
+            .collect();
+        for keys in &bound {
+            for other in &bound {
+                assert!(
+                    keys == other || !other.starts_with(keys),
+                    "{keys:?} starts {other:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn ctrl_q_quits() {
-        let keymap = Keymap::default();
+        let mut keymap = Keymap::default();
         let ctrl_q = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        assert_eq!(keymap.command(&ctrl_q), Some(Command::Quit));
+        assert_eq!(keymap.press(&ctrl_q), Some(Command::Quit));
+    }
+
+    // FR-NAV-01, FR-KEY-02
+    #[test]
+    fn the_motions_have_vi_keys_and_arrow_keys() {
+        let mut keymap = Keymap::default();
+        let none = KeyModifiers::NONE;
+        let focus = |motion| Some(Command::Focus(motion));
+        for (event, command) in [
+            (char('j'), focus(Focus::Next)),
+            (press(KeyCode::Down, none), focus(Focus::Next)),
+            (char('k'), focus(Focus::Previous)),
+            (press(KeyCode::Up, none), focus(Focus::Previous)),
+            (press(KeyCode::Home, none), focus(Focus::First)),
+            (char('G'), focus(Focus::Last)),
+            (
+                press(KeyCode::Char('g'), KeyModifiers::SHIFT),
+                focus(Focus::Last),
+            ),
+            (press(KeyCode::End, none), focus(Focus::Last)),
+            (char('#'), focus(Focus::Parent)),
+            (
+                press(KeyCode::Down, KeyModifiers::CONTROL),
+                focus(Focus::NextSection),
+            ),
+            (
+                press(KeyCode::Up, KeyModifiers::CONTROL),
+                focus(Focus::PreviousSection),
+            ),
+        ] {
+            assert_eq!(keymap.press(&event), command, "{event:?}");
+        }
+    }
+
+    // FR-NAV-01, FR-KEY-02
+    #[test]
+    fn a_sequence_waits_for_its_next_key_showing_what_is_pending() {
+        let mut keymap = Keymap::default();
+        assert_eq!(keymap.pending(), "");
+        for (second, motion) in [
+            ('g', Focus::First),
+            ('j', Focus::NextSection),
+            ('k', Focus::PreviousSection),
+        ] {
+            assert_eq!(keymap.press(&char('g')), None);
+            assert_eq!(keymap.pending(), "g");
+            assert_eq!(
+                keymap.press(&char(second)),
+                Some(Command::Focus(motion)),
+                "g {second}"
+            );
+            assert_eq!(keymap.pending(), "");
+        }
+    }
+
+    #[test]
+    fn a_key_that_continues_no_sequence_cancels_it_and_does_nothing_else() {
+        let mut keymap = Keymap::default();
+        keymap.press(&char('g'));
+        assert_eq!(keymap.press(&char('#')), None);
+        assert_eq!(keymap.pending(), "");
+        assert_eq!(
+            keymap.press(&char('#')),
+            Some(Command::Focus(Focus::Parent))
+        );
+    }
+
+    #[test]
+    fn releases_and_other_events_leave_a_pending_sequence_alone() {
+        let mut keymap = Keymap::default();
+        keymap.press(&char('g'));
+        let mut release = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+        release.kind = KeyEventKind::Release;
+        assert_eq!(keymap.press(&Event::Key(release)), None);
+        assert_eq!(keymap.press(&Event::Resize(80, 24)), None);
+        assert_eq!(keymap.pending(), "g");
+        assert_eq!(keymap.press(&char('g')), Some(Command::Focus(Focus::First)));
     }
 
     #[test]
     fn q_without_ctrl_or_with_more_modifiers_does_nothing() {
-        let keymap = Keymap::default();
+        let mut keymap = Keymap::default();
         for modifiers in [
             KeyModifiers::NONE,
             KeyModifiers::ALT,
             KeyModifiers::CONTROL | KeyModifiers::ALT,
         ] {
             let q = press(KeyCode::Char('q'), modifiers);
-            assert_eq!(keymap.command(&q), None, "{modifiers:?}");
+            assert_eq!(keymap.press(&q), None, "{modifiers:?}");
         }
     }
 
     #[test]
     fn only_presses_give_commands() {
-        let keymap = Keymap::default();
+        let mut keymap = Keymap::default();
         for kind in [KeyEventKind::Release, KeyEventKind::Repeat] {
             let mut key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
             key.kind = kind;
-            assert_eq!(keymap.command(&Event::Key(key)), None, "{kind:?}");
+            assert_eq!(keymap.press(&Event::Key(key)), None, "{kind:?}");
         }
-        assert_eq!(keymap.command(&Event::FocusGained), None);
+        assert_eq!(keymap.press(&Event::FocusGained), None);
     }
 
     #[test]
@@ -189,6 +335,15 @@ mod tests {
             pressed(KeyModifiers::SHIFT, KeyCode::Up),
             (KeyModifiers::SHIFT, KeyCode::Up)
         );
+    }
+
+    #[test]
+    fn parses_sequences_of_keys_separated_by_spaces() {
+        let g = (KeyModifiers::NONE, KeyCode::Char('g'));
+        assert_eq!(parse_sequence("g g"), Some(vec![g, g]));
+        assert_eq!(parse_sequence("g"), Some(vec![g]));
+        assert_eq!(parse_sequence("g meta+x"), None);
+        assert_eq!(parse_sequence("g  g"), None);
     }
 
     #[track_caller]

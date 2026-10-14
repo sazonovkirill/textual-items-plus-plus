@@ -15,10 +15,11 @@ crossterm = "0.29.0"
 jiff = "0.2.37"
 notify-debouncer-full = "0.7.0"
 nucleo-matcher = "0.3.1"
-ratatui = "0.30.2"
+ratatui = { version = "0.30.2", features = ["unstable-rendered-line-info"] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 unicode-segmentation = "1.13.3"
+unicode-width = "0.2.2"
 
 [lints.rust]
 unsafe_code = "forbid"

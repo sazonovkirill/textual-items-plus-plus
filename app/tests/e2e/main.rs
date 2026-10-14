@@ -2,11 +2,14 @@
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-// FR-KEY-01, N-PORT-03
+// FR-STORE-01, FR-KEY-01, FR-NAV-01, N-PORT-03
 #[test]
-fn opens_an_empty_screen_and_quits_with_ctrl_q_restoring_the_terminal() -> TestResult {
+fn opens_the_demo_inbox_moves_through_it_and_quits_with_ctrl_q_restoring_the_terminal() -> TestResult
+{
     let mut terminal = termlens::bin!("tipp")?;
-    terminal.wait_until(termlens::Screen::alternate_screen)?;
+    terminal.wait_until(|screen| screen.text().contains("Call the bank about the card"))?;
+    terminal.send(termlens::Key::Char('j'))?;
+    terminal.wait_until(|screen| screen.text().contains("▌ - Buy coffee beans"))?;
     terminal.send(termlens::Key::Char('q'))?;
     terminal.send(termlens::Key::Ctrl('q'))?;
     assert!(terminal.wait_exit()?.success());

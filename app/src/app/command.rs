@@ -2,11 +2,15 @@
 //! given in. A frontend binds its own keys to these commands and lists them in its palette and
 //! shortcuts panel.
 
+use super::Focus;
+
 /// A command: one user intent, whatever key, menu or palette gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Command {
     /// Leave the app.
     Quit,
+    /// Move the focus (FR-NAV-01).
+    Focus(Focus),
 }
 
 /// Where a command can be given. Later steps add the modes and windows that take keys of their
@@ -15,6 +19,8 @@ pub enum Command {
 pub enum Context {
     /// Everywhere in the app.
     Global,
+    /// In navigate mode, moving between items (FR-EDIT-01).
+    Navigate,
 }
 
 /// A command with what the palette and the shortcuts panel show of it.
@@ -29,11 +35,48 @@ pub struct Entry {
 }
 
 /// Every command, one entry each; a feature registers its commands here.
-pub const REGISTRY: &[Entry] = &[Entry {
-    command: Command::Quit,
-    title: "Quit",
-    context: Context::Global,
-}];
+pub const REGISTRY: &[Entry] = &[
+    Entry {
+        command: Command::Quit,
+        title: "Quit",
+        context: Context::Global,
+    },
+    Entry {
+        command: Command::Focus(Focus::Next),
+        title: "Next Item",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Focus(Focus::Previous),
+        title: "Previous Item",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Focus(Focus::First),
+        title: "First Item",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Focus(Focus::Last),
+        title: "Last Item",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Focus(Focus::Parent),
+        title: "Section Heading",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Focus(Focus::NextSection),
+        title: "Next Section",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Focus(Focus::PreviousSection),
+        title: "Previous Section",
+        context: Context::Navigate,
+    },
+];
 
 #[cfg(test)]
 mod tests {
@@ -48,5 +91,29 @@ mod tests {
         assert_eq!(commands.len(), REGISTRY.len());
         assert_eq!(titles.len(), REGISTRY.len());
         assert!(REGISTRY.iter().all(|entry| !entry.title.is_empty()));
+    }
+
+    // FR-NAV-01
+    #[test]
+    fn every_motion_is_a_navigate_command() {
+        let motions = [
+            Focus::Next,
+            Focus::Previous,
+            Focus::First,
+            Focus::Last,
+            Focus::Parent,
+            Focus::NextSection,
+            Focus::PreviousSection,
+        ];
+        for motion in motions {
+            let entry = REGISTRY
+                .iter()
+                .find(|entry| entry.command == Command::Focus(motion));
+            assert_eq!(
+                entry.map(|entry| entry.context),
+                Some(Context::Navigate),
+                "{motion:?}"
+            );
+        }
     }
 }

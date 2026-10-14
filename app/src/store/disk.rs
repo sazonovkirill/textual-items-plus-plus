@@ -205,7 +205,7 @@ fn reason(path: &Path, error: &io::Error) -> String {
 }
 
 /// The bytes of the file at `path`, or `None` when there is none.
-fn read(path: &Path) -> io::Result<Option<Vec<u8>>> {
+pub(super) fn read(path: &Path) -> io::Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),

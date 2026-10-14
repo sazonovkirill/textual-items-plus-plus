@@ -1,6 +1,7 @@
-//! `tipp`: runs textual-items++ in the terminal until `Ctrl+Q`.
+//! `tipp [file]`: runs textual-items++ in the terminal on the file, or on the demo document
+//! without one, until `Ctrl+Q`.
 
-use std::io;
+use std::{env, io, path::PathBuf};
 
 use anyhow::Context;
 use crossterm::{
@@ -12,6 +13,10 @@ use crossterm::{
 use textual_items_plus_plus::ui::Tui;
 
 fn main() -> anyhow::Result<()> {
+    let mut args = env::args_os().skip(1);
+    let path = args.next().map(PathBuf::from);
+    anyhow::ensure!(args.next().is_none(), "usage: tipp [file]");
+    let tui = Tui::open(path, jiff::Zoned::now().date())?;
     let mut terminal = ratatui::try_init().context("cannot set up the terminal")?;
     // A terminal without the kitty keyboard protocol keeps legacy key reporting, which the keymap
     // reads alike (N-PORT-03). One that does not answer the query, or refuses the request, is
@@ -24,7 +29,7 @@ fn main() -> anyhow::Result<()> {
         .is_ok();
     // A panic skips the rest: the hook `try_init` installed leaves the alternate screen, and the
     // terminal drops the keyboard flags pushed there with it.
-    let result = run(&mut terminal);
+    let result = run(&mut terminal, tui);
     if kitty {
         // The session is over; a terminal that cannot take this has gone already.
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
@@ -34,11 +39,10 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// Draws the app and hands it each terminal event until it quits.
-fn run(terminal: &mut ratatui::DefaultTerminal) -> anyhow::Result<()> {
-    let mut tui = Tui::default();
+fn run(terminal: &mut ratatui::DefaultTerminal, mut tui: Tui) -> anyhow::Result<()> {
     while !tui.should_quit() {
         terminal
-            .draw(|frame| frame.render_widget(&tui, frame.area()))
+            .draw(|frame| frame.render_widget(&mut tui, frame.area()))
             .context("cannot draw")?;
         tui.handle(&event::read().context("cannot read the terminal")?);
     }

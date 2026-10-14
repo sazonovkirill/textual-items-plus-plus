@@ -4,6 +4,8 @@
 
 pub mod autosave;
 mod command;
+mod container;
+mod focus;
 mod history;
 mod picker;
 mod selection;
@@ -13,9 +15,11 @@ mod update;
 pub mod view;
 
 pub use command::{Command, Context, Entry, REGISTRY};
+pub use container::{Row, rows};
+pub use focus::Focus;
 pub use history::History;
 pub use picker::{Candidate, Entries, Picked, Picker, PickerInput, PickerView};
 pub use selection::Selection;
-pub use state::State;
+pub use state::{Opened, State};
 pub use text_field::{Motion, TextEdit, TextField};
 pub use update::{Effect, Message, update};

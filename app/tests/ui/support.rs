@@ -1,8 +1,14 @@
 //! Starting the app and driving it with keys, as a user would, on a terminal of fixed size.
 
+use std::path::PathBuf;
+
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use jiff::civil::{Date, date};
 use ratatui::{Terminal, backend::TestBackend};
 use textual_items_plus_plus::ui::Tui;
+
+/// The local date the tests run on.
+pub const TODAY: Date = date(2026, 10, 5);
 
 /// A running app with the terminal it draws on.
 pub struct Harness {
@@ -11,12 +17,23 @@ pub struct Harness {
 }
 
 impl Harness {
-    /// Starts the app on a `width` by `height` terminal and draws its first screen.
+    /// Starts the app without a file, on the demo document, on a `width` by `height` terminal
+    /// and draws its first screen.
     pub fn new(width: u16, height: u16) -> Self {
+        Self::on(None, width, height)
+    }
+
+    /// Starts the app as `tipp <path>` would, on a `width` by `height` terminal, and draws its
+    /// first screen.
+    pub fn open(path: PathBuf, width: u16, height: u16) -> Self {
+        Self::on(Some(path), width, height)
+    }
+
+    fn on(path: Option<PathBuf>, width: u16, height: u16) -> Self {
         let terminal =
             Terminal::new(TestBackend::new(width, height)).expect("a test backend always sets up");
         let mut harness = Self {
-            tui: Tui::default(),
+            tui: Tui::open(path, TODAY).expect("the test's file opens"),
             terminal,
         };
         harness.draw();
@@ -39,6 +56,11 @@ impl Harness {
         self.press(KeyCode::Char(c), KeyModifiers::CONTROL);
     }
 
+    /// Presses `code` alone.
+    pub fn key(&mut self, code: KeyCode) {
+        self.press(code, KeyModifiers::NONE);
+    }
+
     /// Types `text`, one character key at a time.
     pub fn type_text(&mut self, text: &str) {
         for c in text.chars() {
@@ -48,7 +70,7 @@ impl Harness {
 
     /// Draws the app on the terminal.
     pub fn draw(&mut self) {
-        let tui = &self.tui;
+        let tui = &mut self.tui;
         self.terminal
             .draw(|frame| frame.render_widget(tui, frame.area()))
             .expect("a test backend always draws");

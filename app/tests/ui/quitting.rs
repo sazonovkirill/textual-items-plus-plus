@@ -1,18 +1,8 @@
-//! Starting on an empty screen and quitting with `Ctrl+Q`.
+//! Quitting with `Ctrl+Q`, and only with it.
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::support::Harness;
-
-#[test]
-fn the_app_starts_on_an_empty_screen() {
-    let harness = Harness::new(80, 24);
-    harness
-        .terminal
-        .backend()
-        .assert_buffer_lines(vec![" ".repeat(80); 24]);
-    assert!(!harness.tui.should_quit());
-}
 
 // FR-KEY-01
 #[test]
@@ -31,7 +21,7 @@ fn other_keys_do_not_quit() {
     harness.ctrl('w');
     harness.send(&Event::Resize(40, 10));
     assert!(!harness.tui.should_quit());
-    assert!(harness.rows().iter().all(|row| row.trim().is_empty()));
+    assert!(harness.rows()[0].contains("Inbox"));
 }
 
 // N-PORT-03

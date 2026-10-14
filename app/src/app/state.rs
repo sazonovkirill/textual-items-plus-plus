@@ -1,27 +1,128 @@
 //! The application state a frontend renders, changed only by [`update`](super::update).
 
-use super::Selection;
+use std::path::PathBuf;
+
+use super::{
+    Selection,
+    container::{self, Row},
+    focus::{self, Focus},
+};
+use crate::domain::{Document, ItemId};
+
+/// Where the document came from, which decides whether changes to it can be kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Opened {
+    /// The built-in demo document, kept in memory and never saved (FR-STORE-01, D-29).
+    Demo,
+    /// The file at this path, as the user named it.
+    File(PathBuf),
+}
 
 /// Everything the app knows while it runs.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
+    document: Document,
+    opened: Opened,
+    container: ItemId,
     selection: Selection,
 }
 
 impl State {
+    /// The app showing `document`, opened from `opened`, at home: the Inbox, its first row
+    /// focused (FR-NAV-02).
+    #[must_use]
+    pub fn new(document: Document, opened: Opened) -> Self {
+        let mut state = Self {
+            container: document.inbox(),
+            document,
+            opened,
+            selection: Selection::default(),
+        };
+        state.move_focus(Focus::First);
+        state
+    }
+
+    /// The document.
+    #[must_use]
+    pub fn document(&self) -> &Document {
+        &self.document
+    }
+
+    /// Where the document came from.
+    #[must_use]
+    pub fn opened(&self) -> &Opened {
+        &self.opened
+    }
+
+    /// The container shown.
+    #[must_use]
+    pub fn container(&self) -> ItemId {
+        self.container
+    }
+
+    /// The rows the shown container lists, in order.
+    #[must_use]
+    pub fn rows(&self) -> Vec<Row> {
+        container::rows(&self.document, self.container)
+    }
+
     /// The items the next command acts on.
     #[must_use]
     pub fn selection(&self) -> &Selection {
         &self.selection
+    }
+
+    /// Moves the focus as `motion` says, selecting only the newly focused row.
+    pub(super) fn move_focus(&mut self, motion: Focus) {
+        let target = focus::target(&self.rows(), self.selection.focused(), motion);
+        self.selection.focus(target);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{Item, ItemKind, Node, PlacementError};
+
+    // FR-NAV-02, FR-STORE-01
+    #[test]
+    fn a_new_state_shows_the_inbox_with_its_first_task_focused() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let first = document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "a")))?;
+        document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "b")))?;
+        let state = State::new(document.clone(), Opened::Demo);
+        assert_eq!(state.container(), inbox);
+        assert_eq!(state.selection().focused(), Some(first));
+        assert_eq!(state.rows(), container::rows(&document, inbox));
+        assert_eq!(state.document(), &document);
+        assert_eq!(state.opened(), &Opened::Demo);
+        Ok(())
+    }
 
     #[test]
-    fn a_new_state_selects_nothing() {
-        assert_eq!(State::default().selection(), &Selection::default());
+    fn an_empty_inbox_focuses_nothing() {
+        let state = State::new(
+            Document::new(),
+            Opened::File(PathBuf::from("todo.taskpaper")),
+        );
+        assert_eq!(state.selection(), &Selection::default());
+        assert_eq!(
+            state.opened(),
+            &Opened::File(PathBuf::from("todo.taskpaper"))
+        );
+    }
+
+    // FR-NAV-01
+    #[test]
+    fn moving_the_focus_selects_the_row_it_lands_on() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "a")))?;
+        let last = document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "b")))?;
+        let mut state = State::new(document, Opened::Demo);
+        state.move_focus(Focus::Last);
+        assert_eq!(state.selection().items().collect::<Vec<_>>(), [last]);
+        Ok(())
     }
 }
