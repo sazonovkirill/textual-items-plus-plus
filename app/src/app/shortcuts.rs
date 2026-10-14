@@ -92,7 +92,8 @@ impl KeyGroup {
             | Command::DayEarlier(_)
             | Command::DayLater(_)
             | Command::Tags
-            | Command::TogglePinned => Self::Items,
+            | Command::TogglePinned
+            | Command::ToggleFlagged => Self::Items,
             Command::Undo
             | Command::Redo
             | Command::Delete

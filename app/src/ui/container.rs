@@ -870,8 +870,8 @@ impl<'a> ContainerPane<'a> {
         }
     }
 
-    /// The line naming `item`: its marker or icon, then its title and its tags wrapping under
-    /// the title's start, with its attachment icons and date chips at the right.
+    /// The line naming `item`: its marker or icon, then its flag, its title and its tags wrapping
+    /// under the title's start, with its attachment icons and date chips at the right.
     fn title(&self, id: ItemId, item: &'a Item, row: Option<usize>) -> Piece<'a> {
         self.title_then(id, item, row, None)
     }
@@ -886,7 +886,8 @@ impl<'a> ContainerPane<'a> {
         after: Option<Span<'a>>,
     ) -> Piece<'a> {
         let style = self.title_style(item, self.document.defers(id));
-        let mut spans = self.marked(Cow::Borrowed(&item.title), style);
+        let mut spans = self.flag(item);
+        spans.extend(self.marked(Cow::Borrowed(&item.title), style));
         for tag in item.shown_tags() {
             spans.extend(self.marked(Cow::Owned(tag_text(tag)), self.tag_style(item)));
         }
@@ -903,6 +904,24 @@ impl<'a> ContainerPane<'a> {
             row,
             caret: None,
         }
+    }
+
+    /// The red flag in front of a flagged item's title, a space after it, dimmed once it is
+    /// completed; nothing for an item not flagged (FR-ORG-12).
+    fn flag(&self, item: &Item) -> Vec<Span<'a>> {
+        if !item.flagged {
+            return Vec::new();
+        }
+        let style = Style::new().fg(self.theme.flag);
+        let style = if item.completion().is_some() {
+            style.add_modifier(Modifier::DIM)
+        } else {
+            style
+        };
+        vec![Span::styled(
+            format!("{} ", Icon::Flag.glyph(self.icons)),
+            style,
+        )]
     }
 
     /// `text` in `style`, with the words searched for in it marked, while the pane shows search

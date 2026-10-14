@@ -508,7 +508,7 @@ mod tests {
         let listed = entries(&document);
         assert_eq!(listed.get(1..=views.len()), Some(&views[..]));
         assert_eq!(
-            listed.get(3..=5),
+            listed.get(4..=6),
             Some(&[View::All, View::Logbook, View::Trash].map(Stop::View)[..]),
             "the Logbook between All and the Trash (D-78)"
         );

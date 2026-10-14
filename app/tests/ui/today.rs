@@ -107,9 +107,9 @@ fn open_today_from_the_sidebar() {
     );
     assert!(rows[0].contains("│  󰖙 Today"), "Enter shows it: {rows:#?}");
     assert!(
-        rows[4].starts_with(" 󰉹 All")
-            && rows[5].starts_with(" 󱓳 Logbook")
-            && rows[6].starts_with(" 󰩺 Trash"),
+        rows[5].starts_with(" 󰉹 All")
+            && rows[6].starts_with(" 󱓳 Logbook")
+            && rows[7].starts_with(" 󰩺 Trash"),
         "the Logbook between All and the Trash: {rows:#?}"
     );
 }

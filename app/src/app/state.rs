@@ -1061,7 +1061,7 @@ impl State {
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, editing its description
     /// in the pane, adding an area or a project, collapsing it, deleting, moving, converting,
-    /// pinning and setting its dates, each one step to
+    /// pinning, flagging and setting its dates, each one step to
     /// undo, opening Move to for it or the attachments panel on it, and showing the entry in the
     /// first pane, the sidebar keeping the keys, or in a new pane, which gets them; a view's entry
     /// is only shown. The commands [`sidebar_passes`] names pass to the app; every other command
@@ -1143,6 +1143,8 @@ impl State {
             (Command::EditItem, Some(Shown::Container(id))) => self.open_edit_dialog_on(id),
             (Command::TogglePinned, Some(Shown::Container(id))) => self.toggle_pinned_for(&[id]),
             (Command::TogglePinned, Some(Shown::View(_))) => self.notify(Notice::NotAProject),
+            (Command::ToggleFlagged, Some(Shown::Container(id))) => self.toggle_flagged_for(&[id]),
+            (Command::ToggleFlagged, Some(Shown::View(_))) => self.notify(Notice::NotFlaggable),
             (Command::OpenNote(_), Some(Shown::Container(id))) => {
                 self.open_panel(id, Selected::Note);
             }
@@ -1557,6 +1559,7 @@ pub(super) fn sidebar_takes(command: Command) -> bool {
             | Command::StartToday
             | Command::ToggleLater
             | Command::TogglePinned
+            | Command::ToggleFlagged
             | Command::DayEarlier(_)
             | Command::DayLater(_)
             | Command::Tags

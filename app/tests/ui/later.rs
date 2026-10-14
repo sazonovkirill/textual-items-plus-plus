@@ -133,12 +133,12 @@ fn a_later_project_is_dimmed_and_listed_last_in_the_sidebar_and_its_area() {
     let text = "Inbox:\nWork: @area\n\tSite:\n\tDocs:\n";
     let (_dir, path, mut harness) = on_file(text);
     harness.ctrl('b');
-    harness.type_text("jjjjjjjml");
+    harness.type_text("jjjjjjjjml");
     assert_eq!(
         saved_after_a_second(&mut harness, &path),
         "Inbox:\nWork: @area\n\tSite: @later\n\tDocs:\n"
     );
-    let sidebar: Vec<String> = rows(&harness, 8..11)
+    let sidebar: Vec<String> = rows(&harness, 9..12)
         .iter()
         .map(|row| {
             row.chars()
@@ -149,7 +149,7 @@ fn a_later_project_is_dimmed_and_listed_last_in_the_sidebar_and_its_area() {
         })
         .collect();
     assert_eq!(sidebar, [" 󰆧 WORK", " # Docs", "▌# Site"]);
-    assert_eq!(color(&harness, 3, 10), Color::Indexed(248), "dimmed");
+    assert_eq!(color(&harness, 3, 11), Color::Indexed(248), "dimmed");
     harness.key(KeyCode::Tab);
     open(&mut harness, "work");
     let pane: Vec<String> = rows(&harness, 2..4)

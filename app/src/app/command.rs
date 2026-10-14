@@ -137,6 +137,9 @@ pub enum Command {
     /// Pin the selected projects, which the sidebar and the Navigator then also list among the
     /// pinned projects, or unpin them when all are pinned (FR-VIEW-12).
     TogglePinned,
+    /// Flag the selected projects and tasks as important, or unflag them when all are flagged
+    /// (FR-ORG-12).
+    ToggleFlagged,
     /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
     Sidebar,
     /// Hide the projects inside the project the sidebar focuses, or show them again (FR-VIEW-10).
@@ -345,6 +348,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Go(Go::View(View::Upcoming)),
         title: "Go to Upcoming",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Go(Go::View(View::Flagged)),
+        title: "Go to Flagged",
         context: Context::Navigate,
     },
     Entry {
@@ -628,6 +636,11 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::ToggleFlagged,
+        title: "Toggle Flag",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::Sidebar,
         title: "Toggle Sidebar",
         context: Context::Navigate,
@@ -862,6 +875,7 @@ mod tests {
             Go::Forward,
             Go::View(View::Today),
             Go::View(View::Upcoming),
+            Go::View(View::Flagged),
             Go::View(View::All),
             Go::View(View::Logbook),
             Go::View(View::Trash),

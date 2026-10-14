@@ -54,6 +54,9 @@ pub struct Theme {
     pub today_icon: Color,
     /// Upcoming's icon there: a red.
     pub upcoming_icon: Color,
+    /// The flag of a flagged item, and the Flagged view's icon in the sidebar and the Navigator:
+    /// a red apart from Upcoming's (FR-ORG-12).
+    pub flag: Color,
     /// All's icon there: a green.
     pub all_icon: Color,
     /// The Logbook's icon there: a purple.
@@ -118,6 +121,7 @@ const TERMINAL_DARK: Theme = Theme {
     inbox_icon: Color::LightBlue,
     today_icon: Color::Yellow,
     upcoming_icon: Color::Red,
+    flag: Color::LightRed,
     all_icon: Color::Green,
     logbook_icon: Color::Magenta,
     trash_icon: Color::Indexed(244),
@@ -147,6 +151,7 @@ const CATPPUCCIN_MOCHA: Theme = Theme {
     inbox_icon: Color::Rgb(0x89, 0xb4, 0xfa),
     today_icon: Color::Rgb(0xf9, 0xe2, 0xaf),
     upcoming_icon: Color::Rgb(0xf3, 0x8b, 0xa8),
+    flag: Color::Rgb(0xeb, 0xa0, 0xac),
     all_icon: Color::Rgb(0xa6, 0xe3, 0xa1),
     logbook_icon: Color::Rgb(0xcb, 0xa6, 0xf7),
     trash_icon: Color::Rgb(0x93, 0x99, 0xb2),
@@ -176,6 +181,7 @@ const TOKYO_NIGHT: Theme = Theme {
     inbox_icon: Color::Rgb(0x7a, 0xa2, 0xf7),
     today_icon: Color::Rgb(0xe0, 0xaf, 0x68),
     upcoming_icon: Color::Rgb(0xf7, 0x76, 0x8e),
+    flag: Color::Rgb(0xdb, 0x4b, 0x4b),
     all_icon: Color::Rgb(0x9e, 0xce, 0x6a),
     logbook_icon: Color::Rgb(0x9d, 0x7c, 0xd8),
     trash_icon: Color::Rgb(0x73, 0x7a, 0xa2),
@@ -205,6 +211,7 @@ const GITHUB_LIGHT: Theme = Theme {
     inbox_icon: Color::Rgb(0x09, 0x69, 0xda),
     today_icon: Color::Rgb(0x9a, 0x67, 0x00),
     upcoming_icon: Color::Rgb(0xcf, 0x22, 0x2e),
+    flag: Color::Rgb(0xa4, 0x0e, 0x26),
     all_icon: Color::Rgb(0x1a, 0x7f, 0x37),
     logbook_icon: Color::Rgb(0x82, 0x50, 0xdf),
     trash_icon: Color::Rgb(0x6e, 0x77, 0x81),
@@ -234,6 +241,7 @@ const FLEXOKI_LIGHT: Theme = Theme {
     inbox_icon: Color::Rgb(0x20, 0x5e, 0xa6),
     today_icon: Color::Rgb(0x8e, 0x6b, 0x01),
     upcoming_icon: Color::Rgb(0xaf, 0x30, 0x29),
+    flag: Color::Rgb(0xd1, 0x4d, 0x41),
     all_icon: Color::Rgb(0x66, 0x80, 0x0b),
     logbook_icon: Color::Rgb(0x5e, 0x40, 0x9d),
     trash_icon: Color::Rgb(0x87, 0x85, 0x80),
@@ -244,7 +252,7 @@ mod tests {
     use super::*;
 
     /// Every color of `theme`, each with its role.
-    fn roles(theme: &Theme) -> [(&'static str, Color); 25] {
+    fn roles(theme: &Theme) -> [(&'static str, Color); 26] {
         [
             ("background", theme.background),
             ("text", theme.text),
@@ -268,6 +276,7 @@ mod tests {
             ("inbox_icon", theme.inbox_icon),
             ("today_icon", theme.today_icon),
             ("upcoming_icon", theme.upcoming_icon),
+            ("flag", theme.flag),
             ("all_icon", theme.all_icon),
             ("logbook_icon", theme.logbook_icon),
             ("trash_icon", theme.trash_icon),
@@ -408,6 +417,7 @@ mod tests {
                 colors.inbox_icon,
                 colors.today_icon,
                 colors.upcoming_icon,
+                colors.flag,
                 colors.all_icon,
                 colors.logbook_icon,
                 colors.trash_icon,

@@ -12,7 +12,7 @@ fn below_the_views(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(8)
+        .skip(9)
         .map(|row| {
             let sidebar: String = row.chars().take(25).collect();
             match sidebar.strip_prefix('▌') {
@@ -28,7 +28,7 @@ fn below_the_views(harness: &Harness) -> Vec<String> {
 fn pin_projects_from_the_sidebar_and_rename_and_unpin_one_from_its_pinned_entry() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjjjmp");
+    harness.type_text("jjjjjjjmp");
     harness.type_text("jjmp");
     assert_eq!(
         below_the_views(&harness).get(..7),
@@ -50,7 +50,7 @@ fn pin_projects_from_the_sidebar_and_rename_and_unpin_one_from_its_pinned_entry(
     harness.type_text("R");
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
-        Some(Position::new(13, 9)),
+        Some(Position::new(13, 10)),
         "the title edited in the entry focused"
     );
     harness.type_text("!");
@@ -88,7 +88,7 @@ fn navigator(harness: &Harness) -> Vec<String> {
 fn only_a_project_is_pinned_and_the_navigator_lists_it_again_until_a_query_is_typed() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjjjjjmp");
+    harness.type_text("jjjjjjjjjmp");
     harness.ctrl('b');
     harness.type_text("gamp");
     let status = harness.rows().last().cloned().unwrap_or_default();
@@ -99,7 +99,7 @@ fn only_a_project_is_pinned_and_the_navigator_lists_it_again_until_a_query_is_ty
     harness.ctrl('k');
     let listed = navigator(&harness);
     assert_eq!(
-        listed.get(5..10).unwrap_or_default(),
+        listed.get(6..11).unwrap_or_default(),
         [
             "│ 󰩺 Trash                                                                      │",
             "│ # Website                                                                  4 │",

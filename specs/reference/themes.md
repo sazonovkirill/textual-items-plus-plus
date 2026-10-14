@@ -39,7 +39,8 @@ Each theme provides an exact hex value for every role below. Roles are foregroun
 | Tag text | foreground | Default color of `@tag` labels that have no assigned tag color. |
 | Checklist done | foreground | Checked checklist items and completed tasks. They are intentionally faded and may sit slightly below 4.5:1, but never below 3:1. |
 | Tag 1-6 | foreground | Six user-assignable tag/label colors, in this order: blue, green, yellow, orange, pink/red, purple. Each theme uses its nearest palette hue. |
-| View icons | foreground (non-text) | The icons of the Inbox and the views in the sidebar and the Navigator, each in a hue of its own, as the owner chose: Inbox blue, Today yellow, Upcoming red, All green, Logbook purple, Trash grey (D-78). Each theme uses its nearest palette hue, and each clears 3:1. |
+| View icons | foreground (non-text) | The icons of the Inbox and the views in the sidebar and the Navigator, each in a hue of its own, as the owner chose: Inbox blue, Today yellow, Upcoming red, All green, Logbook purple, Trash grey (D-78), and Flagged the Flag role's red. Each theme uses its nearest palette hue, and each clears 3:1. |
+| Flag | foreground (non-text) | The flag in front of a flagged item's title, and the Flagged view's icon: a red, as the owner asked, apart from the Upcoming icon's so that each view keeps a hue of its own (D-101). It clears 3:1. |
 
 ## 1. Catppuccin Mocha
 
@@ -75,6 +76,7 @@ Each theme provides an exact hex value for every role below. Roles are foregroun
 | Inbox icon | `#89b4fa` | blue | 7.79:1 |
 | Today icon | `#f9e2af` | yellow | 12.91:1 |
 | Upcoming icon | `#f38ba8` | red | 7.08:1 |
+| Flag | `#eba0ac` | maroon | 7.93:1 |
 | All icon | `#a6e3a1` | green | 11.03:1 |
 | Logbook icon | `#cba6f7` | mauve | 8.07:1 |
 | Trash icon | `#9399b2` | overlay2 | 5.81:1 |
@@ -115,6 +117,7 @@ Notes: `subtext0` is used for dim text rather than `overlay0`/`overlay1` (the co
 | Inbox icon | `#7aa2f7` | blue | 6.79:1 |
 | Today icon | `#e0af68` | yellow | 8.55:1 |
 | Upcoming icon | `#f7768e` | red | 6.46:1 |
+| Flag | `#db4b4b` | red1 | 4.17:1 |
 | All icon | `#9ece6a` | green | 9.35:1 |
 | Logbook icon | `#9d7cd8` | purple | 5.13:1 |
 | Trash icon | `#737aa2` | dark5 | 4.10:1 |
@@ -155,6 +158,7 @@ Notes: dim text is `fg_dark`, not `comment` (`#565f89`, 2.76:1). Overdue uses `m
 | Inbox icon | `#0969da` | blue.5 | 5.19:1 |
 | Today icon | `#9a6700` | yellow.5 | 4.87:1 |
 | Upcoming icon | `#cf222e` | red.5 | 5.36:1 |
+| Flag | `#a40e26` | red.7 | 7.87:1 |
 | All icon | `#1a7f37` | green.5 | 5.08:1 |
 | Logbook icon | `#8250df` | purple.5 | 5.05:1 |
 | Trash icon | `#6e7781` | fg.subtle | 4.55:1 |
@@ -195,6 +199,7 @@ Notes: every role clears 4.5:1. Checklist done uses `fg.subtle`, which happens t
 | Inbox icon | `#205ea6` | blue-600 | 6.36:1 |
 | Today icon | `#8e6b01` | yellow-700 | 4.80:1 |
 | Upcoming icon | `#af3029` | red-600 | 6.23:1 |
+| Flag | `#d14d41` | red-400 | 4.21:1 |
 | All icon | `#66800b` | green-600 | 4.39:1 |
 | Logbook icon | `#5e409d` | purple-600 | 7.58:1 |
 | Trash icon | `#878580` | base-500 | 3.59:1 |
@@ -230,6 +235,7 @@ It draws in the terminal's 16 ANSI colors, so it follows the user's palette and 
 | Inbox icon | bright blue |
 | Today icon | yellow |
 | Upcoming icon | red |
+| Flag | bright red |
 | All icon | green |
 | Logbook icon | magenta |
 | Trash icon | grey 244 |

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     all,
     container::{self, Row},
-    logbook, search, today, trash,
+    flagged, logbook, search, today, trash,
     upcoming::{self, Period},
 };
 use crate::domain::{Document, ItemId};
@@ -20,6 +20,8 @@ pub enum View {
     Today,
     /// The open items dated after today, by day and then by month (FR-VIEW-02).
     Upcoming,
+    /// The flagged projects and tasks, projects first (FR-VIEW-14).
+    Flagged,
     /// Every task in every list, grouped by where it lives (FR-VIEW-08).
     All,
     /// Every completed item, by the day it was completed (FR-VIEW-03).
@@ -51,6 +53,10 @@ pub const REGISTRY: &[Entry] = &[
         title: View::Upcoming.title(),
     },
     Entry {
+        view: View::Flagged,
+        title: View::Flagged.title(),
+    },
+    Entry {
         view: View::All,
         title: View::All.title(),
     },
@@ -71,6 +77,7 @@ impl View {
         match self {
             Self::Today => "Today",
             Self::Upcoming => "Upcoming",
+            Self::Flagged => "Flagged",
             Self::All => "All",
             Self::Logbook => "Logbook",
             Self::Trash => "Trash",
@@ -78,13 +85,14 @@ impl View {
         }
     }
 
-    /// How each row says where its item is, if it does: the rows of the Logbook, the Trash and
-    /// search results, from every list, after their titles (FR-VIEW-03, FR-VIEW-04, FR-SRCH-01),
+    /// How each row says where its item is, if it does: the rows of Flagged, the Logbook, the
+    /// Trash and search results, from every list, after their titles (FR-VIEW-14, FR-VIEW-03,
+    /// FR-VIEW-04, FR-SRCH-01),
     /// and Today's, from no one container, under them (D-51).
     #[must_use]
     pub const fn locates(self) -> Option<Locating> {
         match self {
-            Self::Logbook | Self::Trash | Self::Search => Some(Locating::After),
+            Self::Flagged | Self::Logbook | Self::Trash | Self::Search => Some(Locating::After),
             Self::Today => Some(Locating::Under),
             Self::Upcoming | Self::All => None,
         }
@@ -145,6 +153,7 @@ pub(super) fn groups(
     match view {
         View::Today => today::groups(document, today, show_completed),
         View::Upcoming => upcoming::groups(document, today, show_completed),
+        View::Flagged => flagged::groups(document, show_completed),
         View::All => all::groups(document, show_completed),
         View::Logbook => logbook::groups(document),
         View::Trash => trash::groups(document),

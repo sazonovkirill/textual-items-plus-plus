@@ -13,6 +13,7 @@ mod dates;
 mod descriptions;
 mod edit_dialog;
 mod editing;
+mod flagged;
 mod go_to_symbol;
 mod inbox;
 mod later;

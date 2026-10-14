@@ -91,6 +91,13 @@ impl ItemKind {
         matches!(self, Self::Project | Self::Task)
     }
 
+    /// Whether an item of this kind can be flagged: a project or a task, not an area or a section
+    /// (FR-ORG-12).
+    #[must_use]
+    pub fn takes_flag(self) -> bool {
+        matches!(self, Self::Project | Self::Task)
+    }
+
     /// Whether an item of this kind may sit in an item of kind `parent`, or at the top level when
     /// `parent` is `None`. The Inbox sits nowhere: a document has exactly one, of its own.
     #[must_use]
@@ -140,6 +147,8 @@ pub struct Item {
     /// the app runs: the file never keeps it (FR-VIEW-13). What the app goes by is
     /// [`in_evening`](Item::in_evening).
     pub evening: Option<Date>,
+    /// Whether it is a project or a task flagged as important (FR-ORG-12).
+    pub flagged: bool,
     /// The user's tags, and any other tag the model does not interpret, in their order.
     pub tags: Vec<Tag>,
 }
@@ -161,6 +170,7 @@ impl Item {
             later: false,
             pinned: false,
             evening: None,
+            flagged: false,
             tags: Vec::new(),
         }
     }
@@ -234,8 +244,8 @@ pub struct Tag {
 /// The tag names the app writes itself, and those TaskPaper reads as plain text, which no tag of
 /// the user's takes (FR-STORE-10, OQ-11).
 const RESERVED: &[&str] = &[
-    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "pinned", "id",
-    "text", "type",
+    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "pinned", "flagged",
+    "id", "text", "type",
 ];
 
 impl Tag {

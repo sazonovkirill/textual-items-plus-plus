@@ -1140,6 +1140,7 @@ fn stop_icon_color(theme: &Theme, stop: Stop) -> Color {
         Stop::Place(place) => theme.kind(place.kind),
         Stop::View(View::Today) => theme.today_icon,
         Stop::View(View::Upcoming) => theme.upcoming_icon,
+        Stop::View(View::Flagged) => theme.flag,
         Stop::View(View::All) => theme.all_icon,
         Stop::View(View::Logbook) => theme.logbook_icon,
         // Search is opened by searching, never listed as a stop.
@@ -1175,6 +1176,7 @@ fn view_icon(view: View) -> Icon {
     match view {
         View::Today => Icon::Today,
         View::Upcoming => Icon::Upcoming,
+        View::Flagged => Icon::Flag,
         View::All => Icon::All,
         View::Logbook => Icon::Logbook,
         View::Trash => Icon::Trash,

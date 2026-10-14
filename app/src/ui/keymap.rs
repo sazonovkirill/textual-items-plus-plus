@@ -52,6 +52,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // and the Logbook beside taskpaper-terminal's (D-82).
     (Command::Go(Go::View(View::Today)), &["g t"]),
     (Command::Go(Go::View(View::Upcoming)), &["g u", "g U"]),
+    // `!` for what is important, since `gf` filters by tags (FR-VIEW-14).
+    (Command::Go(Go::View(View::Flagged)), &["g !"]),
     (Command::Go(Go::View(View::All)), &["g a"]),
     (Command::Go(Go::View(View::Logbook)), &["g l", "g L"]),
     // `d` as `dd` deletes into it (D-55).
@@ -146,6 +148,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::ClearTagFilter, &["g F"]),
     // `m` modifies the focused item, and **p**in (owner, FR-VIEW-12).
     (Command::TogglePinned, &["m p"]),
+    // `m` modifies the focused item, and **f**lag (FR-ORG-12).
+    (Command::ToggleFlagged, &["m f"]),
     // The owner's key to fold a project in the sidebar (D-67).
     (Command::Collapse, &["'"]),
     // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends

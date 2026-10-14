@@ -23,6 +23,8 @@ pub enum Icon {
     Today,
     /// The Upcoming view.
     Upcoming,
+    /// A flagged item, and the Flagged view (FR-ORG-12, FR-VIEW-14).
+    Flag,
     /// The All view.
     All,
     /// The Logbook view.
@@ -95,6 +97,8 @@ impl Icon {
             Self::Today => ("\u{f0599}", "☼"),
             // nf-md-calendar_arrow_right
             Self::Upcoming => ("\u{f1135}", "»"),
+            // nf-md-flag
+            Self::Flag => ("\u{f023b}", "⚑"),
             // nf-md-format_list_bulleted
             Self::All => ("\u{f0279}", "∷"),
             // nf-md-book_check
@@ -139,7 +143,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 27] = [
+    const ICONS: [Icon; 28] = [
         Icon::Area,
         Icon::Project,
         Icon::Section,
@@ -148,6 +152,7 @@ mod tests {
         Icon::Inbox,
         Icon::Today,
         Icon::Upcoming,
+        Icon::Flag,
         Icon::All,
         Icon::Logbook,
         Icon::Trash,

@@ -370,7 +370,7 @@ mod tests {
         for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
             give(&mut state, Command::Focus(motion));
         }
-        let (rows, buf, caret) = draw(&state, 20, 14);
+        let (rows, buf, caret) = draw(&state, 20, 15);
         assert_eq!(
             rows,
             [
@@ -378,6 +378,7 @@ mod tests {
                 "                   │",
                 " ☼ Today           │",
                 " » Upcoming        │",
+                " ⚑ Flagged         │",
                 " ∷ All             │",
                 " ▤ Logbook         │",
                 " ✕ Trash           │",
@@ -412,6 +413,7 @@ mod tests {
         let icons = [
             ("Today", theme.today_icon),
             ("Upcoming", theme.upcoming_icon),
+            ("Flagged", theme.flag),
             ("All", theme.all_icon),
             ("Logbook", theme.logbook_icon),
             ("Trash", theme.trash_icon),

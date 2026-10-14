@@ -16,6 +16,8 @@ mod date_prompt;
 mod edit_dialog;
 mod editing;
 mod evening;
+mod flagged;
+mod flagging;
 mod focus;
 mod go_to_symbol;
 mod history;

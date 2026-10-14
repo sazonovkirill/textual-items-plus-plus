@@ -617,9 +617,9 @@ fn has_bare_tag(read: &Line, name: &str) -> bool {
 }
 
 /// The item of kind `kind` that the line `read` holds, without what its children hold: its
-/// title, and its tags, the dates and states among them and a project's pin read as fields
-/// (FR-STORE-07, FR-VIEW-12). A date tag whose value is not a `YYYY-MM-DD` day stays a tag, and so
-/// does every other tag.
+/// title, and its tags, the dates and states among them, a project's pin and a project's or a
+/// task's flag read as fields (FR-STORE-07, FR-VIEW-12, FR-ORG-12). A date tag whose value is not
+/// a `YYYY-MM-DD` day stays a tag, and so does every other tag.
 fn fields(read: &Line, kind: ItemKind) -> Item {
     let mut item = Item::new(kind, read.display_text());
     for tag in read.tags() {
@@ -635,6 +635,7 @@ fn fields(read: &Line, kind: ItemKind) -> Item {
             ("area", None) if value.is_none() && kind == ItemKind::Area => {}
             ("section", None) if value.is_none() && kind == ItemKind::Section => {}
             ("pinned", None) if value.is_none() && kind == ItemKind::Project => item.pinned = true,
+            ("flagged", None) if value.is_none() && kind.takes_flag() => item.flagged = true,
             _ => item.tags.push(domain::Tag {
                 name: tag.name.clone(),
                 value: tag.value.clone(),
@@ -652,9 +653,9 @@ fn day(value: &str) -> Option<Date> {
         .filter(|day| day.to_string() == value)
 }
 
-/// The line of `item`: its title as a task or a project, then its kind tag, its pin, start and due
-/// dates, its Later mark, its other tags, and its completion and deletion (OQ-17, FR-STORE-07,
-/// FR-VIEW-12, D-89).
+/// The line of `item`: its title as a task or a project, then its kind tag, its pin, its flag,
+/// start and due dates, its Later mark, its other tags, and its completion and deletion (OQ-17,
+/// FR-STORE-07, FR-VIEW-12, FR-ORG-12, D-89).
 fn line_text(item: &Item) -> String {
     let mut text = match item.kind {
         ItemKind::Task | ItemKind::ChecklistItem => format!("- {}", item.title),
@@ -678,6 +679,9 @@ fn line_text(item: &Item) -> String {
     }
     if item.pinned {
         add("pinned", None);
+    }
+    if item.flagged {
+        add("flagged", None);
     }
     if let Some(start) = item.start {
         add("start", Some(start.to_string()));
@@ -1708,6 +1712,36 @@ Secret @hidden
         let old = item(&document, old);
         assert!(!old.pinned, "a pin has no value");
         assert_eq!(old.tags, [tag("pinned", Some("yes"))]);
+    }
+
+    // FR-ORG-12, FR-STORE-10
+    #[test]
+    fn a_project_s_or_a_task_s_flag_is_read_from_its_tag_and_written_after_its_pin() {
+        let (document, _) = load(concat!(
+            "Site: @home @flagged @pinned\n",
+            "\t- t @flagged @due(2026-10-20)\n",
+            "Work: @area @flagged\n",
+            "\tS: @section @flagged\n",
+            "Old: @flagged(yes)\n",
+        ));
+        let [site, work, old] = children(&document, None);
+        let [task] = children(&document, Some(site));
+        let site = item(&document, site);
+        assert!(site.flagged);
+        assert_eq!(site.tags, [tag("home", None)]);
+        assert_eq!(line_text(site), "Site: @pinned @flagged @home");
+        let task = item(&document, task);
+        assert!(task.flagged);
+        assert_eq!(line_text(task), "- t @flagged @due(2026-10-20)");
+        let [section] = children(&document, Some(work));
+        for other in [work, section] {
+            let other = item(&document, other);
+            assert!(!other.flagged, "an area or a section is never flagged");
+            assert_eq!(other.tags, [tag("flagged", None)], "it keeps the tag");
+        }
+        let old = item(&document, old);
+        assert!(!old.flagged, "a flag has no value");
+        assert_eq!(old.tags, [tag("flagged", Some("yes"))]);
     }
 
     // FR-STORE-02, FR-STORE-03, FR-STORE-06, FR-STORE-08

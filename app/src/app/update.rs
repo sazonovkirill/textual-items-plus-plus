@@ -260,6 +260,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::OpenChecklist => state.open_checklist(),
         Command::Tags => state.open_tags(),
         Command::TogglePinned => state.toggle_pinned(),
+        Command::ToggleFlagged => state.toggle_flagged(),
         Command::FilterTags => state.open_tag_filter(),
         Command::ClearTagFilter => state.clear_tag_filter(),
         Command::Sidebar => state.toggle_sidebar(),
@@ -789,6 +790,36 @@ mod tests {
         give(&mut state, Command::Go(Go::View(View::Today)));
         give(&mut state, Command::ToggleEvening);
         assert_eq!(evening(&state), Some(TODAY));
+        Ok(())
+    }
+
+    // FR-ORG-12, FR-VIEW-10
+    #[test]
+    fn the_sidebar_flags_its_focused_project_but_no_area_or_view() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let site = document.push(None, Node::Item(Item::new(ItemKind::Project, "Site")))?;
+        document.push(None, Node::Item(Item::new(ItemKind::Area, "Home")))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        let flagged = |state: &State| {
+            (state.document().node(site))
+                .and_then(Node::item)
+                .is_some_and(|item| item.flagged)
+        };
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::ToggleFlagged);
+        assert_eq!(state.notice(), Some(&Notice::NotFlaggable), "an area");
+        give(&mut state, Command::Focus(Focus::Previous));
+        give(&mut state, Command::ToggleFlagged);
+        assert!(flagged(&state));
+        assert_eq!(state.notice(), None);
+        give(&mut state, Command::Undo);
+        assert!(!flagged(&state), "one step to undo");
+        give(&mut state, Command::Focus(Focus::First));
+        give(&mut state, Command::Focus(Focus::Next));
+        assert_eq!(sidebar(&state).0.as_deref(), Some("Today"));
+        give(&mut state, Command::ToggleFlagged);
+        assert_eq!(state.notice(), Some(&Notice::NotFlaggable), "a view");
         Ok(())
     }
 
