@@ -178,7 +178,7 @@ fn enter_opens_a_project_row_and_gi_goes_to_the_inbox() {
     harness.key(KeyCode::Enter);
     assert_eq!(title(&harness), "# Blog", "Enter opens the project");
     harness.press(KeyCode::Left, KeyModifiers::ALT);
-    harness.type_text(">gu");
+    harness.type_text(">");
     assert_eq!(title(&harness), "# Blog", "nothing goes up any more");
     harness.ctrl('g');
     harness.type_text("website");

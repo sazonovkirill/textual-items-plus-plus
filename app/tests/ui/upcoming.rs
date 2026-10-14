@@ -15,7 +15,7 @@ fn trimmed(harness: &Harness) -> Vec<String> {
 #[test]
 fn open_upcoming() {
     let mut harness = Harness::new(60, 25);
-    harness.type_text("gU");
+    harness.type_text("gu");
     let upcoming = [
         "  \u{f1135} Upcoming",
         "",

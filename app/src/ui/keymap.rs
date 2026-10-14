@@ -46,11 +46,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Go(Go::Inbox), &["g i"]),
     (Command::Go(Go::Back), &["H", "alt+shift+left"]),
     (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
-    // FR-KEY-06's go-to keys for the views (D-23).
+    // FR-KEY-06's go-to keys for the views (D-23), and the owner's lower-case ones for Upcoming
+    // and the Logbook beside taskpaper-terminal's (D-82).
     (Command::Go(Go::View(View::Today)), &["g t"]),
-    (Command::Go(Go::View(View::Upcoming)), &["g U"]),
+    (Command::Go(Go::View(View::Upcoming)), &["g u", "g U"]),
     (Command::Go(Go::View(View::All)), &["g a"]),
-    (Command::Go(Go::View(View::Logbook)), &["g L"]),
+    (Command::Go(Go::View(View::Logbook)), &["g l", "g L"]),
     // `d` as `dd` deletes into it (D-55).
     (Command::Go(Go::View(View::Trash)), &["g d"]),
     // taskpaper-terminal's Navigator key, with the owner's `Ctrl+K` (D-36).
@@ -144,11 +145,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Browse(Direction::Up), &["g k", "ctrl+up"]),
     (
         Command::FocusLeft,
-        &["ctrl+w h", "ctrl+w left", "ctrl+shift+left", "g l"],
+        &["ctrl+w h", "ctrl+w left", "ctrl+shift+left"],
     ),
     (
         Command::FocusRight,
-        &["ctrl+w l", "ctrl+w right", "ctrl+shift+right", "g r"],
+        &["ctrl+w l", "ctrl+w right", "ctrl+shift+right"],
     ),
     (Command::FocusPane(0), &["g 0"]),
     (Command::FocusPane(1), &["g 1"]),
@@ -471,8 +472,10 @@ mod tests {
             (vec![char('L')], go(Go::Forward)),
             (vec![press(KeyCode::Right, alt_shift)], go(Go::Forward)),
             (vec![char('g'), char('t')], go(Go::View(View::Today))),
+            (vec![char('g'), char('u')], go(Go::View(View::Upcoming))),
             (vec![char('g'), char('U')], go(Go::View(View::Upcoming))),
             (vec![char('g'), char('a')], go(Go::View(View::All))),
+            (vec![char('g'), char('l')], go(Go::View(View::Logbook))),
             (vec![char('g'), char('L')], go(Go::View(View::Logbook))),
             (vec![char('g'), char('d')], go(Go::View(View::Trash))),
             (
@@ -489,7 +492,6 @@ mod tests {
             ),
             (vec![char('g'), char('h')], None),
             (vec![char('g'), char('z')], None),
-            (vec![char('g'), char('u')], None),
         ] {
             let mut given = None;
             for event in &events {
@@ -625,7 +627,11 @@ mod tests {
                 vec![press(KeyCode::Left, ctrl_shift)],
                 Some(Command::FocusLeft),
             ),
-            (vec![char('g'), char('r')], Some(Command::FocusRight)),
+            (
+                vec![press(KeyCode::Right, ctrl_shift)],
+                Some(Command::FocusRight),
+            ),
+            (vec![char('g'), char('r')], None),
             (
                 vec![press(KeyCode::Char('k'), ctrl)],
                 Some(Command::Navigator),

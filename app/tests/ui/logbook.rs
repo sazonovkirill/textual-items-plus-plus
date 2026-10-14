@@ -17,7 +17,7 @@ fn trimmed(harness: &Harness) -> Vec<String> {
 #[test]
 fn uncomplete_a_task_from_the_logbook() {
     let mut harness = Harness::new(60, 30);
-    harness.type_text("gL");
+    harness.type_text("gl");
     let mut logbook = vec![
         "  \u{f14f3} Logbook",
         "",

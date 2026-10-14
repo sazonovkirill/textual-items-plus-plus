@@ -65,7 +65,8 @@ fn open_today_beside_a_project() {
     harness.ctrl('w');
     harness.type_text("h");
     assert_eq!(marked(&harness), (true, false));
-    harness.type_text("gr");
+    harness.ctrl('w');
+    harness.type_text("l");
     assert_eq!(marked(&harness), (false, true));
     harness.type_text("g1");
     assert_eq!(marked(&harness), (true, false));
@@ -179,7 +180,8 @@ fn the_panes_and_what_they_show_come_back_on_the_next_launch() {
     harness.ctrl('g');
     harness.type_text("today");
     harness.press(KeyCode::Enter, KeyModifiers::ALT);
-    harness.type_text("gl");
+    harness.ctrl('w');
+    harness.type_text("h");
     let before = harness.screen();
     let mut harness = harness.relaunch(path);
     assert_eq!(harness.screen(), before);
