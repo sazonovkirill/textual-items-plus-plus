@@ -20,6 +20,7 @@ use super::{
     navigator::{self, Stop},
     pane::{Pane, PaneView, listed},
     saving::Saving,
+    settings::{Setting, Settings},
     sidebar::{self, Sidebar},
     tags::{Choice, TagPicker, TagsView},
     trash,
@@ -70,6 +71,10 @@ pub struct State {
     sidebar: Sidebar,
     /// Whether the shortcuts panel shows (FR-KEY-03).
     pub(super) shortcuts: bool,
+    /// The settings the app runs with (FR-SET-03).
+    pub(super) settings: Settings,
+    /// The setting highlighted in the settings window, while it is open (FR-SET-02).
+    pub(super) settings_window: Option<Setting>,
     pub(super) saving: Saving,
 }
 
@@ -105,6 +110,8 @@ impl State {
             panel: None,
             sidebar: Sidebar::default(),
             shortcuts: false,
+            settings: Settings::default(),
+            settings_window: None,
             saving,
         }
     }
@@ -1237,9 +1244,10 @@ impl State {
     }
 
     /// Opens the Navigator on where the pane is, closing the command palette, Move to, the date
-    /// prompt and the tag picker, or closes it when it is open.
+    /// prompt, the tag picker and the settings window, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         self.palette = None;
+        self.settings_window = None;
         self.move_to = None;
         self.date_prompt = None;
         self.tags = None;

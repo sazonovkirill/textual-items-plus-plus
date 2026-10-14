@@ -128,6 +128,8 @@ pub enum Command {
     Shortcuts,
     /// Scroll the shortcuts panel a page this way (FR-KEY-03).
     ScrollShortcuts(Direction),
+    /// Open the settings window (FR-SET-02).
+    Settings,
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
     KeepMine,
     /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
@@ -623,6 +625,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::ScrollShortcuts(Direction::Up),
         title: "Scroll Shortcuts Up",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Settings,
+        title: "Open Settings",
         context: Context::Navigate,
     },
     // Global, so that its key closes the Navigator too.

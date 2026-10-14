@@ -22,6 +22,7 @@ mod quitting;
 mod rearranging;
 mod saving;
 mod selecting;
+mod settings;
 mod shortcuts;
 mod sidebar;
 mod support;

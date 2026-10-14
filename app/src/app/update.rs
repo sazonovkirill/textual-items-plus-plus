@@ -7,7 +7,7 @@ use jiff::civil::Date;
 
 use super::{
     AttachmentsInput, Command, ConflictSide, DateInput, Direction, EditInput, Notice, OnDisk,
-    PickerInput, Report, Selected, Side, State, autosave::Ending,
+    PickerInput, Report, Selected, Setting, SettingsInput, Side, State, autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -30,6 +30,11 @@ pub enum Message {
     DatePrompt(DateInput),
     /// The user did something in the open attachments panel (FR-ATT-01).
     Attachments(AttachmentsInput),
+    /// The user did something in the open settings window (FR-SET-02).
+    Settings(SettingsInput),
+    /// Something went wrong with the settings file, as the frontend says it: what the file sets
+    /// that the app ignored, or that a setting could not be kept (FR-SET-04).
+    SettingsFailed(String),
     /// The pane with the keys keeps this width from now on, as the frontend measures it, for
     /// [`Command::Narrow`] and [`Command::Widen`] (FR-PANE-02).
     PaneWidth(u16),
@@ -82,6 +87,9 @@ pub enum Effect {
     /// Make the pane with the keys wider, as [`NarrowPane`](Self::NarrowPane) makes it narrower
     /// (FR-PANE-02).
     WidenPane,
+    /// Keep this setting as it is now in the settings file, and report a failure as
+    /// [`Message::SettingsFailed`] (FR-SET-02, FR-SET-04).
+    KeepSetting(Setting),
 }
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
@@ -189,6 +197,9 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Edit(input) => state.edit_input(input),
         Message::DatePrompt(input) => state.date_prompt_input(input),
         Message::Attachments(input) => state.attachments_input(input),
+        Message::Command(Command::Settings) => state.open_settings(),
+        Message::Settings(input) => return state.settings_input(input),
+        Message::SettingsFailed(problem) => state.settings_failed(problem),
     }
     Vec::new()
 }

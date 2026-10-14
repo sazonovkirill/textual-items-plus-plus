@@ -33,6 +33,8 @@ pub struct Edge {
     pub recovery: Option<PathBuf>,
     /// The layouts file, `None` when there is none (FR-PANE-03).
     pub layouts: Option<PathBuf>,
+    /// The settings file, `None` when there is none (FR-SET-01).
+    pub config: Option<PathBuf>,
     /// The local time now.
     pub clock: fn() -> DateTime,
 }

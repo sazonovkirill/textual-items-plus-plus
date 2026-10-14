@@ -110,6 +110,7 @@ fn kept(state: &State) -> String {
         ),
         Notice::Refused(refusal) => why(*refusal).to_owned(),
         Notice::NoChecklist => "only a task has a checklist".to_owned(),
+        Notice::Settings(problem) => format!("config.toml: {problem}"),
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()
@@ -143,7 +144,7 @@ const fn why(refusal: Refusal) -> &'static str {
 }
 
 /// `text` if it fits in `room` columns, else as much of its end as fits behind `…`.
-fn tail(text: &str, room: usize) -> String {
+pub(super) fn tail(text: &str, room: usize) -> String {
     if text.width() <= room {
         return text.to_owned();
     }

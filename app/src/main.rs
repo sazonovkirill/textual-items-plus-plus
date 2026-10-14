@@ -38,7 +38,8 @@ fn main() -> anyhow::Result<()> {
         inputs: inputs.clone(),
         backups: store::backups_folder(env::var_os("XDG_DATA_HOME"), home.clone()),
         recovery: store::recovery_folder(env::var_os("XDG_STATE_HOME"), home.clone()),
-        layouts: store::layouts_file(env::var_os("XDG_STATE_HOME"), home),
+        layouts: store::layouts_file(env::var_os("XDG_STATE_HOME"), home.clone()),
+        config: store::config_file(env::var_os("XDG_CONFIG_HOME"), home),
         clock: || jiff::Zoned::now().datetime(),
     };
     let recovered = match &path {

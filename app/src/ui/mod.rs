@@ -6,6 +6,7 @@ mod clipboard;
 mod conflict;
 mod container;
 mod crumbs;
+mod cut;
 mod date_prompt;
 mod edit_keys;
 mod field;
@@ -14,6 +15,7 @@ mod keymap;
 mod markdown;
 mod panes;
 mod picker;
+mod settings;
 mod shortcuts;
 mod sidebar;
 mod status;
@@ -44,12 +46,12 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput, Effect,
-        Focus, Message, Opened, Part, PickerInput, Place, Selected, Side, State, Stop, TagEntry,
-        TagMark, TagsFor, TagsView, TextEdit,
+        Focus, Message, Opened, Part, PickerInput, Place, Selected, Settings, Side, State, Stop,
+        TagEntry, TagMark, TagsFor, TagsView, TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
-    store::{self, OpenError, Outcome, RecoveryError},
+    store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
 };
 use attachments::{AttachmentsPanel, PanelKey, Scroll, Scrolled};
 use clipboard::Clipboard;
@@ -58,6 +60,7 @@ use container::ContainerPane;
 use crumbs::Crumbs;
 use date_prompt::DatePromptPanel;
 use file::File;
+use settings::SettingsWindow;
 use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
 use sidebar::SidebarPane;
 use status::StatusLine;
@@ -83,8 +86,10 @@ pub enum Input {
 pub struct Tui {
     state: State,
     keymap: Keymap,
+    /// The colors of the theme the settings choose, kept in step with them as the core changes.
     theme: Theme,
-    icons: IconSet,
+    /// The settings file, where a setting changed in the app is kept (FR-SET-04).
+    config: ConfigFile,
     /// The first line of each pane's content on screen, left to right.
     tops: Vec<usize>,
     /// The first pane on screen, when they do not all fit.
@@ -110,16 +115,15 @@ pub struct Tui {
 }
 
 impl Tui {
-    /// The app on `state`, without a file, in the default theme and icons (D-30), its local time
-    /// read from `clock`.
+    /// The app on `state`, without a file or a settings file, its local time read from `clock`.
     #[must_use]
     pub fn new(state: State, today: Date, clock: fn() -> DateTime) -> Self {
         Self {
             tops: vec![0; state.panes().count()],
+            theme: state.settings().theme.colors(),
             state,
             keymap: Keymap::default(),
-            theme: BuiltIn::default().colors(),
-            icons: IconSet::default(),
+            config: ConfigFile::new(None),
             first: 0,
             panel: Scrolled::default(),
             area: Rect::default(),
@@ -147,8 +151,10 @@ impl Tui {
 
     /// The app on the file at `path`, every change saved to it, with the document of the
     /// recovery file `recovered` when one is given, or without a file on the demo document for
-    /// `today`, the local date, never saved (FR-STORE-01, FR-STORE-09, D-29). `edge` says where
-    /// the app's own files go and where the disk worker and the watcher report.
+    /// `today`, the local date, never saved (FR-STORE-01, FR-STORE-09, D-29). It runs with the
+    /// settings of the settings file, the status line saying what of the file it ignored
+    /// (FR-SET-01, FR-SET-04). `edge` says where the app's own files go and where the disk worker
+    /// and the watcher report.
     ///
     /// # Errors
     ///
@@ -159,18 +165,29 @@ impl Tui {
         today: Date,
         edge: &Edge,
     ) -> Result<Self, OpenError> {
-        let Some(path) = path else {
-            return Ok(Self::new(
-                State::new(store::demo::document(today), Opened::Demo, today),
+        let config = ConfigFile::new(edge.config.clone());
+        let (settings, problems) = config.load::<Settings>();
+        let mut tui = match path {
+            None => Self::new(
+                State::new(store::demo::document(today), Opened::Demo, today)
+                    .with_settings(settings),
                 today,
                 edge.clock,
-            ));
+            ),
+            Some(path) => {
+                let (file, state) = File::open(path, recovered, today, edge)?;
+                Self {
+                    file: Some(file),
+                    ..Self::new(state.with_settings(settings), today, edge.clock)
+                }
+            }
         };
-        let (file, state) = File::open(path, recovered, today, edge)?;
-        Ok(Self {
-            file: Some(file),
-            ..Self::new(state, today, edge.clock)
-        })
+        tui.config = config;
+        if !problems.is_empty() {
+            let problems: Vec<String> = problems.iter().map(ToString::to_string).collect();
+            tui.update(Message::SettingsFailed(problems.join("; ")));
+        }
+        Ok(tui)
     }
 
     /// Takes in `input` on `today`, the local date.
@@ -226,10 +243,10 @@ impl Tui {
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
     /// command palette (FR-NAV-06), the Move to picker (FR-OPS-04) and, in edit mode, the title,
-    /// description or note being edited take them the same way (FR-EDIT-01), and so does the date
-    /// prompt (FR-DATE-02). The open
-    /// attachments panel takes them, scrolling itself (FR-ATT-01), leaving quitting and the
-    /// commands it acts on (FR-CHK-03).
+    /// description or note being edited take them the same way (FR-EDIT-01), and so do the date
+    /// prompt (FR-DATE-02) and the settings window (FR-SET-02). The open attachments panel takes
+    /// them, scrolling itself (FR-ATT-01), leaving quitting and the commands it acts on
+    /// (FR-CHK-03).
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
         if let Event::Paste(text) = event {
@@ -274,6 +291,10 @@ impl Tui {
             date_prompt::date_prompt_input(event)
                 .map(Message::DatePrompt)
                 .or_else(|| self.global(event))
+        } else if self.state.settings_window().is_some() {
+            settings::settings_input(event)
+                .map(Message::Settings)
+                .or_else(|| self.global(event))
         } else if let Some(to_picker) = self.open_picker() {
             picker_input(event)
                 .map(to_picker)
@@ -293,7 +314,7 @@ impl Tui {
         let view = self.state.attachments()?;
         let [panes, ..] = self.layout(self.area);
         let area = AttachmentsPanel::area(self.strip(panes));
-        let selected = AttachmentsPanel::new(view, &self.theme, self.icons).selected_lines(area);
+        let selected = AttachmentsPanel::new(view, &self.theme, self.icons()).selected_lines(area);
         let (top, motion) = scroll.from(self.panel.top, AttachmentsPanel::page(area), selected);
         self.panel.top = top;
         motion
@@ -312,11 +333,12 @@ impl Tui {
     /// edited, the query of the open Navigator, Move to or tag picker and the open date prompt
     /// take it with its line breaks as spaces; otherwise the items it holds paste below the
     /// focus, or, in the checklist of the attachments panel, one item for each line below the
-    /// item selected (FR-CHK-03). The conflict prompt takes none, nor does the attachments panel
-    /// while nothing in it is edited and no checklist entry is selected.
+    /// item selected (FR-CHK-03). The conflict prompt and the settings window take none, nor does
+    /// the attachments panel while nothing in it is edited and no checklist entry is selected.
     fn paste(&mut self, text: &str) {
         let panel = self.state.attachments().is_some() && self.state.editing().is_none();
-        if self.state.conflict().is_some() || (panel && !self.in_checklist()) {
+        let window = self.state.conflict().is_some() || self.state.settings_window().is_some();
+        if window || (panel && !self.in_checklist()) {
             return;
         }
         let text = text.trim_end_matches(['\r', '\n']);
@@ -369,6 +391,12 @@ impl Tui {
             self.tops.remove(current);
         }
         self.tops.resize(after, 0);
+        self.theme = self.state.settings().theme.colors();
+    }
+
+    /// The icons the settings choose (FR-UI-04).
+    fn icons(&self) -> IconSet {
+        self.state.settings().icons
     }
 
     /// The width the pane with the keys keeps, `wider` or narrower by a step than its size
@@ -430,28 +458,28 @@ impl Tui {
         }
         let [panes, prompt, _] = self.layout(area);
         if let Some(view) = self.state.attachments() {
-            return AttachmentsPanel::new(view, &self.theme, self.icons)
+            return AttachmentsPanel::new(view, &self.theme, self.icons())
                 .caret(AttachmentsPanel::area(self.strip(panes)), self.panel.top);
         }
         if let Some(view) = self.state.date_prompt() {
             return Some(DatePromptPanel::new(&view, &self.theme).caret(prompt));
         }
         if let Some(view) = self.state.navigator() {
-            return Some(navigator_popup(&view, &self.theme, self.icons).caret(panes));
+            return Some(navigator_popup(&view, &self.theme, self.icons()).caret(panes));
         }
         if let Some(view) = self.state.palette() {
-            return Some(palette_popup(&view, &self.theme, self.icons).caret(panes));
+            return Some(palette_popup(&view, &self.theme, self.icons()).caret(panes));
         }
         if let Some(view) = self.state.move_to() {
-            return Some(move_to_popup(&view, &self.theme, self.icons).caret(panes));
+            return Some(move_to_popup(&view, &self.theme, self.icons()).caret(panes));
         }
         if let Some(view) = self.state.tags() {
-            return Some(tags_popup(&view, &self.theme, self.icons).caret(panes));
+            return Some(tags_popup(&view, &self.theme, self.icons()).caret(panes));
         }
         let sidebar = self.state.sidebar();
         let [side, room] = split(self.strip(panes), sidebar.is_some());
         if let Some(view) = sidebar.filter(|view| view.keys) {
-            return SidebarPane::new(&self.state, view, &self.theme, self.icons).caret(side);
+            return SidebarPane::new(&self.state, view, &self.theme, self.icons()).caret(side);
         }
         let top = self
             .tops
@@ -474,7 +502,14 @@ impl Tui {
     /// The pane with the keys, to draw.
     fn current_pane(&self) -> ContainerPane<'_> {
         let pane = self.state.pane_view();
-        ContainerPane::new(&self.state, pane, true, self.today, &self.theme, self.icons)
+        ContainerPane::new(
+            &self.state,
+            pane,
+            true,
+            self.today,
+            &self.theme,
+            self.icons(),
+        )
     }
 
     /// Where each pane on screen is drawn over `room`, the panes' room beside the sidebar, with
@@ -534,6 +569,14 @@ impl Tui {
             }
             Effect::NarrowPane => self.update(Message::PaneWidth(self.resized(false))),
             Effect::WidenPane => self.update(Message::PaneWidth(self.resized(true))),
+            Effect::KeepSetting(setting) => {
+                if let Err(error) = self.config.write(setting.key(), &self.state.settings()) {
+                    let key = setting.key();
+                    self.update(Message::SettingsFailed(format!(
+                        "`{key}` not saved: {error}"
+                    )));
+                }
+            }
             Effect::ScrollShortcuts(direction) => {
                 let (scroll, _) = &mut self.shortcuts_scroll;
                 *scroll = match direction {
@@ -596,6 +639,8 @@ impl Tui {
             Some(Window::Attachments)
         } else if self.state.date_prompt().is_some() {
             Some(Window::DatePrompt)
+        } else if self.state.settings_window().is_some() {
+            Some(Window::Settings)
         } else if self.open_picker().is_some() {
             Some(Window::Picker)
         } else {
@@ -621,6 +666,59 @@ impl Tui {
             (!keys.is_empty()).then_some((group.name(), keys))
         });
         Some(window.into_iter().chain(commands).collect())
+    }
+
+    /// Draws the panes placed in `room`, each below its breadcrumbs and a rule, a dim rule apart,
+    /// scrolling each to keep its focus in view.
+    fn render_panes(&mut self, room: Rect, buf: &mut Buffer) {
+        let icons = self.icons();
+        let placed = self.pane_areas(room);
+        if let Some(&(first, _)) = placed.first() {
+            self.first = first;
+        }
+        let views: Vec<_> = self.state.panes().collect();
+        let current = self.state.current_pane();
+        for (index, (&pane, top)) in views.iter().zip(&mut self.tops).enumerate() {
+            let Some(&(_, area)) = placed.iter().find(|&&(placed, _)| placed == index) else {
+                continue;
+            };
+            let [crumbs, rule, rows] = pane_layout(area);
+            let path = pane.path();
+            let view = match pane.shown() {
+                Shown::View(view) => Some(view),
+                Shown::Container(_) => None,
+            };
+            let mut header = Crumbs::new(self.state.document(), &path, view, &self.theme, icons)
+                .filter(pane.tag_filter());
+            if views.len() > 1 {
+                header = header.number(index + 1);
+            }
+            if index != current {
+                header = header.dimmed();
+            }
+            header.render(crumbs, buf);
+            Line::styled(
+                "─".repeat(usize::from(rule.width)),
+                Style::new().fg(self.theme.rule),
+            )
+            .render(rule, buf);
+            ContainerPane::new(
+                &self.state,
+                pane,
+                index == current,
+                self.today,
+                &self.theme,
+                icons,
+            )
+            .render(rows, buf, top);
+            if area.right() < room.right() {
+                for y in area.top()..area.bottom() {
+                    if let Some(cell) = buf.cell_mut((area.right(), y)) {
+                        cell.set_symbol("│").set_fg(self.theme.rule);
+                    }
+                }
+            }
+        }
     }
 
     /// Draws the shortcuts panel in `area` while it shows, scrolled no further than its end and
@@ -813,89 +911,53 @@ fn tags_popup<'a>(
 }
 
 impl Widget for &mut Tui {
-    /// Draws the panes side by side, a dim rule apart, each below its breadcrumbs and a rule,
-    /// beside the sidebar while it shows and the shortcuts panel at the right while it shows, over
-    /// the status line, scrolling each pane to keep its focus in view, the date prompt between
-    /// them while it is open, and the Navigator, the command palette, Move to, the attachments
-    /// panel or the conflict prompt over them while it is open.
+    /// Draws, on the theme's background in its text color, the panes side by side, a dim rule
+    /// apart, each below its breadcrumbs and a rule, beside the sidebar while it shows and the
+    /// shortcuts panel at the right while it shows, over the status line, scrolling each pane to
+    /// keep its focus in view, the date prompt between them while it is open, and the Navigator,
+    /// the command palette, Move to, the tag picker, the settings window, the attachments panel or
+    /// the conflict prompt over them while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
+        let icons = self.icons();
+        buf.set_style(
+            area,
+            Style::new().bg(self.theme.background).fg(self.theme.text),
+        );
         let [panes, prompt, status] = self.layout(area);
         let sidebar = self.state.sidebar();
         let [side, room] = split(self.strip(panes), sidebar.is_some());
         if let Some(view) = sidebar {
-            SidebarPane::new(&self.state, view, &self.theme, self.icons).render(side, buf);
+            SidebarPane::new(&self.state, view, &self.theme, icons).render(side, buf);
         }
-        let placed = self.pane_areas(room);
-        if let Some(&(first, _)) = placed.first() {
-            self.first = first;
-        }
-        let views: Vec<_> = self.state.panes().collect();
-        let current = self.state.current_pane();
-        for (index, (&pane, top)) in views.iter().zip(&mut self.tops).enumerate() {
-            let Some(&(_, area)) = placed.iter().find(|&&(placed, _)| placed == index) else {
-                continue;
-            };
-            let [crumbs, rule, rows] = pane_layout(area);
-            let path = pane.path();
-            let view = match pane.shown() {
-                Shown::View(view) => Some(view),
-                Shown::Container(_) => None,
-            };
-            let mut header =
-                Crumbs::new(self.state.document(), &path, view, &self.theme, self.icons)
-                    .filter(pane.tag_filter());
-            if views.len() > 1 {
-                header = header.number(index + 1);
-            }
-            if index != current {
-                header = header.dimmed();
-            }
-            header.render(crumbs, buf);
-            Line::styled(
-                "─".repeat(usize::from(rule.width)),
-                Style::new().fg(self.theme.rule),
-            )
-            .render(rule, buf);
-            ContainerPane::new(
-                &self.state,
-                pane,
-                index == current,
-                self.today,
-                &self.theme,
-                self.icons,
-            )
-            .render(rows, buf, top);
-            if area.right() < room.right() {
-                for y in area.top()..area.bottom() {
-                    if let Some(cell) = buf.cell_mut((area.right(), y)) {
-                        cell.set_symbol("│").set_fg(self.theme.rule);
-                    }
-                }
-            }
-        }
+        self.render_panes(room, buf);
         let shortcuts = self.shortcuts_area(panes);
         self.render_shortcuts(shortcuts, buf);
         if let Some(view) = self.state.navigator() {
-            navigator_popup(&view, &self.theme, self.icons).render(panes, buf);
+            navigator_popup(&view, &self.theme, icons).render(panes, buf);
         }
         if let Some(view) = self.state.palette() {
             let keys = |&command: &Command| self.keymap.labels(command);
-            palette_popup(&view, &self.theme, self.icons)
+            palette_popup(&view, &self.theme, icons)
                 .badge(&keys)
                 .render(panes, buf);
         }
         if let Some(view) = self.state.move_to() {
-            move_to_popup(&view, &self.theme, self.icons).render(panes, buf);
+            move_to_popup(&view, &self.theme, icons).render(panes, buf);
         }
         if let Some(view) = self.state.date_prompt() {
             DatePromptPanel::new(&view, &self.theme).render(prompt, buf);
         }
         if let Some(view) = self.state.tags() {
-            tags_popup(&view, &self.theme, self.icons).render(panes, buf);
+            tags_popup(&view, &self.theme, icons).render(panes, buf);
+        }
+        if let Some(focused) = self.state.settings_window() {
+            let settings = self.state.settings();
+            SettingsWindow::new(settings, focused, self.config.path(), &self.theme)
+                .render(panes, buf);
         }
         match self.state.attachments() {
-            Some(view) => AttachmentsPanel::new(view, &self.theme, self.icons).render(
+            Some(view) => AttachmentsPanel::new(view, &self.theme, icons).render(
                 self.strip(panes),
                 buf,
                 &mut self.panel,
@@ -913,7 +975,6 @@ impl Widget for &mut Tui {
             };
             ConflictPrompt::new(view, &theirs, &mine, &self.theme).render(panes, buf);
         }
-        StatusLine::new(&self.state, self.keymap.pending(), &self.theme, self.icons)
-            .render(status, buf);
+        StatusLine::new(&self.state, self.keymap.pending(), &self.theme, icons).render(status, buf);
     }
 }

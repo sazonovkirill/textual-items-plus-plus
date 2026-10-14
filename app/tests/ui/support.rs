@@ -72,6 +72,7 @@ impl Harness {
             backups: Some(folders.path().join("backups")),
             recovery: Some(folders.path().join("recovery")),
             layouts: Some(folders.path().join("layouts.json")),
+            config: Some(folders.path().join("config.toml")),
             clock: || NOW,
         };
         let tui = Tui::open(path, recovered, TODAY, &edge)?;
@@ -99,6 +100,11 @@ impl Harness {
     /// Where the app keeps its backups.
     pub fn backups(&self) -> PathBuf {
         self.folders.path().join("backups")
+    }
+
+    /// Where the app keeps its settings.
+    pub fn config(&self) -> PathBuf {
+        self.folders.path().join("config.toml")
     }
 
     /// Where the app keeps its recovery files.

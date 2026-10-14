@@ -57,7 +57,7 @@ pub use pane::PaneView;
 pub use picker::{Candidate, Entries, Picked, Picker, PickerInput, PickerView};
 pub use saving::{ConflictSide, ConflictView, Notice, OnDisk, Report};
 pub use selection::Selection;
-pub use settings::{BuiltIn, IconSet};
+pub use settings::{BuiltIn, IconSet, Setting, Settings, SettingsInput};
 pub use shortcuts::KeyGroup;
 pub use sidebar::SidebarView;
 pub use state::{Opened, State};

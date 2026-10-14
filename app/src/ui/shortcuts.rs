@@ -19,9 +19,12 @@ use super::{
     date_prompt,
     edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT},
     keymap::{Key, key_label},
-    picker, text_keys,
+    picker, settings, text_keys,
 };
-use crate::app::{AttachmentsInput, DateInput, EditInput, Motion, Part, PickerInput, TextEdit};
+use crate::app::{
+    AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, SettingsInput,
+    TextEdit,
+};
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
 pub(super) type Listing = (&'static str, Vec<(String, String)>);
@@ -42,6 +45,8 @@ pub(super) enum Window {
     Picker,
     /// The date prompt.
     DatePrompt,
+    /// The settings window.
+    Settings,
     /// The attachments panel, while nothing in it is edited.
     Attachments,
     /// Edit mode, editing this part of an item.
@@ -53,6 +58,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
     let (heading, own): (_, Vec<(Key, String)>) = match window {
         Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
         Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
+        Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
         Window::Attachments => (
             "Attachments Panel",
             named(attachments::KEYS, |key| {
@@ -98,7 +104,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             )
         }
     };
-    if window == Window::Attachments {
+    if matches!(window, Window::Attachments | Window::Settings) {
         return vec![(heading, merged(own))];
     }
     let text = text_keys::TEXT
@@ -152,6 +158,19 @@ fn date_name(input: DateInput) -> String {
         DateInput::Apply => "Set Date".to_owned(),
         DateInput::Cancel => "Cancel".to_owned(),
     }
+}
+
+/// What a key of the settings window does, as the panel names it.
+fn settings_name(input: SettingsInput) -> String {
+    match input {
+        SettingsInput::Focus(Direction::Up) => "Previous Setting",
+        SettingsInput::Focus(Direction::Down) => "Next Setting",
+        SettingsInput::Turn(Direction::Down) => "Next Value",
+        SettingsInput::Turn(Direction::Up) => "Previous Value",
+        SettingsInput::Reset => "Reset to Default",
+        SettingsInput::Close => "Close",
+    }
+    .to_owned()
 }
 
 /// What an edit-mode key does, as the panel names it.
@@ -432,6 +451,7 @@ mod tests {
             [("Editing Comment", 2), ("Text", 16)]
         );
         assert_eq!(headings(Window::Attachments), [("Attachments Panel", 10)]);
+        assert_eq!(headings(Window::Settings), [("Settings", 6)]);
     }
 
     // FR-KEY-03

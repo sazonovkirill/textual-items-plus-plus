@@ -14,7 +14,7 @@ use ratatui::{
     widgets::{Paragraph, StatefulWidget, Widget, Wrap},
 };
 
-use super::{Icon, IconSet, Theme, field};
+use super::{Icon, IconSet, Theme, cut, field};
 use crate::{
     app::{
         self, PaneView, Part, Row, Selection, State, TextField,
@@ -45,6 +45,8 @@ pub(super) struct ContainerPane<'a> {
     today: Date,
     theme: &'a Theme,
     icons: IconSet,
+    /// Whether long text wraps, as the settings say (FR-UI-05).
+    wrap: bool,
 }
 
 impl<'a> ContainerPane<'a> {
@@ -71,17 +73,36 @@ impl<'a> ContainerPane<'a> {
             today,
             theme,
             icons,
+            wrap: state.settings().word_wrap,
         }
+    }
+
+    /// How the text of a title or a description line fits its columns: wrapping, or with word
+    /// wrap off cut short on its one line (FR-UI-05).
+    fn fit(&self) -> Fit {
+        if self.wrap { Fit::Wrap } else { Fit::Cut }
     }
 }
 
-/// A run of lines of the pane: a wrapped paragraph starting `x` columns after the gutter, with
-/// what is drawn right after the gutter and at the right of its first line, part of the row
-/// numbered `row`, if any. A text field is laid out in lines of its own instead, with its caret
-/// on line `caret.0`, `caret.1` columns into it.
+/// How the text of a piece fits its columns.
+#[derive(Clone, Copy)]
+enum Fit {
+    /// Wrapping between words (FR-UI-05).
+    Wrap,
+    /// Each line cut short with `…`, word wrap being off (FR-UI-05).
+    Cut,
+    /// As it is laid out, as a text field lays out its lines.
+    Keep,
+}
+
+/// A run of lines of the pane: text starting `x` columns after the gutter, fitting its columns
+/// as `fit` says, with what is drawn right after the gutter and at the right of its first line,
+/// part of the row numbered `row`, if any. A text field is laid out in lines of its own instead,
+/// with its caret on line `caret.0`, `caret.1` columns into it.
 struct Piece<'a> {
     x: u16,
-    text: Paragraph<'a>,
+    text: Text<'a>,
+    fit: Fit,
     left: Line<'a>,
     right: Line<'a>,
     row: Option<usize>,
@@ -93,7 +114,8 @@ impl Piece<'_> {
     fn blank() -> Self {
         Self {
             x: 0,
-            text: Paragraph::new(""),
+            text: Text::default(),
+            fit: Fit::Keep,
             left: Line::default(),
             right: Line::default(),
             row: None,
@@ -108,9 +130,29 @@ impl Piece<'_> {
         width.saturating_sub(self.x).saturating_sub(right + gap)
     }
 
+    /// Its text fitted to content `width`.
+    fn paragraph(&self, width: u16) -> Paragraph<'_> {
+        match self.fit {
+            Fit::Wrap => Paragraph::new(self.text.clone()).wrap(Wrap { trim: true }),
+            Fit::Cut => {
+                let columns = usize::from(self.text_width(width));
+                let lines: Vec<_> = self
+                    .text
+                    .lines
+                    .iter()
+                    .map(|line| cut::truncate(line, columns))
+                    .collect();
+                Paragraph::new(Text::from(lines).style(self.text.style))
+            }
+            Fit::Keep => Paragraph::new(self.text.clone()),
+        }
+    }
+
     /// The lines it takes in content `width`: at least one.
     fn height(&self, width: u16) -> usize {
-        self.text.line_count(self.text_width(width)).max(1)
+        self.paragraph(width)
+            .line_count(self.text_width(width))
+            .max(1)
     }
 
     /// The columns a text field is scrolled sideways in content `width`: none while its caret
@@ -207,8 +249,7 @@ fn draw(piece: &Piece, start: usize, top: usize, area: Rect, buf: &mut Buffer) {
     let text = Rect::new(x, row_y(first), piece.text_width(width), rows);
     let shift = u16::try_from(piece.shift(width)).unwrap_or(u16::MAX);
     piece
-        .text
-        .clone()
+        .paragraph(width)
         .scroll((u16::try_from(skip).unwrap_or(u16::MAX), shift))
         .render(text, buf);
     if skip == 0 {
@@ -291,10 +332,11 @@ impl<'a> ContainerPane<'a> {
                     } else if !container.description.is_empty() {
                         pieces.push(Piece {
                             x: 0,
-                            text: wrapped(Text::styled(
+                            text: Text::styled(
                                 container.description.as_str(),
                                 self.description_style(),
-                            )),
+                            ),
+                            fit: self.fit(),
                             left: Line::default(),
                             right: Line::default(),
                             row: None,
@@ -421,7 +463,8 @@ impl<'a> ContainerPane<'a> {
         if let Some((Locating::Under, text)) = location {
             pieces.push(Piece {
                 x,
-                text: wrapped(Text::styled(text, self.description_style())),
+                text: Text::styled(text, self.description_style()),
+                fit: self.fit(),
                 left: Line::default(),
                 right: Line::default(),
                 row: Some(index),
@@ -433,7 +476,8 @@ impl<'a> ContainerPane<'a> {
         } else if !under && let Some(first) = shown.description.lines().next() {
             pieces.push(Piece {
                 x,
-                text: wrapped(Text::styled(first, self.description_style())),
+                text: Text::styled(first, self.description_style()),
+                fit: self.fit(),
                 left: Line::default(),
                 right: Line::default(),
                 row: Some(index),
@@ -449,7 +493,8 @@ impl<'a> ContainerPane<'a> {
         let icon = super::view_icon(view).glyph(self.icons);
         Piece {
             x: u16::try_from(Span::raw(icon).width() + 1).unwrap_or(u16::MAX),
-            text: wrapped(Text::styled(view.title(), style)),
+            text: Text::styled(view.title(), style),
+            fit: self.fit(),
             left: Line::styled(icon, style),
             right: Line::default(),
             row: None,
@@ -467,17 +512,19 @@ impl<'a> ContainerPane<'a> {
                 ..self.title(item, None)
             }),
             Heading::Period(period) => Some(Piece {
-                text: wrapped(Text::styled(period.heading(self.today), Modifier::BOLD)),
+                text: Text::styled(period.heading(self.today), Modifier::BOLD),
+                fit: self.fit(),
                 ..Piece::blank()
             }),
             Heading::Completed(day) => Some(Piece {
-                text: wrapped(Text::styled(
+                text: Text::styled(
                     day.map_or_else(
                         || "No date".to_owned(),
                         |day| dates::day_heading(day, self.today),
                     ),
                     Modifier::BOLD,
-                )),
+                ),
+                fit: self.fit(),
                 ..Piece::blank()
             }),
         }
@@ -499,7 +546,8 @@ impl<'a> ContainerPane<'a> {
         spans.extend(after);
         Piece {
             x: self.title_column(item),
-            text: wrapped(Text::from(Line::from(spans))),
+            text: Text::from(Line::from(spans)),
+            fit: self.fit(),
             left: Line::styled(self.marker(item), self.marker_style(item)),
             right: Line::from([self.attachments(item).spans, self.chips(item)].concat()),
             row,
@@ -515,7 +563,8 @@ impl<'a> ContainerPane<'a> {
         let caret = text.get(..field.caret()).unwrap_or_default();
         Piece {
             caret: Some((0, Span::raw(caret).width())),
-            text: Paragraph::new(field::selected(field, 0..text.len(), self.theme)),
+            text: Text::from(field::selected(field, 0..text.len(), self.theme)),
+            fit: Fit::Keep,
             right: self.attachments(item),
             ..self.title(item, row)
         }
@@ -533,7 +582,8 @@ impl<'a> ContainerPane<'a> {
         let (lines, caret) = field::wrapped(field, field_columns(width, x), self.theme);
         Piece {
             x,
-            text: Paragraph::new(lines),
+            text: Text::from(lines),
+            fit: Fit::Keep,
             left: Line::default(),
             right: Line::default(),
             row,
@@ -693,11 +743,6 @@ fn field_columns(width: u16, x: u16) -> usize {
     usize::from(width.saturating_sub(x)).saturating_sub(1)
 }
 
-/// `text` wrapping between words (FR-UI-05).
-fn wrapped(text: Text<'_>) -> Paragraph<'_> {
-    Paragraph::new(text).wrap(Wrap { trim: true })
-}
-
 /// `tag` as it follows a title: a space, then `@name` or `@name(value)`.
 pub(super) fn tag_text(tag: &Tag) -> String {
     match &tag.value {
@@ -752,8 +797,20 @@ mod tests {
         document: &Document,
         container: ItemId,
         focused: Option<&str>,
+        size: (u16, u16),
+        top: &mut usize,
+    ) -> Buffer {
+        draw_wrapped(document, container, focused, size, top, true)
+    }
+
+    /// Draws as [`draw_pane`] does, with word wrap on or off as `wrap` says.
+    fn draw_wrapped(
+        document: &Document,
+        container: ItemId,
+        focused: Option<&str>,
         (width, height): (u16, u16),
         top: &mut usize,
+        wrap: bool,
     ) -> Buffer {
         let theme = BuiltIn::default().colors();
         let mut selection = Selection::default();
@@ -769,6 +826,7 @@ mod tests {
             today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
+            wrap,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         pane.render(buf.area, &mut buf, top);
@@ -794,6 +852,7 @@ mod tests {
             today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
+            wrap: true,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, 10));
         let caret = pane.caret(buf.area, 0);
@@ -820,6 +879,7 @@ mod tests {
             today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
+            wrap: true,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
         pane.render(buf.area, &mut buf, &mut 0);
@@ -853,6 +913,7 @@ mod tests {
             today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
+            wrap: true,
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         let area = buf.area;
@@ -1321,6 +1382,56 @@ mod tests {
         assert!(done.add_modifier.contains(Modifier::CROSSED_OUT));
         assert_eq!(at(2, 15).fg, Some(theme.done), "a done task's marker");
         assert!(!at(2, 15).add_modifier.contains(Modifier::CROSSED_OUT));
+    }
+
+    // FR-UI-05
+    #[test]
+    fn without_word_wrap_titles_and_descriptions_take_a_line_each_cut_short() {
+        let document = demo();
+        let inbox = document.inbox();
+        let buf = draw_wrapped(
+            &document,
+            inbox,
+            Some("Call the bank about the card"),
+            (20, 6),
+            &mut 0,
+            false,
+        );
+        assert_eq!(
+            lines(&buf),
+            padded(
+                20,
+                &[
+                    "  ⊔ Inbox",
+                    "  Everything not so…",
+                    "",
+                    "▌ - Call the… ⇥ Wed",
+                    "  - Buy coffee bean…",
+                    "  - Read the articl…",
+                ]
+            )
+        );
+        let website = find(&document, "Website");
+        let buf = draw_wrapped(&document, website, None, (36, 10), &mut 0, false);
+        assert_eq!(
+            lines(&buf),
+            padded(
+                36,
+                &[
+                    "  ○ Website      ≡ ❞ 2 ⇥ in 20 days",
+                    "  The new marketing site, built wit…",
+                    "",
+                    "  - Collect logos from partners",
+                    "",
+                    "  § Launch",
+                    "    What has to happen before launc…",
+                    "  - Write the … ☑ 1/5 ≡ ❞ 1 ↦ today",
+                    "    Keep it under 300 words.",
+                    "  - Book the launch call @me… ⇥ Sat",
+                ]
+            ),
+            "a description shows its first line under the title"
+        );
     }
 
     // FR-UI-05

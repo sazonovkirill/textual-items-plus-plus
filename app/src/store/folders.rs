@@ -1,6 +1,6 @@
-//! Where the app keeps the files it writes beside the user's own: backups under the XDG data
-//! folder, and recovery files and the pane layouts under the XDG state folder, in a folder named like the settings
-//! folder (FR-SET-01), also on macOS (D-32).
+//! Where the app keeps the files it writes beside the user's own: the settings under the XDG
+//! config folder (FR-SET-01), backups under the XDG data folder, and recovery files and the pane
+//! layouts under the XDG state folder, each in a folder of the app's name, also on macOS (D-32).
 
 use std::{ffi::OsString, path::PathBuf};
 
@@ -28,6 +28,14 @@ pub fn recovery(xdg_state_home: Option<OsString>, home: Option<PathBuf>) -> Opti
 #[must_use]
 pub fn layouts(xdg_state_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathBuf> {
     folder(xdg_state_home, home, ".local/state", "layouts.json")
+}
+
+/// The settings file: `$XDG_CONFIG_HOME/textual-items-plus-plus/config.toml`, or under
+/// `~/.config` when that is unset or not absolute, also on macOS (FR-SET-01). `None` when neither
+/// folder is known.
+#[must_use]
+pub fn config(xdg_config_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathBuf> {
+    folder(xdg_config_home, home, ".config", "config.toml")
 }
 
 /// `<base>/textual-items-plus-plus/<name>`, where `base` is an XDG base folder's variable, or
@@ -99,5 +107,23 @@ mod tests {
             ))
         );
         assert_eq!(layouts(None, None), None);
+    }
+
+    // FR-SET-01
+    #[test]
+    fn the_settings_go_under_xdg_config_home_else_the_home_folder() {
+        let home = Some(PathBuf::from("/home/me"));
+        assert_eq!(
+            config(Some("/config".into()), home.clone()),
+            Some(PathBuf::from("/config/textual-items-plus-plus/config.toml"))
+        );
+        assert_eq!(
+            config(Some("config".into()), home),
+            Some(PathBuf::from(
+                "/home/me/.config/textual-items-plus-plus/config.toml"
+            )),
+            "not absolute"
+        );
+        assert_eq!(config(None, None), None);
     }
 }

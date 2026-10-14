@@ -83,6 +83,8 @@ pub enum Notice {
     /// Typing `@` at the start of a word of a title was refused: the word would read back as a
     /// tag, and tags go on from the tag picker (FR-TAG-02).
     TagInTitle,
+    /// Something went wrong with the settings file, as the frontend said it (FR-SET-04).
+    Settings(String),
 }
 
 /// The conflict prompt as a frontend shows it.
