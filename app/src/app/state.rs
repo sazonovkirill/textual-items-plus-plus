@@ -76,6 +76,8 @@ pub struct State {
     pub(super) shortcuts: bool,
     /// The settings the app runs with (FR-SET-03).
     pub(super) settings: Settings,
+    /// The settings the session takes where the settings file does not set them (FR-SET-02).
+    pub(super) default_settings: Settings,
     /// The setting highlighted in the settings window, while it is open (FR-SET-02).
     pub(super) settings_window: Option<Setting>,
     /// Whether the words the pane searches for are typed (FR-SRCH-01).
@@ -117,6 +119,7 @@ impl State {
             sidebar: Sidebar::default(),
             shortcuts: false,
             settings: Settings::default(),
+            default_settings: Settings::default(),
             settings_window: None,
             searching: false,
             saving,

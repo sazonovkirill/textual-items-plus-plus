@@ -231,10 +231,10 @@ impl Settings {
         }
     }
 
-    /// Whether `setting` has its default value.
+    /// Whether `setting` has its value in `default`, the settings the session starts from when
+    /// the settings file does not set them.
     #[must_use]
-    pub fn is_default(&self, setting: Setting) -> bool {
-        let default = Self::default();
+    pub fn is_default(&self, setting: Setting, default: &Self) -> bool {
         match setting {
             Setting::Theme => self.theme == default.theme,
             Setting::Icons => self.icons == default.icons,
@@ -272,9 +272,8 @@ impl Settings {
         }
     }
 
-    /// Gives `setting` its default value.
-    fn reset(&mut self, setting: Setting) {
-        let default = Self::default();
+    /// Gives `setting` its value in `default`.
+    fn reset(&mut self, setting: Setting, default: &Self) {
         match setting {
             Setting::Theme => self.theme = default.theme,
             Setting::Icons => self.icons = default.icons,
@@ -320,9 +319,17 @@ impl State {
         self.settings
     }
 
-    /// The app with `settings`, as the settings file sets them, from the start.
+    /// The settings the session takes where the settings file does not set them, which
+    /// resetting a setting gives it back (FR-SET-02).
     #[must_use]
-    pub fn with_settings(mut self, settings: Settings) -> Self {
+    pub fn default_settings(&self) -> Settings {
+        self.default_settings
+    }
+
+    /// The app with `settings`, as the settings file sets them over `defaults`, from the start.
+    #[must_use]
+    pub fn with_settings(mut self, defaults: Settings, settings: Settings) -> Self {
+        self.default_settings = defaults;
         self.settings = settings;
         self
     }
@@ -358,7 +365,7 @@ impl State {
                 self.settings_window = Setting::ALL.get(to).copied().or(Some(setting));
             }
             SettingsInput::Turn(direction) => self.settings.turn(setting, direction),
-            SettingsInput::Reset => self.settings.reset(setting),
+            SettingsInput::Reset => self.settings.reset(setting, &self.default_settings),
             SettingsInput::Close => self.settings_window = None,
         }
         if self.settings == before {
@@ -423,7 +430,11 @@ mod tests {
         );
         input(&mut state, SettingsInput::Turn(Direction::Up));
         assert_eq!(state.settings().theme, BuiltIn::FlexokiLight);
-        assert!(!state.settings().is_default(Setting::Theme));
+        assert!(
+            !state
+                .settings()
+                .is_default(Setting::Theme, &Settings::default())
+        );
         assert_eq!(
             input(&mut state, SettingsInput::Reset),
             [Effect::KeepSetting(Setting::Theme)]
@@ -494,11 +505,46 @@ mod tests {
         assert_eq!(turned, ["Reduced", "Off", "Full"]);
         input(&mut state, SettingsInput::Turn(Direction::Up));
         assert_eq!(state.settings().animations, Animations::Off);
-        assert!(!state.settings().is_default(Setting::Animations));
+        assert!(
+            !state
+                .settings()
+                .is_default(Setting::Animations, &Settings::default())
+        );
         input(&mut state, SettingsInput::Reset);
-        assert!(state.settings().is_default(Setting::Animations));
+        assert!(
+            state
+                .settings()
+                .is_default(Setting::Animations, &Settings::default())
+        );
         assert_eq!(serde_json::to_value(Animations::Reduced)?, "reduced");
         Ok(())
+    }
+
+    // FR-UI-07, FR-SET-02
+    #[test]
+    fn resetting_gives_back_the_sessions_default_rather_than_the_apps() {
+        let defaults = Settings {
+            animations: Animations::Reduced,
+            ..Settings::default()
+        };
+        let mut state =
+            State::new(Document::new(), Opened::Demo, TODAY).with_settings(defaults, defaults);
+        assert_eq!(state.default_settings(), defaults);
+        give(&mut state, Message::Command(Command::Settings));
+        for _ in 0..3 {
+            input(&mut state, SettingsInput::Focus(Direction::Down));
+        }
+        assert!(state.settings().is_default(Setting::Animations, &defaults));
+        assert_eq!(
+            input(&mut state, SettingsInput::Reset),
+            [],
+            "nothing to keep"
+        );
+        input(&mut state, SettingsInput::Turn(Direction::Up));
+        assert_eq!(state.settings().animations, Animations::Full);
+        assert!(!state.settings().is_default(Setting::Animations, &defaults));
+        input(&mut state, SettingsInput::Reset);
+        assert_eq!(state.settings().animations, Animations::Reduced);
     }
 
     // FR-SET-02
@@ -515,10 +561,13 @@ mod tests {
     // FR-SET-04
     #[test]
     fn a_problem_with_the_settings_file_shows_until_the_next_command() {
-        let mut state = State::new(Document::new(), Opened::Demo, TODAY).with_settings(Settings {
-            word_wrap: false,
-            ..Settings::default()
-        });
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY).with_settings(
+            Settings::default(),
+            Settings {
+                word_wrap: false,
+                ..Settings::default()
+            },
+        );
         assert!(!state.settings().word_wrap);
         give(
             &mut state,
@@ -625,7 +674,11 @@ mod tests {
             [Effect::KeepSetting(Setting::WeatherIdle)]
         );
         assert_eq!(state.settings().value(Setting::WeatherIdle), "4 minutes");
-        assert!(!state.settings().is_default(Setting::WeatherIdle));
+        assert!(
+            !state
+                .settings()
+                .is_default(Setting::WeatherIdle, &Settings::default())
+        );
         for _ in 0..3 {
             input(&mut state, SettingsInput::Turn(Direction::Up));
         }
@@ -636,7 +689,11 @@ mod tests {
             "no less than a minute"
         );
         input(&mut state, SettingsInput::Reset);
-        assert!(state.settings().is_default(Setting::WeatherIdle));
+        assert!(
+            state
+                .settings()
+                .is_default(Setting::WeatherIdle, &Settings::default())
+        );
     }
 
     // FR-UI-03

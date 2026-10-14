@@ -366,11 +366,7 @@ fn a_save_refused_because_the_file_changed_opens_the_prompt() {
     fs::write(&path, "Inbox:\n\t- Pack\n").expect("written");
     harness.wait(1000);
     assert!(harness.screen().contains("Changed on disk"));
-    assert_eq!(
-        harness.tui.deadline(),
-        Some(Duration::from_mins(3)),
-        "no save is due, only the weather after the last key (FR-UI-08)"
-    );
+    assert_eq!(harness.tui.deadline(), None, "no save is due");
     assert_eq!(read(&path), "Inbox:\n\t- Pack\n");
 }
 

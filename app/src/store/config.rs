@@ -333,11 +333,8 @@ mod tests {
             wrap: false,
         };
         assert_eq!(config.load(ours.clone()), (ours.clone(), vec![]), "no file");
-        let (settings, problems) = load(
-            dir.path(),
-            "wrap = true
-theme = \"nord\"\n",
-        )?;
+        let text = "wrap = true\ntheme = \"nord\"\n";
+        let (settings, problems) = load(dir.path(), text)?;
         assert_eq!(problems.len(), 1);
         assert_eq!(settings, Settings::default(), "over the usual defaults");
         let (settings, _) = config.load(ours);

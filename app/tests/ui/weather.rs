@@ -42,7 +42,7 @@ fn status(harness: &Harness) -> String {
 // FR-UI-08, N-PERF-03
 #[test]
 fn after_three_idle_minutes_autumn_leaves_fall_and_pile_up_until_a_key_which_does_nothing_else() {
-    let mut harness = Harness::new(60, 18);
+    let mut harness = animated(60, 18);
     harness.type_text("j");
     let before = frame(&harness);
     assert_eq!(
@@ -77,7 +77,7 @@ fn after_three_idle_minutes_autumn_leaves_fall_and_pile_up_until_a_key_which_doe
 // FR-UI-08
 #[test]
 fn a_paste_or_a_resize_ends_the_weather_too_and_is_dropped() {
-    let mut harness = Harness::new(60, 18);
+    let mut harness = animated(60, 18);
     let before = frame(&harness);
     harness.wait(180_000);
     play(&mut harness, 5);
@@ -95,7 +95,7 @@ fn a_paste_or_a_resize_ends_the_weather_too_and_is_dropped() {
 // FR-UI-08
 #[test]
 fn the_command_palette_starts_the_weather_at_once() {
-    let mut harness = Harness::new(60, 18);
+    let mut harness = animated(60, 18);
     harness.ctrl('p');
     harness.type_text("weather");
     harness.key(KeyCode::Enter);
@@ -109,7 +109,7 @@ fn the_command_palette_starts_the_weather_at_once() {
 // FR-UI-08
 #[test]
 fn summer_has_no_weather_and_the_palette_says_so() {
-    let mut harness = Harness::new(60, 18);
+    let mut harness = animated(60, 18);
     let summer = date(2026, 7, 14);
     harness.tui.tick(Duration::ZERO, summer);
     assert_eq!(harness.tui.deadline(), None, "nothing to wait for");
@@ -125,16 +125,21 @@ fn summer_has_no_weather_and_the_palette_says_so() {
         "{}",
         status(&harness)
     );
-    assert_eq!(harness.tui.deadline(), None);
+    harness
+        .tui
+        .tick(Duration::from_mins(10) + Duration::from_secs(1), summer);
+    harness.draw();
+    assert_eq!(harness.tui.deadline(), None, "once the palette has closed");
 }
 
 // FR-UI-08, FR-SET-02, N-PERF-03
 #[test]
 fn turning_the_weather_off_in_the_settings_window_stops_the_idle_timer() {
-    let mut harness = Harness::new(80, 30);
-    harness.type_text("g,jjjl");
+    let mut harness = animated(80, 30);
+    harness.type_text("g,jjjjl");
     harness.key(KeyCode::Esc);
-    assert_eq!(harness.tui.deadline(), None);
+    harness.wait(200);
+    assert_eq!(harness.tui.deadline(), None, "once the window has closed");
     let before = frame(&harness);
     harness.wait(600_000);
     assert_eq!(frame(&harness), before);
@@ -159,9 +164,34 @@ fn the_settings_file_sets_the_idle_minutes_and_a_zero_is_named_and_ignored() {
     assert_eq!(harness.tui.deadline(), Some(Duration::from_mins(3)));
 }
 
+// FR-UI-08, FR-UI-07
+#[test]
+fn the_idle_timer_waits_for_every_animation_but_the_palette_starts_the_weather_anyway() {
+    let mut harness = with_config("animations = \"reduced\"\n");
+    harness.type_text("j");
+    assert_eq!(harness.tui.deadline(), None, "no idle timer");
+    let mut off = Harness::new(60, 18);
+    off.type_text("j");
+    assert_eq!(off.tui.deadline(), None);
+    off.ctrl('p');
+    off.type_text("weather");
+    off.key(KeyCode::Enter);
+    play(&mut off, 5);
+    assert!(leaves(&off));
+}
+
+/// The app on the demo document, animating fully, on a `width` by `height` terminal.
+fn animated(width: u16, height: u16) -> Harness {
+    Harness::animated(
+        tempfile::tempdir().expect("a temporary folder"),
+        width,
+        height,
+    )
+}
+
 /// The app on the demo document with a settings file holding `text`.
 fn with_config(text: &str) -> Harness {
     let folders = tempfile::tempdir().expect("a temporary folder");
     fs::write(folders.path().join("config.toml"), text).expect("written");
-    Harness::in_folders(folders, None, None, 60, 18).expect("the demo opens")
+    Harness::animated(folders, 60, 18)
 }

@@ -183,6 +183,15 @@ impl StatefulWidget for ContainerPane<'_> {
     type State = usize;
 
     fn render(self, area: Rect, buf: &mut Buffer, top: &mut usize) {
+        self.draw(area, buf, top);
+    }
+}
+
+impl ContainerPane<'_> {
+    /// Draws the pane over `area` from content line `top`, scrolled as little as keeps the
+    /// focused row in view, and returns the screen lines of each row on screen, the heading's
+    /// among them, in order.
+    pub(super) fn draw(self, area: Rect, buf: &mut Buffer, top: &mut usize) -> Vec<(ItemId, Rect)> {
         let width = area.width.saturating_sub(GUTTER);
         let (pieces, lines, y) = self.laid_out(width);
         let focused = self.focused_row();
@@ -220,6 +229,48 @@ impl StatefulWidget for ContainerPane<'_> {
         if let Some((start, end)) = band {
             self.band_text(area, buf, start, end, *top);
         }
+        self.on_screen(&pieces, &lines, area, *top)
+    }
+
+    /// The screen lines over `area` of each row the pieces laid out at content `lines` show from
+    /// content line `top`, in order.
+    fn on_screen(
+        &self,
+        pieces: &[Piece],
+        lines: &[usize],
+        area: Rect,
+        top: usize,
+    ) -> Vec<(ItemId, Rect)> {
+        let width = area.width.saturating_sub(GUTTER);
+        let bottom = top + usize::from(area.height);
+        let mut shown: Vec<(usize, Rect)> = Vec::new();
+        for (piece, &start) in pieces.iter().zip(lines) {
+            let end = start + piece.height(width);
+            let (Some(row), true) = (piece.row, start < bottom && end > top) else {
+                continue;
+            };
+            let y = |line: usize| area.y + u16::try_from(line - top).unwrap_or(u16::MAX);
+            let rect = Rect::new(area.x, y(start.max(top)), area.width, 0);
+            let rect = Rect {
+                height: y(end.min(bottom)) - rect.y,
+                ..rect
+            };
+            match shown.last_mut() {
+                Some((last, lines)) if *last == row => *lines = lines.union(rect),
+                _ => shown.push((row, rect)),
+            }
+        }
+        shown
+            .into_iter()
+            .filter_map(|(row, rect)| {
+                let id = if row == HEADING {
+                    self.heading?
+                } else {
+                    self.rows.get(row)?.id()
+                };
+                Some((id, rect))
+            })
+            .collect()
     }
 }
 

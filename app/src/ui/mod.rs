@@ -1,6 +1,7 @@
 //! The UI layer: the terminal frontend, which turns terminal events into app messages, carries out
 //! the app's effects and draws its state.
 
+mod animation;
 mod attachments;
 mod clipboard;
 mod conflict;
@@ -39,6 +40,7 @@ use ratatui::{
     widgets::{StatefulWidget, Widget},
 };
 
+pub use animation::animations_default;
 pub use clipboard::SystemClipboard;
 pub use file::Edge;
 pub use keymap::Keymap;
@@ -47,14 +49,15 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
     app::{
-        self, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput, Effect,
-        Focus, Message, Opened, Part, PickerInput, Place, SearchInput, Selected, Settings, Side,
-        State, Stop, Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
+        self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput,
+        Effect, Focus, Message, Opened, Part, PickerInput, Place, SearchInput, Selected, Settings,
+        Side, State, Stop, Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
         view::{Shown, View},
     },
     domain::ItemKind,
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
 };
+use animation::{Animator, Before, DrawnPane, Intent};
 use attachments::{AttachmentsPanel, PanelKey, Scroll, Scrolled};
 use clipboard::Clipboard;
 use conflict::ConflictPrompt;
@@ -119,6 +122,8 @@ pub struct Tui {
     now: Duration,
     /// The weather the app shows once it sits idle (FR-UI-08).
     weather: Weather,
+    /// The effects drawn over each frame (FR-UI-07).
+    animator: Animator,
 }
 
 impl Tui {
@@ -128,6 +133,7 @@ impl Tui {
         Self {
             tops: vec![0; state.panes().count()],
             theme: state.settings().theme.colors(),
+            animator: Animator::new(state.settings().animations),
             state,
             keymap: Keymap::default(),
             config: ConfigFile::new(None),
@@ -183,7 +189,7 @@ impl Tui {
         let mut tui = match path {
             None => Self::new(
                 State::new(store::demo::document(today), Opened::Demo, today)
-                    .with_settings(settings),
+                    .with_settings(defaults, settings),
                 today,
                 edge.clock,
             ),
@@ -191,7 +197,7 @@ impl Tui {
                 let (file, state) = File::open(path, recovered, today, edge)?;
                 Self {
                     file: Some(file),
-                    ..Self::new(state.with_settings(settings), today, edge.clock)
+                    ..Self::new(state.with_settings(defaults, settings), today, edge.clock)
                 }
             }
         };
@@ -203,11 +209,13 @@ impl Tui {
         Ok(tui)
     }
 
-    /// Takes in `input` on `today`, the local date.
+    /// Takes in `input` on `today`, the local date, and has the next frame show what it did
+    /// (FR-UI-07).
     pub fn input(&mut self, input: Input, today: Date) {
         self.today = today;
+        let before = Before::of(&self.state);
         match input {
-            Input::Terminal(event) => self.handle(&event, today),
+            Input::Terminal(event) => self.take(&event),
             Input::Disk(outcome) => {
                 let messages = self
                     .file
@@ -225,6 +233,7 @@ impl Tui {
             }
             Input::Terminate => self.update(Message::Terminate),
         }
+        self.animator.settle(&before, &self.state);
     }
 
     /// The frontend's clock reads `now`, counted from the start of the session, on `today`, the
@@ -233,6 +242,7 @@ impl Tui {
     pub fn tick(&mut self, now: Duration, today: Date) {
         self.today = today;
         self.now = now;
+        self.animator.at(now);
         self.update(Message::Tick(now));
         self.keymap.tick(now);
         self.weather.tick(now, self.idle());
@@ -244,7 +254,7 @@ impl Tui {
         let settings = self.state.settings();
         let minutes = u64::from(settings.weather_idle_minutes.get());
         Season::of(self.today)
-            .filter(|_| settings.weather)
+            .filter(|_| settings.weather && settings.animations == Animations::Full)
             .map(|season| Idle {
                 season,
                 after: Duration::from_mins(minutes),
@@ -265,6 +275,7 @@ impl Tui {
             self.state.deadline(),
             self.keymap.deadline(),
             self.weather.deadline(self.idle()),
+            self.animator.deadline(),
         ]
         .into_iter()
         .flatten()
@@ -282,7 +293,13 @@ impl Tui {
     /// (FR-CHK-03). A key, paste, click or resize while the weather plays only ends it
     /// (FR-UI-08).
     pub fn handle(&mut self, event: &Event, today: Date) {
-        self.today = today;
+        self.input(Input::Terminal(event.clone()), today);
+    }
+
+    /// Takes in one terminal event, as [`handle`](Self::handle) says, ending the effects running
+    /// first so that what it changes shows at once (FR-UI-07).
+    fn take(&mut self, event: &Event) {
+        self.animator.cut();
         if weather::is_input(event) && self.weather.input(self.now) {
             return;
         }
@@ -426,7 +443,11 @@ impl Tui {
     /// it as panes open and close.
     fn update(&mut self, message: Message) {
         let (panes, current) = (self.state.panes().count(), self.state.current_pane());
-        for effect in app::update(&mut self.state, message, self.today) {
+        let intent = Intent::of(&message);
+        let effects = app::update(&mut self.state, message, self.today);
+        self.animator.observe(intent, &self.state);
+        self.animator.set(self.state.settings().animations);
+        for effect in effects {
             self.run(effect);
         }
         let after = self.state.panes().count();
@@ -759,7 +780,7 @@ impl Tui {
                 Style::new().fg(self.theme.rule),
             )
             .render(rule, buf);
-            ContainerPane::new(
+            let drawn = ContainerPane::new(
                 &self.state,
                 pane,
                 index == current,
@@ -767,7 +788,15 @@ impl Tui {
                 &self.theme,
                 icons,
             )
-            .render(rows, buf, top);
+            .draw(rows, buf, top);
+            self.animator.drawn(DrawnPane {
+                index,
+                focused: index == current && !self.state.sidebar_has_keys(),
+                focus: pane.selection().focused(),
+                body: rows,
+                crumbs,
+                rows: drawn,
+            });
             if area.right() < room.right() {
                 for y in area.top()..area.bottom() {
                     if let Some(cell) = buf.cell_mut((area.right(), y)) {
@@ -1027,7 +1056,7 @@ impl Widget for &mut Tui {
             tags_popup(&view, &self.theme, icons).render(panes, buf);
         }
         if let Some(focused) = self.state.settings_window() {
-            let settings = self.state.settings();
+            let settings = (self.state.settings(), self.state.default_settings());
             SettingsWindow::new(settings, focused, self.config.path(), &self.theme)
                 .render(panes, buf);
         }
@@ -1051,6 +1080,7 @@ impl Widget for &mut Tui {
             ConflictPrompt::new(view, &theirs, &mine, &self.theme).render(panes, buf);
         }
         StatusLine::new(&self.state, self.keymap.pending(), &self.theme, icons).render(status, buf);
+        self.animator.process(buf, &self.theme);
         self.weather.draw(buf, area, icons);
     }
 }

@@ -17,7 +17,8 @@ use crossterm::{
         self, DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
-    execute,
+    execute, queue,
+    terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate},
 };
 use signal_hook::{
     consts::{SIGHUP, SIGTERM},
@@ -41,7 +42,10 @@ fn main() -> anyhow::Result<()> {
         layouts: store::layouts_file(env::var_os("XDG_STATE_HOME"), home.clone()),
         config: store::config_file(env::var_os("XDG_CONFIG_HOME"), home),
         clock: || jiff::Zoned::now().datetime(),
-        animations: ui::animations_default(env::var_os("SSH_CONNECTION"), env::var_os("SSH_TTY")),
+        animations: ui::animations_default(
+            env::var_os("SSH_CONNECTION").as_deref(),
+            env::var_os("SSH_TTY").as_deref(),
+        ),
     };
     let recovered = match &path {
         Some(path) => Recovery::new(edge.recovery.clone())
@@ -178,6 +182,10 @@ fn run(
 ) -> anyhow::Result<()> {
     let start = Instant::now();
     while !tui.should_quit() {
+        // The terminal shows each frame whole, as an effect changes many cells at once. One that
+        // does not know synchronized output ignores it, and one that is gone is noticed by
+        // drawing.
+        let _ = queue!(terminal.backend_mut(), BeginSynchronizedUpdate);
         terminal
             .draw(|frame| {
                 let area = frame.area();
@@ -187,6 +195,7 @@ fn run(
                 }
             })
             .context("cannot draw")?;
+        let _ = execute!(terminal.backend_mut(), EndSynchronizedUpdate);
         let wait = tui
             .deadline()
             .map_or(Duration::MAX, |deadline| {

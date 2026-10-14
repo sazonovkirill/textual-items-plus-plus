@@ -87,22 +87,24 @@ const WIDTH: u16 = 64;
 /// there is one.
 pub(super) struct SettingsWindow<'a> {
     settings: Settings,
+    defaults: Settings,
     focused: Setting,
     file: Option<&'a Path>,
     theme: &'a Theme,
 }
 
 impl<'a> SettingsWindow<'a> {
-    /// The window showing `settings` with `focused` highlighted and the path of `file`, drawn in
-    /// `theme`.
+    /// The window showing `settings`, marking where they differ from `defaults`, with `focused`
+    /// highlighted and the path of `file`, drawn in `theme`.
     pub(super) fn new(
-        settings: Settings,
+        (settings, defaults): (Settings, Settings),
         focused: Setting,
         file: Option<&'a Path>,
         theme: &'a Theme,
     ) -> Self {
         Self {
             settings,
+            defaults,
             focused,
             file,
             theme,
@@ -138,7 +140,7 @@ impl<'a> SettingsWindow<'a> {
     /// The line naming `setting` in `width` columns: a `*` when it differs from its default, its
     /// name, cut short of its value a space before it, and its value at the right.
     fn title(&self, setting: Setting, width: usize) -> Line<'static> {
-        let changed = !self.settings.is_default(setting);
+        let changed = !self.settings.is_default(setting, &self.defaults);
         let lead = Span::raw(if changed { " * " } else { "   " });
         let value = Span::raw(self.settings.value(setting));
         let value = if changed { value.bold() } else { value };
@@ -189,7 +191,13 @@ mod tests {
         let theme = BuiltIn::default().colors();
         let area = Rect::new(0, 0, width, 22);
         let mut buf = Buffer::empty(area);
-        SettingsWindow::new(settings, Setting::Icons, file, &theme).render(area, &mut buf);
+        SettingsWindow::new(
+            (settings, Settings::default()),
+            Setting::Icons,
+            file,
+            &theme,
+        )
+        .render(area, &mut buf);
         (0..area.height)
             .map(|y| {
                 let row: String = (0..area.width).map(|x| buf[(x, y)].symbol()).collect();
@@ -236,7 +244,13 @@ mod tests {
         let theme = BuiltIn::default().colors();
         let area = Rect::new(0, 0, 24, 22);
         let mut buf = Buffer::empty(area);
-        SettingsWindow::new(settings, Setting::Icons, Some(path), &theme).render(area, &mut buf);
+        SettingsWindow::new(
+            (settings, Settings::default()),
+            Setting::Icons,
+            Some(path),
+            &theme,
+        )
+        .render(area, &mut buf);
         assert_eq!(buf[(4, 6)].bg, theme.selection, "the highlighted setting");
         assert_eq!(buf[(4, 7)].bg, theme.selection, "and its description");
         assert_eq!(buf[(4, 4)].bg, theme.background);
