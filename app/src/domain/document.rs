@@ -10,7 +10,7 @@ use super::item::{Item, ItemId, ItemKind, Node};
 mod edit;
 mod moving;
 
-pub use edit::{Op, Snapshot, Transaction};
+pub use edit::{Branch, Op, Snapshot, Transaction};
 pub use moving::Destination;
 
 /// The whole todo list: the Inbox, always first (FR-ORG-07), then the top-level nodes in the

@@ -41,6 +41,15 @@ pub enum Command {
     Delete,
     /// Open the picker that moves the selected items to another container (FR-OPS-04).
     MoveTo,
+    /// Put a copy of each selected item, with its contents, right after it (FR-OPS-05).
+    Duplicate,
+    /// Put the selected items, with their contents, on the clipboard (FR-OPS-05).
+    Copy,
+    /// Put the selected items, with their contents, on the clipboard and take them out
+    /// (FR-OPS-05).
+    Cut,
+    /// Put the items on the clipboard in on this side of the focus (FR-OPS-05).
+    Paste(Side),
     /// Edit the title of the container shown, in place (FR-ORG-06).
     RenameContainer,
     /// Move the container shown to the Trash (FR-ORG-06, OQ-19).
@@ -251,6 +260,31 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::Duplicate,
+        title: "Duplicate",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Copy,
+        title: "Copy",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Cut,
+        title: "Cut",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Paste(Side::Below),
+        title: "Paste Below",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Paste(Side::Above),
+        title: "Paste Above",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::RenameContainer,
         title: "Rename Container",
         context: Context::Navigate,
@@ -369,12 +403,13 @@ mod tests {
 
     // FR-EDIT-01, FR-EDIT-03, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-ORG-06
     #[test]
-    fn editing_adding_and_deleting_are_navigate_commands() {
+    fn editing_adding_deleting_and_the_clipboard_are_navigate_commands() {
         let added = [
             Command::NewTask,
             Command::NewSection,
             Command::NewProject,
             Command::NewArea,
+            Command::Paste,
         ]
         .into_iter()
         .flat_map(|new| [new(Side::Below), new(Side::Above)]);
@@ -390,6 +425,9 @@ mod tests {
             Command::Move(Direction::Down),
             Command::Indent,
             Command::Outdent,
+            Command::Duplicate,
+            Command::Copy,
+            Command::Cut,
         ];
         for command in added.chain(others) {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);

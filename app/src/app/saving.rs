@@ -939,7 +939,10 @@ mod tests {
             ending: true,
         };
         let mut state = conflicted()?;
-        assert_eq!(command(&mut state, Command::Quit), [mine]);
+        assert_eq!(
+            command(&mut state, Command::Quit),
+            std::slice::from_ref(&mine)
+        );
         assert_eq!(
             command(&mut state, Command::Quit),
             [],

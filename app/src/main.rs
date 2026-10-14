@@ -12,8 +12,10 @@ use std::{
 
 use anyhow::Context;
 use crossterm::{
+    clipboard::CopyToClipboard,
     event::{
-        self, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
 };
@@ -23,7 +25,7 @@ use signal_hook::{
 };
 use textual_items_plus_plus::{
     store::{self, Recovery},
-    ui::{Edge, Input, Tui},
+    ui::{Edge, Input, SystemClipboard, Tui},
 };
 
 fn main() -> anyhow::Result<()> {
@@ -45,6 +47,7 @@ fn main() -> anyhow::Result<()> {
         None => None,
     };
     let mut tui = Tui::open(path, recovered.as_deref(), today(), &edge)?;
+    tui.use_clipboard(Box::new(System(arboard::Clipboard::new().ok())));
     forward_signals(inputs.clone()).context("cannot listen for signals")?;
     let mut terminal = ratatui::try_init().context("cannot set up the terminal")?;
     // A terminal without the kitty keyboard protocol keeps legacy key reporting, which the keymap
@@ -56,6 +59,8 @@ fn main() -> anyhow::Result<()> {
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         )
         .is_ok();
+    // Text pasted into a terminal that does not bracket it arrives as typed keys.
+    let bracketed = execute!(io::stdout(), EnableBracketedPaste).is_ok();
     forward_terminal_events(inputs);
     // The panic hook `try_init` installed restores the terminal first; once the panic has
     // unwound to here, the document is written out as it stands (N-REL-01).
@@ -63,6 +68,10 @@ fn main() -> anyhow::Result<()> {
     if kitty {
         // The session is over; a terminal that cannot take this has gone already.
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+    }
+    if bracketed {
+        // As for the keyboard flags above.
+        let _ = execute!(io::stdout(), DisableBracketedPaste);
     }
     ratatui::restore();
     if let Some(farewell) = tui.farewell() {
@@ -78,6 +87,35 @@ fn main() -> anyhow::Result<()> {
         }
         panic::resume_unwind(panic)
     })
+}
+
+/// The system clipboard: the desktop's when a display server is reachable, else the terminal's
+/// through OSC 52, which copies over SSH and in tmux with `set-clipboard on` but cannot be read,
+/// so pasting then takes the text the app copied last, and text pasted into the terminal comes
+/// as a paste event, as in taskpaper-terminal.
+struct System(Option<arboard::Clipboard>);
+
+impl std::fmt::Debug for System {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("System").field(&self.0.is_some()).finish()
+    }
+}
+
+impl SystemClipboard for System {
+    fn set(&mut self, text: &str) {
+        let copied = self
+            .0
+            .as_mut()
+            .is_some_and(|clipboard| clipboard.set_text(text).is_ok());
+        if !copied {
+            // A terminal without OSC 52 ignores it, and there is no other way left to copy.
+            let _ = execute!(io::stdout(), CopyToClipboard::to_clipboard_from(text));
+        }
+    }
+
+    fn get(&mut self) -> Option<String> {
+        self.0.as_mut()?.get_text().ok()
+    }
 }
 
 /// The local date now.

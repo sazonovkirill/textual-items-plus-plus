@@ -47,6 +47,16 @@ pub struct Snapshot {
     below: Vec<(ItemId, Entry)>,
 }
 
+/// A node with its whole subtree, apart from any document: what is duplicated, copied, cut and
+/// pasted (FR-OPS-05). [`Document::graft`] turns it into a [`Snapshot`] to put in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Branch {
+    /// The top node.
+    pub node: Node,
+    /// Its children, each with its own subtree, in order.
+    pub children: Vec<Branch>,
+}
+
 /// The operations of one user command, applied together and undone as one step.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Transaction {
@@ -169,6 +179,49 @@ impl Document {
             below.push((next, entry));
         }
         Some(Snapshot { top, below })
+    }
+
+    /// The node `id` with its subtree, apart from this document; `None` when this document has no
+    /// such node.
+    #[must_use]
+    pub fn branch(&self, id: ItemId) -> Option<Branch> {
+        let entry = self.entries.get(&id)?;
+        Some(Branch {
+            node: entry.node.clone(),
+            children: entry
+                .children
+                .iter()
+                .map(|&child| self.branch(child))
+                .collect::<Option<_>>()?,
+        })
+    }
+
+    /// `branch` as a subtree to put in with [`Op::Insert`], every node given a fresh identifier
+    /// from [`new_id`](Self::new_id).
+    pub fn graft(&mut self, branch: &Branch) -> Snapshot {
+        let mut below = Vec::new();
+        let top = self.grafted(branch, &mut below);
+        Snapshot { top, below }
+    }
+
+    /// The entry of `branch`'s top node under a fresh identifier, after adding those of its
+    /// descendants to `below`, in the order [`snapshot`](Self::snapshot) lists them.
+    fn grafted(&mut self, branch: &Branch, below: &mut Vec<(ItemId, Entry)>) -> (ItemId, Entry) {
+        let id = self.new_id();
+        let mut children = Vec::with_capacity(branch.children.len());
+        for child in &branch.children {
+            let at = below.len();
+            let entry = self.grafted(child, below);
+            children.push(entry.0);
+            below.insert(at, entry);
+        }
+        (
+            id,
+            Entry {
+                node: branch.node.clone(),
+                children,
+            },
+        )
     }
 
     /// Applies every operation of `transaction` in order, or none of them.
@@ -349,6 +402,45 @@ mod tests {
             original.revision(),
             "undoing is a change"
         );
+        Ok(())
+    }
+
+    // FR-OPS-05
+    #[test]
+    fn a_branch_grafted_back_in_is_a_copy_under_fresh_identifiers() -> Result<(), PlacementError> {
+        let Fixture {
+            mut document,
+            area,
+            section,
+            ..
+        } = fixture()?;
+        let branch = document
+            .branch(area)
+            .ok_or(PlacementError::NoSuchNode(area))?;
+        assert_eq!(branch.children.len(), 1);
+        assert_eq!(
+            branch
+                .children
+                .first()
+                .map(|section| section.children.len()),
+            Some(2)
+        );
+        let subtree = document.graft(&branch);
+        let copy = subtree.id();
+        assert!(document.node(copy).is_none(), "nothing is put in yet");
+        let insert = Op::Insert {
+            parent: None,
+            index: 2,
+            subtree,
+        };
+        document.apply(&Transaction::new(vec![insert.clone()]))?;
+        assert_eq!(document.branch(copy), Some(branch));
+        let copied_section = document.children(copy).first().copied();
+        assert!(copied_section.is_some_and(|id| id != section));
+        // The graft lists its nodes as a snapshot does, so taking the copy out again fits.
+        document.apply(&Transaction::new(vec![insert.inverse()]))?;
+        assert_eq!(document.node(copy), None);
+        assert_eq!(document.branch(ItemId::new(999)), None);
         Ok(())
     }
 

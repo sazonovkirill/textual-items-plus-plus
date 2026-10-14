@@ -84,6 +84,36 @@ pub(super) fn path(document: &Document, container: ItemId) -> Vec<ItemId> {
     path
 }
 
+/// The projects, sections and tasks among `items`, the kinds rows show, without those inside
+/// another of them, which go along with it, in order: the items a command on the selection takes
+/// with everything inside them.
+pub(super) fn outermost_rows(
+    document: &Document,
+    items: impl IntoIterator<Item = ItemId>,
+) -> Vec<ItemId> {
+    let rows: Vec<ItemId> = items
+        .into_iter()
+        .filter(|&id| {
+            document.node(id).and_then(Node::item).is_some_and(|item| {
+                matches!(
+                    item.kind,
+                    ItemKind::Project | ItemKind::Section | ItemKind::Task
+                )
+            })
+        })
+        .collect();
+    rows.iter()
+        .copied()
+        .filter(|&id| {
+            !path(document, id)
+                .iter()
+                .rev()
+                .skip(1)
+                .any(|above| rows.contains(above))
+        })
+        .collect()
+}
+
 /// Whether `id` is a container that can be opened: the Inbox, an area, a project or a section,
 /// neither it nor anything above it in the Trash, and not inside a completed item, whose contents
 /// are shown nowhere (FR-ORG-09). A completed container itself opens, as its row does.

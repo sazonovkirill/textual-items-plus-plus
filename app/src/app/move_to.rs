@@ -36,18 +36,7 @@ impl MoveTo {
         document: &Document,
         items: impl IntoIterator<Item = ItemId>,
     ) -> Option<Self> {
-        let mut items: Vec<ItemId> = items
-            .into_iter()
-            .filter(|&id| kind(document, id).is_some_and(movable))
-            .collect();
-        let all = items.clone();
-        items.retain(|&id| {
-            !container::path(document, id)
-                .iter()
-                .rev()
-                .skip(1)
-                .any(|above| all.contains(above))
-        });
+        let items = container::outermost_rows(document, items);
         (!items.is_empty()).then(|| Self {
             picker: Picker::new(destinations(document, &items)),
             items,
@@ -128,11 +117,6 @@ impl MoveTo {
         }
         Transaction::new(ops)
     }
-}
-
-/// Whether Move to moves an item of `kind`: only rows move, and the Inbox is none.
-fn movable(kind: ItemKind) -> bool {
-    matches!(kind, ItemKind::Project | ItemKind::Section | ItemKind::Task)
 }
 
 /// What the item `id` is, if it is one.

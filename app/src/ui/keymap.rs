@@ -58,6 +58,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Delete, &["d d", "delete"]),
     // taskpaper-terminal's Move to key.
     (Command::MoveTo, &["g m"]),
+    // taskpaper-terminal's clipboard keys (its D-53).
+    (Command::Duplicate, &["D"]),
+    (Command::Copy, &["y", "ctrl+c"]),
+    (Command::Cut, &["ctrl+x"]),
+    (Command::Paste(Side::Below), &["p", "ctrl+v"]),
+    (Command::Paste(Side::Above), &["P", "alt+v"]),
     // The container shown, which no row of its own shows (D-40).
     (Command::RenameContainer, &["R"]),
     (Command::DeleteContainer, &["d c"]),

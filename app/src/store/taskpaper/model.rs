@@ -11,8 +11,8 @@ use std::collections::HashMap;
 
 use jiff::civil::Date;
 
-use super::{Line, LineId, LineKind, Outline, split_lines, tags};
-use crate::domain::{self, Completion, Document, Item, ItemId, ItemKind, Node};
+use super::{Line, LineId, LineKind, Outline, parse, serialize, split_lines, tags};
+use crate::domain::{self, Branch, Completion, Document, Item, ItemId, ItemKind, Node};
 
 /// The invisible character that guards a content line (attachments.md §1.1).
 const GUARD: char = '\u{200B}';
@@ -111,6 +111,69 @@ pub fn write_document(document: &Document, source: &Source) -> Outline {
     writer.outline
 }
 
+/// TaskPaper text holding `branches`, tab-indented from their top nodes, as a file writes new
+/// items: what is copied and cut (FR-OPS-05).
+#[must_use]
+pub fn write_branches(branches: &[Branch]) -> String {
+    let (document, source) = (Document::new(), Source::default());
+    let mut writer = Writer {
+        document: &document,
+        source: &source,
+        outline: Outline::default(),
+    };
+    let root = writer.outline.root();
+    for branch in branches {
+        writer.write_branch(root, branch);
+    }
+    serialize(&writer.outline)
+}
+
+/// The items TaskPaper `text` holds, as pasted (FR-OPS-05): each top-level line an area or a
+/// project where the top level takes it, else an item inside a project, and a text line a task,
+/// so that a pasted list becomes tasks. What is under each line reads as in a file. Blank lines at
+/// the top level are left out; a top-level line tagged `@hidden` is kept as read.
+///
+/// # Panics
+///
+/// Never: the lines are read into a document of their own, where each goes where its kind fits.
+#[must_use]
+pub fn read_branches(text: &str) -> Vec<Branch> {
+    let outline = parse(text);
+    let mut reader = Reader {
+        outline: &outline,
+        document: Document::new(),
+        lines: HashMap::new(),
+    };
+    let holder = reader
+        .document
+        .push(None, Node::Item(Item::new(ItemKind::Project, "")))
+        .expect("a project fits at the top level");
+    let in_project = Place::In(ItemKind::Project);
+    let mut read = Vec::new();
+    for &line_id in children(&outline, outline.root()) {
+        let top = line(&outline, line_id);
+        if top.text().trim().is_empty() && top.children().is_empty() {
+            continue;
+        }
+        let id = if let Some(kind) = classify(top, Place::Top) {
+            reader.read_as(None, Some(kind), line_id)
+        } else {
+            let text = top.kind() == LineKind::Note && !has_tag(top, "hidden");
+            let kind = classify(top, in_project).or(text.then_some(ItemKind::Task));
+            reader.read_as(Some(holder), kind, line_id)
+        };
+        read.push(id);
+    }
+    read.into_iter()
+        .map(|id| {
+            reader
+                .document
+                .branch(id)
+                .expect("the lines read are in the document")
+        })
+        .collect()
+}
+
 struct Reader<'a> {
     outline: &'a Outline,
     document: Document,
@@ -131,9 +194,20 @@ impl<'a> Reader<'a> {
     /// Adds the line `line_id` and everything under it to `parent`, as an item where its kind
     /// fits `place` and as kept content otherwise.
     fn read_node(&mut self, parent: Option<ItemId>, place: Place, line_id: LineId) -> ItemId {
-        let outline = self.outline;
-        let read = line(outline, line_id);
-        let (node, place, rest) = match classify(read, place) {
+        let kind = classify(line(self.outline, line_id), place);
+        self.read_as(parent, kind, line_id)
+    }
+
+    /// Adds the line `line_id` and everything under it to `parent`, as an item of `kind`, which
+    /// fits there, or as kept content for `None`.
+    fn read_as(
+        &mut self,
+        parent: Option<ItemId>,
+        kind: Option<ItemKind>,
+        line_id: LineId,
+    ) -> ItemId {
+        let read = line(self.outline, line_id);
+        let (node, place, rest) = match kind {
             Some(kind) => {
                 let (item, rest) = self.read_item(line_id, kind);
                 (Node::Item(item), Place::In(kind), rest)
@@ -191,6 +265,21 @@ struct Writer<'a> {
 }
 
 impl Writer<'_> {
+    /// Writes `branch` under `parent` as new lines.
+    fn write_branch(&mut self, parent: LineId, branch: &Branch) {
+        let line_id = match &branch.node {
+            Node::Kept(text) => self.push(parent, text.clone(), None),
+            Node::Item(item) => {
+                let line_id = self.push(parent, line_text(item), None);
+                self.write_contents(line_id, item, None);
+                line_id
+            }
+        };
+        for child in &branch.children {
+            self.write_branch(line_id, child);
+        }
+    }
+
     fn write_node(&mut self, parent: LineId, place: Place, id: ItemId) {
         let read_from = self.source;
         let source_id = read_from.lines.get(&id).copied();
@@ -690,6 +779,75 @@ Work: @area
 
     fn first_top_level(document: &Document) -> ItemId {
         document.top_level()[0]
+    }
+
+    // FR-OPS-05
+    #[test]
+    fn copied_items_are_written_as_a_file_writes_them_and_read_back_alike() {
+        let (document, _) = load(EXAMPLE);
+        let [work] = children(&document, None);
+        let branch = document.branch(work).unwrap();
+        let text = write_branches(std::slice::from_ref(&branch));
+        assert_eq!(text, &EXAMPLE[EXAMPLE.find("Work").unwrap()..]);
+        assert_eq!(read_branches(&text), [branch]);
+        assert_eq!(write_branches(&[]), "");
+    }
+
+    // FR-OPS-05
+    #[test]
+    fn pasted_lines_become_items_where_they_fit_and_plain_lines_become_tasks() {
+        let text = "\
+Milk
+
+- Eggs @shop
+Groceries:
+\t- Bread
+\t\tWholemeal
+Later: @section
+\t- x
+Home: @area
+Secret @hidden
+\tunder it
+";
+        let branches = read_branches(text);
+        let kinds: Vec<_> = branches
+            .iter()
+            .map(|branch| {
+                branch
+                    .node
+                    .item()
+                    .map(|item| (item.kind, item.title.as_str()))
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                Some((ItemKind::Task, "Milk")),
+                Some((ItemKind::Task, "Eggs")),
+                Some((ItemKind::Project, "Groceries")),
+                Some((ItemKind::Section, "Later")),
+                Some((ItemKind::Area, "Home")),
+                None,
+            ]
+        );
+        assert_eq!(branches[1].node.item().unwrap().tags, [tag("shop", None)]);
+        let bread = branches[2].children[0].node.item().unwrap();
+        assert_eq!(
+            (bread.title.as_str(), bread.description.as_str()),
+            ("Bread", "Wholemeal")
+        );
+        assert_eq!(branches[3].children.len(), 1);
+        assert_eq!(branches[5].node, Node::Kept("Secret @hidden".to_owned()));
+        assert_eq!(
+            branches[5].children[0].node,
+            Node::Kept("under it".to_owned())
+        );
+        assert_eq!(
+            write_branches(&branches[5..]),
+            "Secret @hidden\n\tunder it\n",
+            "kept lines are copied as they were"
+        );
+        assert_eq!(read_branches("\n\n"), []);
     }
 
     // FR-STORE-02, FR-STORE-03, FR-STORE-04, FR-STORE-05, FR-STORE-06, FR-STORE-07,

@@ -4,6 +4,7 @@
 
 mod adding;
 pub mod autosave;
+mod clipboard;
 mod command;
 mod completion;
 mod container;

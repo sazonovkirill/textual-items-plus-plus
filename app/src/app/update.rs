@@ -6,9 +6,9 @@ use std::time::Duration;
 use jiff::civil::Date;
 
 use super::{
-    Command, ConflictSide, EditInput, OnDisk, PickerInput, Report, State, autosave::Ending,
+    Command, ConflictSide, EditInput, OnDisk, PickerInput, Report, Side, State, autosave::Ending,
 };
-use crate::domain::ItemKind;
+use crate::domain::{Branch, ItemKind};
 
 /// A user intent or a result the frontend reports back.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,10 +30,13 @@ pub enum Message {
     Disk(Report),
     /// The file on disk is no longer the version the core last read or wrote (F-FILE-06).
     OnDisk(OnDisk),
+    /// These items, as the clipboard holds them, are pasted on this side of the focus
+    /// (FR-OPS-05); the answer to [`Effect::ReadClipboard`], or text pasted into the terminal.
+    Paste(Side, Vec<Branch>),
 }
 
 /// Work the frontend carries out for the core, which never does I/O itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     /// End the session, after the effects before it.
     Quit,
@@ -53,11 +56,16 @@ pub enum Effect {
     /// The document is now the one the file on disk was last reported to hold; write it the way
     /// that file was read from now on.
     Reloaded,
+    /// Put these items on the clipboard (FR-OPS-05).
+    SetClipboard(Vec<Branch>),
+    /// Read the items on the clipboard and paste them on this side of the focus with
+    /// [`Message::Paste`] (FR-OPS-05).
+    ReadClipboard(Side),
 }
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
-/// the effects the frontend should carry out, in order. A command given in edit mode ends it
-/// first, so that the edit is kept before anything else happens. Every message is followed by
+/// the effects the frontend should carry out, in order. A command or a paste given in edit mode
+/// ends it first, so that the edit is kept before anything else happens. Every message is followed by
 /// what saving asks for after it.
 pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     let mut effects = dispatch(state, message, today);
@@ -67,7 +75,7 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
 
 /// Applies `message` to `state` by the module that owns it.
 fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
-    if let Message::Command(_) = message {
+    if let Message::Command(_) | Message::Paste(..) = message {
         state.finish_editing();
         state.clear_notice();
     }
@@ -98,6 +106,11 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::NewArea(side)) => state.new_container(ItemKind::Area, side),
         Message::Command(Command::Delete) => state.delete(today),
         Message::Command(Command::MoveTo) => state.open_move_to(),
+        Message::Command(Command::Duplicate) => state.duplicate(),
+        Message::Command(Command::Copy) => return state.copy(),
+        Message::Command(Command::Cut) => return state.cut(),
+        Message::Command(Command::Paste(side)) => return vec![Effect::ReadClipboard(side)],
+        Message::Paste(side, branches) => state.paste(side, &branches),
         Message::Command(Command::RenameContainer) => state.rename_container(),
         Message::Command(Command::DeleteContainer) => state.delete_container(today),
         Message::Command(Command::Move(direction)) => state.move_item(direction),

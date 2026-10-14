@@ -9,7 +9,7 @@ mod tags;
 
 use thiserror::Error;
 
-pub use model::{Source, read_document, write_document};
+pub use model::{Source, read_branches, read_document, write_branches, write_document};
 pub use outline::{FileFormat, IndentUnit, Line, LineEnding, LineId, LineKind, Outline};
 pub use serialize::serialize;
 pub use tags::Tag;

@@ -1,6 +1,7 @@
 //! The UI layer: the terminal frontend, which turns terminal events into app messages, carries out
 //! the app's effects and draws its state.
 
+mod clipboard;
 mod conflict;
 mod container;
 mod crumbs;
@@ -27,6 +28,7 @@ use ratatui::{
     widgets::{StatefulWidget, Widget},
 };
 
+pub use clipboard::SystemClipboard;
 pub use file::Edge;
 pub use keymap::Keymap;
 pub use picker::{PickerPopup, picker_input};
@@ -34,11 +36,13 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
     app::{
-        self, Command, Context, Destination, Effect, Message, Opened, Part, Place, REGISTRY, State,
+        self, Command, Context, Destination, EditInput, Effect, Message, Opened, Part, PickerInput,
+        Place, REGISTRY, Side, State, TextEdit,
     },
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
 };
+use clipboard::Clipboard;
 use conflict::ConflictPrompt;
 use container::ContainerPane;
 use crumbs::Crumbs;
@@ -60,7 +64,8 @@ pub enum Input {
 }
 
 /// The running app as the terminal shows it: the core's state, the keys that drive it, how it is
-/// drawn and scrolled, the file it keeps in step, and whether the session has ended.
+/// drawn and scrolled, the file it keeps in step, the clipboard and whether the session has
+/// ended.
 #[derive(Debug)]
 pub struct Tui {
     state: State,
@@ -73,6 +78,7 @@ pub struct Tui {
     area: Rect,
     quit: bool,
     file: Option<File>,
+    clipboard: Clipboard,
     /// The local date, as last given.
     today: Date,
 }
@@ -90,8 +96,15 @@ impl Tui {
             area: Rect::default(),
             quit: false,
             file: None,
+            clipboard: Clipboard::default(),
             today,
         }
+    }
+
+    /// Copies to and pastes from `system` from now on, keeping only the app's own copy without
+    /// it (FR-OPS-05).
+    pub fn use_clipboard(&mut self, system: Box<dyn SystemClipboard>) {
+        self.clipboard = Clipboard::new(system);
     }
 
     /// The app on the file at `path`, every change saved to it, with the document of the
@@ -181,6 +194,10 @@ impl Tui {
     /// then acts on its own.
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
+        if let Event::Paste(text) = event {
+            self.paste(text);
+            return;
+        }
         if let Some(command) = self.keymap.cut_short(event) {
             self.give(command);
         }
@@ -211,6 +228,43 @@ impl Tui {
         };
         if let Some(message) = message {
             self.update(message);
+        }
+    }
+
+    /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
+    /// it: a description being edited takes it whole; a title being edited takes a single line,
+    /// while several lines end editing and paste as items below; the query of the open Navigator
+    /// or Move to takes it with its line breaks as spaces; otherwise the items it holds paste
+    /// below the focus. The conflict prompt takes none.
+    fn paste(&mut self, text: &str) {
+        if self.state.conflict().is_some() {
+            return;
+        }
+        let text = text.trim_end_matches(['\r', '\n']);
+        let several = text.contains(['\r', '\n']);
+        let part = self.state.editing().map(|(_, part, _)| part);
+        if part == Some(Part::Description) {
+            for c in text.replace("\r\n", "\n").replace('\r', "\n").chars() {
+                self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
+            }
+        } else if part.is_some() && !several {
+            for c in text.chars() {
+                self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
+            }
+        } else if self.state.navigator().is_some() || self.state.move_to().is_some() {
+            let navigator = self.state.navigator().is_some();
+            for c in text.chars() {
+                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
+                let input = PickerInput::Edit(TextEdit::Insert(c));
+                self.update(if navigator {
+                    Message::Navigator(input)
+                } else {
+                    Message::MoveTo(input)
+                });
+            }
+        } else {
+            let branches = store::taskpaper::read_branches(text);
+            self.update(Message::Paste(Side::Below, branches));
         }
     }
 
@@ -305,6 +359,11 @@ impl Tui {
                 if let Some(file) = &mut self.file {
                     file.reloaded();
                 }
+            }
+            Effect::SetClipboard(branches) => self.clipboard.copy(&branches),
+            Effect::ReadClipboard(side) => {
+                let branches = self.clipboard.branches();
+                self.update(Message::Paste(side, branches));
             }
         }
     }

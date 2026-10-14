@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use jiff::civil::Date;
 
 use super::{
-    Direction, EditInput, Go, History, Notice, Part, Picked, Picker, PickerInput, PickerView,
-    Selection, Side, TextField, Whose, adding, completion,
+    Direction, EditInput, Effect, Go, History, Notice, Part, Picked, Picker, PickerInput,
+    PickerView, Selection, Side, TextField, Whose, adding, clipboard, completion,
     container::{self, Row},
     editing::Editing,
     focus::{self, Focus},
@@ -17,7 +17,7 @@ use super::{
     trash,
     visits::{Visit, Visits},
 };
-use crate::domain::{Document, ItemId, ItemKind, Transaction};
+use crate::domain::{Branch, Document, ItemId, ItemKind, Transaction};
 
 /// Where the document came from, which decides whether changes to it can be kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +153,51 @@ impl State {
     pub(super) fn delete(&mut self, today: Date) {
         let transaction = trash::delete(&self.document, self.selection.items(), today);
         self.change(transaction);
+    }
+
+    /// Puts a copy of each selected item, with its contents, right after it, as one step to undo,
+    /// focusing the copy of the last one the pane shows.
+    pub(super) fn duplicate(&mut self) {
+        let taken = container::outermost_rows(&self.document, self.selection.items());
+        let (transaction, last) = clipboard::duplicate(&mut self.document, &taken);
+        self.change_focusing(transaction, last.or(self.selection.focused()));
+    }
+
+    /// Asks for the selected items, with their contents, to go on the clipboard; nothing when no
+    /// project, section or task is selected.
+    pub(super) fn copy(&self) -> Vec<Effect> {
+        let taken = container::outermost_rows(&self.document, self.selection.items());
+        if taken.is_empty() {
+            return Vec::new();
+        }
+        vec![Effect::SetClipboard(clipboard::branches(
+            &self.document,
+            &taken,
+        ))]
+    }
+
+    /// Copies the selected items and takes them out of the document, not into the Trash, as one
+    /// step to undo, moving the focus on from the rows that leave.
+    pub(super) fn cut(&mut self) -> Vec<Effect> {
+        let effects = self.copy();
+        let taken = container::outermost_rows(&self.document, self.selection.items());
+        let transaction = clipboard::cut(&self.document, &taken);
+        self.change(transaction);
+        effects
+    }
+
+    /// Pastes `branches` on `side` of the focused row, as one step to undo, focusing the last
+    /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near.
+    pub(super) fn paste(&mut self, side: Side, branches: &[Branch]) {
+        let target = clipboard::Target {
+            container: self.container,
+            show_completed: self.show_completed,
+            focused: self.selection.focused(),
+            side,
+        };
+        if let Some((transaction, shown)) = clipboard::paste(&mut self.document, target, branches) {
+            self.change_focusing(transaction, shown.or(self.selection.focused()));
+        }
     }
 
     /// Opens the Move to picker for the selected items, closing the Navigator. Nothing opens when
