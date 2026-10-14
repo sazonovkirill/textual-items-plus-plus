@@ -71,7 +71,8 @@ fn main() -> anyhow::Result<()> {
     let bracketed = execute!(io::stdout(), EnableBracketedPaste).is_ok();
     forward_terminal_events(inputs);
     // The panic hook `try_init` installed restores the terminal first; once the panic has
-    // unwound to here, the document is written out as it stands (N-REL-01).
+    // unwound to here, or the event loop has failed, as when the terminal is gone before a save
+    // falls due, the document is written out as it stands (N-REL-01).
     let result = panic::catch_unwind(AssertUnwindSafe(|| run(&mut terminal, &mut tui, &received)));
     if kitty {
         // The session is over; a terminal that cannot take this has gone already.
@@ -88,7 +89,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(farewell) = tui.farewell() {
         eprintln!("{farewell}");
     }
-    result.unwrap_or_else(|panic| {
+    if !matches!(result, Ok(Ok(()))) {
         match tui.recover() {
             Ok(Some(path)) => eprintln!("tipp: the unsaved changes are in {}", path.display()),
             Ok(None) => {}
@@ -96,8 +97,8 @@ fn main() -> anyhow::Result<()> {
                 eprintln!("tipp: cannot write the unsaved changes to a recovery file: {error}");
             }
         }
-        panic::resume_unwind(panic)
-    })
+    }
+    result.unwrap_or_else(|panic| panic::resume_unwind(panic))
 }
 
 /// The system clipboard: the desktop's when a display server is reachable, else the terminal's
