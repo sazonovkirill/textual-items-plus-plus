@@ -8,7 +8,7 @@
 use std::{path::PathBuf, time::Duration};
 
 use super::{
-    Effect, State,
+    Effect, Refusal, State,
     autosave::{Autosave, Ending, SaveState, Step},
     container,
     move_to::MoveTo,
@@ -55,7 +55,8 @@ pub enum ConflictSide {
     Theirs,
 }
 
-/// Something that happened to the file, for the status line to say until the next command.
+/// Something that happened to the file or a command, for the status line to say until the next
+/// command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notice {
     /// The file changed on disk and was read again.
@@ -71,6 +72,8 @@ pub enum Notice {
     CopyFailed(String),
     /// The daily backup failed, for this reason.
     BackupFailed(String),
+    /// Indenting or outdenting was refused, for this reason (FR-OPS-03).
+    Refused(Refusal),
 }
 
 /// The conflict prompt as a frontend shows it.
@@ -178,9 +181,14 @@ impl State {
         self.saving.now = now;
     }
 
-    /// Clears what the status line said about the file, as each command does.
+    /// Clears what the status line said, as each command does.
     pub(super) fn clear_notice(&mut self) {
         self.saving.notice = None;
+    }
+
+    /// Has the status line say `notice` until the next command.
+    pub(super) fn notify(&mut self, notice: Notice) {
+        self.saving.notice = Some(notice);
     }
 
     /// Asks to end the session, saving first. With the conflict prompt open, the file on disk is

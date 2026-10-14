@@ -14,7 +14,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use super::{Icon, IconSet, Theme};
-use crate::app::{Notice, Opened, State, autosave::SaveState};
+use crate::app::{Notice, Opened, Refusal, State, autosave::SaveState};
 
 /// What stands between the parts of the line.
 const SEPARATOR: &str = " · ";
@@ -103,6 +103,11 @@ fn kept(state: &State) -> String {
         Notice::CannotTakeTheirs => "cannot take theirs: the file on disk is not UTF-8".to_owned(),
         Notice::CopyFailed(reason) => format!("{quit_again}conflict copy failed: {reason}"),
         Notice::BackupFailed(reason) => format!("backup failed: {reason}"),
+        Notice::Refused(Refusal::DoesNotNest) => {
+            "only projects and checklist items nest".to_owned()
+        }
+        Notice::Refused(Refusal::NothingAbove) => "nothing above to indent into".to_owned(),
+        Notice::Refused(Refusal::NotNested) => "nothing to outdent from".to_owned(),
     });
     if let Some(notice) = notice {
         return notice;

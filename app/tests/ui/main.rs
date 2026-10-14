@@ -7,5 +7,6 @@ mod editing;
 mod moving;
 mod navigation;
 mod quitting;
+mod rearranging;
 mod saving;
 mod support;

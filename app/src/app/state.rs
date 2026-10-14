@@ -5,12 +5,13 @@ use std::path::PathBuf;
 use jiff::civil::Date;
 
 use super::{
-    EditInput, Go, History, Picked, Picker, PickerInput, PickerView, Selection, Side, TextField,
-    adding, completion,
+    Direction, EditInput, Go, History, Notice, Picked, Picker, PickerInput, PickerView, Selection,
+    Side, TextField, adding, completion,
     container::{self, Row},
     editing::Editing,
     focus::{self, Focus},
     move_to::{Destination, MoveTo},
+    moving,
     navigator::{self, Place},
     saving::Saving,
     trash,
@@ -179,6 +180,42 @@ impl State {
         }
     }
 
+    /// Moves the focused item one step `direction` among its rows, as one step to undo, keeping
+    /// the focus on it (FR-OPS-02, FR-OPS-10).
+    pub(super) fn move_item(&mut self, direction: Direction) {
+        let Some(id) = self.selection.focused() else {
+            return;
+        };
+        let transaction = moving::shift(&self.document, &self.rows(), id, direction);
+        self.change(transaction);
+    }
+
+    /// Indents the focused item into the item of its kind above it, as one step to undo, and
+    /// focuses that item, since what it holds is not shown; the status line says why when the
+    /// hierarchy refuses (FR-OPS-03).
+    pub(super) fn indent(&mut self) {
+        let Some(id) = self.selection.focused() else {
+            return;
+        };
+        match moving::indent(&self.document, id) {
+            Ok((transaction, into)) => self.change_focusing(transaction, Some(into)),
+            Err(refusal) => self.notify(Notice::Refused(refusal)),
+        }
+    }
+
+    /// Outdents the focused item out of the item of its kind it is in, as one step to undo,
+    /// moving the focus on when it leaves the rows; the status line says why when the hierarchy
+    /// refuses (FR-OPS-03).
+    pub(super) fn outdent(&mut self) {
+        let Some(id) = self.selection.focused() else {
+            return;
+        };
+        match moving::outdent(&self.document, id) {
+            Ok(transaction) => self.change(transaction),
+            Err(refusal) => self.notify(Notice::Refused(refusal)),
+        }
+    }
+
     /// Starts editing the focused row's title. Nothing happens unless a row is focused.
     pub(super) fn edit_title(&mut self) {
         let editing = self
@@ -311,9 +348,14 @@ impl State {
 
     /// Applies `transaction` as one step to undo, moving the focus on when its row leaves.
     fn change(&mut self, transaction: Transaction) {
+        self.change_focusing(transaction, self.selection.focused());
+    }
+
+    /// Applies `transaction` as one step to undo, then focuses `focused`, or the row nearest it
+    /// when it is not a row.
+    fn change_focusing(&mut self, transaction: Transaction, focused: Option<ItemId>) {
         let before = self.rows();
         let (container, show_completed) = (self.container, self.show_completed);
-        let focused = self.selection.focused();
         let mut after = self.selection.clone();
         self.history
             .commit(
@@ -327,6 +369,9 @@ impl State {
                 },
             )
             .expect("a transaction made from the document as it is fits it");
+        if focused != self.selection.focused() {
+            self.selection.focus(focused);
+        }
         self.settle(&before);
     }
 

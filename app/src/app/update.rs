@@ -100,6 +100,9 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::MoveTo) => state.open_move_to(),
         Message::Command(Command::RenameContainer) => state.rename_container(),
         Message::Command(Command::DeleteContainer) => state.delete_container(today),
+        Message::Command(Command::Move(direction)) => state.move_item(direction),
+        Message::Command(Command::Indent) => state.indent(),
+        Message::Command(Command::Outdent) => state.outdent(),
         Message::Navigator(input) => state.navigator_input(input),
         Message::MoveTo(input) => state.move_to_input(input),
         Message::Edit(input) => state.edit_input(input),
@@ -112,7 +115,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::{Focus, Go, Opened, Side, TextEdit};
+    use crate::app::{Direction, Focus, Go, Notice, Opened, Refusal, Side, TextEdit};
     use crate::domain::{Completion, Document, Item, ItemKind, Node, PlacementError};
 
     const TODAY: Date = date(2026, 10, 14);
@@ -255,6 +258,56 @@ mod tests {
         let effects = update(&mut state, Message::Command(Command::Quit), TODAY);
         assert_eq!(effects, [Effect::Quit]);
         assert!(state.editing().is_none(), "quitting keeps the edit");
+        Ok(())
+    }
+
+    // FR-OPS-02, FR-OPS-03
+    #[test]
+    fn moving_and_indenting_change_the_state_with_no_effect() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::Move(Direction::Down));
+        assert_eq!(titles(&state), ["b", "a"]);
+        assert_eq!(focused(&state), Some("a"));
+        give(&mut state, Command::Indent);
+        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
+        give(&mut state, Command::Outdent);
+        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::DoesNotNest)));
+        give(&mut state, Command::Move(Direction::Up));
+        assert_eq!(state.notice(), None);
+        assert_eq!(titles(&state), ["a", "b"]);
+        let mut empty = State::new(Document::new(), Opened::Demo);
+        let before = empty.clone();
+        for command in [
+            Command::Move(Direction::Up),
+            Command::Indent,
+            Command::Outdent,
+        ] {
+            give(&mut empty, command);
+        }
+        assert_eq!(empty, before, "with nothing focused nothing happens");
+        let mut document = Document::new();
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        for title in ["A", "B"] {
+            document.push(Some(area), Node::Item(Item::new(ItemKind::Project, title)))?;
+        }
+        let mut state = State::new(document, Opened::Demo);
+        for message in [
+            Message::Command(Command::Navigator),
+            Message::Navigator(PickerInput::Next),
+            Message::Navigator(PickerInput::Choose),
+            Message::Command(Command::Focus(Focus::Last)),
+            Message::Command(Command::Indent),
+        ] {
+            assert_eq!(update(&mut state, message, TODAY), []);
+        }
+        assert_eq!(titles(&state), ["A"]);
+        assert_eq!(focused(&state), Some("A"), "the project it went into");
+        give(&mut state, Command::Go(Go::Into));
+        assert_eq!(focused(&state), Some("B"));
+        give(&mut state, Command::Outdent);
+        assert_eq!(titles(&state), Vec::<&str>::new());
+        give(&mut state, Command::Go(Go::Up));
+        assert_eq!(titles(&state), ["A", "B"]);
         Ok(())
     }
 

@@ -8,8 +8,10 @@ use thiserror::Error;
 use super::item::{Item, ItemId, ItemKind, Node};
 
 mod edit;
+mod moving;
 
 pub use edit::{Op, Snapshot, Transaction};
+pub use moving::Destination;
 
 /// The whole todo list: the Inbox, always first (FR-ORG-07), then the top-level nodes in the
 /// user's order (FR-ORG-08), each with its children. Two documents are equal when they hold the

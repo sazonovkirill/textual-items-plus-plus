@@ -6,7 +6,7 @@ use std::{collections::HashMap, time::Duration};
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
-use crate::app::{Command, Focus, Go, Side};
+use crate::app::{Command, Direction, Focus, Go, Side};
 
 /// How long a sequence waits for its next key, as in taskpaper-terminal (its keybindings.md §1).
 const TIMEOUT: Duration = Duration::from_secs(1);
@@ -61,6 +61,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // The container shown, which no row of its own shows (D-40).
     (Command::RenameContainer, &["R"]),
     (Command::DeleteContainer, &["d c"]),
+    // `Alt` with a motion moves, and `]`/`[` indent and outdent beside taskpaper-terminal's
+    // `Tab`/`Shift+Tab` (D-24, D-42).
+    (Command::Move(Direction::Up), &["alt+k", "alt+up"]),
+    (Command::Move(Direction::Down), &["alt+j", "alt+down"]),
+    (Command::Indent, &["]", "tab"]),
+    (Command::Outdent, &["[", "shift+tab"]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
     // while the user types (its D-115, D-38).
     (Command::KeepMine, &["ctrl+k"]),
@@ -336,6 +342,32 @@ mod tests {
                 given = keymap.press(event);
             }
             assert_eq!(given, command, "{events:?}");
+        }
+    }
+
+    // FR-OPS-02, FR-OPS-03, FR-KEY-02
+    #[test]
+    fn alt_with_a_motion_moves_and_brackets_and_tab_indent() {
+        let mut keymap = Keymap::default();
+        let alt = KeyModifiers::ALT;
+        let moved = |direction| Some(Command::Move(direction));
+        for (event, command) in [
+            (press(KeyCode::Char('k'), alt), moved(Direction::Up)),
+            (press(KeyCode::Up, alt), moved(Direction::Up)),
+            (press(KeyCode::Char('j'), alt), moved(Direction::Down)),
+            (press(KeyCode::Down, alt), moved(Direction::Down)),
+            (char(']'), Some(Command::Indent)),
+            (
+                press(KeyCode::Tab, KeyModifiers::NONE),
+                Some(Command::Indent),
+            ),
+            (char('['), Some(Command::Outdent)),
+            (
+                press(KeyCode::BackTab, KeyModifiers::SHIFT),
+                Some(Command::Outdent),
+            ),
+        ] {
+            assert_eq!(keymap.press(&event), command, "{event:?}");
         }
     }
 

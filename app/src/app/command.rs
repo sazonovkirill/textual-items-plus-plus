@@ -2,7 +2,7 @@
 //! given in. A frontend binds its own keys to these commands and lists them in its palette and
 //! shortcuts panel.
 
-use super::{Focus, Side};
+use super::{Direction, Focus, Side};
 
 /// A command: one user intent, whatever key, menu or palette gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,6 +43,12 @@ pub enum Command {
     RenameContainer,
     /// Move the container shown to the Trash (FR-ORG-06, OQ-19).
     DeleteContainer,
+    /// Move the focused item up or down among the items it is shown with (FR-OPS-02, FR-OPS-10).
+    Move(Direction),
+    /// Indent the focused item into the item of its kind above it (FR-OPS-03).
+    Indent,
+    /// Outdent the focused item out of the item of its kind it is in (FR-OPS-03).
+    Outdent,
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
     KeepMine,
     /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
@@ -243,6 +249,26 @@ pub const REGISTRY: &[Entry] = &[
         title: "Delete Container",
         context: Context::Navigate,
     },
+    Entry {
+        command: Command::Move(Direction::Up),
+        title: "Move Up",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Move(Direction::Down),
+        title: "Move Down",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Indent,
+        title: "Indent",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Outdent,
+        title: "Outdent",
+        context: Context::Navigate,
+    },
     // Global, so that its key closes the Navigator too.
     Entry {
         command: Command::Navigator,
@@ -320,7 +346,7 @@ mod tests {
         assert_eq!(context(Command::Navigator), Some(Context::Global));
     }
 
-    // FR-EDIT-01, FR-EDIT-05, FR-OPS-04, FR-OPS-05, FR-ORG-06
+    // FR-EDIT-01, FR-EDIT-05, FR-OPS-02, FR-OPS-03, FR-OPS-04, FR-OPS-05, FR-ORG-06
     #[test]
     fn editing_adding_and_deleting_are_navigate_commands() {
         let added = [
@@ -337,6 +363,10 @@ mod tests {
             Command::MoveTo,
             Command::RenameContainer,
             Command::DeleteContainer,
+            Command::Move(Direction::Up),
+            Command::Move(Direction::Down),
+            Command::Indent,
+            Command::Outdent,
         ];
         for command in added.chain(others) {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);
