@@ -11,6 +11,7 @@ use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 /// and projects whose start or due date is `today` or earlier, the overdue ones, due before
 /// `today` (FR-DATE-04), first, then the others, each in file order, then, only when
 /// `show_completed`, the completed ones (FR-VIEW-11). A container's dates are its own (OQ-20).
+/// A Later item, or one inside a Later project, shows only once it is due (D-92).
 /// Items in the Trash and the contents of a completed item are not shown (FR-ORG-09); with
 /// nothing to show there is no group.
 #[must_use]
@@ -61,7 +62,10 @@ impl Walk {
         if item.deleted.is_some() {
             return;
         }
-        if let Some(row) = self.row(id, item) {
+        // A Later item waits for its due date, not its start date, as a deadline is not missed
+        // (D-92).
+        let waits = document.defers(id) && item.due.is_none_or(|due| due > self.today);
+        if let Some(row) = self.row(id, item).filter(|_| !waits) {
             let bucket = if item.completion().is_some() {
                 Bucket::Completed
             } else if item.overdue(self.today) {
@@ -136,6 +140,30 @@ mod tests {
             .expect("the test changes an item");
         edit(&mut item);
         document.set(id, item).expect("the kind stays");
+    }
+
+    // FR-ORG-11, FR-VIEW-06
+    #[test]
+    fn later_items_and_what_a_later_project_holds_show_only_once_due() {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let started = add(&mut document, inbox, Task, Some(0), None);
+        let due = add(&mut document, inbox, Task, Some(-1), Some(0));
+        let project = add(&mut document, None, Project, Some(0), None);
+        let inside = add(&mut document, Some(project), Task, Some(-1), None);
+        let overdue_inside = add(&mut document, Some(project), Task, None, Some(-1));
+        let open = add(&mut document, inbox, Task, Some(0), None);
+        for id in [started, due, project] {
+            change(&mut document, id, |item| item.later = true);
+        }
+        assert!(document.defers(inside));
+        assert_eq!(
+            groups(&document, TODAY, false),
+            [Group {
+                heading: None,
+                rows: vec![task(overdue_inside), task(due), task(open)],
+            }]
+        );
     }
 
     // FR-VIEW-06, FR-DATE-04, OQ-9, D-51

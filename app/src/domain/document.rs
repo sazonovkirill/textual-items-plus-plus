@@ -162,6 +162,24 @@ impl Document {
         false
     }
 
+    /// Whether `id` is Later, or inside a project that is, so that it counts as Later too
+    /// (FR-ORG-11, D-92).
+    #[must_use]
+    pub fn defers(&self, id: ItemId) -> bool {
+        let mut at = Some(id);
+        while let Some(id) = at {
+            if self
+                .node(id)
+                .and_then(Node::item)
+                .is_some_and(Item::is_later)
+            {
+                return true;
+            }
+            at = self.parent(id);
+        }
+        false
+    }
+
     /// Adds `node` as the last child of `parent`, or last at the top level when `parent` is
     /// `None`. Kept content goes anywhere; an item only where its kind fits, and never inside
     /// kept content.
@@ -407,6 +425,28 @@ mod tests {
         }
         for id in [area, inside_area, document.inbox(), ItemId::new(99)] {
             assert!(!document.conceals(id), "{id:?}");
+        }
+        Ok(())
+    }
+
+    // FR-ORG-11
+    #[test]
+    fn a_later_project_defers_everything_inside_it() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let mut later = Item::new(Project, "later");
+        later.later = true;
+        let project = document.push(None, Node::Item(later))?;
+        let section = document.push(Some(project), item(Section))?;
+        let task = document.push(Some(section), item(Task))?;
+        let mut marked = Item::new(Area, "marked");
+        marked.later = true;
+        let area = document.push(None, Node::Item(marked))?;
+        let inside_area = document.push(Some(area), item(Task))?;
+        for id in [project, section, task] {
+            assert!(document.defers(id), "{id:?}");
+        }
+        for id in [area, inside_area, document.inbox(), ItemId::new(99)] {
+            assert!(!document.defers(id), "{id:?}");
         }
         Ok(())
     }

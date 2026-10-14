@@ -2,7 +2,10 @@
 //! Anytime and Someday (FR-VIEW-08, OQ-9). Hides how the groups follow from the document.
 
 use super::view::{Group, Heading};
-use super::{Row, container};
+use super::{
+    Row,
+    container::{self, Stage},
+};
 use crate::domain::{Document, ItemId, ItemKind, Node};
 
 /// All's groups, as Things 3's Anytime groups them: the Inbox's tasks first under no heading,
@@ -10,7 +13,9 @@ use crate::domain::{Document, ItemId, ItemKind, Node};
 /// its own, in the order of the outline, its tasks listed as its view lists them (FR-VIEW-05), so
 /// its sections' tasks follow its other tasks, under no section heading. Completed tasks come after the open ones of their
 /// list and are left out unless `show_completed` (FR-VIEW-11); tasks in the Trash and inside a
-/// completed item are not shown (FR-ORG-09), and a group with no tasks is left out.
+/// completed item are not shown (FR-ORG-09), and a group with no tasks is left out. Later tasks
+/// come after the open ones of their list, and Later projects' groups after the others among
+/// their siblings (D-92).
 #[must_use]
 pub(super) fn groups(document: &Document, show_completed: bool) -> Vec<Group> {
     let mut groups = Vec::new();
@@ -21,27 +26,26 @@ pub(super) fn groups(document: &Document, show_completed: bool) -> Vec<Group> {
             rows: inbox,
         });
     }
-    for &id in document.top_level() {
+    for id in container::later_last(document, document.top_level()) {
         list(document, id, show_completed, &mut groups);
     }
     groups
 }
 
-/// The Inbox's tasks not in the Trash, the open ones and then, if shown, the completed ones, each
-/// in file order.
+/// The Inbox's tasks not in the Trash, the open ones, then the Later ones (D-92), then, if shown,
+/// the completed ones, each in file order.
 fn inbox_tasks(document: &Document, show_completed: bool) -> Vec<Row> {
     let inbox = document.inbox();
-    let tasks = |completed: bool| {
+    let tasks = |stage: Stage| {
         document.children(inbox).iter().copied().filter(move |&id| {
             document.node(id).and_then(Node::item).is_some_and(|item| {
-                item.kind == ItemKind::Task
-                    && item.deleted.is_none()
-                    && item.completed.is_some() == completed
+                item.kind == ItemKind::Task && item.deleted.is_none() && Stage::of(item) == stage
             })
         })
     };
-    let completed = show_completed.then(|| tasks(true));
-    tasks(false)
+    let completed = show_completed.then(|| tasks(Stage::Completed));
+    tasks(Stage::Open)
+        .chain(tasks(Stage::Later))
         .chain(completed.into_iter().flatten())
         .map(|id| Row::Task { id, section: None })
         .collect()
@@ -74,7 +78,7 @@ fn list(document: &Document, id: ItemId, show_completed: bool, groups: &mut Vec<
             rows,
         });
     }
-    for &child in document.children(id) {
+    for child in container::later_last(document, document.children(id)) {
         list(document, child, show_completed, groups);
     }
 }
@@ -122,6 +126,55 @@ mod tests {
                     heading: Some(Heading::Item(project)),
                     rows: vec![task(in_project, None)]
                 }
+            ]
+        );
+        Ok(())
+    }
+
+    // FR-ORG-11, FR-VIEW-08
+    #[test]
+    fn later_tasks_and_later_projects_groups_come_after_the_open_ones() -> Result<(), PlacementError>
+    {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let later = |document: &mut Document, id| {
+            let item = document.node(id).and_then(Node::item).cloned();
+            let item = item.map(|item| Item {
+                later: true,
+                ..item
+            });
+            document.set(id, item.ok_or(PlacementError::NoSuchNode(id))?)
+        };
+        let waiting = add(&mut document, Some(inbox), Task)?;
+        let open = add(&mut document, Some(inbox), Task)?;
+        let someday = add(&mut document, None, Project)?;
+        let in_someday = add(&mut document, Some(someday), Task)?;
+        let project = add(&mut document, None, Project)?;
+        let in_project = add(&mut document, Some(project), Task)?;
+        later(&mut document, waiting)?;
+        later(&mut document, someday)?;
+        let headings: Vec<Option<Heading>> = groups(&document, false)
+            .iter()
+            .map(|group| group.heading)
+            .collect();
+        assert_eq!(
+            headings,
+            [
+                None,
+                Some(Heading::Item(project)),
+                Some(Heading::Item(someday))
+            ]
+        );
+        let rows: Vec<Vec<Row>> = groups(&document, false)
+            .into_iter()
+            .map(|group| group.rows)
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                vec![task(open, None), task(waiting, None)],
+                vec![task(in_project, None)],
+                vec![task(in_someday, None)]
             ]
         );
         Ok(())

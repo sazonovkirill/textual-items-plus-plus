@@ -57,7 +57,8 @@ impl Period {
 /// container's dates are its own, so its contents are listed by theirs (OQ-20). It lists tasks,
 /// sections and projects outside the Trash, and not the contents of a completed item
 /// (FR-ORG-09); within each group the completed ones come last, and only when `show_completed`
-/// (FR-VIEW-11). No group is empty.
+/// (FR-VIEW-11). Later items, and those inside a Later project, are not listed (D-92). No group is
+/// empty.
 #[must_use]
 pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> Vec<Group> {
     let mut dated = Vec::new();
@@ -111,7 +112,11 @@ fn collect(document: &Document, id: ItemId, today: Date, dated: &mut Vec<Entry>)
         ItemKind::Inbox | ItemKind::Area => None,
         ItemKind::ChecklistItem => return,
     };
-    let date = item.start.or(item.due).filter(|&date| date > today);
+    // Later items wait for no date (D-92).
+    let date = item
+        .start
+        .or(item.due)
+        .filter(|&date| date > today && !document.defers(id));
     if let (Some(row), Some(date)) = (row, date) {
         dated.push(Entry {
             date,
@@ -170,6 +175,31 @@ mod tests {
             .into_iter()
             .map(|group| (group.heading, group.rows.into_iter().map(Row::id).collect()))
             .collect()
+    }
+
+    // FR-ORG-11, FR-VIEW-02
+    #[test]
+    fn leaves_out_later_items_and_what_a_later_project_holds() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let mut later = Item::new(ItemKind::Project, "later");
+        later.later = true;
+        later.due = TOMORROW;
+        let project = document.push(None, Node::Item(later))?;
+        task(&mut document, project, TOMORROW, None)?;
+        let mut waiting = Item::new(ItemKind::Task, "waiting");
+        waiting.later = true;
+        waiting.due = TOMORROW;
+        document.push(Some(inbox), Node::Item(waiting))?;
+        let open = task(&mut document, inbox, TOMORROW, None)?;
+        assert_eq!(
+            listed(&document, TODAY, false),
+            [(
+                Some(Heading::Period(Period::Day(date(2026, 10, 15)))),
+                vec![open]
+            )]
+        );
+        Ok(())
     }
 
     // FR-VIEW-02, OQ-8

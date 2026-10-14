@@ -165,3 +165,25 @@ fn a_later_project_is_dimmed_and_listed_last_in_the_sidebar_and_its_area() {
     assert_eq!(pane, ["▌ # Docs", "  # Site"]);
     assert_eq!(color(&harness, 30, 3), Color::Indexed(248), "dimmed");
 }
+
+// FR-ORG-11, FR-DATE-02
+#[test]
+fn what_a_later_project_holds_is_dimmed_and_later_and_a_start_date_exclude_each_other() {
+    let text = "Inbox:\nSite: @later\n\t- Draft @start(2026-10-05)\n";
+    let (_dir, path, mut harness) = on_file(text);
+    open(&mut harness, "site");
+    assert!(rows(&harness, 2..3)[0].starts_with("▌ ☐ Draft "));
+    assert_eq!(color(&harness, 4, 2), Color::Indexed(248), "dimmed inside");
+    harness.type_text("ml");
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        "Inbox:\nSite: @later\n\t- Draft @later\n",
+        "marking it Later clears its start date"
+    );
+    harness.type_text("mt");
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        "Inbox:\nSite: @later\n\t- Draft @start(2026-10-05)\n",
+        "starting it takes it out of Later"
+    );
+}

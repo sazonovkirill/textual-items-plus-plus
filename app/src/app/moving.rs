@@ -38,9 +38,9 @@ pub enum Refusal {
 /// shown; an empty one when it has nowhere to go. An item changes places with the next item
 /// shown in its own group, a task among the tasks listed under the same heading, a section among
 /// the sections and a child project among the child projects, open, Later and completed ones
-/// apart (FR-VIEW-11, D-89). Only a task crosses the edge of its group: past the heading below it, it is the
-/// first task of that section, and up from the top of a section it is the last task of the
-/// section above, or of those outside sections (FR-OPS-10).
+/// apart (FR-VIEW-11, D-89). Only a task crosses the edge of its group: past the heading below
+/// it, it is the first task of that section, and up from the top of a section it is the last
+/// task of the section above, or of those outside sections (FR-OPS-10).
 fn shift(document: &Document, rows: &[Row], id: ItemId, direction: Direction) -> Transaction {
     let Some((at, &row)) = rows.iter().enumerate().find(|(_, row)| row.id() == id) else {
         return Transaction::default();

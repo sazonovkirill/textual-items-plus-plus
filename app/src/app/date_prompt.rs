@@ -145,7 +145,8 @@ pub(super) fn nudge(
 }
 
 /// The transaction that gives each of `items` that takes dates the `kind` date `date` makes of
-/// it, leaving alone those whose date that is already.
+/// it, leaving alone those whose date that is already. A start date takes an item out of Later,
+/// as Things 3's When is either a day or Someday (D-92).
 fn redate(
     document: &Document,
     items: impl IntoIterator<Item = ItemId>,
@@ -157,17 +158,19 @@ fn redate(
         .filter_map(|id| Some((id, dated(document, id)?)))
         .filter_map(|(id, item)| {
             let date = date(item);
-            (item.date(kind) != date).then(|| {
-                let mut after = item.clone();
-                match kind {
-                    DateKind::Start => after.start = date,
-                    DateKind::Due => after.due = date,
+            let mut after = item.clone();
+            match kind {
+                DateKind::Start => {
+                    after.start = date;
+                    // A file's mark on a kind that is never Later stays (D-89).
+                    after.later &= date.is_none() || !item.kind.goes_later();
                 }
-                Op::Set {
-                    id,
-                    before: item.clone(),
-                    after,
-                }
+                DateKind::Due => after.due = date,
+            }
+            (after != *item).then(|| Op::Set {
+                id,
+                before: item.clone(),
+                after,
             })
         })
         .collect();
@@ -244,6 +247,36 @@ mod tests {
         document.apply(&set(&document, [a], DateKind::Start, None))?;
         assert_eq!(item(&document, a).start, None);
         assert_eq!(item(&document, a).due, Some(TODAY));
+        Ok(())
+    }
+
+    // FR-ORG-11, FR-DATE-02
+    #[test]
+    fn a_start_date_takes_an_item_out_of_later_but_a_due_date_does_not()
+    -> Result<(), PlacementError> {
+        let (mut document, a, b, _) = document()?;
+        for id in [a, b] {
+            let mut later = item(&document, id).clone();
+            later.later = true;
+            later.start = None;
+            document.set(id, later)?;
+        }
+        document.apply(&set(&document, [a], DateKind::Due, Some(TODAY)))?;
+        document.apply(&set(&document, [a], DateKind::Start, None))?;
+        assert!(
+            item(&document, a).later,
+            "a due date or no start date keeps it"
+        );
+        document.apply(&nudge(&document, [a, b], DateKind::Start, 1, TODAY))?;
+        for id in [a, b] {
+            assert!(!item(&document, id).later);
+        }
+        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "x")))?;
+        let mut marked = Item::new(ItemKind::Section, "s");
+        marked.later = true;
+        let section = document.push(Some(area), Node::Item(marked))?;
+        document.apply(&set(&document, [section], DateKind::Start, Some(TODAY)))?;
+        assert!(item(&document, section).later, "a section's mark is kept");
         Ok(())
     }
 

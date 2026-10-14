@@ -59,7 +59,7 @@ pub struct Place {
     pub depth: usize,
     /// How many tasks not completed it holds, at any depth.
     pub open_tasks: usize,
-    /// Whether it is a project marked Later (D-89).
+    /// Whether it is a project marked Later, or inside one (D-92).
     pub later: bool,
     /// Whether it is listed among the pinned projects, which list a pinned project again, apart
     /// from the tree, at depth 0 (FR-VIEW-12).
@@ -154,7 +154,8 @@ fn pinned(document: &Document, id: ItemId) -> bool {
 /// of its sidebar (FR-ORG-09).
 pub(super) fn places(document: &Document) -> Vec<Candidate<Place>> {
     let mut places = Vec::new();
-    let tops = std::iter::once(document.inbox()).chain(later_last(document, document.top_level()));
+    let tops = std::iter::once(document.inbox())
+        .chain(container::later_last(document, document.top_level()));
     for id in tops {
         // Only an area or a project sits at the top level beside the Inbox (FR-ORG-01).
         if let Some(item) = shown(document, id) {
@@ -181,7 +182,7 @@ fn list<'a>(
             kind: item.kind,
             depth: above.len(),
             open_tasks: 0,
-            later: item.is_later(),
+            later: document.defers(id),
             in_pinned: false,
         },
         text: item.title.clone(),
@@ -189,7 +190,7 @@ fn list<'a>(
     });
     above.push(&item.title);
     let mut open = 0;
-    for child in later_last(document, document.children(id)) {
+    for child in container::later_last(document, document.children(id)) {
         let held = match shown(document, child) {
             Some(inside) if inside.kind == ItemKind::Project => {
                 list(document, child, inside, above, places)
@@ -203,18 +204,6 @@ fn list<'a>(
         place.value.open_tasks = open;
     }
     open
-}
-
-/// `ids` in their order, but those marked Later after the others (D-89).
-fn later_last(document: &Document, ids: &[ItemId]) -> impl Iterator<Item = ItemId> + use<> {
-    let later = |id| {
-        document
-            .node(id)
-            .and_then(Node::item)
-            .is_some_and(Item::is_later)
-    };
-    let (open, later): (Vec<ItemId>, Vec<ItemId>) = ids.iter().partition(|&&id| !later(id));
-    open.into_iter().chain(later)
 }
 
 /// How many tasks not completed `child` of `parent` is or holds, at any depth, leaving out the

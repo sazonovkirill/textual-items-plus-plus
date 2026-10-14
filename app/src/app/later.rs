@@ -4,8 +4,9 @@
 use crate::domain::{Document, Item, ItemId, Node, Op, Transaction};
 
 /// The transaction that takes `items` out of Later when every one of them is Later, and
-/// otherwise marks Later those that are not. Only projects and tasks are Later; anything else
-/// among `items`, such as an area or a section, is left alone.
+/// otherwise marks Later those that are not, clearing their start dates, as Things 3's When is
+/// either a day or Someday (D-92). Only projects and tasks are Later; anything else among
+/// `items`, such as an area or a section, is left alone.
 pub(super) fn toggle(document: &Document, items: impl IntoIterator<Item = ItemId>) -> Transaction {
     let items: Vec<(ItemId, &Item)> = items
         .into_iter()
@@ -21,6 +22,7 @@ pub(super) fn toggle(document: &Document, items: impl IntoIterator<Item = ItemId
             before: item.clone(),
             after: Item {
                 later: marking,
+                start: item.start.filter(|_| !marking),
                 ..item.clone()
             },
         })
@@ -63,6 +65,32 @@ mod tests {
         assert_eq!(
             (later(&document, project), later(&document, task)),
             (Some(false), Some(false))
+        );
+        Ok(())
+    }
+
+    // FR-ORG-11
+    #[test]
+    fn marking_later_clears_the_start_date_and_unmarking_keeps_it_clear()
+    -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let mut task = Item::new(ItemKind::Task, "t");
+        task.start = Some(jiff::civil::date(2026, 10, 20));
+        task.due = Some(jiff::civil::date(2026, 10, 30));
+        let task = document.push(Some(document.inbox()), Node::Item(task))?;
+        let dates = |document: &Document| {
+            let item = document.node(task).and_then(Node::item);
+            item.map(|item| (item.start, item.due))
+        };
+        document.apply(&toggle(&document, [task]))?;
+        assert_eq!(
+            dates(&document),
+            Some((None, Some(jiff::civil::date(2026, 10, 30))))
+        );
+        document.apply(&toggle(&document, [task]))?;
+        assert_eq!(
+            dates(&document),
+            Some((None, Some(jiff::civil::date(2026, 10, 30))))
         );
         Ok(())
     }

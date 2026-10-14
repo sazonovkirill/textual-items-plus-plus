@@ -175,6 +175,21 @@ pub(super) fn scheduled_out_of_inbox(document: &Document, parent: ItemId, item: 
     parent == document.inbox() && item.start.is_some()
 }
 
+/// `ids` in their order, but those marked Later after the others (D-89).
+pub(super) fn later_last(
+    document: &Document,
+    ids: &[ItemId],
+) -> impl Iterator<Item = ItemId> + use<> {
+    let later = |id| {
+        document
+            .node(id)
+            .and_then(Node::item)
+            .is_some_and(Item::is_later)
+    };
+    let (open, later): (Vec<ItemId>, Vec<ItemId>) = ids.iter().partition(|&&id| !later(id));
+    open.into_iter().chain(later)
+}
+
 /// How the children of one container are picked and ordered into a group of rows.
 #[derive(Clone, Copy)]
 struct Group<'a> {

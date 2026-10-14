@@ -639,8 +639,8 @@ impl<'a> ContainerPane<'a> {
                 if let Some(container) = self.item(id) {
                     let row = self.heading.map(|_| HEADING);
                     pieces.push(self.ended(match self.edited(id, Part::Title) {
-                        Some(field) => self.field(container, field, row),
-                        None => self.title(container, row),
+                        Some(field) => self.field(id, container, field, row),
+                        None => self.title(id, container, row),
                     }));
                     if let Some(field) = self.edited(id, Part::Description) {
                         pieces.push(self.description_field(field, 0, width, row));
@@ -727,8 +727,8 @@ impl<'a> ContainerPane<'a> {
             _ => None,
         };
         let mut title = match self.edited(row.id(), Part::Title) {
-            Some(field) => self.field(shown, field, Some(index)),
-            None => self.title_then(shown, Some(index), after),
+            Some(field) => self.field(row.id(), shown, field, Some(index)),
+            None => self.title_then(row.id(), shown, Some(index), after),
         };
         if let Some((checked, total)) = app::progress(self.document, row.id()) {
             let style = Style::new()
@@ -839,7 +839,7 @@ impl<'a> ContainerPane<'a> {
         match heading {
             Heading::Item(id) => self.item(id).map(|item| Piece {
                 right: Line::default(),
-                ..self.title(item, None)
+                ..self.title(id, item, None)
             }),
             Heading::Period(period) => Some(Piece {
                 text: Text::styled(period.heading(self.today), Modifier::BOLD),
@@ -862,14 +862,21 @@ impl<'a> ContainerPane<'a> {
 
     /// The line naming `item`: its marker or icon, then its title and its tags wrapping under
     /// the title's start, with its attachment icons and date chips at the right.
-    fn title(&self, item: &'a Item, row: Option<usize>) -> Piece<'a> {
-        self.title_then(item, row, None)
+    fn title(&self, id: ItemId, item: &'a Item, row: Option<usize>) -> Piece<'a> {
+        self.title_then(id, item, row, None)
     }
 
     /// The line naming `item` as [`title`](Self::title) draws it, with `after` following its
     /// tags.
-    fn title_then(&self, item: &'a Item, row: Option<usize>, after: Option<Span<'a>>) -> Piece<'a> {
-        let mut spans = self.marked(Cow::Borrowed(&item.title), self.title_style(item));
+    fn title_then(
+        &self,
+        id: ItemId,
+        item: &'a Item,
+        row: Option<usize>,
+        after: Option<Span<'a>>,
+    ) -> Piece<'a> {
+        let style = self.title_style(item, self.document.defers(id));
+        let mut spans = self.marked(Cow::Borrowed(&item.title), style);
         for tag in item.shown_tags() {
             spans.extend(self.marked(Cow::Owned(tag_text(tag)), self.tag_style(item)));
         }
@@ -878,7 +885,10 @@ impl<'a> ContainerPane<'a> {
             x: self.title_column(item),
             text: Text::from(Line::from(spans)),
             fit: self.fit(),
-            left: Line::styled(self.marker(item), self.marker_style(item)),
+            left: Line::styled(
+                self.marker(item),
+                style.remove_modifier(Modifier::CROSSED_OUT),
+            ),
             right: Line::from([self.attachments(item).spans, self.chips(item)].concat()),
             row,
             caret: None,
@@ -934,7 +944,13 @@ impl<'a> ContainerPane<'a> {
     /// The line of `item`, numbered `row` if it is one, while `field` edits its title: its marker,
     /// then the text edited, without tags or date chips, the selected part in the selection
     /// colors, on one line that scrolls sideways to keep the caret in view.
-    fn field(&self, item: &'a Item, field: &'a TextField, row: Option<usize>) -> Piece<'a> {
+    fn field(
+        &self,
+        id: ItemId,
+        item: &'a Item,
+        field: &'a TextField,
+        row: Option<usize>,
+    ) -> Piece<'a> {
         let text = field.text();
         let caret = text.get(..field.caret()).unwrap_or_default();
         Piece {
@@ -942,7 +958,7 @@ impl<'a> ContainerPane<'a> {
             text: Text::from(field::selected(field, 0..text.len(), self.theme)),
             fit: Fit::Keep,
             right: self.attachments(item),
-            ..self.title(item, row)
+            ..self.title(id, item, row)
         }
     }
 
@@ -1043,8 +1059,10 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// How `item`'s title is drawn: a task in the text color, struck through and faded once
-    /// completed; containers bold, each kind in its color (D-82); dimmed while Later (D-89).
-    fn title_style(&self, item: &Item) -> Style {
+    /// completed; containers bold, each kind in its color (D-82); dimmed while it is Later, or
+    /// `deferred` inside a Later project (D-89, D-92). Its marker takes the same style, not struck
+    /// through.
+    fn title_style(&self, item: &Item, deferred: bool) -> Style {
         let theme = self.theme;
         let style = match item.kind {
             ItemKind::Inbox | ItemKind::Project | ItemKind::Area | ItemKind::Section => {
@@ -1054,17 +1072,11 @@ impl<'a> ContainerPane<'a> {
         };
         if item.completion().is_some() {
             style.fg(theme.done).add_modifier(Modifier::CROSSED_OUT)
-        } else if item.is_later() {
+        } else if deferred {
             style.fg(theme.dim_text)
         } else {
             style
         }
-    }
-
-    /// How `item`'s marker is drawn: in its title's color, faded once completed.
-    fn marker_style(&self, item: &Item) -> Style {
-        let style = self.title_style(item);
-        style.remove_modifier(Modifier::CROSSED_OUT)
     }
 
     /// How `item`'s tags are drawn: dimmed after its title (FR-TAG-03).
