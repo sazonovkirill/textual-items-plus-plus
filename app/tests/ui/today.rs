@@ -1,7 +1,7 @@
 //! The Today view: what is due or has started, in one list, overdue first, each row saying where
 //! it is.
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::support::Harness;
 
@@ -208,4 +208,92 @@ fn the_evening_is_not_kept_in_the_file_and_only_today_takes_me() {
     let mut restarted = Harness::open(path, 60, 12);
     restarted.type_text("gt");
     assert!(!evening(&restarted), "a restart empties the Evening");
+}
+
+/// The titles of Today's tasks, top to bottom.
+fn titles(harness: &Harness) -> Vec<String> {
+    trimmed(harness)
+        .iter()
+        .filter_map(|row| row.split_once("☐ "))
+        .map(|(_, title)| title.split("  ").next().unwrap_or_default().to_owned())
+        .collect()
+}
+
+// FR-VIEW-06, FR-OPS-02, D-108
+#[test]
+fn alt_arrows_reorder_today_and_undo_puts_the_order_back() {
+    let mut harness = Harness::new(60, 16);
+    harness.type_text("gt");
+    harness.press(KeyCode::Down, KeyModifiers::ALT);
+    assert_eq!(
+        titles(&harness),
+        [
+            "Write the announcement @writing",
+            "Answer the recruiter's email",
+            "Review two portfolios",
+            "Water the plants",
+        ],
+        "the overdue task goes below the next one"
+    );
+    assert!(
+        trimmed(&harness)[4].starts_with("▌ ☐ Answer"),
+        "still focused"
+    );
+    harness.type_text("Vj");
+    harness.press(KeyCode::Char('k'), KeyModifiers::ALT);
+    assert_eq!(
+        titles(&harness),
+        [
+            "Answer the recruiter's email",
+            "Review two portfolios",
+            "Write the announcement @writing",
+            "Water the plants",
+        ],
+        "selected rows move together"
+    );
+    harness.press(KeyCode::Up, KeyModifiers::ALT);
+    assert_eq!(
+        titles(&harness)[0],
+        "Answer the recruiter's email",
+        "the top row stays at the top"
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("z");
+    assert_eq!(
+        titles(&harness),
+        [
+            "Write the announcement @writing",
+            "Answer the recruiter's email",
+            "Review two portfolios",
+            "Water the plants",
+        ],
+        "one step to undo"
+    );
+}
+
+// FR-VIEW-06, D-108
+#[test]
+fn today_s_order_is_not_kept_in_the_file() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\n\t- Call mom @start(2026-10-05)\n\t- Pay rent @start(2026-10-05)\n";
+    std::fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path.clone(), 60, 12);
+    harness.type_text("gt");
+    harness.press(KeyCode::Down, KeyModifiers::ALT);
+    assert_eq!(titles(&harness), ["Pay rent", "Call mom"]);
+    harness.wait(1000);
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("saved"),
+        text,
+        "the file never keeps Today's order"
+    );
+    drop(harness);
+    let mut restarted = Harness::open(path, 60, 12);
+    restarted.type_text("gt");
+    assert_eq!(
+        titles(&restarted),
+        ["Call mom", "Pay rent"],
+        "a restart forgets the order"
+    );
 }

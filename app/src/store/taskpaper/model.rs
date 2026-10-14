@@ -589,7 +589,7 @@ fn is_inbox(read: &Line) -> bool {
 }
 
 /// Whether the line `read`, in `place`, holds `item`'s kind, title, dates, state and tags; the
-/// Evening is the app's alone, never the file's (FR-VIEW-13).
+/// Evening and the order of Today are the app's alone, never the file's (FR-VIEW-13, D-108).
 fn reads_as(read: &Line, place: Place, item: &Item) -> bool {
     let kind = if item.kind == ItemKind::Inbox {
         is_inbox(read).then_some(ItemKind::Inbox)
@@ -602,6 +602,7 @@ fn reads_as(read: &Line, place: Place, item: &Item) -> bool {
         own.note.clone_from(&item.note);
         own.comments.clone_from(&item.comments);
         own.evening = item.evening;
+        own.today_place = item.today_place;
         own == *item
     }
 }
@@ -1666,19 +1667,21 @@ Secret @hidden
         }
     }
 
-    // FR-VIEW-13, FR-STORE-06
+    // FR-VIEW-13, FR-VIEW-06, FR-STORE-06
     #[test]
-    fn the_evening_is_never_written_and_leaves_a_line_as_it_was() {
+    fn the_evening_and_today_s_order_are_never_written_and_leave_a_line_as_it_was() {
         let text = "Inbox:\n\t- Call mom  @home @start(2026-10-14) @evening(today)\n";
         let (mut document, source) = load(text);
         let [call] = children(&document, Some(document.inbox()));
         let mut evening = item(&document, call).clone();
         evening.evening = Some(jiff::civil::date(2026, 10, 14));
+        evening.today_place = Some(3);
         document.set(call, evening).expect("the kind stays");
         assert_eq!(save(&document, &source), text, "the tag is the user's");
         let (mut document, source) = load("Inbox:\n");
         let new = Node::Item(Item {
             evening: Some(jiff::civil::date(2026, 10, 14)),
+            today_place: Some(0),
             ..Item::new(ItemKind::Task, "t")
         });
         document

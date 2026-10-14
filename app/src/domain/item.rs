@@ -147,6 +147,9 @@ pub struct Item {
     /// the app runs: the file never keeps it (FR-VIEW-13). What the app goes by is
     /// [`in_evening`](Item::in_evening).
     pub evening: Option<Date>,
+    /// Its place in the order the user gave Today, the lowest first, which the file never keeps
+    /// either (FR-VIEW-06, D-108).
+    pub today_place: Option<usize>,
     /// Whether it is a project or a task flagged as important (FR-ORG-12).
     pub flagged: bool,
     /// The user's tags, and any other tag the model does not interpret, in their order.
@@ -170,6 +173,7 @@ impl Item {
             later: false,
             pinned: false,
             evening: None,
+            today_place: None,
             flagged: false,
             tags: Vec::new(),
         }

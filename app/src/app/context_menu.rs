@@ -224,7 +224,10 @@ impl State {
         };
         match command {
             Command::Restore => false,
-            Command::NewLike(_) | Command::Move(_) => self.container().is_some(),
+            Command::NewLike(_) => self.container().is_some(),
+            Command::Move(_) => {
+                self.container().is_some() || self.shown() == Shown::View(View::Today)
+            }
             Command::GroupIntoSection => group(ItemKind::Section),
             Command::GroupIntoProject => group(ItemKind::Project),
             Command::Convert => converting::convert_all(document, &self.targets()).is_ok(),
@@ -420,7 +423,7 @@ mod tests {
 
     // FR-KEY-07, FR-VIEW-04, FR-VIEW-06
     #[test]
-    fn a_view_offers_no_adding_or_moving_and_the_trash_only_restoring_and_deleting()
+    fn a_view_offers_no_adding_only_today_moving_and_the_trash_only_restoring_and_deleting()
     -> Result<(), PlacementError> {
         let Fixture {
             mut state, site, t, ..
@@ -433,13 +436,13 @@ mod tests {
         );
         assert_eq!(titles(&state), ["t"]);
         let listed = offered(&mut state);
-        for command in [
-            Command::NewLike(Side::Below),
-            Command::Move(Direction::Up),
-            Command::GroupIntoSection,
-        ] {
+        for command in [Command::NewLike(Side::Below), Command::GroupIntoSection] {
             assert!(!listed.contains(&command), "{command:?} in a view");
         }
+        assert!(
+            listed.contains(&Command::Move(Direction::Up)),
+            "Today has an order of its own (D-108)"
+        );
         assert!(
             listed.contains(&Command::OpenInNewPane),
             "where it is listed"

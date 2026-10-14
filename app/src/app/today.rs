@@ -1,19 +1,23 @@
 //! The Today view: every item whose start or due date has come, in one list, overdue ones first,
-//! each row saying where its item is (FR-VIEW-06, OQ-9, D-51). Hides how the list follows from
-//! the document.
+//! each row saying where its item is, in the order the user gives it (FR-VIEW-06, OQ-9, D-51,
+//! D-108). Hides how the list follows from the document.
+
+use std::collections::HashSet;
 
 use jiff::civil::Date;
 
 use super::{
+    Direction,
     container::Row,
     view::{Group, Heading},
 };
-use crate::domain::{Document, Item, ItemId, ItemKind, Node};
+use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 
 /// The one group Today shows of `document` on `today`, without a heading: the tasks, sections
-/// and projects whose start or due date is `today` or earlier, the overdue ones, due before
-/// `today` (FR-DATE-04), first, then the others, each in file order, then, only when
-/// `show_completed`, the completed ones (FR-VIEW-11). A container's dates are its own (OQ-20).
+/// and projects whose start or due date is `today` or earlier, those the user put in order first,
+/// in that order (D-108), then the overdue ones, due before `today` (FR-DATE-04), then the
+/// others, each in file order, then, only when `show_completed`, the completed ones
+/// (FR-VIEW-11). A container's dates are its own (OQ-20).
 /// A Later item, or one inside a Later project, shows only once it is due (D-92).
 /// Items in the Trash and the contents of a completed item are not shown (FR-ORG-09). The items
 /// put in the Evening on `today` follow in a group of their own under the Evening heading, in the
@@ -30,20 +34,123 @@ pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> 
         walk.visit(document, id);
     }
     // Stable, so each bucket keeps the file's order.
-    walk.entries
-        .sort_by_key(|&(evening, bucket, _)| (evening, bucket));
-    let (evening, day): (Vec<_>, Vec<_>) = walk
-        .entries
-        .into_iter()
-        .partition(|&(evening, _, _)| evening);
+    walk.entries.sort_by_key(|entry| {
+        (
+            entry.evening,
+            entry.place.is_none(),
+            entry.place,
+            entry.bucket,
+        )
+    });
+    let (evening, day): (Vec<_>, Vec<_>) =
+        walk.entries.into_iter().partition(|entry| entry.evening);
     [(None, day), (Some(Heading::Evening), evening)]
         .into_iter()
         .filter(|(_, entries)| !entries.is_empty())
         .map(|(heading, entries)| Group {
             heading,
-            rows: entries.into_iter().map(|(_, _, row)| row).collect(),
+            rows: entries.into_iter().map(|entry| entry.row).collect(),
         })
         .collect()
+}
+
+/// The transaction that moves `items` one step `direction` in the order of Today, whose groups
+/// a pane shows as `shown`, without changing the file (D-108). In each group, each of them goes
+/// past the row next to it that is not one of them, so that a run of them moves together, and one
+/// at the end it moves toward stays. The rows shown take the places in Today's order that they
+/// held, so that the items a pane hides, and those no longer listed, keep theirs.
+#[must_use]
+pub(super) fn reorder(
+    document: &Document,
+    shown: &[Group],
+    items: &[ItemId],
+    direction: Direction,
+) -> Transaction {
+    let items: HashSet<ItemId> = items.iter().copied().collect();
+    let before: Vec<Vec<ItemId>> = shown
+        .iter()
+        .map(|group| group.rows.iter().copied().map(Row::id).collect())
+        .collect();
+    let after: Vec<Vec<ItemId>> = before
+        .iter()
+        .map(|ids| stepped(ids, &items, direction))
+        .collect();
+    if before == after {
+        return Transaction::default();
+    }
+    let mut order = placed(document);
+    order.extend(
+        before
+            .iter()
+            .flatten()
+            .filter(|&&id| place(document, id).is_none()),
+    );
+    for (before, after) in before.iter().zip(&after) {
+        let slots = order.iter_mut().filter(|id| before.contains(id));
+        for (slot, &id) in slots.zip(after) {
+            *slot = id;
+        }
+    }
+    let ops = order
+        .into_iter()
+        .enumerate()
+        .filter_map(|(place, id)| {
+            let before = document.node(id).and_then(Node::item)?;
+            (before.today_place != Some(place)).then(|| Op::Set {
+                id,
+                before: before.clone(),
+                after: Item {
+                    today_place: Some(place),
+                    ..before.clone()
+                },
+            })
+        })
+        .collect();
+    Transaction::new(ops)
+}
+
+/// `ids` with each of `items` moved one step `direction` past the next of `ids` that is not one
+/// of them, if any.
+fn stepped(ids: &[ItemId], items: &HashSet<ItemId>, direction: Direction) -> Vec<ItemId> {
+    let mut ids = ids.to_vec();
+    match direction {
+        Direction::Up => ids.reverse(),
+        Direction::Down => {}
+    }
+    for at in (1..ids.len()).rev() {
+        if let Some([earlier, later]) = ids.get_mut(at - 1..=at)
+            && items.contains(earlier)
+            && !items.contains(later)
+        {
+            std::mem::swap(earlier, later);
+        }
+    }
+    match direction {
+        Direction::Up => ids.reverse(),
+        Direction::Down => {}
+    }
+    ids
+}
+
+/// Every item of `document` the user has put in Today's order, in that order.
+fn placed(document: &Document) -> Vec<ItemId> {
+    let mut placed = Vec::new();
+    let mut pending: Vec<ItemId> = std::iter::once(document.inbox())
+        .chain(document.top_level().iter().copied())
+        .collect();
+    while let Some(id) = pending.pop() {
+        if let Some(place) = place(document, id) {
+            placed.push((place, id));
+        }
+        pending.extend_from_slice(document.children(id));
+    }
+    placed.sort_unstable();
+    placed.into_iter().map(|(_, id)| id).collect()
+}
+
+/// The place of the item `id` in Today's order, if the user gave it one.
+fn place(document: &Document, id: ItemId) -> Option<usize> {
+    document.node(id).and_then(Node::item)?.today_place
 }
 
 /// The walk through the document in file order, collecting Today's rows with where in the list
@@ -51,8 +158,18 @@ pub(super) fn groups(document: &Document, today: Date, show_completed: bool) -> 
 struct Walk {
     today: Date,
     show_completed: bool,
-    /// Each row, with whether it is in the Evening and where in its part it goes.
-    entries: Vec<(bool, Bucket, Row)>,
+    entries: Vec<Entry>,
+}
+
+/// A row of Today, with where in the list it goes.
+struct Entry {
+    /// Whether it is in the Evening.
+    evening: bool,
+    /// Its place in the order the user gave Today, if any.
+    place: Option<usize>,
+    /// Where it goes among the rows without a place.
+    bucket: Bucket,
+    row: Row,
 }
 
 /// Where in the list a row goes, in order.
@@ -83,8 +200,12 @@ impl Walk {
             } else {
                 Bucket::Due
             };
-            self.entries
-                .push((item.in_evening(self.today), bucket, row));
+            self.entries.push(Entry {
+                evening: item.in_evening(self.today),
+                place: item.today_place,
+                bucket,
+                row,
+            });
         }
         if item.completion().is_some() {
             return;
@@ -326,5 +447,96 @@ mod tests {
     #[test]
     fn an_empty_document_has_nothing_today() {
         assert_eq!(groups(&Document::new(), TODAY, true), []);
+    }
+
+    /// Moves `items` one step `direction` in Today on `document`, completed items shown when
+    /// `show_completed`.
+    fn step(document: &mut Document, items: &[ItemId], direction: Direction, show_completed: bool) {
+        let shown = groups(document, TODAY, show_completed);
+        let transaction = reorder(document, &shown, items, direction);
+        document
+            .apply(&transaction)
+            .expect("a transaction made from the document fits it");
+    }
+
+    /// The rows of Today's groups on `document`, completed ones shown when `show_completed`.
+    fn listed(document: &Document, show_completed: bool) -> Vec<Vec<Row>> {
+        groups(document, TODAY, show_completed)
+            .into_iter()
+            .map(|group| group.rows)
+            .collect()
+    }
+
+    // FR-VIEW-06, D-108
+    #[test]
+    fn items_given_a_place_come_first_in_it_and_the_rest_follow_as_before() {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let [a, b, c, overdue] = [Some(0), Some(0), Some(0), None]
+            .map(|start| add(&mut document, inbox, Task, start, start.or(Some(-1))));
+        change(&mut document, c, |item| item.today_place = Some(4));
+        change(&mut document, b, |item| item.today_place = Some(7));
+        assert_eq!(
+            listed(&document, false),
+            [vec![task(c), task(b), task(overdue), task(a)]]
+        );
+    }
+
+    // FR-VIEW-06, FR-OPS-02, D-108
+    #[test]
+    fn reordering_moves_the_selected_past_their_neighbour_runs_together() {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let [a, b, c, d] = [0; 4].map(|_| add(&mut document, inbox, Task, Some(0), None));
+        step(&mut document, &[a, b], Direction::Down, false);
+        assert_eq!(
+            listed(&document, false),
+            [vec![task(c), task(a), task(b), task(d)]]
+        );
+        step(&mut document, &[c, d], Direction::Up, false);
+        assert_eq!(
+            listed(&document, false),
+            [vec![task(c), task(a), task(d), task(b)]],
+            "the top one stays, the other goes up"
+        );
+        let shown = groups(&document, TODAY, false);
+        assert!(
+            reorder(&document, &shown, &[c], Direction::Up)
+                .ops()
+                .is_empty(),
+            "nothing changes when nothing moves"
+        );
+    }
+
+    // FR-VIEW-06, FR-VIEW-13, D-108
+    #[test]
+    fn hidden_items_keep_their_places_and_new_ones_come_last() {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let [a, done, b, c] = [0; 4].map(|_| add(&mut document, inbox, Task, Some(0), None));
+        change(&mut document, done, |item| {
+            item.completed = Some(Completion::On(TODAY));
+        });
+        change(&mut document, c, |item| item.evening = Some(TODAY));
+        step(&mut document, &[done], Direction::Up, true);
+        step(&mut document, &[a], Direction::Down, false);
+        assert_eq!(
+            listed(&document, true),
+            [vec![task(b), task(done), task(a)], vec![task(c)]],
+            "the completed one, hidden, kept its place between them, and the Evening its own part"
+        );
+        let shown = groups(&document, TODAY, false);
+        assert!(
+            reorder(&document, &shown, &[c], Direction::Up)
+                .ops()
+                .is_empty(),
+            "the Evening's one row stays"
+        );
+        let new = add(&mut document, inbox, Task, Some(0), Some(-1));
+        assert_eq!(
+            listed(&document, false)[0],
+            [task(b), task(a), task(new)],
+            "a new item, overdue as it is, comes after those given a place"
+        );
     }
 }

@@ -26,7 +26,7 @@ use super::{
     settings::{Setting, Settings},
     sidebar::{self, Sidebar},
     tags::{Choice, TagPicker, TagsView},
-    trash,
+    today, trash,
     view::{self, Group, Shown, View},
     visits::Visit,
 };
@@ -685,10 +685,16 @@ impl State {
     }
 
     /// Moves the selected items one step `direction` among their rows, as one step to undo,
-    /// keeping the focus where it is (FR-OPS-02, FR-OPS-10). A view's order is not the file's,
-    /// so nothing moves there.
+    /// keeping the focus where it is (FR-OPS-02, FR-OPS-10). Today has an order of its own, which
+    /// they move in instead of the file (D-108); another view's order is not the file's, so
+    /// nothing moves there.
     pub(super) fn move_item(&mut self, direction: Direction) {
         let Some(container) = self.container() else {
+            if self.shown() == Shown::View(View::Today) {
+                let items = self.pane().selection.items(&self.listed());
+                let transaction = today::reorder(&self.document, &self.groups(), &items, direction);
+                self.change(transaction);
+            }
             return;
         };
         let (today, show_completed) = (self.today, self.pane().show_completed);
@@ -2993,7 +2999,6 @@ mod tests {
             children: Vec::new(),
         };
         state.paste(Side::Below, &[branch]);
-        state.move_item(Direction::Down);
         state.group(ItemKind::Section);
         state.delete_container(TODAY);
         assert_eq!(state.document(), &before);
@@ -3007,6 +3012,29 @@ mod tests {
         assert_eq!(title(&state, inbox_task), Some("xy"));
         assert_eq!(state.shown(), Shown::View(View::Today));
         assert_eq!(state.rows().len(), 4, "no task was added");
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-OPS-02, D-108
+    #[test]
+    fn moving_reorders_today_but_no_other_view_nor_the_file() -> Result<(), PlacementError> {
+        let Dated { mut state, .. } = dated()?;
+        state.go(Go::View(View::Today));
+        let before = state.rows();
+        let (first, second) = (before[0], before[1]);
+        state.move_item(Direction::Down);
+        assert_eq!(state.rows()[..2], [second, first]);
+        assert_eq!(
+            state.selection().focused(),
+            Some(first.id()),
+            "the focus goes with it"
+        );
+        state.undo();
+        assert_eq!(state.rows(), before, "one step to undo");
+        state.go(Go::View(View::Upcoming));
+        let upcoming = state.document().clone();
+        state.move_item(Direction::Down);
+        assert_eq!(state.document(), &upcoming, "nothing moves in another view");
         Ok(())
     }
 
