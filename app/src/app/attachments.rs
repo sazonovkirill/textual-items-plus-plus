@@ -111,14 +111,18 @@ pub(super) fn view<'a>(
 }
 
 /// Whether a panel on `id` stays open in a pane showing `shown` on `document`: while its item is
-/// there and, unless the pane shows the Trash, not in the Trash with what holds it.
+/// there and, unless the pane shows the Trash, not in the Trash with what holds it nor inside a
+/// completed item (FR-ORG-09).
 pub(super) fn stays(document: &Document, id: ItemId, shown: Shown) -> bool {
     let item = |id| document.node(id).and_then(Node::item);
     item(id).is_some()
         && (shown == Shown::View(View::Trash)
             || container::path(document, id)
                 .into_iter()
-                .all(|id| item(id).is_none_or(|item| item.deleted.is_none())))
+                .all(|id| item(id).is_none_or(|item| item.deleted.is_none()))
+                && document
+                    .parent(id)
+                    .is_none_or(|parent| !document.conceals(parent)))
 }
 
 impl State {
@@ -1446,6 +1450,25 @@ mod tests {
         give(&mut state, Command::Cut);
         assert_eq!(panels(&state), [None, None], "b, cut, is gone");
         assert!(item(&state, b).is_none());
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-ORG-09
+    #[test]
+    fn a_panel_closes_once_an_item_holding_its_item_is_completed() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let p = document.push(None, Node::Item(Item::new(ItemKind::Project, "p")))?;
+        let s = document.push(Some(p), Node::Item(Item::new(ItemKind::Section, "s")))?;
+        let t = document.push(Some(s), Node::Item(Item::new(ItemKind::Task, "t")))?;
+        let mut state = State::new(document, Opened::File("a.taskpaper".into()), TODAY);
+        state.show(Shown::Container(p), Some(t));
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        assert_eq!(panels(&state), [Some(t)]);
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::Focus(Focus::Previous));
+        give(&mut state, Command::ToggleCompleted);
+        assert!(item(&state, s).is_some_and(|s| s.completion().is_some()));
+        assert_eq!(panels(&state), [None], "t is no longer shown anywhere");
         Ok(())
     }
 

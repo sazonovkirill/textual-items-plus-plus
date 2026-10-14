@@ -472,11 +472,11 @@ impl State {
     /// query, Go to Symbol open on the items now listed with its query, Move to open on the
     /// destinations now listed with its query while an item it moves is found again, the date
     /// prompt open while an item it dates is, Quick Add open on its place while that is found
-    /// again, else on the Inbox, and each pane's attachments panel open while its item is, on what it
-    /// selected as far as that is found again, and the sidebar on its entry and its collapsed
-    /// areas as they are found again. The tag filter stays while the container shown is found
-    /// again as it was. The undo history is cleared, since its steps fit only the document as it
-    /// was.
+    /// again, else on the Inbox, and each pane's attachments panel open while its item is and
+    /// [stays](attachments::stays) open, on what it selected as far as that is found again, and
+    /// the sidebar on its entry and its collapsed areas as they are found again. The tag filter
+    /// stays while the container shown is found again as it was. The undo history is cleared,
+    /// since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -494,6 +494,7 @@ impl State {
             pane.panel = pane
                 .panel
                 .and_then(|panel| attachments::rematched(panel, &old, new, &exact));
+            pane.keep_panel(new);
         }
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
@@ -1014,6 +1015,34 @@ mod tests {
             "a, which they are on, is gone"
         );
         assert!(state.attachments().is_none());
+        Ok(())
+    }
+
+    // F-FILE-06, FR-ATT-01, FR-VIEW-04
+    #[test]
+    fn a_reload_closes_a_panel_whose_item_went_to_the_trash_outside_the_trash() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::OpenNote(Whose::Focused));
+        command(&mut state, Command::FocusLeft);
+        command(&mut state, Command::OpenInNewPane);
+        command(&mut state, Command::OpenNote(Whose::Focused));
+        command(&mut state, Command::FocusLeft);
+        command(&mut state, Command::Go(Go::View(View::Trash)));
+        let mut trashed = document(&["a"])?;
+        let a = find(&trashed, "a").ok_or("a")?;
+        let item = trashed.node(a).and_then(Node::item).ok_or("a")?;
+        let item = Item {
+            deleted: Some(TODAY),
+            ..item.clone()
+        };
+        trashed.set(a, item)?;
+        send(&mut state, Message::OnDisk(OnDisk::Changed(trashed)));
+        let a = titled(&state, "a").ok_or("a")?;
+        let panels: Vec<_> = state
+            .panes()
+            .map(|pane| pane.attachments().map(|view| view.id))
+            .collect();
+        assert_eq!(panels, [None, Some(a)], "only the Trash's panel stays");
         Ok(())
     }
 

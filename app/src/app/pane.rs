@@ -274,7 +274,7 @@ impl Pane {
     }
 
     /// Closes the panel once it no longer [stays](attachments::stays) open on its item.
-    fn keep_panel(&mut self, document: &Document) {
+    pub(super) fn keep_panel(&mut self, document: &Document) {
         let shown = self.shown;
         self.panel = self
             .panel
