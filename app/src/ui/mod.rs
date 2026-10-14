@@ -958,7 +958,7 @@ impl Tui {
     pub fn recover(&self) -> Result<Option<PathBuf>, RecoveryError> {
         match &self.file {
             Some(file) if self.state.save_state() != app::autosave::SaveState::Saved => {
-                file.recover(self.state.document()).map(Some)
+                file.recover(self.state.document())
             }
             _ => Ok(None),
         }

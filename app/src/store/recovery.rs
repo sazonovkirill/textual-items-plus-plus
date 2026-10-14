@@ -79,6 +79,25 @@ impl Recovery {
             }
         }
     }
+
+    /// Writes `text`, the document opened from `file`, to a new recovery file as
+    /// [`write`](Self::write) does, unless `file` holds it already, as when the save a session
+    /// ended with landed; returns its path, or `None` when there is nothing to keep.
+    ///
+    /// # Errors
+    ///
+    /// [`RecoveryError`] when there is no recovery folder or writing failed.
+    pub fn keep(
+        &self,
+        file: &Path,
+        text: &str,
+        now: DateTime,
+    ) -> Result<Option<PathBuf>, RecoveryError> {
+        if fs::read(file).is_ok_and(|held| held == text.as_bytes()) {
+            return Ok(None);
+        }
+        self.write(Some(file), text, now).map(Some)
+    }
 }
 
 impl Recovery {
@@ -249,6 +268,25 @@ mod tests {
             assert_eq!(fs::read_to_string(&written)?, text);
         }
         assert_eq!(names(&dir.path().join("recovery"))?.len(), 3);
+        Ok(())
+    }
+
+    // N-REL-01, D-96
+    #[test]
+    fn keeping_writes_a_recovery_file_only_when_the_file_lacks_the_text() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("todo.taskpaper");
+        fs::write(&file, "- saved\n")?;
+        let recovery = recovery(dir.path());
+        assert_eq!(recovery.keep(&file, "- saved\n", CRASH)?, None);
+        assert!(!dir.path().join("recovery").exists());
+        let kept = recovery
+            .keep(&file, "- unsaved\n", CRASH)?
+            .expect("written");
+        assert_eq!(fs::read_to_string(&kept)?, "- unsaved\n");
+        let missing = dir.path().join("new.taskpaper");
+        let kept = recovery.keep(&missing, "- new\n", CRASH)?.expect("written");
+        assert_eq!(fs::read_to_string(&kept)?, "- new\n");
         Ok(())
     }
 

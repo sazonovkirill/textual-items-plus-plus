@@ -374,13 +374,13 @@ impl File {
         store::encode(document, &self.source)
     }
 
-    /// Writes `document`, which holds changes the file lacks, to a recovery file, once the disk
-    /// work asked for is done, so that a save under way cannot change the file after it
-    /// (N-REL-01); returns its path.
-    pub(super) fn recover(&self, document: &Document) -> Result<PathBuf, RecoveryError> {
+    /// Writes `document` to a recovery file once the disk work asked for is done, so that a
+    /// save under way cannot change the file after it, unless that save left the file holding
+    /// it (N-REL-01, D-96); returns its path, or `None` when there is nothing to keep.
+    pub(super) fn recover(&self, document: &Document) -> Result<Option<PathBuf>, RecoveryError> {
         self.disk.flush();
         self.recovery
-            .write(Some(&self.path), &self.text(document), (self.clock)())
+            .keep(&self.path, &self.text(document), (self.clock)())
     }
 }
 

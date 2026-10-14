@@ -415,6 +415,19 @@ fn after_a_crash_the_document_goes_to_a_recovery_file_that_opens_next_time() {
     assert!(error.to_string().contains("cannot read"), "{error}");
 }
 
+// N-REL-01, D-96
+#[test]
+fn a_crash_while_the_last_save_is_under_way_writes_no_recovery_file_once_it_lands() {
+    let (_dir, path, mut harness) = on_file(TEXT);
+    harness.type_text("x");
+    // As when the terminal is closed: the save is asked for, and the session ends before the
+    // event loop hears that it landed.
+    harness.tui.input(Input::Terminate, TODAY);
+    assert_eq!(harness.tui.recover().expect("nothing to write"), None);
+    assert!(read(&path).contains("@done"));
+    assert!(!harness.recovery().exists(), "no recovery file");
+}
+
 // F-FILE-06
 #[test]
 fn a_save_refused_because_the_file_changed_opens_the_prompt() {

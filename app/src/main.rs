@@ -2,7 +2,8 @@
 //! on the demo document without one, until `Ctrl+Q`.
 
 use std::{
-    env, io,
+    env,
+    io::{self, Write as _},
     panic::{self, AssertUnwindSafe},
     path::PathBuf,
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
@@ -57,7 +58,14 @@ fn main() -> anyhow::Result<()> {
     let mut tui = Tui::open(path, recovered.as_deref(), today(), &edge)?;
     tui.use_clipboard(Box::new(System(arboard::Clipboard::new().ok())));
     forward_signals(inputs.clone()).context("cannot listen for signals")?;
+    let report = panic::take_hook();
     let mut terminal = ratatui::try_init().context("cannot set up the terminal")?;
+    // In place of `try_init`'s hook, whose report of a restore that failed panics in turn when
+    // the terminal is gone, aborting before the document is kept (D-96).
+    panic::set_hook(Box::new(move |info| {
+        let _ = ratatui::try_restore();
+        report(info);
+    }));
     // A terminal without the kitty keyboard protocol keeps legacy key reporting, which the keymap
     // reads alike (N-PORT-03). One that does not answer the query, or refuses the request, is
     // taken not to have it.
@@ -71,10 +79,11 @@ fn main() -> anyhow::Result<()> {
     // Text pasted into a terminal that does not bracket it arrives as typed keys.
     let bracketed = execute!(io::stdout(), EnableBracketedPaste).is_ok();
     forward_terminal_events(inputs);
-    // The panic hook `try_init` installed restores the terminal first; once the panic has
-    // unwound to here, or the event loop has failed, as when the terminal is gone before a save
-    // falls due, the document is written out as it stands (N-REL-01).
+    // The panic hook restores the terminal first; once the panic has unwound to here, or the
+    // event loop has failed, as when the terminal is gone, the document is kept before anything
+    // is written to the terminal, and what cannot be shown there is dropped (N-REL-01, D-96).
     let result = panic::catch_unwind(AssertUnwindSafe(|| run(&mut terminal, &mut tui, &received)));
+    let recovered = (!matches!(result, Ok(Ok(())))).then(|| tui.recover());
     if kitty {
         // The session is over; a terminal that cannot take this has gone already.
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
@@ -86,19 +95,23 @@ fn main() -> anyhow::Result<()> {
     // The session may end, or have panicked, while the mouse is reported (D-74); a terminal
     // that does not report it ignores this.
     let _ = execute!(io::stdout(), DisableMouseCapture);
-    ratatui::restore();
+    let _ = ratatui::try_restore();
+    let mut stderr = io::stderr();
     if let Some(farewell) = tui.farewell() {
-        eprintln!("{farewell}");
+        let _ = writeln!(stderr, "{farewell}");
     }
-    if !matches!(result, Ok(Ok(()))) {
-        match tui.recover() {
-            Ok(Some(path)) => eprintln!("tipp: the unsaved changes are in {}", path.display()),
-            Ok(None) => {}
-            Err(error) => {
-                eprintln!("tipp: cannot write the unsaved changes to a recovery file: {error}");
-            }
-        }
-    }
+    let _ = match recovered {
+        Some(Ok(Some(path))) => writeln!(
+            stderr,
+            "tipp: the unsaved changes are in {}",
+            path.display()
+        ),
+        Some(Err(error)) => writeln!(
+            stderr,
+            "tipp: cannot write the unsaved changes to a recovery file: {error}"
+        ),
+        Some(Ok(None)) | None => Ok(()),
+    };
     result.unwrap_or_else(|panic| panic::resume_unwind(panic))
 }
 
