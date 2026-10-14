@@ -112,15 +112,45 @@ fn open_the_focused_item_in_a_new_pane() {
 
 // FR-PANE-02
 #[test]
+fn narrowing_a_pane_drawn_wider_than_its_width_brings_back_the_pane_beyond_it() {
+    let mut harness = today_beside_website();
+    harness.ctrl('\\');
+    harness.ctrl('w');
+    harness.type_text("h");
+    assert_eq!(rules(&harness).len(), 2, "three panes fit");
+    for _ in 0..2 {
+        harness.ctrl('w');
+        harness.type_text(">");
+    }
+    assert_eq!(
+        rules(&harness).len(),
+        1,
+        "the second pane, drawn to the edge, pushes out the third"
+    );
+    harness.ctrl('w');
+    harness.type_text("<");
+    assert_eq!(
+        rules(&harness).len(),
+        2,
+        "four columns narrower, all three fit"
+    );
+}
+
+// FR-PANE-02
+#[test]
 fn narrow_and_widen_a_pane_and_scroll_sideways_when_panes_do_not_fit() {
     let mut harness = today_beside_website();
     harness.ctrl('w');
     harness.type_text("<");
-    assert_eq!(rules(&harness), [53], "four columns narrower");
+    assert_eq!(
+        rules(&harness),
+        [54],
+        "four columns narrower than its share"
+    );
     for _ in 0..2 {
         harness.press(KeyCode::Char('L'), KeyModifiers::ALT | KeyModifiers::SHIFT);
     }
-    assert_eq!(rules(&harness), [45], "eight columns wider again");
+    assert_eq!(rules(&harness), [46], "eight columns wider again");
     harness.ctrl('\\');
     harness.ctrl('\\');
     let (_, right) = sides(&harness, 0);

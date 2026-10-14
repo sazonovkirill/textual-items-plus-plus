@@ -52,7 +52,7 @@ pub(super) fn strip(
 
 /// How wide each pane would be in `width` columns: a pane keeping a width keeps it, and the others
 /// share what is left after the rules between the panes, none narrower than [`MIN_WIDTH`].
-fn sizes(width: u16, widths: &[Option<u16>]) -> Vec<u16> {
+pub(super) fn sizes(width: u16, widths: &[Option<u16>]) -> Vec<u16> {
     let rules = u16::try_from(widths.len().saturating_sub(1)).unwrap_or(u16::MAX);
     let room = width.saturating_sub(rules);
     let kept: u16 = widths

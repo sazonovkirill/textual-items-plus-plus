@@ -365,12 +365,17 @@ impl Tui {
         self.tops.resize(after, 0);
     }
 
-    /// The width the pane with the keys keeps, `wider` or narrower than drawn by a step, no
-    /// narrower than a pane is drawn and no wider than the room beside the sidebar (FR-PANE-02).
+    /// The width the pane with the keys keeps, `wider` or narrower by a step than its size
+    /// among the panes, which the last pane on screen may draw wider, no narrower than a pane is
+    /// drawn and no wider than the room beside the sidebar (FR-PANE-02).
     fn resized(&self, wider: bool) -> u16 {
         let [panes, ..] = self.layout(self.area);
         let [_, room] = split(self.strip(panes), self.state.sidebar().is_some());
-        let width = self.current_area(room).width;
+        let widths: Vec<_> = self.state.panes().map(|pane| pane.width()).collect();
+        let width = panes::sizes(room.width, &widths)
+            .get(self.state.current_pane())
+            .copied()
+            .unwrap_or(room.width);
         if wider {
             width.saturating_add(panes::STEP).min(room.width)
         } else {
