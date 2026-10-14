@@ -188,6 +188,13 @@ impl Item {
         }
     }
 
+    /// Sets its start date to `date`. A start date takes it out of Later, as Things 3's When is
+    /// either a day or Someday (D-92); a file's mark on a kind that is never Later stays (D-89).
+    pub fn set_start(&mut self, date: Option<Date>) {
+        self.start = date;
+        self.later &= date.is_none() || !self.kind.goes_later();
+    }
+
     /// The tags the app shows and finds it by: none on an area, which has no tags, though a file
     /// may give it some (D-75).
     #[must_use]
@@ -495,6 +502,20 @@ mod tests {
             let goes = matches!(kind, Project | Task);
             assert_eq!(kind.goes_later(), goes, "{kind:?}");
             assert_eq!(item.is_later(), goes, "{kind:?}");
+        }
+    }
+
+    // FR-ORG-11, FR-DATE-02
+    #[test]
+    fn a_start_date_takes_a_project_or_a_task_out_of_later() {
+        for (kind, stays) in [(Task, false), (Project, false), (Section, true)] {
+            let mut item = Item::new(kind, "x");
+            item.later = true;
+            item.set_start(None);
+            assert!(item.later, "{kind:?}: no start date keeps it");
+            item.set_start(Some(date(2026, 10, 1)));
+            assert_eq!(item.start, Some(date(2026, 10, 1)));
+            assert_eq!(item.later, stays, "{kind:?}");
         }
     }
 

@@ -337,7 +337,12 @@ impl EditDialog {
             after.tags.clone_from(&self.tags);
         }
         if has(EditField::Start) {
-            after.start = date(DateKind::Start)?;
+            let start = date(DateKind::Start)?;
+            // Only a new start date takes it out of Later, so a file's `@start @later` survives
+            // an edit of its other fields.
+            if start != item.start {
+                after.set_start(start);
+            }
         }
         if has(EditField::Due) {
             after.due = date(DateKind::Due)?;
@@ -872,6 +877,18 @@ mod tests {
             None,
             "nothing happens while it is closed"
         );
+        Ok(())
+    }
+
+    // FR-EDIT-08, FR-ORG-11
+    #[test]
+    fn a_start_date_left_as_it_was_keeps_a_files_later_mark() -> TestResult {
+        let mut sample = sample()?;
+        let mut call = item(&sample.document, sample.call).clone();
+        call.later = true;
+        sample.document.set(sample.call, call.clone())?;
+        let open = dialog(&sample.document, sample.call)?;
+        assert_eq!(open.applied(&call), Ok(call));
         Ok(())
     }
 

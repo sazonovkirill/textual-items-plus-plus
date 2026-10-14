@@ -187,3 +187,28 @@ fn what_a_later_project_holds_is_dimmed_and_later_and_a_start_date_exclude_each_
         "starting it takes it out of Later"
     );
 }
+
+// FR-ORG-11, FR-EDIT-08, FR-VIEW-06, FR-EDIT-06
+#[test]
+fn starting_a_later_task_in_the_edit_dialog_takes_it_out_of_later() {
+    let text = "Inbox:\n\t- Plan @later\n";
+    let (_dir, path, mut harness) = on_file(text);
+    harness.type_text("e");
+    for _ in 0..3 {
+        harness.key(KeyCode::Tab);
+    }
+    harness.type_text("today");
+    harness.key(KeyCode::Enter);
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        "Inbox:\n\t- Plan @start(2026-10-05)\n"
+    );
+    harness.type_text("gt");
+    assert!(harness.screen().contains("Plan"), "listed in Today");
+    harness.type_text("z");
+    assert_eq!(
+        saved_after_a_second(&mut harness, &path),
+        text,
+        "one step to undo"
+    );
+}
