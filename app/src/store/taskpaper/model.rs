@@ -1135,6 +1135,21 @@ Secret @hidden
         }
     }
 
+    // FR-OPS-02, F-FILE-03
+    #[test]
+    fn a_sibling_moved_after_a_shallower_one_stays_its_sibling() {
+        let (mut document, source) = load("Inbox:\n\t\t- a\n\t- b\n");
+        let [a, b] = children(&document, Some(document.inbox()));
+        let moved = document.move_to(a, domain::Destination::After(b)).unwrap();
+        document.apply(&moved).unwrap();
+        let saved = save(&document, &source);
+        assert_eq!(saved, "Inbox:\n\t- b\n\t- a\n");
+        let (reloaded, _) = load(&saved);
+        let [b, a] = children(&reloaded, Some(reloaded.inbox()));
+        assert_eq!(item(&reloaded, b).title, "b");
+        assert_eq!(item(&reloaded, a).title, "a");
+    }
+
     // FR-STORE-04
     #[test]
     fn kept_lines_with_no_item_left_before_them_read_as_the_description() {

@@ -7,7 +7,8 @@ use super::{BOM, FileFormat, IndentUnit, Line, LineEnding, Origin, Outline, is_w
 
 /// The file contents for `outline`, BOM included: an unedited outline gives back the exact text
 /// it was parsed from (F-FILE-03), and new or edited lines use the remembered indent unit and line
-/// ending (F-FILE-08). When the text would not read back at the outline's depths, its lines are
+/// ending (F-FILE-08). An indent jump that would nest a line under an earlier sibling is dropped.
+/// When the text would not read back at the outline's depths, its lines are
 /// re-indented with the remembered unit, or else with tabs, which read back for every canonical
 /// outline (D-31).
 #[must_use]
@@ -117,16 +118,22 @@ fn rereads_as(origin: &Origin, line: &Line, depth: usize, next_text_depth: Optio
     reread_depth == depth
 }
 
-/// Every line in document order with its absolute depth ([data-model.md §2](../../../../specs/reference/taskpaper-terminal/specs/data-model.md#2-derived-line-attributes)).
+/// Every line in document order with its absolute depth ([data-model.md §2](../../../../specs/reference/taskpaper-terminal/specs/data-model.md#2-derived-line-attributes)),
+/// without its extra indent where that would make it deeper than an earlier sibling, which would
+/// then read back as its parent ([file-format.md §3.1](../../../../specs/reference/taskpaper-terminal/specs/file-format.md#31-canonical-outlines), rule 1).
 fn lines_with_depth(outline: &Outline) -> Vec<(&Line, usize)> {
-    let mut ancestor_depths: Vec<usize> = Vec::new();
+    let mut path_depths: Vec<usize> = Vec::new();
     outline
         .descendants(outline.root())
         .filter_map(|(id, level)| outline.get(id).map(|line| (line, level)))
         .map(|(line, level)| {
-            ancestor_depths.truncate(level);
-            let depth = ancestor_depths.last().map_or(0, |parent| parent + 1) + line.extra_indent();
-            ancestor_depths.push(depth);
+            let previous_sibling = path_depths.get(level).copied();
+            path_depths.truncate(level);
+            let child_depth = path_depths.last().map_or(0, |parent| parent + 1);
+            let depth = Some(child_depth + line.extra_indent())
+                .filter(|&depth| previous_sibling.is_none_or(|sibling| depth <= sibling))
+                .unwrap_or(child_depth);
+            path_depths.push(depth);
             (line, depth)
         })
         .collect()
@@ -360,14 +367,14 @@ mod tests {
         assert_eq!(serialize(&with_bom), "\u{FEFF}");
     }
 
-    /// An outline of new lines `A`, `B` under it, `C` under `B` and `D` two levels under `A`.
+    /// An outline of new lines `A`, `B` under it, `C` under `B` and `D` two levels under `C`.
     fn new_lines(format: FileFormat) -> Outline {
         let mut outline = Outline::new(format);
         let root = outline.root();
         let a = push_new(&mut outline, root, "A:", 0);
         let b = push_new(&mut outline, a, "- B", 0);
-        push_new(&mut outline, b, "C", 0);
-        push_new(&mut outline, a, "D", 1);
+        let c = push_new(&mut outline, b, "C", 0);
+        push_new(&mut outline, c, "D", 1);
         outline
     }
 
@@ -375,13 +382,13 @@ mod tests {
     #[test]
     fn new_lines_use_the_remembered_format() {
         let cases = [
-            (FileFormat::default(), "A:\n\t- B\n\t\tC\n\t\tD\n"),
+            (FileFormat::default(), "A:\n\t- B\n\t\tC\n\t\t\t\tD\n"),
             (
                 FileFormat {
                     indent: IndentUnit::Spaces(4),
                     ..FileFormat::default()
                 },
-                "A:\n    - B\n        C\n        D\n",
+                "A:\n    - B\n        C\n                D\n",
             ),
             (
                 FileFormat {
@@ -389,7 +396,7 @@ mod tests {
                     trailing_newline: false,
                     ..FileFormat::default()
                 },
-                "A:\r\n\t- B\r\n\t\tC\r\n\t\tD",
+                "A:\r\n\t- B\r\n\t\tC\r\n\t\t\t\tD",
             ),
             (
                 FileFormat {
@@ -397,7 +404,7 @@ mod tests {
                     bom: true,
                     ..FileFormat::default()
                 },
-                "\u{FEFF}A:\r\t- B\r\t\tC\r\t\tD\r",
+                "\u{FEFF}A:\r\t- B\r\t\tC\r\t\t\t\tD\r",
             ),
         ];
         for (format, expected) in cases {
@@ -519,6 +526,30 @@ mod tests {
             assert_eq!(text, expected);
             assert_eq!(shape(&parse(&text)), shape(&outline), "{text:?}");
         }
+    }
+
+    // F-FILE-03, file-format §3.1
+    #[test]
+    fn an_indent_jump_that_would_nest_a_line_under_an_earlier_sibling_is_dropped() {
+        let mut outline = Outline::default();
+        let root = outline.root();
+        let p = push_read(&mut outline, root, "P:", 0, origin("P:", 0, 0, "\n"));
+        push_read(&mut outline, p, "- b", 1, origin("\t\t- b", 2, 2, "\n"));
+        push_read(&mut outline, p, "- c", 0, origin("\t- c", 1, 1, "\n"));
+        push_read(&mut outline, p, "- a", 2, origin("\t\t\t- a", 3, 3, "\n"));
+        push_new(&mut outline, root, "Q", 1);
+        let text = serialize(&outline);
+        assert_eq!(text, "P:\n\t\t- b\n\t- c\n\t- a\nQ\n");
+        assert_eq!(
+            shape(&parse(&text)),
+            [
+                r#"0 0 "P:""#,
+                r#"1 1 "- b""#,
+                r#"1 0 "- c""#,
+                r#"1 0 "- a""#,
+                r#"0 0 "Q""#
+            ]
+        );
     }
 
     #[test]
