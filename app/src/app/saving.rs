@@ -30,10 +30,23 @@ pub enum Report {
     SaveRefused,
     /// The daily backup failed, for this reason; saving goes on (F-FILE-09).
     BackupFailed(String),
-    /// The conflict copy asked for was written here.
-    Copied(PathBuf),
-    /// The conflict copy asked for could not be written, for this reason.
-    CopyFailed(String),
+    /// This conflict copy asked for was written here.
+    Copied(CopyId, PathBuf),
+    /// This conflict copy asked for could not be written, for this reason.
+    CopyFailed(CopyId, String),
+}
+
+/// Which conflict copy a [`Report`] tells of, as [`Effect::Copy`] asked for it, so that the
+/// report of a copy whose choice no longer stands is not taken for a later one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CopyId(u64);
+
+impl CopyId {
+    /// Moves on to the copy after this one, and names it.
+    fn next(&mut self) -> Self {
+        self.0 += 1;
+        *self
+    }
 }
 
 /// What the file on disk turned out to hold when it was no longer the version the core last read
@@ -137,6 +150,8 @@ pub(super) struct Saving {
     refused: bool,
     /// Where the document went when the session ended with the conflict prompt open.
     left_in: Option<PathBuf>,
+    /// The conflict copy asked for last.
+    last_copy: CopyId,
 }
 
 /// The file changed on disk while the document held changes it lacks, or became unreadable.
@@ -145,8 +160,8 @@ struct Conflict {
     /// The file on disk, `None` when it cannot be read.
     theirs: Option<Document>,
     diff: bool,
-    /// The choice waiting for its conflict copy.
-    choosing: Option<Choice>,
+    /// The choice waiting for its conflict copy, and that copy.
+    choosing: Option<(CopyId, Choice)>,
     /// Whether ending failed to keep the document, so quitting again ends without it.
     confirm_quit: bool,
 }
@@ -178,6 +193,7 @@ impl Saving {
             notice: None,
             refused: false,
             left_in: None,
+            last_copy: CopyId(0),
         }
     }
 
@@ -237,24 +253,27 @@ impl State {
     }
 
     /// Asks to end the session, saving first. With the conflict prompt open, the file on disk is
-    /// left as it is and the document goes to a conflict copy instead, so that neither is lost;
-    /// a quit after that copy failed ends without it. An edit under way is kept first.
+    /// left as it is and the document goes to a conflict copy instead, so that neither is lost,
+    /// in place of a choice waiting for its copy; a quit after that copy failed ends without it.
+    /// An edit under way is kept first.
     pub(super) fn end(&mut self, ending: Ending) -> Vec<Effect> {
         self.finish_editing();
-        let Some(conflict) = &mut self.saving.conflict else {
-            self.saving.autosave.end(ending);
+        let saving = &mut self.saving;
+        let Some(conflict) = &mut saving.conflict else {
+            saving.autosave.end(ending);
             return Vec::new();
         };
         match (ending, &conflict.choosing) {
             (Ending::Quit, _) if conflict.confirm_quit => vec![Effect::Quit],
-            // The copy under way would be taken for this one; its choice ends quickly.
-            (Ending::Quit, Some(_))
-            | (Ending::Terminate, Some(Choice::Leave(Ending::Terminate))) => Vec::new(),
+            (Ending::Quit, Some((_, Choice::Leave(_))))
+            | (Ending::Terminate, Some((_, Choice::Leave(Ending::Terminate)))) => Vec::new(),
             _ => {
-                conflict.choosing = Some(Choice::Leave(ending));
+                let id = saving.last_copy.next();
+                conflict.choosing = Some((id, Choice::Leave(ending)));
                 vec![Effect::Copy {
                     side: ConflictSide::Mine,
                     ending: true,
+                    id,
                 }]
             }
         }
@@ -271,15 +290,18 @@ impl State {
             Report::SaveFailed(reason) => saving.autosave.failed(reason),
             Report::SaveRefused => saving.autosave.refused(),
             Report::BackupFailed(reason) => saving.notice = Some(Notice::BackupFailed(reason)),
-            Report::Copied(copy) => return self.copied(copy),
-            Report::CopyFailed(reason) => {
+            Report::Copied(id, copy) => return self.copied(id, copy),
+            Report::CopyFailed(id, reason) => {
                 let Some(conflict) = &mut saving.conflict else {
                     return Vec::new();
                 };
-                match conflict.choosing.take() {
-                    Some(Choice::Leave(Ending::Terminate)) => return vec![Effect::Quit],
-                    Some(Choice::Leave(Ending::Quit)) => conflict.confirm_quit = true,
-                    Some(Choice::KeepMine | Choice::TakeTheirs(_)) | None => {}
+                let Some((_, choice)) = conflict.choosing.take_if(|(asked, _)| *asked == id) else {
+                    return Vec::new();
+                };
+                match choice {
+                    Choice::Leave(Ending::Terminate) => return vec![Effect::Quit],
+                    Choice::Leave(Ending::Quit) => conflict.confirm_quit = true,
+                    Choice::KeepMine | Choice::TakeTheirs(_) => {}
                 }
                 saving.notice = Some(Notice::CopyFailed(reason));
             }
@@ -287,15 +309,17 @@ impl State {
         Vec::new()
     }
 
-    /// The conflict copy of the choice under way was written to `copy`, so the choice goes ahead.
-    fn copied(&mut self, copy: PathBuf) -> Vec<Effect> {
+    /// The conflict copy `id` was written to `copy`, so its choice goes ahead if it still stands.
+    fn copied(&mut self, id: CopyId, copy: PathBuf) -> Vec<Effect> {
         let Some(Conflict {
-            choosing: Some(choice),
+            choosing: Some((_, choice)),
             ..
-        }) = self
-            .saving
-            .conflict
-            .take_if(|conflict| conflict.choosing.is_some())
+        }) = self.saving.conflict.take_if(|conflict| {
+            conflict
+                .choosing
+                .as_ref()
+                .is_some_and(|(asked, _)| *asked == id)
+        })
         else {
             return Vec::new();
         };
@@ -341,7 +365,7 @@ impl State {
         if let Some(conflict) = &mut self.saving.conflict {
             cancel_choice(conflict);
             // A prompt open only because the file could not be read gives way once it can.
-            let leaving = matches!(conflict.choosing, Some(Choice::Leave(_)));
+            let leaving = matches!(conflict.choosing, Some((_, Choice::Leave(_))));
             if !saved || theirs.is_none() || leaving {
                 conflict.theirs = theirs;
                 return Vec::new();
@@ -389,18 +413,20 @@ impl State {
     /// Starts `choice` with a conflict copy of `discarded`, unless no prompt is open or a choice
     /// is under way.
     fn choose(&mut self, choice: Choice, discarded: ConflictSide) -> Vec<Effect> {
-        let Some(conflict) = self
-            .saving
+        let saving = &mut self.saving;
+        let Some(conflict) = saving
             .conflict
             .as_mut()
             .filter(|conflict| conflict.choosing.is_none())
         else {
             return Vec::new();
         };
-        conflict.choosing = Some(choice);
+        let id = saving.last_copy.next();
+        conflict.choosing = Some((id, choice));
         vec![Effect::Copy {
             side: discarded,
             ending: false,
+            id,
         }]
     }
 
@@ -533,7 +559,7 @@ impl State {
 fn cancel_choice(conflict: &mut Conflict) {
     conflict
         .choosing
-        .take_if(|choice| !matches!(choice, Choice::Leave(_)));
+        .take_if(|(_, choice)| !matches!(choice, Choice::Leave(_)));
 }
 
 #[cfg(test)]
@@ -1075,14 +1101,18 @@ mod tests {
             command(&mut state, Command::KeepMine),
             [Effect::Copy {
                 side: ConflictSide::Theirs,
-                ending: false
+                ending: false,
+                id: CopyId(1),
             }]
         );
         assert_eq!(command(&mut state, Command::KeepMine), [], "one at a time");
         assert_eq!(command(&mut state, Command::TakeTheirs), []);
         let copy = PathBuf::from("theirs.taskpaper");
         assert_eq!(
-            send(&mut state, Message::Disk(Report::Copied(copy.clone()))),
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(1), copy.clone()))
+            ),
             []
         );
         assert_eq!(send(&mut state, Message::Tick(secs(1))), [Effect::Save]);
@@ -1090,7 +1120,10 @@ mod tests {
         assert_eq!(state.document(), &mine);
         assert_eq!(state.notice(), Some(&Notice::KeptMine(copy)));
         assert_eq!(
-            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(1), "x".into()))
+            ),
             []
         );
         Ok(())
@@ -1104,12 +1137,16 @@ mod tests {
             command(&mut state, Command::TakeTheirs),
             [Effect::Copy {
                 side: ConflictSide::Mine,
-                ending: false
+                ending: false,
+                id: CopyId(1),
             }]
         );
         let copy = PathBuf::from("mine.taskpaper");
         assert_eq!(
-            send(&mut state, Message::Disk(Report::Copied(copy.clone()))),
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(1), copy.clone()))
+            ),
             [Effect::Reloaded]
         );
         assert_eq!(state.document(), &document(&["x"])?);
@@ -1124,7 +1161,10 @@ mod tests {
         let mut state = conflicted()?;
         command(&mut state, Command::KeepMine);
         assert_eq!(
-            send(&mut state, Message::Disk(Report::CopyFailed("full".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::CopyFailed(CopyId(1), "full".into()))
+            ),
             []
         );
         assert_eq!(state.notice(), Some(&Notice::CopyFailed("full".into())));
@@ -1132,7 +1172,10 @@ mod tests {
         assert_eq!(command(&mut state, Command::KeepMine).len(), 1);
         let mut state = opened(&["a"])?;
         assert_eq!(
-            send(&mut state, Message::Disk(Report::CopyFailed("late".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::CopyFailed(CopyId(1), "late".into()))
+            ),
             [],
             "nothing was waiting for it"
         );
@@ -1177,13 +1220,19 @@ mod tests {
         );
         assert_eq!(state.conflict(), None);
         assert_eq!(
-            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(1), "x".into()))
+            ),
             []
         );
         let mut state = opened(&["a"])?;
         send(&mut state, Message::OnDisk(OnDisk::Unreadable));
         command(&mut state, Command::KeepMine);
-        send(&mut state, Message::Disk(Report::Copied("theirs".into())));
+        send(
+            &mut state,
+            Message::Disk(Report::Copied(CopyId(1), "theirs".into())),
+        );
         assert_eq!(
             send(&mut state, Message::Tick(secs(1))),
             [Effect::Save],
@@ -1199,7 +1248,10 @@ mod tests {
         command(&mut state, Command::KeepMine);
         send(&mut state, Message::OnDisk(OnDisk::Unreadable));
         assert_eq!(
-            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(1), "x".into()))
+            ),
             []
         );
         assert_eq!(state.conflict().map(|view| view.readable), Some(false));
@@ -1207,10 +1259,56 @@ mod tests {
         send(&mut state, Message::OnDisk(OnDisk::Gone));
         assert!(state.gone_from_disk());
         assert_eq!(
-            send(&mut state, Message::Disk(Report::Copied("x".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(2), "x".into()))
+            ),
             []
         );
         assert!(state.conflict().is_some());
+        Ok(())
+    }
+
+    // F-FILE-06
+    #[test]
+    fn a_copy_for_a_cancelled_choice_is_not_taken_for_a_later_one() -> TestResult {
+        let mut state = conflicted()?;
+        let mine = state.document().clone();
+        command(&mut state, Command::KeepMine);
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
+        );
+        command(&mut state, Command::TakeTheirs);
+        assert_eq!(
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(1), "theirs".into()))
+            ),
+            [],
+            "the copy of theirs does not keep mine"
+        );
+        assert_eq!(state.document(), &mine);
+        send(
+            &mut state,
+            Message::Disk(Report::CopyFailed(CopyId(2), "full".into())),
+        );
+        assert_eq!(state.notice(), Some(&Notice::CopyFailed("full".into())));
+        assert!(state.conflict().is_some());
+        assert_eq!(state.document(), &mine);
+        command(&mut state, Command::TakeTheirs);
+        send(
+            &mut state,
+            Message::Disk(Report::CopyFailed(CopyId(2), "late".into())),
+        );
+        assert_eq!(state.notice(), None, "a failure of no choice that stands");
+        assert_eq!(
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(3), "mine".into()))
+            ),
+            [Effect::Reloaded]
+        );
         Ok(())
     }
 
@@ -1235,33 +1333,52 @@ mod tests {
     // F-FILE-05, F-FILE-06
     #[test]
     fn ending_with_the_prompt_open_keeps_mine_in_a_copy_and_leaves_theirs() -> TestResult {
-        let mine = Effect::Copy {
+        let mine = |id| Effect::Copy {
             side: ConflictSide::Mine,
             ending: true,
+            id,
         };
         let mut state = conflicted()?;
-        assert_eq!(
-            command(&mut state, Command::Quit),
-            std::slice::from_ref(&mine)
-        );
+        assert_eq!(command(&mut state, Command::Quit), [mine(CopyId(1))]);
         assert_eq!(
             command(&mut state, Command::Quit),
             [],
             "the copy is under way"
         );
-        assert_eq!(send(&mut state, Message::Terminate), [mine]);
+        assert_eq!(send(&mut state, Message::Terminate), [mine(CopyId(2))]);
         assert_eq!(send(&mut state, Message::Terminate), []);
         send(&mut state, Message::OnDisk(OnDisk::Unreadable));
         let copy = PathBuf::from("mine.taskpaper");
         assert_eq!(
-            send(&mut state, Message::Disk(Report::Copied(copy.clone()))),
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(2), copy.clone()))
+            ),
             [Effect::Quit],
             "leaving stands whatever the file does"
         );
         assert_eq!(state.left_in(), Some(copy.as_path()));
-        let mut state = conflicted()?;
-        command(&mut state, Command::KeepMine);
-        assert_eq!(command(&mut state, Command::Quit), []);
+        for choice in [Command::KeepMine, Command::TakeTheirs] {
+            let mut state = conflicted()?;
+            command(&mut state, choice);
+            assert_eq!(
+                command(&mut state, Command::Quit),
+                [mine(CopyId(2))],
+                "quitting leaves the choice under way"
+            );
+            send(
+                &mut state,
+                Message::Disk(Report::Copied(CopyId(1), "theirs".into())),
+            );
+            assert_eq!(
+                send(
+                    &mut state,
+                    Message::Disk(Report::Copied(CopyId(2), copy.clone()))
+                ),
+                [Effect::Quit]
+            );
+            assert_eq!(state.left_in(), Some(copy.as_path()));
+        }
         Ok(())
     }
 
@@ -1272,7 +1389,10 @@ mod tests {
         command(&mut state, Command::Quit);
         assert!(!state.confirming_quit());
         assert_eq!(
-            send(&mut state, Message::Disk(Report::CopyFailed("full".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::CopyFailed(CopyId(1), "full".into()))
+            ),
             []
         );
         assert!(state.confirming_quit());
@@ -1280,7 +1400,10 @@ mod tests {
         let mut state = conflicted()?;
         send(&mut state, Message::Terminate);
         assert_eq!(
-            send(&mut state, Message::Disk(Report::CopyFailed("full".into()))),
+            send(
+                &mut state,
+                Message::Disk(Report::CopyFailed(CopyId(1), "full".into()))
+            ),
             [Effect::Quit]
         );
         Ok(())

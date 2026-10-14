@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::civil::Date;
 
 use super::{
-    AttachmentsInput, Command, ConflictSide, DateInput, Direction, EditInput, Notice, OnDisk,
-    PickerInput, Report, SearchInput, Selected, Setting, SettingsInput, Side, State,
+    AttachmentsInput, Command, ConflictSide, CopyId, DateInput, Direction, EditInput, Notice,
+    OnDisk, PickerInput, Report, SearchInput, Selected, Setting, SettingsInput, Side, State,
     autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
@@ -69,14 +69,16 @@ pub enum Effect {
     /// version last read or written, after the file's daily backup; report how it went as
     /// [`Message::Disk`], after what is on disk as [`Message::OnDisk`] when it is refused.
     Save,
-    /// Write `side` to a conflict copy of the file and report where as [`Message::Disk`]. When
-    /// the session is `ending`, a copy that fails goes to a recovery file instead, and the report
-    /// comes before the next effect.
+    /// Write `side` to a conflict copy of the file and report where as [`Message::Disk`], naming
+    /// it `id`. When the session is `ending`, a copy that fails goes to a recovery file instead,
+    /// and the report comes before the next effect.
     Copy {
         /// The version to keep.
         side: ConflictSide,
         /// Whether the session ends once it is kept.
         ending: bool,
+        /// Which copy the report tells of.
+        id: CopyId,
     },
     /// The document is now the one the file on disk was last reported to hold; write it the way
     /// that file was read from now on.

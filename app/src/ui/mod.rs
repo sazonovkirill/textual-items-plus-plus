@@ -661,11 +661,11 @@ impl Tui {
                     file.save(self.state.document(), self.today);
                 }
             }
-            Effect::Copy { side, ending } => {
+            Effect::Copy { side, ending, id } => {
                 let report = self
                     .file
-                    .as_ref()
-                    .and_then(|file| file.copy(side, self.state.document(), ending));
+                    .as_mut()
+                    .and_then(|file| file.copy(side, self.state.document(), ending, id));
                 if let Some(report) = report {
                     self.update(report);
                 }

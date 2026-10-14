@@ -4,6 +4,7 @@
 //! version of the file the app last read or wrote, and the outline it is written back with.
 
 use std::{
+    collections::VecDeque,
     path::{Path, PathBuf},
     sync::{Arc, mpsc::Sender},
 };
@@ -12,7 +13,7 @@ use jiff::civil::{Date, DateTime};
 
 use super::Input;
 use crate::{
-    app::{Animations, ConflictSide, Layout, Message, OnDisk, Opened, Report, State},
+    app::{Animations, ConflictSide, CopyId, Layout, Message, OnDisk, Opened, Report, State},
     domain::Document,
     store::{
         self, Backups, Disk, Job, Layouts, OpenError, OpenFile, Outcome, Recovery, RecoveryError,
@@ -52,6 +53,8 @@ pub(super) struct File {
     /// until the core takes it.
     theirs: Option<(Vec<u8>, Option<Source>)>,
     disk: Disk,
+    /// The conflict copies queued on the worker, which reports them in this order.
+    copies: VecDeque<CopyId>,
     /// Conflict copies the session ends with are written at once, not on the worker.
     backups: Backups,
     recovery: Recovery,
@@ -122,6 +125,7 @@ impl File {
             known: version,
             theirs: None,
             disk,
+            copies: VecDeque::new(),
             backups,
             recovery: Recovery::new(edge.recovery.clone()),
             layouts,
@@ -163,13 +167,14 @@ impl File {
         });
     }
 
-    /// Writes `side` to a conflict copy: on the worker, or at once with a recovery file in its
-    /// place when the copy fails as the session is `ending`, returning the report then.
+    /// Writes `side` to the conflict copy `id`: on the worker, or at once with a recovery file in
+    /// its place when the copy fails as the session is `ending`, returning the report then.
     pub(super) fn copy(
-        &self,
+        &mut self,
         side: ConflictSide,
         document: &Document,
         ending: bool,
+        id: CopyId,
     ) -> Option<Message> {
         let contents = match side {
             ConflictSide::Mine => self.text(document).into_bytes(),
@@ -181,6 +186,7 @@ impl File {
         };
         let now = (self.clock)();
         if !ending {
+            self.copies.push_back(id);
             self.disk.submit(Job::ConflictCopy {
                 path: self.path.clone(),
                 contents,
@@ -199,8 +205,8 @@ impl File {
                     .map_err(|error| format!("{copy}; nor a recovery file: {error}"))
             });
         Some(Message::Disk(match kept {
-            Ok(copy) => Report::Copied(copy),
-            Err(reason) => Report::CopyFailed(reason),
+            Ok(copy) => Report::Copied(id, copy),
+            Err(reason) => Report::CopyFailed(id, reason),
         }))
     }
 
@@ -226,12 +232,24 @@ impl File {
                 .collect(),
             Outcome::SaveFailed { reason } => vec![Message::Disk(Report::SaveFailed(reason))],
             Outcome::BackupFailed { reason } => vec![Message::Disk(Report::BackupFailed(reason))],
-            Outcome::ConflictCopied { copy } => vec![Message::Disk(Report::Copied(copy))],
+            Outcome::ConflictCopied { copy } => {
+                vec![Message::Disk(Report::Copied(self.copy_queued(), copy))]
+            }
             Outcome::ConflictCopyFailed { reason } => {
-                vec![Message::Disk(Report::CopyFailed(reason))]
+                vec![Message::Disk(Report::CopyFailed(
+                    self.copy_queued(),
+                    reason,
+                ))]
             }
             Outcome::Checked { contents } => self.found(contents).into_iter().collect(),
         }
+    }
+
+    /// The conflict copy the worker just reported, the first of those queued.
+    fn copy_queued(&mut self) -> CopyId {
+        self.copies
+            .pop_front()
+            .expect("the worker reports only the conflict copies queued on it")
     }
 
     /// What the file on disk holding `contents`, `None` when there is none, tells the core:

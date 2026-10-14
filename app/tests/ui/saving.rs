@@ -273,6 +273,28 @@ fn quitting_with_the_prompt_open_leaves_theirs_and_keeps_mine_in_a_copy() {
     );
 }
 
+// F-FILE-05, F-FILE-06
+#[test]
+fn quitting_before_a_choice_is_reported_still_quits_keeping_mine_in_a_copy() {
+    for choice in ['e', 'r'] {
+        let (_dir, path, mut harness) = conflicted();
+        let ctrl = |c| Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL));
+        harness.tui.handle(&ctrl(choice), TODAY);
+        harness.tui.flush();
+        harness.send(&ctrl('q'));
+        assert!(harness.tui.should_quit(), "after Ctrl+{choice}");
+        assert_eq!(
+            read(&path),
+            "Inbox:\n\t- Renew the passport\n\t- Book trains\n"
+        );
+        let farewell = harness.tui.farewell().expect("a farewell");
+        let mine = farewell
+            .strip_prefix("tipp: left theirs on disk; mine is in ")
+            .expect("mine is in a copy");
+        assert!(read(&PathBuf::from(mine)).contains("@done"), "{farewell}");
+    }
+}
+
 // F-FILE-06, F-FILE-07
 #[test]
 fn a_file_made_unreadable_elsewhere_asks_and_cannot_be_taken() {
