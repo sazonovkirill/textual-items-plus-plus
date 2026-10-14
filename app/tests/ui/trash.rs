@@ -115,3 +115,39 @@ fn empty_the_trash_after_confirming() {
         "undo puts all back"
     );
 }
+
+// FR-VIEW-04, FR-OPS-05, D-113
+#[test]
+fn a_copy_from_the_trash_pastes_live_and_nothing_else_acts_there() {
+    let mut harness = Harness::new(60, 12);
+    let listed = [
+        "▌ ☐ Cancel the newspaper · Inbox",
+        "  ☐ Paint the hallway · Home › Move to the new flat",
+    ];
+    let refused = "…a · only restore and delete work in the Trash";
+    harness.type_text("gdD");
+    assert_eq!(
+        trimmed(&harness),
+        trash(&listed, refused),
+        "nothing duplicated"
+    );
+    harness.type_text("M");
+    assert_eq!(
+        trimmed(&harness),
+        trash(&listed, refused),
+        "Move to does not open"
+    );
+    harness.type_text("ygi");
+    harness.ctrl('v');
+    assert!(
+        harness.screen().contains("▌ ☐ Cancel the newspaper"),
+        "the copy is in the Inbox:\n{}",
+        harness.screen()
+    );
+    harness.type_text("gd");
+    assert_eq!(
+        trimmed(&harness),
+        trash(&listed, SAVED),
+        "and not in the Trash"
+    );
+}

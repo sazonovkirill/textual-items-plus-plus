@@ -492,6 +492,16 @@ impl State {
         areas
     }
 
+    /// Whether the pane shows the Trash, where only restoring and deleting act, saying so when it
+    /// does (D-113).
+    fn refuses_in_trash(&mut self) -> bool {
+        let in_trash = self.pane().shown == Shown::View(View::Trash);
+        if in_trash {
+            self.notify(Notice::InTrash);
+        }
+        in_trash
+    }
+
     /// Moves the selected items to the Trash on `today`, or in the Trash deletes them for good,
     /// as one step to undo, moving the focus on from the rows that leave (FR-VIEW-04).
     pub(super) fn delete(&mut self, today: Date) {
@@ -527,8 +537,11 @@ impl State {
     }
 
     /// Puts a copy of each selected item, with its contents, right after it, as one step to undo,
-    /// focusing the copy of the last one the pane shows.
+    /// focusing the copy of the last one the pane shows; nothing in the Trash (D-113).
     pub(super) fn duplicate(&mut self) {
+        if self.refuses_in_trash() {
+            return;
+        }
         let taken = self.targets();
         let (transaction, last) = clipboard::duplicate(&mut self.document, &taken);
         self.change_focusing(transaction, last.or(self.pane().selection.focused()));
@@ -580,8 +593,11 @@ impl State {
     }
 
     /// Opens the Move to picker for the selected items, closing the Navigator and the tag picker.
-    /// Nothing opens when no project, section or task is selected.
+    /// Nothing opens when no project, section or task is selected, nor in the Trash (D-113).
     pub(super) fn open_move_to(&mut self) {
+        if self.refuses_in_trash() {
+            return;
+        }
         self.navigator = None;
         self.tags = None;
         self.move_to = MoveTo::open(&self.document, self.pane().selection.items(&self.listed()));
@@ -3167,6 +3183,54 @@ mod tests {
         assert_eq!(state.notice(), Some(&Notice::EmptyTrash(1)));
         state.empty_trash(true);
         assert_eq!(state.document().node(inbox_task), None, "emptied");
+        Ok(())
+    }
+
+    // FR-VIEW-04, FR-OPS-05, D-113
+    #[test]
+    fn items_copied_in_the_trash_paste_live_and_nothing_else_acts_there()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Site");
+        state.delete(TODAY);
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::Last);
+        assert_eq!(state.selection().focused(), Some(site));
+        state.delete(TODAY);
+        state.go(Go::View(View::Trash));
+        let before = state.document().clone();
+        state.duplicate();
+        assert_eq!(state.notice(), Some(&Notice::InTrash));
+        state.notify(Notice::Reloaded);
+        state.open_move_to();
+        assert_eq!(state.notice(), Some(&Notice::InTrash));
+        assert!(state.move_to().is_none());
+        assert_eq!(state.document(), &before, "nothing changes in the Trash");
+        let branches = clipboard::branches(state.document(), &[site]);
+        assert_eq!(state.copy(), [Effect::SetClipboard(branches.clone())]);
+        navigate(&mut state, "Work");
+        state.move_focus(Focus::Last);
+        state.paste(Side::Below, &branches);
+        let pasted = state.selection().focused().expect("the paste is focused");
+        assert_ne!(pasted, site);
+        let deleted = |id| {
+            state
+                .document()
+                .node(id)
+                .and_then(Node::item)
+                .and_then(|item| item.deleted)
+        };
+        assert_eq!(deleted(pasted), None, "the copy is live");
+        let held = state.document().children(pasted);
+        assert_eq!(held.len(), 1, "the copy holds its task");
+        assert_eq!(deleted(held[0]), None, "and so is what it holds");
+        assert_eq!(deleted(in_site), Some(TODAY), "the original stays deleted");
+        assert_eq!(trash::items(state.document()), [site]);
         Ok(())
     }
 

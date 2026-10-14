@@ -121,6 +121,7 @@ fn kept(state: &State) -> String {
         Notice::AreaUncompleted => "an area can't be completed".to_owned(),
         Notice::NotLater => "only a task or a project can be Later".to_owned(),
         Notice::Settings(problem) => format!("config.toml: {problem}"),
+        Notice::InTrash => "only restore and delete work in the Trash".to_owned(),
         Notice::NoWeather => "no weather in summer".to_owned(),
         Notice::SavedAs(path) => format!("saved as {}", path.display()),
         Notice::QuickAdded(place) => format!("added to {place}"),

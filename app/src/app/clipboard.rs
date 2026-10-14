@@ -5,6 +5,7 @@
 use super::{
     End, Side, adding,
     container::{self, Row},
+    trash,
 };
 use crate::domain::{Branch, Document, ItemId, ItemKind, Op, Transaction};
 
@@ -96,7 +97,7 @@ pub(super) struct Target {
 /// Inbox, or into a container whose contents are hidden for being completed (FR-ORG-09), and
 /// then nothing is pasted. Each goes where a new item of its kind would (FR-EDIT-05, FR-ORG-06),
 /// after the one before it when that is a row, and never before an earlier one in the same
-/// place; text kept as read goes as a task would.
+/// place; text kept as read goes as a task would. Nothing pasted goes in the Trash (D-113).
 pub(super) fn paste(
     document: &mut Document,
     target: Target,
@@ -104,7 +105,7 @@ pub(super) fn paste(
 ) -> Option<(Transaction, Option<ItemId>)> {
     let subtrees: Vec<_> = branches
         .iter()
-        .map(|branch| (kind(branch), document.graft(branch)))
+        .map(|branch| (kind(branch), document.graft(&trash::live(branch))))
         .collect();
     let mut scratch = document.clone();
     let mut ops = Vec::new();

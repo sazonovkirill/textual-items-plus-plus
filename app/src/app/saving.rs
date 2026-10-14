@@ -120,6 +120,9 @@ pub enum Notice {
     /// The document was written to the file at this path, which saving follows from now on
     /// (FR-STORE-11).
     SavedAs(PathBuf),
+    /// Something other than restoring or deleting was asked for in the Trash (FR-VIEW-04,
+    /// D-113).
+    InTrash,
     /// Quick Add added a task to the place with this path (FR-EDIT-07).
     QuickAdded(String),
 }
@@ -138,6 +141,7 @@ impl Notice {
                 | Self::AreaUncompleted
                 | Self::NotLater
                 | Self::NotAProject
+                | Self::InTrash
         )
     }
 }

@@ -7,7 +7,7 @@ use std::cmp::Reverse;
 use jiff::civil::Date;
 
 use super::{container::Row, view::Group};
-use crate::domain::{Document, Item, ItemId, ItemKind, Node, Op, Transaction};
+use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 
 /// Whether `item` is of a kind that is deleted to the Trash and listed there.
 fn trashable(item: &Item) -> bool {
@@ -99,6 +99,21 @@ pub(super) fn restore(document: &Document, items: impl IntoIterator<Item = ItemI
         })
         .collect();
     Transaction::new(ops)
+}
+
+/// `branch` with nothing in it in the Trash, as pasting puts items in (D-113).
+pub(super) fn live(branch: &Branch) -> Branch {
+    let node = match &branch.node {
+        Node::Item(item) => Node::Item(Item {
+            deleted: None,
+            ..item.clone()
+        }),
+        kept @ Node::Kept(_) => kept.clone(),
+    };
+    Branch {
+        node,
+        children: branch.children.iter().map(live).collect(),
+    }
 }
 
 #[cfg(test)]
