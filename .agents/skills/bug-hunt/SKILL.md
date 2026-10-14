@@ -11,8 +11,8 @@ The rules are in [the bug hunt](../../../docs/bug-hunt.md); this is the procedur
 
 1. Start two or three Bug Finders in parallel as subagents, each with its [set of areas](../../../docs/bug-hunt.md#areas), rotated from the last round, plus the features added and the bugs fixed since then.
 2. When every Finder has reported, start the Bug Reviewer with their lists.
-3. Ask the owner the Reviewer's NEEDS_CLARIFICATION questions. Split the WILL_FIX bugs by area and start the Bug Fixers in parallel, each in its own worktree, naming each one's bugs and the latest `D-n` on `main`.
-4. Report to the owner: questions, fixes and the severity trend. When the owner asked for rounds until the hunt is clean, start the next round unless this one's Reviewer accepted no P1 or P2 bug.
+3. Split the WILL_FIX bugs by area and start the Bug Fixers in parallel, each in its own worktree, naming each one's bugs and the latest `D-n` on `main`.
+4. Report to the owner: fixes and the severity trend. When the owner asked for rounds until the hunt is clean, start the next round unless this one's Reviewer accepted no P1 or P2 bug.
 
 ## Bug Finder
 
@@ -24,10 +24,10 @@ The rules are in [the bug hunt](../../../docs/bug-hunt.md); this is the procedur
 
 ## Bug Reviewer
 
-1. List the open `bug` tasks that carry none of WILL_FIX, NEEDS_CLARIFICATION and WILL_NOT_FIX.
+1. List the open `bug` tasks that carry neither WILL_FIX nor WILL_NOT_FIX.
 2. For each, check the specs and Decisions table, and reproduce it when in doubt.
 3. Set the task's labels to its existing labels plus exactly one verdict, set its final priority, and comment `Bug Reviewer: <LABEL>. <reason>` in one line. Move a WILL_NOT_FIX task to Ready.
-4. Report to the coordinator each bug's verdict and priority, and the questions for the owner.
+4. Report to the coordinator each bug's verdict and priority, and the product calls it made.
 
 ## Bug Fixer
 

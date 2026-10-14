@@ -21,9 +21,9 @@ The coordinator is the session the owner asked for the hunt, and each role is a 
 
 The app's areas are split into three sets, one for each Finder:
 
-- **Set X:** tasks, editing and undo, selection and rearranging (moving, indenting, multi-selection, converting, the clipboard), notes, comments and checklists.
+- **Set X:** tasks, editing and undo, selection and rearranging (moving, indenting, multi-selection, converting, the clipboard), notes, comments and checklists, the shortcuts panel and the mouse.
 - **Set Y:** the sidebar and projects, views (Inbox, Today, Upcoming, All, Logbook, Trash), dates and tags.
-- **Set Z:** storage (saving, reload and external-change conflicts, backups, layout restore), panes, the Navigator, Go to Symbol, the command palette, search, settings, themes and small terminals.
+- **Set Z:** storage (saving, reload and external-change conflicts, backups, layout restore), panes, the Navigator, Go to Symbol, the command palette, search, settings, themes, weather, animations and small terminals.
 
 The Finders rotate sets each round, so each set gets a fresh pair of eyes; with two Finders, the round leaves out the set the last round tested most closely. A feature added since the last round goes to the set it belongs to and is named in that Finder's brief, as are the fixes since the last round, which are worth testing again.
 
@@ -48,21 +48,20 @@ The coordinator records each round's final priorities as a severity trend, for e
 
 ## Bug Reviewer
 
-1. Take every open `bug` task without one of the three labels below, not only those of this round.
+1. Take every open `bug` task without one of the two labels below, not only those of this round.
 2. Check each one against the specs and the Decisions table, where later decisions win, and reproduce it when the report leaves doubt.
-3. Give it exactly one label and a one-line comment `Bug Reviewer: <LABEL>. <reason>`, and set its final priority:
+3. Give it exactly one of the two labels and a one-line comment `Bug Reviewer: <LABEL>. <reason>`, and set its final priority:
    - **WILL_FIX:** a real bug worth fixing. The comment says what the fix should achieve when the report leaves room.
-   - **NEEDS_CLARIFICATION:** fixing it needs a product decision only the owner can make. The comment puts the question with the options and a recommendation.
    - **WILL_NOT_FIX:** not a bug, already decided, or a cosmetic P4 the owner would not notice in daily use. Move it to Ready for the owner to see; the label keeps agents from claiming it there ([task selection](agent-workflow.md#backlog-and-task-selection)).
 4. Fix nothing and change no code or documents.
-5. Report to the coordinator: the verdict and final priority of each bug, and the questions for the owner.
+5. Report to the coordinator: the verdict and final priority of each bug, and the product calls it made.
 
-The coordinator asks the owner the NEEDS_CLARIFICATION questions. When the owner answers, the coordinator records the answer as a comment on the task and relabels the bug WILL_FIX or WILL_NOT_FIX by it, and a WILL_FIX bug goes to a Fixer.
+The owner leaves the choice of which bugs to fix to the agents and is not asked (owner, 2026-10-14). When a bug needs a product call, the Reviewer makes it against the specs and decisions, and the comment states it so the Fixer can record it as a decision.
 
 ## Bug Fixer
 
-The coordinator splits the WILL_FIX bugs between the Fixers by area, so that they do not change the same code, and names each Fixer's bugs in its brief. A Fixer leaves the others' bugs and every NEEDS_CLARIFICATION bug alone.
+The coordinator splits the WILL_FIX bugs between the Fixers by area, so that they do not change the same code, and names each Fixer's bugs in its brief. A Fixer leaves the others' bugs alone.
 
 1. Take each bug through the usual pipeline. A bug named in your brief counts as a task the owner named, though it sits in Inbox: claim it, fix it test-first with a test that fails before the fix, validate, get the fresh review, deliver to `main` and move it to Done ([agent workflow](agent-workflow.md)).
-2. Record an owner's answer, or a rule the fix settles, as a decision (`D-n`) and update the spec it changes. Fixers add decisions at the same time, so whoever reaches `main` first keeps the number and the others renumber before pushing.
+2. Record a product call from the Reviewer, or a rule the fix settles, as a decision (`D-n`) and update the spec it changes. Fixers add decisions at the same time, so whoever reaches `main` first keeps the number and the others renumber before pushing.
 3. Report to the coordinator: each bug's commit and any new decision, and what you could not fix.
