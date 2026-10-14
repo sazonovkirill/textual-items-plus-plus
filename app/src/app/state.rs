@@ -7,9 +7,7 @@ use jiff::civil::Date;
 use super::{
     Command, DateInput, DatePromptView, Direction, EditInput, Effect, End, Go, History, Notice,
     Part, Picked, Picker, PickerInput, PickerView, Refusal, Selected, Selection, Side, SidebarView,
-    TextEdit, TextField, Whose, adding,
-    attachments::Panel,
-    checklist, clipboard, completion,
+    TextEdit, TextField, Whose, adding, checklist, clipboard, completion,
     container::{self, Row},
     converting,
     date_prompt::{self, DatePrompt},
@@ -77,8 +75,6 @@ pub struct State {
     /// The item whose title, description or note is edited, in edit mode (FR-EDIT-01), in the
     /// sidebar while it has the keys.
     editing: Option<Editing>,
-    /// The attachments panel, while it is open (FR-ATT-01).
-    pub(super) panel: Option<Panel>,
     pub(super) sidebar: Sidebar,
     /// Whether the shortcuts panel shows (FR-KEY-03).
     pub(super) shortcuts: bool,
@@ -129,7 +125,6 @@ impl State {
             tags: None,
             edit_dialog: None,
             editing: None,
-            panel: None,
             sidebar,
             shortcuts: false,
             settings: Settings::default(),
@@ -560,7 +555,7 @@ impl State {
     /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near, while
     /// the sidebar has the keys, or in a view, which has no place to paste into.
     pub(super) fn paste(&mut self, side: Side, branches: &[Branch]) {
-        if self.panel.is_some() {
+        if self.pane.panel.is_some() {
             self.paste_checklist(side, branches);
             return;
         }
@@ -949,7 +944,7 @@ impl State {
                     self.notify(Notice::TagInTitle);
                 }
             }
-            EditInput::Next if self.panel.is_some() => {
+            EditInput::Next if self.pane.panel.is_some() => {
                 let checklist = editing.kind() == ItemKind::ChecklistItem;
                 if self.finish_editing() && checklist {
                     self.new_checklist_item(Side::Below);
@@ -1015,7 +1010,7 @@ impl State {
         };
         let (id, started) = (editing.id(), editing.revision());
         let in_sidebar = self.sidebar.has_keys();
-        let in_panel = self.panel.is_some();
+        let in_panel = self.pane.panel.is_some();
         let heading = !in_sidebar && Some(id) == self.container();
         let listed = self.listings();
         let (transaction, before) = editing.finish(&mut self.document);

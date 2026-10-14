@@ -86,7 +86,7 @@ impl State {
     /// The attachments panel, while it is open (FR-ATT-01).
     #[must_use]
     pub fn attachments(&self) -> Option<AttachmentsView<'_>> {
-        let Panel { id, selected, .. } = self.panel?;
+        let Panel { id, selected, .. } = self.pane.panel?;
         let item = self.document.node(id).and_then(Node::item)?;
         let checklist = (item.kind == ItemKind::Task).then(|| checklist::lines(&self.document, id));
         // The panel is modal, so what is edited while it is open is what it has selected.
@@ -121,7 +121,7 @@ impl State {
             .and_then(Node::item)
             .is_some_and(|item| item.kind != ItemKind::ChecklistItem);
         if attached {
-            self.panel = Some(Panel::new(id, selected));
+            self.pane.panel = Some(Panel::new(id, selected));
         }
     }
 
@@ -134,7 +134,7 @@ impl State {
         };
         if is_task(&self.document, id) {
             let selected = first_of_checklist(&self.document, id);
-            self.panel = Some(Panel::new(id, selected));
+            self.pane.panel = Some(Panel::new(id, selected));
         } else {
             self.notify(Notice::NoChecklist);
         }
@@ -154,7 +154,7 @@ impl State {
         match input {
             AttachmentsInput::Close => {
                 self.finish_editing();
-                self.panel = None;
+                self.pane.panel = None;
             }
             _ if editing => {}
             AttachmentsInput::Edit => {
@@ -170,13 +170,13 @@ impl State {
                 self.start_editing(editing);
             }
             AttachmentsInput::Select(motion) => {
-                self.panel = Some(Panel::new(id, moved(&self.document, panel, motion)));
+                self.pane.panel = Some(Panel::new(id, moved(&self.document, panel, motion)));
             }
             AttachmentsInput::AddComment(now) => {
                 let editing =
                     Editing::new_comment(&mut self.document, id, comments::stamp(now), before);
                 self.start_editing(editing);
-                self.panel = Some(Panel::new(id, Selected::Comment(Some(0))));
+                self.pane.panel = Some(Panel::new(id, Selected::Comment(Some(0))));
             }
             AttachmentsInput::Delete => {
                 let transaction = match selected {
@@ -186,7 +186,7 @@ impl State {
                 };
                 let before = entries(&self.document, id);
                 self.change(transaction);
-                self.panel = Some(settled(&self.document, panel, &before));
+                self.pane.panel = Some(settled(&self.document, panel, &before));
             }
         }
     }
@@ -206,7 +206,7 @@ impl State {
                 | Command::TakeTheirs
                 | Command::ShowDiff
         );
-        if passes || self.panel.is_none() {
+        if passes || self.pane.panel.is_none() {
             return false;
         }
         let selected = self.attachments().map(|view| view.selected);
@@ -249,7 +249,7 @@ impl State {
                 selected: Selected::Checklist(selected),
                 ..
             },
-        ) = self.panel
+        ) = self.pane.panel
         else {
             return;
         };
@@ -261,7 +261,7 @@ impl State {
             place,
             before,
         );
-        self.panel = Some(Panel {
+        self.pane.panel = Some(Panel {
             selected: Selected::Checklist(Some(editing.id())),
             adding_from: Some(panel.selected),
             ..panel
@@ -272,7 +272,7 @@ impl State {
     /// Ends adding a checklist item: when it was left empty, what was selected before it is
     /// selected again (FR-CHK-03).
     pub(super) fn finish_adding(&mut self, kept: bool) {
-        if let Some(panel) = self.panel.as_mut()
+        if let Some(panel) = self.pane.panel.as_mut()
             && let Some(from) = panel.adding_from.take()
             && !kept
         {
@@ -288,7 +288,7 @@ impl State {
                 selected: Selected::Checklist(selected),
                 ..
             },
-        ) = self.panel
+        ) = self.pane.panel
         else {
             return;
         };
@@ -296,47 +296,47 @@ impl State {
             checklist::paste(&mut self.document, panel.id, selected, side, branches)
         {
             self.change(transaction);
-            self.panel = Some(Panel {
+            self.pane.panel = Some(Panel {
                 selected: Selected::Checklist(Some(last)),
                 ..panel
             });
         }
     }
+}
 
-    /// The panel once the document read again as `new` replaced `old`: on its item while
-    /// `exact` finds it again, with the checklist item selected while `exact` finds it, else the
-    /// checklist's first entry, and the comment selected found again as the same line among the
-    /// comments read, or at the same place when it is not (FR-ATT-01, FR-ATT-04).
-    pub(super) fn rematched_panel(
-        &self,
-        old: &Document,
-        exact: &dyn Fn(ItemId) -> Option<ItemId>,
-    ) -> Option<Panel> {
-        let Panel { id, selected, .. } = self.panel?;
-        let found = exact(id)?;
-        let selected = match selected {
-            Selected::Checklist(item) => match item.and_then(exact) {
-                Some(again) => Selected::Checklist(Some(again)),
-                None => first_of_checklist(&self.document, found),
-            },
-            Selected::Comment(Some(index)) => {
-                let line = old
-                    .node(id)
-                    .and_then(Node::item)
-                    .and_then(|item| item.comments.get(index));
-                let comments = self
-                    .document
-                    .node(found)
-                    .and_then(Node::item)
-                    .map(|item| item.comments.as_slice())
-                    .unwrap_or_default();
-                let again = comments.iter().position(|comment| Some(comment) == line);
-                Selected::Comment(Some(again.unwrap_or(index)))
-            }
-            selected @ (Selected::Note | Selected::Comment(None)) => selected,
-        };
-        Some(Panel::new(found, selected))
-    }
+/// `panel` once the document read again as `new` replaced `old`: on its item while `exact` finds
+/// it again, with the checklist item selected while `exact` finds it, else the checklist's first
+/// entry, and the comment selected found again as the same line among the comments read, or at
+/// the same place when it is not (FR-ATT-01, FR-ATT-04).
+pub(super) fn rematched(
+    panel: Panel,
+    old: &Document,
+    new: &Document,
+    exact: &dyn Fn(ItemId) -> Option<ItemId>,
+) -> Option<Panel> {
+    let Panel { id, selected, .. } = panel;
+    let found = exact(id)?;
+    let selected = match selected {
+        Selected::Checklist(item) => match item.and_then(exact) {
+            Some(again) => Selected::Checklist(Some(again)),
+            None => first_of_checklist(new, found),
+        },
+        Selected::Comment(Some(index)) => {
+            let line = old
+                .node(id)
+                .and_then(Node::item)
+                .and_then(|item| item.comments.get(index));
+            let comments = new
+                .node(found)
+                .and_then(Node::item)
+                .map(|item| item.comments.as_slice())
+                .unwrap_or_default();
+            let again = comments.iter().position(|comment| Some(comment) == line);
+            Selected::Comment(Some(again.unwrap_or(index)))
+        }
+        selected @ (Selected::Note | Selected::Comment(None)) => selected,
+    };
+    Some(Panel::new(found, selected))
 }
 
 /// Whether the open panel acts on `command`, as [`State::panel_command`] says: the motions and
@@ -1174,12 +1174,10 @@ mod tests {
     // F-FILE-06, FR-ATT-01
     #[test]
     fn a_rematched_panel_keeps_its_checklist_item_while_found() -> Result<(), PlacementError> {
-        let (mut state, a, [b, c]) = with_checklist(["b", "c"])?;
+        let (state, a, [b, c]) = with_checklist(["b", "c"])?;
         let old = state.document().clone();
-        let mut rematched = |selected, exact: &dyn Fn(ItemId) -> Option<ItemId>| {
-            state.panel = Some(Panel::new(a, selected));
-            state
-                .rematched_panel(&old, exact)
+        let rematched = |selected, exact: &dyn Fn(ItemId) -> Option<ItemId>| {
+            super::rematched(Panel::new(a, selected), &old, state.document(), exact)
                 .map(|panel| panel.selected)
         };
         let all = |id| Some(id);

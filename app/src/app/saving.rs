@@ -10,7 +10,7 @@ use std::{path::PathBuf, time::Duration};
 use jiff::civil::Date;
 
 use super::{
-    Effect, Refusal, SaveAsReport, State,
+    Effect, Refusal, SaveAsReport, State, attachments,
     autosave::{Autosave, Ending, SaveState, Step},
     go_to_symbol,
     move_to::MoveTo,
@@ -472,7 +472,7 @@ impl State {
     /// query, Go to Symbol open on the items now listed with its query, Move to open on the
     /// destinations now listed with its query while an item it moves is found again, the date
     /// prompt open while an item it dates is, Quick Add open on its place while that is found
-    /// again, else on the Inbox, and the attachments panel open while its item is, on what it
+    /// again, else on the Inbox, and each pane's attachments panel open while its item is, on what it
     /// selected as far as that is found again, and the sidebar on its entry and its collapsed
     /// areas as they are found again. The tag filter stays while the container shown is found
     /// again as it was. The undo history is cleared, since its steps fit only the document as it
@@ -491,6 +491,9 @@ impl State {
             .chain(&mut self.right);
         for pane in panes {
             pane.reload(new, today, nearest, exact);
+            pane.panel = pane
+                .panel
+                .and_then(|panel| attachments::rematched(panel, &old, new, &exact));
         }
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
@@ -514,7 +517,6 @@ impl State {
         }
         self.edit_dialog =
             (self.edit_dialog.take()).and_then(|dialog| dialog.rematched(new, exact));
-        self.panel = self.rematched_panel(&old, &exact);
         self.sidebar.rematch(exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();

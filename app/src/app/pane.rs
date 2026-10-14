@@ -8,6 +8,7 @@ use jiff::civil::Date;
 
 use super::{
     Selection, TextField,
+    attachments::Panel,
     container::{self, Row},
     focus::{self, Focus},
     search, tags,
@@ -31,6 +32,8 @@ pub(super) struct Pane {
     /// The width the pane keeps, as the frontend measures it, once narrowed or widened; without
     /// one it shares what the others leave (FR-PANE-02).
     pub(super) width: Option<u16>,
+    /// The attachments panel open in the pane, if any (FR-ATT-01).
+    pub(super) panel: Option<Panel>,
     listing: Listing,
 }
 
@@ -81,6 +84,7 @@ impl Pane {
             filter: Vec::new(),
             query: TextField::new(String::new()),
             width: None,
+            panel: None,
             listing: Listing::default(),
         };
         pane.arrive(document, today, visit);
