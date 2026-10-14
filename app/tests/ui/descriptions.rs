@@ -111,7 +111,8 @@ fn describe_the_project_shown() {
     harness.key(KeyCode::Enter);
     harness.press(KeyCode::Char('m'), KeyModifiers::NONE);
     harness.press(KeyCode::Char('N'), KeyModifiers::SHIFT);
-    harness.ctrl('a');
+    harness.press(KeyCode::Home, KeyModifiers::CONTROL);
+    harness.press(KeyCode::End, KeyModifiers::CONTROL | KeyModifiers::SHIFT);
     harness.type_text("Notes on writing");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);

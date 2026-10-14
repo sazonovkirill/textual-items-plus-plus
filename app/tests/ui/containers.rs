@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Position, Rect};
 
 use crate::support::Harness;
@@ -128,7 +128,8 @@ fn the_title_of_the_project_shown_is_a_row_its_own_commands_act_on() {
     harness.type_text(" posts");
     harness.key(KeyCode::Enter);
     harness.type_text("mn");
-    harness.ctrl('a');
+    harness.press(KeyCode::Home, KeyModifiers::CONTROL);
+    harness.press(KeyCode::End, KeyModifiers::CONTROL | KeyModifiers::SHIFT);
     harness.type_text("Weekly.");
     harness.key(KeyCode::Esc);
     harness.type_text("md");
@@ -162,7 +163,8 @@ fn describe_a_project_from_the_sidebar() {
     harness.ctrl('b');
     harness.type_text("G");
     harness.type_text("mn");
-    harness.ctrl('a');
+    harness.press(KeyCode::Home, KeyModifiers::CONTROL);
+    harness.press(KeyCode::End, KeyModifiers::CONTROL | KeyModifiers::SHIFT);
     harness.type_text("Pack first.");
     harness.key(KeyCode::Esc);
     assert!(

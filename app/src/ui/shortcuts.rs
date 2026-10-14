@@ -234,6 +234,7 @@ fn text_name(edit: TextEdit) -> String {
         TextEdit::DeleteForward => "Delete Forward".to_owned(),
         TextEdit::DeleteWordBackward => "Delete Word Back".to_owned(),
         TextEdit::DeleteWordForward => "Delete Word Forward".to_owned(),
+        TextEdit::DeleteLineBackward => "Delete to Line Start".to_owned(),
         TextEdit::SelectAll => "Select All".to_owned(),
     }
 }
@@ -509,10 +510,10 @@ mod tests {
                 .map(|(heading, keys)| (heading, keys.len()))
                 .collect()
         };
-        assert_eq!(headings(Window::Picker), [("Picker", 5), ("Text", 16)]);
+        assert_eq!(headings(Window::Picker), [("Picker", 5), ("Text", 19)]);
         assert_eq!(
             headings(Window::DatePrompt),
-            [("Date Prompt", 2), ("Text", 16)]
+            [("Date Prompt", 2), ("Text", 19)]
         );
         assert_eq!(
             window_keys(Window::SaveAs),
@@ -529,25 +530,25 @@ mod tests {
         );
         assert_eq!(
             headings(Window::Editing(Part::Title)),
-            [("Editing", 3), ("Text", 16)]
+            [("Editing", 3), ("Text", 19)]
         );
         assert_eq!(
             headings(Window::Editing(Part::Description)),
-            [("Editing Description", 15), ("Text", 12)]
+            [("Editing Description", 15), ("Text", 15)]
         );
         assert_eq!(
             headings(Window::Editing(Part::Note)),
-            [("Editing Note", 15), ("Text", 12)]
+            [("Editing Note", 15), ("Text", 15)]
         );
         assert_eq!(
             headings(Window::Editing(Part::Comment(0))),
-            [("Editing Comment", 3), ("Text", 16)]
+            [("Editing Comment", 3), ("Text", 19)]
         );
         let (_, editing) = &window_keys(Window::Editing(Part::Title))[0];
         assert!(editing.contains(&("Paste".to_owned(), "Ctrl+V".to_owned())));
         assert_eq!(headings(Window::Attachments), [("Attachments Panel", 12)]);
         assert_eq!(headings(Window::Settings), [("Settings", 6)]);
-        assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 16)]);
+        assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 19)]);
     }
 
     // FR-KEY-03

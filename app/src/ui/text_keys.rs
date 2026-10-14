@@ -12,6 +12,7 @@ const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
 const CTRL: KeyModifiers = KeyModifiers::CONTROL;
 const ALT: KeyModifiers = KeyModifiers::ALT;
 const CTRL_SHIFT: KeyModifiers = CTRL.union(SHIFT);
+const ALT_SHIFT: KeyModifiers = ALT.union(SHIFT);
 
 /// Moving the caret by `motion`, extending the selection with `select`.
 const fn go(motion: Motion, select: bool) -> TextEdit {
@@ -19,20 +20,28 @@ const fn go(motion: Motion, select: bool) -> TextEdit {
 }
 
 /// The text keys besides typing, as the keymap matches them. `Shift+↑` and `Shift+↓` select to
-/// the start and end of the text.
+/// the start and end of the text. The `Alt`, `Ctrl+A`, `Ctrl+E` and `Ctrl+U` keys are what macOS
+/// terminals send for `Option` and `Cmd` with the arrows and `Delete`, as iTerm2's Natural Text
+/// Editing preset maps them, and what macOS text fields take as well (D-93).
 pub(super) const TEXT: &[(Key, TextEdit)] = &[
     ((NONE, KeyCode::Left), go(Motion::Left, false)),
     ((NONE, KeyCode::Right), go(Motion::Right, false)),
     ((CTRL, KeyCode::Left), go(Motion::WordLeft, false)),
     ((CTRL, KeyCode::Right), go(Motion::WordRight, false)),
+    ((ALT, KeyCode::Left), go(Motion::WordLeft, false)),
+    ((ALT, KeyCode::Right), go(Motion::WordRight, false)),
     ((ALT, KeyCode::Char('b')), go(Motion::WordLeft, false)),
     ((ALT, KeyCode::Char('f')), go(Motion::WordRight, false)),
     ((NONE, KeyCode::Home), go(Motion::Start, false)),
     ((NONE, KeyCode::End), go(Motion::End, false)),
+    ((CTRL, KeyCode::Char('a')), go(Motion::LineStart, false)),
+    ((CTRL, KeyCode::Char('e')), go(Motion::LineEnd, false)),
     ((SHIFT, KeyCode::Left), go(Motion::Left, true)),
     ((SHIFT, KeyCode::Right), go(Motion::Right, true)),
     ((CTRL_SHIFT, KeyCode::Left), go(Motion::WordLeft, true)),
     ((CTRL_SHIFT, KeyCode::Right), go(Motion::WordRight, true)),
+    ((ALT_SHIFT, KeyCode::Left), go(Motion::WordLeft, true)),
+    ((ALT_SHIFT, KeyCode::Right), go(Motion::WordRight, true)),
     ((SHIFT, KeyCode::Home), go(Motion::Start, true)),
     ((SHIFT, KeyCode::End), go(Motion::End, true)),
     ((SHIFT, KeyCode::Up), go(Motion::Start, true)),
@@ -41,7 +50,9 @@ pub(super) const TEXT: &[(Key, TextEdit)] = &[
     ((NONE, KeyCode::Delete), TextEdit::DeleteForward),
     ((CTRL, KeyCode::Char('w')), TextEdit::DeleteWordBackward),
     ((ALT, KeyCode::Backspace), TextEdit::DeleteWordBackward),
-    ((CTRL, KeyCode::Char('a')), TextEdit::SelectAll),
+    ((ALT, KeyCode::Char('d')), TextEdit::DeleteWordForward),
+    ((ALT, KeyCode::Delete), TextEdit::DeleteWordForward),
+    ((CTRL, KeyCode::Char('u')), TextEdit::DeleteLineBackward),
 ];
 
 /// The change to a text field `key` asks for: its text key, else typing the character it is.
@@ -86,6 +97,10 @@ mod tests {
             ((CTRL_SHIFT, KeyCode::Left), go(Motion::WordLeft, true)),
             ((SHIFT, KeyCode::Up), go(Motion::Start, true)),
             ((SHIFT, KeyCode::Down), go(Motion::End, true)),
+            ((ALT, KeyCode::Left), go(Motion::WordLeft, false)),
+            ((ALT_SHIFT, KeyCode::Right), go(Motion::WordRight, true)),
+            ((CTRL, KeyCode::Char('a')), go(Motion::LineStart, false)),
+            ((CTRL, KeyCode::Char('e')), go(Motion::LineEnd, false)),
         ] {
             assert_eq!(text_edit(key), Some(expected), "{key:?}");
         }
@@ -93,13 +108,15 @@ mod tests {
 
     // FR-EDIT-04
     #[test]
-    fn deleting_and_selecting_everything() {
+    fn deleting() {
         for (key, expected) in [
             ((NONE, KeyCode::Backspace), TextEdit::DeleteBackward),
             ((NONE, KeyCode::Delete), TextEdit::DeleteForward),
             ((CTRL, KeyCode::Char('w')), TextEdit::DeleteWordBackward),
             ((ALT, KeyCode::Backspace), TextEdit::DeleteWordBackward),
-            ((CTRL, KeyCode::Char('a')), TextEdit::SelectAll),
+            ((ALT, KeyCode::Char('d')), TextEdit::DeleteWordForward),
+            ((ALT, KeyCode::Delete), TextEdit::DeleteWordForward),
+            ((CTRL, KeyCode::Char('u')), TextEdit::DeleteLineBackward),
         ] {
             assert_eq!(text_edit(key), Some(expected), "{key:?}");
         }

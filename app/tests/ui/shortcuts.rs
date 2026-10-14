@@ -221,7 +221,7 @@ fn the_wheel_scrolls_the_panel_three_lines_and_the_mouse_is_reported_only_while_
 // FR-KEY-03, FR-DATE-02
 #[test]
 fn the_date_prompt_lists_its_own_keys_and_the_text_keys_without_scroll_keys() {
-    let mut harness = Harness::new(160, 40);
+    let mut harness = Harness::new(160, 48);
     harness.type_text("?md");
     let lines = panel(&harness, 40);
     assert_eq!(
@@ -286,7 +286,7 @@ fn edit_mode_lists_the_keys_of_the_title_or_the_description_edited() {
             .map(|line| line.rsplit("  ").next().unwrap_or_default().to_owned())
             .collect::<Vec<_>>()
     };
-    assert_eq!(keys("Line Start"), ["Home"]);
+    assert_eq!(keys("Line Start"), ["Home", "Ctrl+A"]);
     assert_eq!(
         keys("Text Start"),
         ["Ctrl+Home"],

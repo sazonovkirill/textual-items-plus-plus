@@ -63,7 +63,7 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives_in_a_new_pan
     );
 }
 
-// FR-SRCH-03, FR-VIEW-04, OQ-14
+// FR-SRCH-03, FR-VIEW-04, OQ-14, FR-EDIT-04
 #[test]
 fn completed_items_are_found_and_marked_while_the_trash_is_left_out() {
     let mut harness = Harness::new(70, 16);
@@ -79,6 +79,11 @@ fn completed_items_are_found_and_marked_while_the_trash_is_left_out() {
         results(&harness),
         Vec::<String>::new(),
         "deleted, so left out"
+    );
+    harness.ctrl('g');
+    assert!(
+        harness.screen().contains("┌Navigator"),
+        "a key the words typed leave alone opens what it opens elsewhere"
     );
 }
 

@@ -28,6 +28,8 @@ pub enum TextEdit {
     DeleteWordBackward,
     /// Delete the selection, or up to the end of the word after the caret.
     DeleteWordForward,
+    /// Delete the selection, or back to the start of the caret's line.
+    DeleteLineBackward,
     /// Select the whole text.
     SelectAll,
 }
@@ -215,6 +217,7 @@ impl TextField {
             TextEdit::DeleteForward => self.replaced(self.selection_or(self.right()), ""),
             TextEdit::DeleteWordBackward => self.replaced(self.selection_or(self.word_left()), ""),
             TextEdit::DeleteWordForward => self.replaced(self.selection_or(self.word_right()), ""),
+            TextEdit::DeleteLineBackward => self.replaced(self.selection_or(self.line_start()), ""),
             TextEdit::SelectAll => Self {
                 caret: self.text.len(),
                 anchor: Some(0),
@@ -854,6 +857,17 @@ mod tests {
         check("on[e tw|o", TextEdit::DeleteWordForward, "on|o");
     }
 
+    // FR-EDIT-04
+    #[test]
+    fn deletes_back_to_the_start_of_the_line() {
+        check("one two|", TextEdit::DeleteLineBackward, "|");
+        check("one |two", TextEdit::DeleteLineBackward, "|two");
+        check("|one", TextEdit::DeleteLineBackward, "|one");
+        check("o[ne tw|o", TextEdit::DeleteLineBackward, "o|o");
+        check_area("ab\ncd|e", TextEdit::DeleteLineBackward, "ab\n|e");
+        check_area("ab\n|cd", TextEdit::DeleteLineBackward, "ab\n|cd");
+    }
+
     #[test]
     fn counts_and_places_the_caret_by_grapheme_column() {
         assert_eq!(field(&format!("a{FAMILY}|b")).column(), 2);
@@ -894,6 +908,7 @@ mod tests {
             Just(TextEdit::DeleteForward),
             Just(TextEdit::DeleteWordBackward),
             Just(TextEdit::DeleteWordForward),
+            Just(TextEdit::DeleteLineBackward),
             Just(TextEdit::SelectAll),
         ]
     }

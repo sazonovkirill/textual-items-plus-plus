@@ -103,12 +103,39 @@ fn backspace_in_an_empty_title_leaves_editing_as_escape_does() {
     harness.key(KeyCode::Enter);
     harness.type_text("x");
     harness.key(KeyCode::Backspace);
-    harness.ctrl('a');
-    harness.key(KeyCode::Backspace);
+    harness.ctrl('u');
     assert_eq!(mode(&harness), "EDIT", "a title with text loses it");
     harness.key(KeyCode::Backspace);
     assert_eq!(mode(&harness), "NAVIGATE");
     assert_eq!(items(&harness), inbox, "the title emptied is kept");
+}
+
+// FR-EDIT-04, D-93
+#[test]
+fn the_keys_macos_terminals_send_for_option_and_cmd_edit_a_title() {
+    let mut harness = Harness::new(60, 12);
+    harness.key(KeyCode::Enter);
+    harness.ctrl('a');
+    harness.press(KeyCode::Char('d'), KeyModifiers::ALT);
+    harness.type_text("Ring");
+    harness.ctrl('e');
+    harness.press(KeyCode::Left, KeyModifiers::ALT);
+    harness.press(KeyCode::Left, KeyModifiers::SHIFT | KeyModifiers::ALT);
+    harness.type_text("the debit ");
+    harness.press(KeyCode::Right, KeyModifiers::ALT);
+    harness.type_text(" today");
+    assert_eq!(
+        items(&harness),
+        ["*Ring the bank about the debit card today", COFFEE, READ].map(String::from)
+    );
+    harness.ctrl('u');
+    harness.type_text("Done");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        items(&harness),
+        ["*Done", COFFEE, READ].map(String::from),
+        "Ctrl+U deletes back to the start of the line"
+    );
 }
 
 // FR-EDIT-05
