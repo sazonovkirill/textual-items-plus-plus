@@ -3,7 +3,7 @@
 //! frontend keeps the clipboard itself.
 
 use super::{
-    Side, adding,
+    End, Side, adding,
     container::{self, Row},
 };
 use crate::domain::{Branch, Document, ItemId, ItemKind, Op, Transaction};
@@ -149,7 +149,9 @@ fn kind(branch: &Branch) -> Option<ItemKind> {
 }
 
 /// The parent, `None` for the top level, and index where an item of `kind` goes on `side` of
-/// `focused`, as a new one would; `None` when it can go nowhere near.
+/// `focused`, as a new one would; `None` when it can go nowhere near. Below the title row of
+/// `container`, its heading, it goes first of its kind there, as `o` adds its first task, and above
+/// it nowhere, as `O` adds nothing (D-68, D-103).
 fn place(
     document: &Document,
     container: ItemId,
@@ -159,6 +161,16 @@ fn place(
     side: Side,
 ) -> Option<(Option<ItemId>, usize)> {
     match kind {
+        Some(ItemKind::Inbox | ItemKind::ChecklistItem) => None,
+        _ if focused == Some(container) => match side {
+            Side::Below => adding::end_place(
+                document,
+                container,
+                kind.unwrap_or(ItemKind::Task),
+                End::Top,
+            ),
+            Side::Above => None,
+        },
         None | Some(ItemKind::Task) => {
             let (parent, index) = adding::place(document, container, rows, focused, side);
             Some((Some(parent), index))
@@ -166,7 +178,6 @@ fn place(
         Some(kind @ (ItemKind::Section | ItemKind::Project | ItemKind::Area)) => {
             adding::container_place(document, container, rows, focused, kind, side)
         }
-        Some(ItemKind::Inbox | ItemKind::ChecklistItem) => None,
     }
 }
 
@@ -425,6 +436,35 @@ mod tests {
                 Some("Site")
             ],
             "kept text goes as a task would, after what was pasted before it"
+        );
+        Ok(())
+    }
+
+    // FR-OPS-05, D-68, D-103
+    #[test]
+    fn pasted_below_the_title_row_items_go_first_and_above_it_nothing() -> Result<(), PlacementError>
+    {
+        let Fixture {
+            mut state, work, ..
+        } = fixture()?;
+        open(&mut state, "Work");
+        give(&mut state, Command::Focus(Focus::First));
+        assert_eq!(state.selection().focused(), Some(work));
+        let before = tree(&state);
+        send(&mut state, Message::Paste(Side::Above, vec![task("t")]));
+        assert_eq!(tree(&state), before, "no row stands above the title row");
+        assert_eq!(state.selection().focused(), Some(work));
+        let pasted = vec![task("t1"), task("t2")];
+        send(&mut state, Message::Paste(Side::Below, pasted));
+        assert_eq!(titles(&state), ["t1", "t2", "loose", "Soon", "s", "Site"]);
+        assert_eq!(focused(&state), "t2");
+        give(&mut state, Command::Focus(Focus::First));
+        let pasted = vec![container(Section, "S2", Vec::new()), task("t3")];
+        send(&mut state, Message::Paste(Side::Below, pasted));
+        assert_eq!(
+            titles(&state),
+            ["t1", "t2", "loose", "S2", "t3", "Soon", "s", "Site"],
+            "a section goes first of its kind"
         );
         Ok(())
     }

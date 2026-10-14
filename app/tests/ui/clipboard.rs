@@ -260,3 +260,30 @@ fn ctrl_v_pastes_the_clipboard_text_into_the_text_edited() {
         "a description takes the text with its lines"
     );
 }
+
+// FR-OPS-05, D-68, D-103
+#[test]
+fn pasting_on_the_title_row_puts_the_items_first() {
+    let mut harness = Harness::new(80, 24);
+    harness.type_text("y");
+    harness.ctrl('k');
+    harness.type_text("Work");
+    harness.key(KeyCode::Enter);
+    harness.type_text("gg");
+    let before = pane(&harness);
+    harness.press(KeyCode::Char('v'), KeyModifiers::ALT);
+    assert_eq!(pane(&harness), before, "no row stands above the title row");
+    harness.ctrl('v');
+    let call = "▌ ☐ Call the bank about the card                                          󱙬 Wed";
+    assert_eq!(pane(&harness)[2], call, "the first task");
+    harness.type_text("gg");
+    harness.send(&Event::Paste("Tea".to_owned()));
+    assert_eq!(
+        pane(&harness)[2..5],
+        [
+            "▌ ☐ Tea",
+            "  ☐ Call the bank about the card                                          󱙬 Wed",
+            "  ☐ Answer the recruiter's email                                    󰨱 yesterday",
+        ]
+    );
+}
