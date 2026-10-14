@@ -177,24 +177,45 @@ pub fn read_branches(text: &str) -> Vec<Branch> {
 
 /// The items `text` holds, as pasted into a checklist (FR-CHK-03): one item for each line that
 /// is not blank, its indentation nesting it under the line above it that is indented less, every
-/// line read as a task's, so that a line ending in `:` or with no `- ` is an item too. The items
-/// are tasks at the top and checklist items below; the app makes them all checklist items.
+/// line read as a task's, so that a line ending in `:` or with no `- ` is an item too. An item's
+/// description lines are items under it, and its note and comments, as a copied task brings
+/// them, are left out. The items are tasks at the top and checklist items below; the app makes
+/// them all checklist items.
 #[must_use]
 pub fn read_checklist(text: &str) -> Vec<Branch> {
-    let tasks: Vec<String> = text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| {
-            let body = line.trim_start();
-            let indentation = line.get(..line.len() - body.len()).unwrap_or_default();
-            if kind_of_line(body) == LineKind::Task {
-                line.to_owned()
-            } else {
-                format!("{indentation}- {body}")
-            }
-        })
-        .collect();
+    let outline = parse(text);
+    let mut tasks = Vec::new();
+    for &line_id in children(&outline, outline.root()) {
+        push_checklist_lines(&outline, line_id, 0, &mut tasks);
+    }
     read_branches(&tasks.join("\n"))
+}
+
+/// Pushes the line `line_id` at `depth` and what is under it to `tasks` as task lines: its
+/// description lines unguarded one level deeper, its note and comments left out.
+fn push_checklist_lines(outline: &Outline, line_id: LineId, depth: usize, tasks: &mut Vec<String>) {
+    push_task_line(line(outline, line_id).text(), depth, tasks);
+    let parts = Parts::of(outline, line_id);
+    for &child in parts.description {
+        push_task_line(&unguard(line(outline, child).text()), depth + 1, tasks);
+    }
+    for &child in parts.rest {
+        push_checklist_lines(outline, child, depth + 1, tasks);
+    }
+}
+
+/// Pushes `body` to `tasks` as a task line indented `depth` levels, unless it is blank.
+fn push_task_line(body: &str, depth: usize, tasks: &mut Vec<String>) {
+    let body = body.trim();
+    if body.is_empty() {
+        return;
+    }
+    let indentation = "\t".repeat(depth);
+    tasks.push(if kind_of_line(body) == LineKind::Task {
+        format!("{indentation}{body}")
+    } else {
+        format!("{indentation}- {body}")
+    });
 }
 
 /// The type TaskPaper reads `body`, a line without its indentation, as.
@@ -908,6 +929,61 @@ Secret @hidden
         );
         assert_eq!(read(&pack.children[0].children[0]).1, "Novels");
         assert_eq!(read_checklist(" \n"), []);
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn pasted_lines_are_items_whatever_breaks_them_and_a_copied_task_brings_no_attachments() {
+        let outline = |branches: &[Branch]| {
+            fn walk(branches: &[Branch], depth: usize, out: &mut Vec<(usize, String)>) {
+                for branch in branches {
+                    out.push((depth, branch.node.item().unwrap().title.clone()));
+                    walk(&branch.children, depth + 1, out);
+                }
+            }
+            let mut out = Vec::new();
+            walk(branches, 0, &mut out);
+            out
+        };
+        let lines = |pairs: &[(usize, &str)]| -> Vec<(usize, String)> {
+            pairs.iter().map(|&(d, t)| (d, t.to_owned())).collect()
+        };
+        let fruit = lines(&[(0, "Fruit"), (1, "Apples"), (1, "Pears"), (0, "Bread")]);
+        for text in [
+            "Fruit\n\tApples\n\tPears\nBread",
+            "Fruit\r\tApples\r\tPears\rBread\r",
+            "Fruit\r\n  Apples\r\n\r\n  Pears\r\nBread",
+        ] {
+            assert_eq!(outline(&read_checklist(text)), fruit, "{text:?}");
+        }
+        assert_eq!(
+            outline(&read_checklist("Cheese\r\tGouda\r\t\tAged")),
+            lines(&[(0, "Cheese"), (1, "Gouda"), (2, "Aged")])
+        );
+        let copied = "\
+- Write @due(2026-10-20) @writing
+\tFirst line
+\t\u{200B}- second
+\tNOTE @hidden
+\t\tDraft in the shared doc.
+\tCOMMENTS @hidden
+\t\t[2026-10-13 21:30] Ask design
+\t- Outline
+";
+        let branches = read_checklist(copied);
+        assert_eq!(
+            outline(&branches),
+            lines(&[
+                (0, "Write"),
+                (1, "First line"),
+                (1, "second"),
+                (1, "Outline")
+            ])
+        );
+        assert_eq!(
+            branches[0].node.item().unwrap().tags,
+            [tag("writing", None)]
+        );
     }
 
     // FR-STORE-02, FR-STORE-03, FR-STORE-04, FR-STORE-05, FR-STORE-06, FR-STORE-07,

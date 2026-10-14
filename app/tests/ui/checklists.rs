@@ -156,6 +156,46 @@ fn items_copied_paste_into_a_checklist_one_for_each_line() {
     );
 }
 
+// FR-CHK-03
+#[test]
+fn a_list_pasted_with_carriage_returns_or_a_copied_task_shows_every_line_as_an_item() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    fs::write(
+        &path,
+        "Inbox:\n\t- Groceries\n\t- Write @due(2026-10-20)\n\t\tNOTE @hidden\n\t\t\tDraft\n\t\tCOMMENTS @hidden\n\t\t\t[2026-10-13 21:30] Ask\n",
+    )
+    .expect("the file is written");
+    let mut harness = Harness::open(path.clone(), 80, 16);
+    harness.type_text("c");
+    harness.send(&Event::Paste(
+        "Fruit\r\tApples\r\tPears\rBread\r".to_owned(),
+    ));
+    assert_eq!(
+        panel(&harness)[4..8],
+        [
+            "│ ☐ Fruit                              │",
+            "│   ☐ Apples                           │",
+            "│   ☐ Pears                            │",
+            "│▌☐ Bread                              │",
+        ],
+        "each line a terminal sends is an item, nested by its indentation"
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("jyk");
+    harness.type_text("c");
+    harness.ctrl('v');
+    harness.key(KeyCode::Esc);
+    harness.terminate();
+    let saved = fs::read_to_string(&path).expect("the file is read");
+    assert!(
+        saved.starts_with(
+            "Inbox:\n\t- Groceries\n\t\t- Fruit\n\t\t\t- Apples\n\t\t\t- Pears\n\t\t- Write\n\t\t- Bread\n\t- Write @due"
+        ),
+        "the copied task arrives below the first item without its note, comments and date: {saved}"
+    );
+}
+
 // FR-UI-02, FR-ATT-01
 #[test]
 fn only_the_panel_marks_what_is_selected_while_it_has_the_keys() {

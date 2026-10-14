@@ -166,8 +166,8 @@ pub(super) fn place(
 
 /// The transaction that puts `branches` in as checklist items of `task` on `side` of its item
 /// `selected`, where [`place`] puts a new one, in order, and the last of them; `None` when there
-/// is nothing to paste. Every item in them becomes a checklist item, keeping its text, whether it
-/// is done and how the items nest (FR-CHK-03).
+/// is nothing to paste. Every item in them becomes a checklist item, keeping its text, tags,
+/// whether it is done and how the items nest (FR-CHK-03).
 pub(super) fn paste(
     document: &mut Document,
     task: ItemId,
@@ -193,12 +193,15 @@ pub(super) fn paste(
     Some((Transaction::new(ops), last?))
 }
 
-/// `branch` with every item in it a checklist item.
+/// `branch` with every item in it a checklist item keeping only what a checklist item shows: its
+/// title, tags and whether it is done. A copied task's note, comments and dates stay with the
+/// original; the clipboard reads each description line as an item of its own.
 fn checklist(branch: &Branch) -> Branch {
     let node = match &branch.node {
         Node::Item(item) => Node::Item(Item {
-            kind: ItemKind::ChecklistItem,
-            ..item.clone()
+            completed: item.completed,
+            tags: item.tags.clone(),
+            ..Item::new(ItemKind::ChecklistItem, item.title.clone())
         }),
         Node::Kept(text) => Node::Kept(text.clone()),
     };
@@ -438,6 +441,40 @@ mod tests {
         );
         assert_eq!(item(&document, last).map(|it| it.title.as_str()), Some("z"));
         assert!(paste(&mut document, task, None, Side::Above, &[]).is_none());
+        Ok(())
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn a_pasted_item_keeps_its_title_tags_and_done_state_and_nothing_a_checklist_cannot_show()
+    -> Result<(), PlacementError> {
+        let (mut document, [task, ..]) = document()?;
+        let mut copied = Item::new(ItemKind::Task, "x");
+        copied.description = "a description".to_owned();
+        copied.note = "a note".to_owned();
+        copied.comments = vec!["a comment".to_owned()];
+        copied.start = Some(TODAY);
+        copied.due = Some(TODAY);
+        copied.completed = Some(Completion::On(TODAY));
+        copied.tags = vec![crate::domain::Tag {
+            name: "home".to_owned(),
+            value: None,
+        }];
+        let pasted = Branch {
+            node: Node::Item(copied.clone()),
+            children: Vec::new(),
+        };
+        let (transaction, last) = paste(&mut document, task, None, Side::Above, &[pasted])
+            .ok_or(PlacementError::DoesNotFit)?;
+        document.apply(&transaction)?;
+        assert_eq!(
+            item(&document, last),
+            Some(&Item {
+                completed: copied.completed,
+                tags: copied.tags,
+                ..Item::new(ItemKind::ChecklistItem, "x")
+            })
+        );
         Ok(())
     }
 }
