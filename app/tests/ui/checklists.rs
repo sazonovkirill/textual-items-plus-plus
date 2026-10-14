@@ -242,3 +242,57 @@ fn only_the_panel_marks_what_is_selected_while_it_has_the_keys() {
     harness.key(KeyCode::Esc);
     assert_eq!(row(&harness), "▌ ☐ Call the bank about the card");
 }
+
+// FR-CHK-03, D-104
+#[test]
+fn tab_and_shift_tab_nest_an_item_selected_or_edited_and_leave_the_panes_be() {
+    let folders = tempfile::tempdir().expect("a temporary folder");
+    let path = folders.path().join("todo.taskpaper");
+    fs::write(&path, "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t- Cups\n").expect("the file is written");
+    let mut harness =
+        Harness::launched_in(folders, Some(path.clone()), 100, 16).expect("the file opens");
+    let checklist = |harness: &Harness| -> Vec<String> {
+        harness.rows()[5..8]
+            .iter()
+            .map(|row| {
+                row.chars()
+                    .skip(51)
+                    .collect::<String>()
+                    .trim_end_matches(['│', ' '])
+                    .to_owned()
+            })
+            .collect()
+    };
+    harness.type_text("cj");
+    harness.key(KeyCode::Tab);
+    assert_eq!(
+        checklist(&harness),
+        [" ☐ Plates", "▌  ☐ Cups", ""],
+        "Tab nests the item selected"
+    );
+    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
+    assert_eq!(checklist(&harness), [" ☐ Plates", "▌☐ Cups", ""]);
+    harness.type_text("o");
+    harness.type_text("Bowls");
+    harness.key(KeyCode::Left);
+    harness.key(KeyCode::Tab);
+    harness.type_text("!");
+    assert_eq!(
+        checklist(&harness),
+        [" ☐ Plates", " ☐ Cups", "▌  ☐ Bowl!s"],
+        "Tab nests the item edited, the caret where it was"
+    );
+    harness.key(KeyCode::Esc);
+    harness.key(KeyCode::Esc);
+    assert!(
+        harness.rows()[2].starts_with(" \u{f0599} Today                   │▌"),
+        "the pane keeps the keys: {}",
+        harness.rows()[2]
+    );
+    harness.terminate();
+    let saved = fs::read_to_string(&path).expect("the file is read");
+    assert_eq!(
+        saved,
+        "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t- Cups\n\t\t\t- Bowl!s\n"
+    );
+}

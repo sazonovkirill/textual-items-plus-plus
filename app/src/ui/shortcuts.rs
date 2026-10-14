@@ -18,7 +18,7 @@ use super::{
     Theme,
     attachments::{self, PanelKey, Scroll},
     date_prompt, edit_dialog,
-    edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
+    edit_keys::{CHECKLIST, COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
     keymap::{Key, key_label},
     picker, quick_add, save_as, search, settings, text_keys,
 };
@@ -60,6 +60,8 @@ pub(super) enum Window {
     Attachments,
     /// Edit mode, editing this part of an item.
     Editing(Part),
+    /// Edit mode, editing a checklist item's text in the attachments panel.
+    EditingChecklistItem,
 }
 
 /// The groups of keys `window` binds: its own, then the text keys it leaves as they are.
@@ -100,6 +102,16 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             }),
         ),
         Window::Editing(Part::Title) => ("Editing", named(EDIT, edit_name)),
+        Window::EditingChecklistItem => (
+            "Editing Checklist Item",
+            named(CHECKLIST, edit_name)
+                .into_iter()
+                .chain(named(EDIT, |input| match input {
+                    EditInput::Next => "Done, Then Next Item".to_owned(),
+                    input => edit_name(input),
+                }))
+                .collect(),
+        ),
         Window::Editing(Part::Comment(_)) => ("Editing Comment", named(COMMENT, edit_name)),
         Window::Editing(part @ (Part::Description | Part::Note)) => {
             let motions = DESCRIPTION_MOTIONS
@@ -125,7 +137,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             )
         }
     };
-    if let Window::Editing(_) = window {
+    if let Window::Editing(_) | Window::EditingChecklistItem = window {
         own.push((PASTE, "Paste".to_owned()));
     }
     if matches!(window, Window::Attachments | Window::Settings) {
@@ -242,6 +254,8 @@ fn edit_name(input: EditInput) -> String {
         EditInput::Next => "Done, Then Next Task".to_owned(),
         EditInput::Done => "Done".to_owned(),
         EditInput::Cancel => "Cancel".to_owned(),
+        EditInput::Indent => "Indent".to_owned(),
+        EditInput::Outdent => "Outdent".to_owned(),
     }
 }
 
@@ -585,6 +599,21 @@ mod tests {
         assert_eq!(
             headings(Window::Editing(Part::Comment(0))),
             [("Editing Comment", 3), ("Text", 19)]
+        );
+        assert_eq!(
+            window_keys(Window::EditingChecklistItem)[0],
+            (
+                "Editing Checklist Item",
+                [
+                    ("Indent", "Tab"),
+                    ("Outdent", "Shift+Tab"),
+                    ("Done, Then Next Item", "Enter"),
+                    ("Done", "Esc"),
+                    ("Paste", "Ctrl+V"),
+                ]
+                .map(|(name, keys)| (name.to_owned(), keys.to_owned()))
+                .to_vec()
+            )
         );
         let (_, editing) = &window_keys(Window::Editing(Part::Title))[0];
         assert!(editing.contains(&("Paste".to_owned(), "Ctrl+V".to_owned())));

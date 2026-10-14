@@ -43,7 +43,8 @@ pub(super) enum PanelKey {
     /// Gives the core this input.
     Input(AttachmentsInput),
     /// Gives the core this command, which the panel takes before the main keymap's: `]`/`[`
-    /// nest checklist items there, while elsewhere they nudge the start date (D-82).
+    /// and `Tab`/`Shift+Tab` nest checklist items there, while elsewhere they nudge the start
+    /// date (D-82) and cycle the panes (D-79).
     Command(Command),
     /// Adds a comment stamped now.
     AddComment,
@@ -137,6 +138,14 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
         PanelKey::Command(Command::Outdent),
     ),
     (
+        (KeyModifiers::NONE, KeyCode::Tab),
+        PanelKey::Command(Command::Indent),
+    ),
+    (
+        (KeyModifiers::SHIFT, KeyCode::BackTab),
+        PanelKey::Command(Command::Outdent),
+    ),
+    (
         (KeyModifiers::NONE, KeyCode::Char('j')),
         PanelKey::Scroll(Scroll::Lines(1)),
     ),
@@ -188,8 +197,8 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
 /// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
-/// `a` adds a comment, `\\` widens or narrows the panel, `]` and `[` indent and outdent the
-/// selected checklist item, and the motion keys scroll or select. Only key presses count.
+/// `a` adds a comment, `\\` widens or narrows the panel, `]` or `Tab` and `[` or `Shift+Tab`
+/// indent and outdent the selected checklist item, and the motion keys scroll or select. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()
@@ -756,7 +765,8 @@ mod tests {
 
     // FR-ATT-02, FR-ATT-03, FR-ATT-04, FR-CHK-03
     #[test]
-    fn escape_closes_e_and_enter_edit_d_deletes_a_adds_brackets_nest_and_the_motion_keys_scroll() {
+    fn escape_closes_e_and_enter_edit_d_deletes_a_adds_brackets_and_tab_nest_and_the_motion_keys_scroll()
+     {
         let none = KeyModifiers::NONE;
         for (code, modifiers, key) in [
             (KeyCode::Esc, none, PanelKey::Input(AttachmentsInput::Close)),
@@ -785,6 +795,12 @@ mod tests {
             (
                 KeyCode::Char('['),
                 none,
+                PanelKey::Command(Command::Outdent),
+            ),
+            (KeyCode::Tab, none, PanelKey::Command(Command::Indent)),
+            (
+                KeyCode::BackTab,
+                KeyModifiers::SHIFT,
                 PanelKey::Command(Command::Outdent),
             ),
             (KeyCode::Char('j'), none, PanelKey::Scroll(Scroll::Lines(1))),

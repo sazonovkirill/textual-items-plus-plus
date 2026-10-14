@@ -995,6 +995,128 @@ mod tests {
         Ok(())
     }
 
+    /// The text being edited and where its caret is.
+    fn edited(state: &State) -> Option<(&str, usize)> {
+        state
+            .editing()
+            .map(|(.., field)| (field.text(), field.caret()))
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn an_item_added_nests_while_edited_as_one_step_to_undo() -> Result<(), PlacementError> {
+        let (mut state, a, [c]) = with_checklist(["c"])?;
+        give(&mut state, Command::OpenChecklist);
+        input(&mut state, AttachmentsInput::Edit);
+        edit(&mut state, EditInput::Indent);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::Refused(Refusal::NothingAbove))
+        );
+        assert_eq!(edited(&state), Some(("c", 1)), "editing goes on");
+        edit(&mut state, EditInput::Next);
+        type_text(&mut state, "dx");
+        let left = TextEdit::Move {
+            motion: Motion::Left,
+            select: false,
+        };
+        edit(&mut state, EditInput::Text(left));
+        edit(&mut state, EditInput::Indent);
+        type_text(&mut state, "!");
+        assert_eq!(edited(&state), Some(("d!x", 2)), "the caret stays");
+        assert_eq!(
+            checklist(&state),
+            [("c".to_owned(), 0), ("d!x".to_owned(), 1)]
+        );
+        edit(&mut state, EditInput::Outdent);
+        assert_eq!(
+            checklist(&state),
+            [("c".to_owned(), 0), ("d!x".to_owned(), 0)]
+        );
+        edit(&mut state, EditInput::Outdent);
+        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::NotNested)));
+        edit(&mut state, EditInput::Indent);
+        edit(&mut state, EditInput::Done);
+        let nested = [("c".to_owned(), 0), ("d!x".to_owned(), 1)];
+        assert_eq!(checklist(&state), nested);
+        state.undo();
+        assert_eq!(state.document().children(a), [c]);
+        assert!(
+            state.document().children(c).is_empty(),
+            "adding it where it nests is one step"
+        );
+        state.redo();
+        assert_eq!(checklist(&state), nested);
+        give(&mut state, Command::NewLike(Side::Below));
+        edit(&mut state, EditInput::Outdent);
+        edit(&mut state, EditInput::Done);
+        assert_eq!(checklist(&state), nested, "an item left empty is not added");
+        assert_eq!(
+            selected(&state),
+            state.document().children(c).first().copied().map(entry)
+        );
+        Ok(())
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn an_item_edited_moves_with_its_text_as_one_step_to_undo() -> Result<(), PlacementError> {
+        let (mut state, a, [c, d]) = with_checklist(["c", "d"])?;
+        give(&mut state, Command::OpenChecklist);
+        give(&mut state, Command::Focus(Focus::Next));
+        give(&mut state, Command::EditTitle);
+        type_text(&mut state, "!");
+        edit(&mut state, EditInput::Indent);
+        type_text(&mut state, "?");
+        edit(&mut state, EditInput::Outdent);
+        edit(&mut state, EditInput::Indent);
+        edit(&mut state, EditInput::Done);
+        assert_eq!(state.document().children(c), [d]);
+        assert_eq!(item(&state, d).map(|it| it.title.as_str()), Some("d!?"));
+        state.undo();
+        assert_eq!(state.document().children(a), [c, d]);
+        assert_eq!(item(&state, d).map(|it| it.title.as_str()), Some("d"));
+        give(&mut state, Command::EditTitle);
+        edit(&mut state, EditInput::Text(TextEdit::DeleteBackward));
+        edit(&mut state, EditInput::Indent);
+        edit(&mut state, EditInput::Done);
+        assert_eq!(
+            (
+                state.document().children(c),
+                item(&state, d).map(|it| it.title.as_str())
+            ),
+            ([d].as_slice(), Some("d")),
+            "an item emptied keeps its text and still moves"
+        );
+        Ok(())
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn only_a_checklist_item_nests_while_edited() -> Result<(), PlacementError> {
+        let (mut state, a, _) = with_checklist(["c"])?;
+        let mut document = state.document().clone();
+        let inbox = Some(document.inbox());
+        document.push(inbox, Node::Item(Item::new(ItemKind::Task, "b")))?;
+        state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Command::Focus(Focus::Last));
+        let before = state.document().clone();
+        give(&mut state, Command::EditTitle);
+        edit(&mut state, EditInput::Indent);
+        assert_eq!(state.document(), &before, "a task does not move");
+        edit(&mut state, EditInput::Done);
+        give(&mut state, Command::Focus(Focus::First));
+        state.open_attachments(Whose::Focused, Selected::Note);
+        input(&mut state, AttachmentsInput::Edit);
+        edit(&mut state, EditInput::Outdent);
+        assert_eq!(
+            state.editing().map(|(id, part, _)| (id, part)),
+            Some((a, Part::Note))
+        );
+        assert_eq!((state.document(), state.notice()), (&before, None));
+        Ok(())
+    }
+
     // FR-ATT-01, FR-CHK-03
     #[test]
     fn the_panel_takes_every_command_but_quitting_and_pasting() -> Result<(), PlacementError> {

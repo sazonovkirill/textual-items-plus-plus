@@ -32,6 +32,24 @@ pub(super) fn edit_input(event: &Event) -> Option<EditInput> {
         .or_else(|| text_keys::text_edit(key).map(EditInput::Text))
 }
 
+/// The keys of a checklist item's edit mode besides those of edit mode: `Tab` and `Shift+Tab`
+/// indent and outdent it, as `]` and `[` do while it is selected (FR-CHK-03).
+pub(super) const CHECKLIST: &[(Key, EditInput)] = &[
+    ((KeyModifiers::NONE, KeyCode::Tab), EditInput::Indent),
+    ((KeyModifiers::SHIFT, KeyCode::BackTab), EditInput::Outdent),
+];
+
+/// What `event` does while a checklist item is edited: its checklist key, else what it does in
+/// edit mode. Only key presses count.
+pub(super) fn checklist_input(event: &Event) -> Option<EditInput> {
+    let key = keymap::key_press(event)?;
+    CHECKLIST
+        .iter()
+        .find(|(bound, _)| *bound == key)
+        .map(|&(_, input)| input)
+        .or_else(|| edit_input(event))
+}
+
 /// The keys of a comment's input besides the text keys: `Enter` keeps the comment, `Esc` drops
 /// what was typed, as taskpaper-terminal's comment input does (FR-ATT-04).
 pub(super) const COMMENT: &[(Key, EditInput)] = &[
@@ -147,6 +165,29 @@ mod tests {
             KeyEventKind::Release,
         ));
         assert_eq!(edit_input(&release), None);
+    }
+
+    // FR-CHK-03
+    #[test]
+    fn in_a_checklist_item_tab_and_shift_tab_nest_it_and_other_keys_are_edit_modes() {
+        let input = |code, modifiers| checklist_input(&press(code, modifiers));
+        assert_eq!(
+            input(KeyCode::Tab, KeyModifiers::NONE),
+            Some(EditInput::Indent)
+        );
+        assert_eq!(
+            input(KeyCode::BackTab, KeyModifiers::SHIFT),
+            Some(EditInput::Outdent)
+        );
+        assert_eq!(
+            input(KeyCode::Enter, KeyModifiers::NONE),
+            Some(EditInput::Next)
+        );
+        assert_eq!(
+            input(KeyCode::Char('x'), KeyModifiers::NONE),
+            Some(EditInput::Text(TextEdit::Insert('x')))
+        );
+        assert_eq!(edit_input(&press(KeyCode::Tab, KeyModifiers::NONE)), None);
     }
 
     // FR-ATT-04

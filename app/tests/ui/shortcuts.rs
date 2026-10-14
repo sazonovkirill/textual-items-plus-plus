@@ -385,8 +385,8 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
         "{lines:#?}"
     );
     for line in [
-        "│  Indent                             ]",
-        "│  Outdent                            [",
+        "│  Indent                        ], Tab",
+        "│  Outdent                 [, Shift+Tab",
     ] {
         assert!(lines.contains(&line.to_owned()), "{line}: {lines:#?}");
     }

@@ -350,6 +350,10 @@ impl Tui {
                 return;
             }
             match part {
+                // The only titles the panel edits are its checklist items'.
+                Part::Title if self.state.attachments().is_some() => {
+                    edit_keys::checklist_input(event)
+                }
                 Part::Title => edit_keys::edit_input(event),
                 Part::Description => {
                     edit_keys::description_input(event, self.description_columns())
@@ -911,7 +915,13 @@ impl Tui {
     /// The window that has the keys, when one does that binds keys of its own.
     fn window(&self) -> Option<Window> {
         if let Some((_, part, _)) = self.state.editing() {
-            Some(Window::Editing(part))
+            Some(
+                if part == Part::Title && self.state.attachments().is_some() {
+                    Window::EditingChecklistItem
+                } else {
+                    Window::Editing(part)
+                },
+            )
         } else if self.state.attachments().is_some() {
             Some(Window::Attachments)
         } else if let Some((picker, _)) = self.dialog_keys() {
