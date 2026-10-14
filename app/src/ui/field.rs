@@ -4,10 +4,11 @@
 use std::ops::Range;
 
 use ratatui::{
+    buffer::Buffer,
     layout::{Position, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::Block,
+    widgets::{Block, Paragraph, Widget},
 };
 
 use super::Theme;
@@ -27,24 +28,43 @@ pub(super) fn selected<'a>(field: &'a TextField, line: Range<usize>, theme: &The
     ])
 }
 
-/// The text of a prompt's `field` after a space, its selection in the selection colors of `theme`,
-/// for the first line inside the prompt's border.
+/// A prompt's `field`, its selection in the selection colors of `theme`, as [`draw_prompt`] draws
+/// it.
 pub(super) fn prompt_line<'a>(field: &'a TextField, theme: &Theme) -> Line<'a> {
-    let mut line = Line::from(" ");
-    line.spans
-        .extend(selected(field, 0..field.text().len(), theme).spans);
-    line
+    selected(field, 0..field.text().len(), theme)
 }
 
-/// Where the terminal's cursor goes when a prompt with `field` drawn as [`prompt_line`] has the
-/// bordered `area`: at the caret, or in the last column inside the border when the text is
-/// wider; nowhere when the prompt has no room inside its border.
+/// Draws `line`, a prompt's `field` as typed, in `row`, the first line inside the prompt's
+/// border, after a space and scrolled sideways to keep the caret in view.
+pub(super) fn draw_prompt(field: &TextField, line: Line<'_>, row: Rect, buf: &mut Buffer) {
+    let text = prompt_text(row);
+    let shift = u16::try_from(prompt_shift(field, text)).unwrap_or(u16::MAX);
+    Paragraph::new(line).scroll((0, shift)).render(text, buf);
+}
+
+/// Where the terminal's cursor goes when a prompt with `field` drawn as [`draw_prompt`] has the
+/// bordered `area`: at the caret; nowhere when the prompt has no room for it inside its border.
 pub(super) fn prompt_caret(field: &TextField, area: Rect) -> Option<Position> {
-    let inner = Block::bordered().inner(area);
-    let before = field.text().get(..field.caret()).unwrap_or_default();
-    let column = u16::try_from(Span::raw(before).width() + 1).unwrap_or(u16::MAX);
-    let last = inner.right().saturating_sub(1);
-    (!inner.is_empty()).then(|| Position::new(inner.x.saturating_add(column).min(last), inner.y))
+    let text = prompt_text(Block::bordered().inner(area).rows().next()?);
+    let column = caret_width(field) - prompt_shift(field, text);
+    let column = u16::try_from(column).unwrap_or(u16::MAX);
+    (!text.is_empty()).then(|| Position::new(text.x.saturating_add(column), text.y))
+}
+
+/// The part of a prompt's first `row` that its text takes, after a space.
+fn prompt_text(row: Rect) -> Rect {
+    let x = row.x.saturating_add(1).min(row.right());
+    Rect::new(x, row.y, row.right() - x, row.height)
+}
+
+/// The display columns of `field`'s text before its caret.
+fn caret_width(field: &TextField) -> usize {
+    Span::raw(field.text().get(..field.caret()).unwrap_or_default()).width()
+}
+
+/// The columns a prompt's `field` is scrolled sideways in its `text` area, as [`shift`] scrolls.
+fn prompt_shift(field: &TextField, text: Rect) -> usize {
+    shift(field.text(), caret_width(field), usize::from(text.width))
 }
 
 /// The lines of `field`'s text wrapped as the field wraps them in `columns`, each drawn as

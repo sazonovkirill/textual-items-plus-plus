@@ -84,7 +84,12 @@ impl Widget for SaveAsPanel<'_> {
         frame.render(area, buf);
         let mut rows = inner.rows();
         if let Some(row) = rows.next() {
-            field::prompt_line(self.view.field, theme).render(row, buf);
+            field::draw_prompt(
+                self.view.field,
+                field::prompt_line(self.view.field, theme),
+                row,
+                buf,
+            );
         }
         if let Some(row) = rows.next() {
             self.status().render(row, buf);
@@ -99,7 +104,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::{TextEdit, TextField},
+        app::{Motion, TextEdit, TextField},
         ui::BuiltIn,
     };
 
@@ -199,5 +204,34 @@ mod tests {
             SaveAsPanel::new(&view, &theme).caret(area),
             Some(Position::new(13, 11))
         );
+    }
+
+    // FR-STORE-11, FR-UI-06
+    #[test]
+    fn a_long_path_scrolls_sideways_to_keep_the_caret_in_view() {
+        let theme = BuiltIn::default().colors();
+        let path = "~/Library/Mobile Documents/com~apple~CloudDocs/Planning/todo.taskpaper";
+        let caret = |field: &TextField| {
+            let view = SaveAsView {
+                field,
+                status: SaveAsStatus::Typing,
+            };
+            SaveAsPanel::new(&view, &theme).caret(Rect::new(0, 10, 40, SaveAsPanel::HEIGHT))
+        };
+        let end = TextField::new(path.to_owned());
+        assert_eq!(
+            lines(&drawn(&end, SaveAsStatus::Typing))[1],
+            "│ le~CloudDocs/Planning/todo.taskpaper │"
+        );
+        assert_eq!(caret(&end), Some(Position::new(38, 11)));
+        let start = end.edited(TextEdit::Move {
+            motion: Motion::Start,
+            select: false,
+        });
+        assert_eq!(
+            lines(&drawn(&start, SaveAsStatus::Typing))[1],
+            "│ ~/Library/Mobile Documents/com~apple~│"
+        );
+        assert_eq!(caret(&start), Some(Position::new(2, 11)));
     }
 }

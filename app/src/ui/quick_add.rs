@@ -60,8 +60,8 @@ impl<'a> QuickAddPanel<'a> {
         field::prompt_caret(self.view.field, area)
     }
 
-    /// The text typed after a space, each date found in its chip's color, the selection in the
-    /// selection colors.
+    /// The text typed, each date found in its chip's color, the selection in the selection
+    /// colors.
     fn input(&self) -> Line<'a> {
         let field = self.view.field;
         let text = field.text();
@@ -78,7 +78,7 @@ impl<'a> QuickAddPanel<'a> {
                 self.style(&(start..end), &selection),
             ))
         });
-        Line::from_iter(std::iter::once(Span::raw(" ")).chain(spans))
+        Line::from_iter(spans)
     }
 
     /// How the bytes `part` of the text are drawn: in the selection colors when `selection` holds
@@ -148,7 +148,7 @@ impl Widget for QuickAddPanel<'_> {
         frame.render(area, buf);
         let mut rows = inner.rows();
         if let Some(row) = rows.next() {
-            self.input().render(row, buf);
+            field::draw_prompt(self.view.field, self.input(), row, buf);
         }
         if let Some(row) = rows.next() {
             self.preview().render(row, buf);
@@ -280,5 +280,20 @@ mod tests {
             Some(Position::new(4, 11))
         );
         assert_eq!(panel.caret(Rect::new(0, 0, 1, 1)), None);
+    }
+
+    // FR-EDIT-07, FR-UI-06
+    #[test]
+    fn a_long_text_scrolls_sideways_to_keep_the_caret_in_view() {
+        let theme = BuiltIn::default().colors();
+        let field = TextField::new("Call the plumber about the kitchen sink due fri".to_owned());
+        let shown = view(&field);
+        let (buf, lines) = rows(&shown, &theme);
+        assert_eq!(lines[1], "│ umber about the kitchen sink due fri │");
+        assert_eq!(buf[(31, 1)].fg, theme.due, "due, scrolled with the text");
+        assert_eq!(
+            QuickAddPanel::new(&shown, &theme).caret(Rect::new(0, 10, 40, QuickAddPanel::HEIGHT)),
+            Some(Position::new(38, 11))
+        );
     }
 }

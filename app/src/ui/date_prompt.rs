@@ -56,9 +56,7 @@ impl<'a> DatePromptPanel<'a> {
         Self { view, theme }
     }
 
-    /// Where the terminal's cursor goes when the panel is drawn over `area`: at the caret, or in
-    /// the last column inside the border when the text is wider; nowhere when the panel has no
-    /// room inside its border.
+    /// Where the terminal's cursor goes when the panel is drawn over `area`, as for any prompt.
     pub(super) fn caret(&self, area: Rect) -> Option<Position> {
         field::prompt_caret(self.view.field, area)
     }
@@ -113,7 +111,12 @@ impl Widget for DatePromptPanel<'_> {
         frame.render(area, buf);
         let mut rows = inner.rows();
         if let Some(row) = rows.next() {
-            field::prompt_line(self.view.field, theme).render(row, buf);
+            field::draw_prompt(
+                self.view.field,
+                field::prompt_line(self.view.field, theme),
+                row,
+                buf,
+            );
         }
         if let Some(row) = rows.next() {
             self.preview().render(row, buf);
