@@ -91,6 +91,26 @@ fn add_and_rename_a_task() {
     );
 }
 
+// FR-EDIT-01, D-84
+#[test]
+fn backspace_in_an_empty_title_leaves_editing_as_escape_does() {
+    let mut harness = Harness::new(60, 12);
+    let inbox = [format!("*{CALL}"), COFFEE.into(), READ.into()];
+    harness.key(KeyCode::Char('o'));
+    harness.key(KeyCode::Backspace);
+    assert_eq!(mode(&harness), "NAVIGATE");
+    assert_eq!(items(&harness), inbox, "the new task is not added");
+    harness.key(KeyCode::Enter);
+    harness.type_text("x");
+    harness.key(KeyCode::Backspace);
+    harness.ctrl('a');
+    harness.key(KeyCode::Backspace);
+    assert_eq!(mode(&harness), "EDIT", "a title with text loses it");
+    harness.key(KeyCode::Backspace);
+    assert_eq!(mode(&harness), "NAVIGATE");
+    assert_eq!(items(&harness), inbox, "the title emptied is kept");
+}
+
 // FR-EDIT-05
 #[test]
 fn shift_o_adds_above_and_keys_type_while_editing() {

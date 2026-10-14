@@ -7,7 +7,7 @@ use jiff::civil::Date;
 use super::{
     Command, DateInput, DatePromptView, Direction, EditInput, Effect, End, Go, History, Notice,
     Part, Picked, Picker, PickerInput, PickerView, Selected, Selection, Side, SidebarView,
-    TextField, Whose, adding,
+    TextEdit, TextField, Whose, adding,
     attachments::Panel,
     clipboard, completion,
     container::{self, Row},
@@ -896,13 +896,22 @@ impl State {
         }
     }
 
-    /// Applies `input` to the edited title. Nothing happens outside edit mode.
+    /// Applies `input` to the edited title. Deleting back in an empty title ends editing, as
+    /// [`EditInput::Done`] does, except in a checklist item's (D-84). Nothing happens outside edit
+    /// mode.
     pub(super) fn edit_input(&mut self, input: EditInput) {
         let container = self.container();
         let Some(editing) = self.editing.as_mut() else {
             return;
         };
         match input {
+            EditInput::Text(TextEdit::DeleteBackward)
+                if editing.part() == Part::Title
+                    && editing.kind() != ItemKind::ChecklistItem
+                    && editing.field().text().is_empty() =>
+            {
+                self.finish_editing();
+            }
             EditInput::Text(edit) => {
                 if editing.input(&mut self.document, edit) == Err(Refused::Tag) {
                     self.notify(Notice::TagInTitle);
@@ -1930,6 +1939,48 @@ mod tests {
         state.undo();
         assert_eq!(title(&state, inbox_task), title(&before, inbox_task));
         assert_eq!(state.rows(), before.rows());
+        Ok(())
+    }
+
+    // FR-EDIT-01, D-84
+    #[test]
+    fn deleting_back_in_an_empty_title_ends_editing_as_done_does() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            inbox_task,
+            work,
+            ..
+        } = fixture()?;
+        let back = EditInput::Text(TextEdit::DeleteBackward);
+        let inbox = state.document().inbox();
+        state.new_task(Side::Below);
+        state.edit_input(back);
+        assert!(state.editing().is_none());
+        assert_eq!(
+            state.document().children(inbox),
+            [inbox_task],
+            "a new task goes"
+        );
+        state.edit_title();
+        state.edit_input(back);
+        assert_eq!(
+            state.editing().map(|(.., field)| field.text()),
+            Some(""),
+            "a title with text loses its last character"
+        );
+        state.edit_input(back);
+        assert!(state.editing().is_none());
+        assert_eq!(
+            title(&state, inbox_task),
+            Some("i"),
+            "an emptied title is kept as done keeps it"
+        );
+        navigate(&mut state, "Work");
+        state.new_container(ItemKind::Area, Side::Below);
+        state.edit_input(back);
+        assert!(state.editing().is_none());
+        assert_eq!(state.document().top_level(), [work], "a new container goes");
+        assert_eq!(state.container(), Some(work));
         Ok(())
     }
 

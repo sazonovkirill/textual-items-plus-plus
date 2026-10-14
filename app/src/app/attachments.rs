@@ -755,6 +755,22 @@ mod tests {
         }
     }
 
+    // FR-CHK-02, D-84
+    #[test]
+    fn deleting_back_in_an_empty_checklist_item_keeps_editing() -> Result<(), PlacementError> {
+        let (mut state, _, [c]) = with_checklist(["c"])?;
+        give(&mut state, Command::OpenChecklist);
+        input(&mut state, AttachmentsInput::Edit);
+        for _ in 0..2 {
+            edit(&mut state, EditInput::Text(TextEdit::DeleteBackward));
+        }
+        assert_eq!(
+            state.editing().map(|(id, .., field)| (id, field.text())),
+            Some((c, ""))
+        );
+        Ok(())
+    }
+
     // FR-ATT-02, FR-CHK-02
     #[test]
     fn the_checklist_opens_on_a_task_and_only_on_a_task() -> Result<(), PlacementError> {
