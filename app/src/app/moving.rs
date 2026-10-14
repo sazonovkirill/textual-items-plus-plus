@@ -117,20 +117,20 @@ fn outside_sections(document: &Document, section: ItemId) -> Destination {
 
 /// The transaction that indents `id`, making it the last child of the nearest item of its kind
 /// above it among its siblings that is neither in the Trash nor completed, with that item; only
-/// a checklist item indents, since v1 nests no project in another (FR-OPS-03, D-57).
+/// a project or a checklist item indents (FR-OPS-03).
 ///
 /// # Errors
 ///
 /// The [`Refusal`] when the hierarchy does not allow it.
 fn indent(document: &Document, id: ItemId) -> Result<(Transaction, ItemId), Refusal> {
     let kind = nesting(document, id)?;
-    if !kind.goes_in(Some(kind)) {
-        return Err(Refusal::DoesNotNest);
-    }
     let (parent, index) = document
         .position(id)
         .expect("an item that nests is not the Inbox, so it has a place");
-    let siblings = parent.map_or(document.top_level(), |parent| document.children(parent));
+    let siblings = match parent {
+        Some(parent) => document.children(parent),
+        None => document.top_level(),
+    };
     let into = siblings
         .iter()
         .take(index)
@@ -575,21 +575,28 @@ mod tests {
 
     // FR-OPS-03, FR-ORG-02
     #[test]
-    fn a_project_does_not_indent_but_one_nested_in_the_file_outdents() -> Result<(), PlacementError>
-    {
+    fn a_project_indents_into_the_open_project_above_it_and_outdents_back()
+    -> Result<(), PlacementError> {
         let mut document = nested();
-        let [d, e] = ["D", "E"].map(|title| find(&document, title));
-        assert_eq!(
-            indent(&document, d).err(),
-            Some(Refusal::DoesNotNest),
-            "v1 nests no project in another"
-        );
-        let transaction = outdent(&document, e).map_err(|_| PlacementError::DoesNotFit)?;
+        let [a, d, e] = ["A", "D", "E"].map(|title| find(&document, title));
+        let (transaction, into) = indent(&document, d).map_err(|_| PlacementError::DoesNotFit)?;
+        assert_eq!(into, a);
+        document.apply(&transaction)?;
+        assert_eq!(document.children(a), [d]);
+        assert_eq!(document.children(d), [e], "what it holds goes with it");
+        let transaction = outdent(&document, d).map_err(|_| PlacementError::DoesNotFit)?;
         document.apply(&transaction)?;
         assert_eq!(
-            document.position(e),
-            document.position(d).map(|(p, i)| (p, i + 1))
+            document.position(d),
+            document.position(a).map(|(p, i)| (p, i + 1))
         );
+        let top = add(&mut document, None, Item::new(Project, "top"));
+        let next = add(&mut document, None, Item::new(Project, "next"));
+        let (transaction, into) =
+            indent(&document, next).map_err(|_| PlacementError::DoesNotFit)?;
+        assert_eq!(into, top, "at the top level too");
+        document.apply(&transaction)?;
+        assert_eq!(document.children(top), [next]);
         Ok(())
     }
 
@@ -616,10 +623,15 @@ mod tests {
     fn a_move_the_hierarchy_does_not_allow_is_refused_with_why() {
         let document = nested();
         let [a, e, t, one, area] = ["A", "E", "t", "1", "area"].map(|title| find(&document, title));
+        assert_eq!(indent(&document, a).err(), Some(Refusal::NothingAbove));
         assert_eq!(indent(&document, one).err(), Some(Refusal::NothingAbove));
-        for project in [a, find(&document, "B"), e] {
-            assert_eq!(indent(&document, project).err(), Some(Refusal::DoesNotNest));
-        }
+        assert_eq!(
+            indent(&document, find(&document, "B"))
+                .ok()
+                .map(|(_, into)| into),
+            Some(a)
+        );
+        assert_eq!(indent(&document, e).err(), Some(Refusal::NothingAbove));
         assert_eq!(outdent(&document, a).err(), Some(Refusal::NotNested));
         assert_eq!(outdent(&document, one).err(), Some(Refusal::NotNested));
         for id in [t, area, document.inbox(), ItemId::new(99)] {
@@ -709,38 +721,32 @@ mod tests {
 
     // FR-OPS-01, FR-OPS-03
     #[test]
-    fn selected_projects_do_not_indent() {
-        let document = projects();
-        let [q, r, t] = ["Q", "R", "t"].map(|title| find(&document, title));
+    fn selected_projects_indent_together_into_the_one_above() -> Result<(), PlacementError> {
+        let mut document = projects();
+        let [p, q, r, t] = ["P", "Q", "R", "t"].map(|title| find(&document, title));
+        let (transaction, moved) =
+            indent_all(&document, &[t, q, r]).map_err(|_| PlacementError::DoesNotFit)?;
+        assert_eq!(moved, [(q, p), (r, p)]);
+        document.apply(&transaction)?;
         assert_eq!(
-            indent_all(&document, &[t, q, r]).err(),
-            Some(Refusal::DoesNotNest),
-            "v1 nests no project in another"
+            document.children(p),
+            [q, r],
+            "in their order, the task left alone"
+        );
+        let document = projects();
+        assert_eq!(
+            indent_all(&document, &[p, q]).err(),
+            Some(Refusal::NothingAbove),
+            "the first has nothing above, so the second would go into it"
+        );
+        assert_eq!(
+            indent_all(&document, &[t]).err(),
+            Some(Refusal::DoesNotNest)
         );
         assert_eq!(
             indent_all(&document, &[]).ok(),
             Some((Transaction::default(), Vec::new()))
         );
-    }
-
-    // FR-OPS-01, FR-OPS-03, FR-CHK-03
-    #[test]
-    fn selected_checklist_items_indent_together_into_the_one_above() -> Result<(), PlacementError> {
-        let mut document = Document::new();
-        let task = add(&mut document, None, Item::new(Project, "P"));
-        let task = add(&mut document, Some(task), Item::new(Task, "t"));
-        let [one, two, three] = ["1", "2", "3"]
-            .map(|title| add(&mut document, Some(task), Item::new(ChecklistItem, title)));
-        assert_eq!(
-            indent_all(&document, &[one, two]).err(),
-            Some(Refusal::NothingAbove),
-            "the first has nothing above, so the second would go into it"
-        );
-        let (transaction, moved) =
-            indent_all(&document, &[two, three]).map_err(|_| PlacementError::DoesNotFit)?;
-        assert_eq!(moved, [(two, one), (three, one)]);
-        document.apply(&transaction)?;
-        assert_eq!(document.children(one), [two, three], "in their order");
         Ok(())
     }
 

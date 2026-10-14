@@ -115,8 +115,15 @@ fn a_project_moves_to_the_top_level_and_escape_closes_the_picker() {
     harness.type_text("Ggm");
     assert_eq!(
         window(&harness, "Move to"),
-        ["›", " 󰋜 Home", " 󰆧 Work", " 󰆧 Home",],
-        "a project goes to the top level or an area, never into a project (D-57)"
+        [
+            "›",
+            " 󰋜 Home",
+            " 󰆧 Work",
+            " 󰆧 Home",
+            "   󰉖 Move to the new flat",
+            " 󰉖 Learn Rust",
+        ],
+        "a project goes to the top level, an area or a project, never into itself"
     );
     harness.key(KeyCode::Esc);
     assert_eq!(window(&harness, "Move to"), Vec::<String>::new());

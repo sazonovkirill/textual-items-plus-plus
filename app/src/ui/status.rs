@@ -133,11 +133,11 @@ fn kept(state: &State) -> String {
 /// Why the hierarchy refused a move or a change of kind.
 const fn why(refusal: Refusal) -> &'static str {
     match refusal {
-        Refusal::DoesNotNest => "only checklist items nest",
+        Refusal::DoesNotNest => "only projects and checklist items nest",
         Refusal::NothingAbove => "nothing above to indent into",
         Refusal::NotNested => "nothing to outdent from",
         Refusal::NoRoomForSection => "a section goes only in an area or a project",
-        Refusal::NoRoomForProject => "a project goes only in an area or at the top level",
+        Refusal::NoRoomForProject => "a project can't go in a section or the Inbox",
         Refusal::SectionHoldsTasks => "a section holds only tasks",
         Refusal::ReadsAsTask => "only a task's title can start with \"- \"",
     }
@@ -254,7 +254,7 @@ mod tests {
         check(&long, "g", 31, " ↕ NAVIGATE · …paper · saved g ");
     }
 
-    // FR-OPS-03, FR-OPS-07, FR-TASK-06, D-57
+    // FR-OPS-03, FR-OPS-07, FR-TASK-06, D-65
     #[test]
     fn each_refusal_says_why() {
         let reasons = [
@@ -270,11 +270,11 @@ mod tests {
         assert_eq!(
             reasons,
             [
-                "only checklist items nest",
+                "only projects and checklist items nest",
                 "nothing above to indent into",
                 "nothing to outdent from",
                 "a section goes only in an area or a project",
-                "a project goes only in an area or at the top level",
+                "a project can't go in a section or the Inbox",
                 "a section holds only tasks",
                 "only a task's title can start with \"- \"",
             ]

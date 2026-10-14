@@ -113,7 +113,7 @@ fn a_task_or_a_section_is_not_indented_and_the_status_line_says_why() {
     let mut harness = website(0);
     harness.key(KeyCode::Tab);
     assert!(
-        status(&harness).ends_with("only checklist items nest"),
+        status(&harness).ends_with("only projects and checklist items nest"),
         "{}",
         status(&harness)
     );
@@ -123,7 +123,7 @@ fn a_task_or_a_section_is_not_indented_and_the_status_line_says_why() {
         "the next command clears it"
     );
     harness.key(KeyCode::Char('['));
-    assert!(status(&harness).ends_with("only checklist items nest"));
+    assert!(status(&harness).ends_with("only projects and checklist items nest"));
 }
 
 const PLANS: &str = "\
@@ -177,36 +177,30 @@ Plans: @area
     );
 }
 
-// FR-OPS-03, FR-ORG-02, FR-ORG-06, D-57
+// FR-OPS-03, FR-ORG-02, FR-ORG-06
 #[test]
-fn a_project_does_not_indent_but_one_nested_in_the_file_outdents() {
+fn a_project_indents_into_the_project_above_and_outdents_out_of_it() {
     let (_dir, path, mut harness) = plans();
     harness.key(KeyCode::Char('G'));
     harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
     assert!(status(&harness).ends_with("nothing to outdent from"));
     harness.key(KeyCode::Char(']'));
+    let indented = listed(&harness);
     assert!(
-        status(&harness).ends_with("only checklist items nest"),
-        "{}",
-        status(&harness)
-    );
-    assert_eq!(
-        saved(&mut harness, &path),
-        PLANS,
-        "Kitchen stays beside Garden"
-    );
-    let mut harness = website(0);
-    harness.key(KeyCode::Char('G'));
-    assert!(
-        listed(&harness)
+        indented
             .iter()
-            .any(|row| row.ends_with(" Blog") && row.starts_with('*')),
-        "{:?}",
-        listed(&harness)
+            .any(|row| row.ends_with("Garden") && row.starts_with('*'))
     );
-    harness.key(KeyCode::Char('['));
+    assert!(!indented.iter().any(|row| row.ends_with("Kitchen")));
+    let file = saved(&mut harness, &path);
     assert!(
-        !listed(&harness).iter().any(|row| row.ends_with(" Blog")),
-        "a project the file nests outdents out of its project"
+        file.contains("\tGarden:\n\t\tKitchen:\n\t\t\t- Paint the walls\n"),
+        "{file}"
     );
+    harness.key(KeyCode::Char('.'));
+    harness.key(KeyCode::Char(']'));
+    assert!(status(&harness).ends_with("nothing above to indent into"));
+    harness.key(KeyCode::Char('['));
+    assert!(!listed(&harness).iter().any(|row| row.ends_with("Kitchen")));
+    assert_eq!(saved(&mut harness, &path), PLANS, "back where it was");
 }

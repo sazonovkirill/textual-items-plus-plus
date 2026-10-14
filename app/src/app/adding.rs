@@ -150,14 +150,14 @@ pub(super) fn end_place(
     Some((parent, index.unwrap_or(children.len())))
 }
 
-/// Whether a new item of `kind` goes in `parent`, or at the top level for `None`.
+/// Whether an item of `kind` may go in `parent`, or at the top level for `None`.
 fn fits(document: &Document, kind: ItemKind, parent: Option<ItemId>) -> bool {
     match parent {
         Some(id) => document
             .node(id)
             .and_then(Node::item)
-            .is_some_and(|item| kind.goes_in(Some(item.kind))),
-        None => kind.goes_in(None),
+            .is_some_and(|item| kind.fits_in(Some(item.kind))),
+        None => kind.fits_in(None),
     }
 }
 
@@ -388,23 +388,15 @@ mod tests {
 
     // FR-EDIT-05, FR-ORG-06
     #[test]
-    fn a_project_added_in_a_project_goes_beside_it() -> Result<(), PlacementError> {
+    fn a_project_goes_among_the_child_projects_nearest_the_focus() -> Result<(), PlacementError> {
         let fixture = fixture()?;
         let (p, project) = (fixture.project, ItemKind::Project);
         let at = |focused, side| container_at(&fixture, p, focused, project, side);
-        for focused in [
-            fixture.loose,
-            fixture.in_section,
-            fixture.empty,
-            fixture.child,
-        ] {
-            assert_eq!(
-                at(Some(focused), Side::Below),
-                Some((None, 1)),
-                "v1 nests none"
-            );
-            assert_eq!(at(Some(focused), Side::Above), Some((None, 0)));
+        for focused in [fixture.loose, fixture.in_section, fixture.empty] {
+            assert_eq!(at(Some(focused), Side::Below), Some((Some(p), 4)));
         }
+        assert_eq!(at(Some(fixture.child), Side::Below), Some((Some(p), 5)));
+        assert_eq!(at(Some(fixture.child), Side::Above), Some((Some(p), 4)));
         Ok(())
     }
 
@@ -426,8 +418,7 @@ mod tests {
         );
         assert_eq!(
             at(section, ItemKind::Project, Side::Above),
-            Some((None, 0)),
-            "beside the project, since v1 nests none"
+            Some((Some(p), 4))
         );
         assert_eq!(at(inbox, ItemKind::Project, Side::Below), Some((None, 0)));
         assert_eq!(at(inbox, ItemKind::Section, Side::Below), None);

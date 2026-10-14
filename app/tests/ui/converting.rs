@@ -123,7 +123,7 @@ fn where_the_new_kind_cannot_go_the_status_line_says_why() {
     );
     keys(&mut harness, "gi");
     keys(&mut harness, "my");
-    assert!(status(&harness).ends_with("a project goes only in an area or at the top level"));
+    assert!(status(&harness).ends_with("a project can't go in a section or the Inbox"));
     keys(&mut harness, "gS");
     assert!(status(&harness).ends_with("a section goes only in an area or a project"));
 }

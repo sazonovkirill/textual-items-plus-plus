@@ -565,17 +565,20 @@ impl State {
         self.change(transaction);
     }
 
-    /// Indents the selected items into the item of their kind above them, as one step to undo;
-    /// the status line says why when the hierarchy refuses every one (FR-OPS-03). The pane lists
-    /// nothing that indents, since projects do not nest (D-57) and checklist items show in the
-    /// attachments panel, so this only says why. A view has no tree to indent in, so nothing
-    /// happens there.
+    /// Indents the selected items into the item of their kind above them, as one step to undo,
+    /// focusing the item the focused one went into, since what it holds is not shown; the status
+    /// line says why when the hierarchy refuses every one (FR-OPS-03). A view has no tree to
+    /// indent in, so nothing happens there.
     pub(super) fn indent(&mut self) {
         if self.container().is_none() {
             return;
         }
         match moving::indent_all(&self.document, &self.targets()) {
-            Ok((transaction, _)) => self.change(transaction),
+            Ok((transaction, moved)) => {
+                let focused = self.selection().focused();
+                let into = moved.iter().find(|&&(id, _)| Some(id) == focused);
+                self.change_focusing(transaction, into.map_or(focused, |&(_, into)| Some(into)));
+            }
             Err(refusal) => self.notify(Notice::Refused(refusal)),
         }
     }
@@ -979,9 +982,8 @@ impl State {
             (Command::Move(direction), Some(Shown::Container(id))) => {
                 self.change(sidebar::shift(&self.document, id, direction));
             }
-            // v1 nests no project in another (D-57), and nothing else in the sidebar nests.
-            (Command::Indent, Some(Shown::Container(_))) => {
-                self.notify(Notice::Refused(moving::Refusal::DoesNotNest));
+            (Command::Indent, Some(Shown::Container(id))) => {
+                apply(self, sidebar::indent(&self.document, id));
             }
             (Command::Convert, Some(Shown::Container(id))) => {
                 apply(self, converting::convert_all(&self.document, &[id]));
@@ -2073,16 +2075,15 @@ mod tests {
             "a section beside the focused section"
         );
         navigate(&mut state, "Site");
+        let site = state.container();
         add(&mut state, ItemKind::Project, End::Bottom, "Next");
+        let last = site.and_then(|site| state.document().children(site).last().copied());
         assert_eq!(
-            titles(&state).last().map(String::as_str),
+            last.and_then(|id| title(&state, id)),
             Some("Next"),
-            "a project goes into the area holding the one shown, and opens"
+            "a project goes into the project shown, as its row"
         );
-        assert_eq!(
-            state.container().and_then(|id| title(&state, id)),
-            Some("Next")
-        );
+        assert_eq!(state.container(), site);
         Ok(())
     }
 
@@ -2235,6 +2236,7 @@ mod tests {
             section,
             in_section,
             site,
+            in_site,
             ..
         } = fixture()?;
         let mut document = state.document().clone();
@@ -2263,25 +2265,32 @@ mod tests {
         state.extend_selection(Direction::Up);
         state.extend_selection(Direction::Up);
         assert_eq!(picked(&state), [site, two, three]);
-        let before = state.document().clone();
         state.indent();
         assert_eq!(
             state.notice(),
-            Some(&Notice::Refused(moving::Refusal::DoesNotNest))
+            Some(&Notice::Refused(moving::Refusal::NothingAbove))
         );
-        assert_eq!(state.document(), &before, "v1 nests no project in another");
+        state.toggle_picked();
+        state.indent();
+        assert_eq!(state.document().children(site), [in_site, two, three]);
+        assert_eq!(
+            state.selection().focused(),
+            Some(site),
+            "the item the focused one went into"
+        );
+        state.extend_selection(Direction::Up);
         state.outdent();
         assert_eq!(
             state.notice(),
             Some(&Notice::Refused(moving::Refusal::NotNested))
         );
-        navigate(&mut state, "Two");
-        let before = state.document().clone();
+        state.undo();
+        assert_eq!(picked(&state), [two, three]);
         state.indent();
         assert_eq!(
-            state.document(),
-            &before,
-            "an empty project has nothing to indent"
+            state.selection().focused(),
+            Some(site),
+            "the focus, not on an item indented, stays"
         );
         Ok(())
     }
