@@ -34,6 +34,8 @@ pub enum PickerInput {
     Next,
     /// Choose the focused match.
     Choose,
+    /// Choose the focused match to open in a new pane, where that applies (FR-PANE-02).
+    ChooseInNewPane,
     /// Close without choosing.
     Dismiss,
 }
@@ -155,7 +157,7 @@ impl<T: Clone> Picker<T> {
             PickerInput::Next => {
                 self.focused = (self.focused + 1).min(self.ranked.len().saturating_sub(1));
             }
-            PickerInput::Choose => {
+            PickerInput::Choose | PickerInput::ChooseInNewPane => {
                 let index = *self.ranked.get(self.focused)?;
                 let candidate = self.candidates.get(index)?;
                 return Some(Picked::Chosen(candidate.value.clone()));

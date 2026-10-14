@@ -21,6 +21,16 @@ use crate::app::{PickerInput, PickerView};
 pub(super) const PICKER: &[(Key, PickerInput)] = &[
     ((KeyModifiers::NONE, KeyCode::Esc), PickerInput::Dismiss),
     ((KeyModifiers::NONE, KeyCode::Enter), PickerInput::Choose),
+    // taskpaper-terminal's keys to open the choice in a new pane, `Ctrl+T` as fzf and Telescope
+    // open a tab, for terminals that take `Alt+Enter`.
+    (
+        (KeyModifiers::ALT, KeyCode::Enter),
+        PickerInput::ChooseInNewPane,
+    ),
+    (
+        (KeyModifiers::CONTROL, KeyCode::Char('t')),
+        PickerInput::ChooseInNewPane,
+    ),
     ((KeyModifiers::NONE, KeyCode::Up), PickerInput::Previous),
     (
         (KeyModifiers::CONTROL, KeyCode::Char('p')),
@@ -234,6 +244,12 @@ mod tests {
         for (code, modifiers, expected) in [
             (KeyCode::Esc, none, PickerInput::Dismiss),
             (KeyCode::Enter, none, PickerInput::Choose),
+            (
+                KeyCode::Enter,
+                KeyModifiers::ALT,
+                PickerInput::ChooseInNewPane,
+            ),
+            (KeyCode::Char('t'), ctrl, PickerInput::ChooseInNewPane),
             (KeyCode::Up, none, PickerInput::Previous),
             (KeyCode::Char('p'), ctrl, PickerInput::Previous),
             (KeyCode::Down, none, PickerInput::Next),

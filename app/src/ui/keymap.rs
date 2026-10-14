@@ -117,11 +117,31 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Tags, &["m g"]),
     (Command::FilterTags, &["g f"]),
     (Command::ClearTagFilter, &["g F"]),
-    // Todoist's sidebar key, and taskpaper-terminal's keys to focus the pane left and right
-    // (D-45).
+    // Todoist's sidebar key (D-45), and taskpaper-terminal's pane keys: a legacy terminal sends
+    // `Ctrl+\` as `Ctrl+4`, and `g` with a digit reaches a pane where `Alt` with it is taken
+    // (D-60).
     (Command::Sidebar, &["M"]),
-    (Command::FocusSidebar, &["ctrl+w h", "ctrl+w left"]),
-    (Command::FocusPane, &["ctrl+w l", "ctrl+w right"]),
+    (
+        Command::FocusLeft,
+        &["ctrl+w h", "ctrl+w left", "ctrl+shift+left", "g l"],
+    ),
+    (
+        Command::FocusRight,
+        &["ctrl+w l", "ctrl+w right", "ctrl+shift+right", "g r"],
+    ),
+    (Command::FocusPane(1), &["alt+1", "g 1"]),
+    (Command::FocusPane(2), &["alt+2", "g 2"]),
+    (Command::FocusPane(3), &["alt+3", "g 3"]),
+    (Command::FocusPane(4), &["alt+4", "g 4"]),
+    (Command::FocusPane(5), &["alt+5", "g 5"]),
+    (Command::FocusPane(6), &["alt+6", "g 6"]),
+    (Command::FocusPane(7), &["alt+7", "g 7"]),
+    (Command::FocusPane(8), &["alt+8", "g 8"]),
+    (Command::FocusPane(9), &["alt+9", "g 9"]),
+    (Command::OpenInNewPane, &["ctrl+\\", "ctrl+4", "ctrl+w v"]),
+    (Command::ClosePane, &["ctrl+w c"]),
+    (Command::Narrow, &["ctrl+w <", "alt+shift+h"]),
+    (Command::Widen, &["ctrl+w >", "alt+shift+l"]),
     // taskpaper-terminal's keys for its shortcuts panel and for scrolling it a page (its D-55).
     (Command::Shortcuts, &["?"]),
     (Command::ScrollShortcuts(Direction::Down), &[")"]),

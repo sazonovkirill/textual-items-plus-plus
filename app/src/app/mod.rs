@@ -47,6 +47,7 @@ pub use history::History;
 pub use move_to::Destination;
 pub use moving::{Direction, Refusal};
 pub use navigator::{Place, Stop};
+pub use pane::PaneView;
 pub use picker::{Candidate, Entries, Picked, Picker, PickerInput, PickerView};
 pub use saving::{ConflictSide, ConflictView, Notice, OnDisk, Report};
 pub use selection::Selection;

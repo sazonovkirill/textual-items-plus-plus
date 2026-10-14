@@ -387,7 +387,14 @@ impl State {
         let exact =
             |id| text_path::find(&old, new, id).and_then(|(found, exact)| exact.then_some(found));
         let today = self.today;
-        self.pane.reload(new, today, nearest, exact);
+        let panes = self
+            .left
+            .iter_mut()
+            .chain([&mut self.pane])
+            .chain(&mut self.right);
+        for pane in panes {
+            pane.reload(new, today, nearest, exact);
+        }
         if let Some(picker) = &self.navigator {
             let query = picker.view().query.text().to_owned();
             self.navigator = Some(navigator::reopen(new, self.shown(), &query));

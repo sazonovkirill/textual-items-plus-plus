@@ -382,14 +382,14 @@ mod tests {
         assert_eq!(buf[(3, website)].fg, theme.primary, "a project");
         assert_eq!(buf[(17, work)].fg, theme.dim_text, "a count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
-        give(&mut state, Command::FocusPane);
+        give(&mut state, Command::FocusRight);
         let (rows, buf, _) = draw(&state, 20, 13);
         assert!(
             rows[usize::from(website)].starts_with(" ○ Website"),
             "no marker: {rows:?}"
         );
         assert_ne!(buf[(5, website)].bg, theme.current_line);
-        give(&mut state, Command::FocusSidebar);
+        give(&mut state, Command::FocusLeft);
         give(&mut state, Command::Go(crate::app::Go::Into));
         let (_, buf, _) = draw(&state, 20, 13);
         assert_eq!(

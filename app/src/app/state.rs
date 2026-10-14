@@ -1,6 +1,6 @@
 //! The application state a frontend renders, changed only by [`update`](super::update).
 
-use std::path::PathBuf;
+use std::{mem, path::PathBuf};
 
 use jiff::civil::Date;
 
@@ -18,12 +18,13 @@ use super::{
     move_to::{Destination, MoveTo},
     moving,
     navigator::{self, Stop},
-    pane::{Pane, listed},
+    pane::{Pane, PaneView, listed},
     saving::Saving,
     sidebar::{self, Sidebar},
     tags::{Choice, TagPicker, TagsView},
     trash,
     view::{self, Group, Shown, View},
+    visits::Visit,
 };
 use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Tag, Transaction, dates::DateKind};
 
@@ -43,7 +44,12 @@ pub struct State {
     opened: Opened,
     /// The local date by the frontend's clock at the latest message, which views list by.
     pub(super) today: Date,
+    /// The panes left of the one with the keys, left to right (FR-PANE-01).
+    pub(super) left: Vec<Pane>,
+    /// The pane with the keys.
     pub(super) pane: Pane,
+    /// The panes right of the one with the keys, left to right.
+    pub(super) right: Vec<Pane>,
     pub(super) history: History,
     pub(super) navigator: Option<Picker<Stop>>,
     /// Move to, while its picker is open (FR-OPS-04).
@@ -71,7 +77,17 @@ impl State {
     pub fn new(document: Document, opened: Opened, today: Date) -> Self {
         let saving = Saving::new(document.revision(), true, matches!(opened, Opened::File(_)));
         Self {
-            pane: Pane::new(&document, today, Shown::Container(document.inbox()), false),
+            left: Vec::new(),
+            pane: Pane::new(
+                &document,
+                today,
+                Visit {
+                    shown: Shown::Container(document.inbox()),
+                    focused: None,
+                },
+                false,
+            ),
+            right: Vec::new(),
             today,
             document,
             opened,
@@ -96,6 +112,34 @@ impl State {
     /// The pane with the keys, to change.
     pub(super) fn pane_mut(&mut self) -> &mut Pane {
         &mut self.pane
+    }
+
+    /// The panes, left to right, as a frontend draws them (FR-PANE-01).
+    pub fn panes(&self) -> impl Iterator<Item = PaneView<'_>> {
+        self.left
+            .iter()
+            .chain([&self.pane])
+            .chain(&self.right)
+            .map(|pane| PaneView::new(pane, &self.document, self.today))
+    }
+
+    /// The position of the pane with the keys among [`panes`](Self::panes); the commands that
+    /// act on a pane act on it.
+    #[must_use]
+    pub fn current_pane(&self) -> usize {
+        self.left.len()
+    }
+
+    /// The pane with the keys, as a frontend draws it.
+    #[must_use]
+    pub fn pane_view(&self) -> PaneView<'_> {
+        PaneView::new(&self.pane, &self.document, self.today)
+    }
+
+    /// The rows every pane lists, left to right, to keep each pane's focus on a row once they
+    /// change.
+    fn listings(&self) -> Vec<Vec<Row>> {
+        self.panes().map(|pane| pane.rows()).collect()
     }
 
     /// The document.
@@ -151,7 +195,7 @@ impl State {
     /// Keeps `today`, the local date by the frontend's clock, for the views to list by.
     pub(super) fn set_today(&mut self, today: Date) {
         if today != self.today {
-            let before = self.rows();
+            let before = self.listings();
             self.today = today;
             self.settle(&before);
         }
@@ -390,8 +434,12 @@ impl State {
 
     /// Applies `input` to the open Move to picker: choosing a destination closes it and moves the
     /// selected items there as one step to undo, the pane staying where it is and the focus
-    /// moving on from the rows that leave, as Things 3 does. Nothing happens while it is closed.
+    /// moving on from the rows that leave, as Things 3 does. Nothing happens while it is closed,
+    /// nor for choosing in a new pane, which no destination opens in.
     pub(super) fn move_to_input(&mut self, input: PickerInput) {
+        if input == PickerInput::ChooseInNewPane {
+            return;
+        }
         let Some(picked) = self
             .move_to
             .as_mut()
@@ -440,8 +488,11 @@ impl State {
     /// Applies `input` to the open tag picker: choosing a tag closes it and adds the tag to the
     /// selected items, or removes it from them when each carries it, as one step to undo, or adds
     /// it to the filter, or takes it out when the filter has it. Nothing happens while it is
-    /// closed.
+    /// closed, nor for choosing in a new pane, which no tag opens in.
     pub(super) fn tags_input(&mut self, input: PickerInput) {
+        if input == PickerInput::ChooseInNewPane {
+            return;
+        }
         let Some(closed) = self
             .tags
             .as_mut()
@@ -472,7 +523,7 @@ impl State {
 
     /// Filters the pane by `filter`, moving the focus on when its row hides.
     fn set_filter(&mut self, filter: Vec<String>) {
-        let before = self.rows();
+        let before = self.listings();
         self.pane_mut().filter = filter;
         self.settle(&before);
     }
@@ -547,7 +598,7 @@ impl State {
         let items = self.targets();
         match converting::group_place(&self.document, &items, kind) {
             Ok(Some(place)) => {
-                let selection = self.pane().selection.clone();
+                let (before, selection) = (self.listings(), self.pane().selection.clone());
                 let editing = Editing::group(
                     &mut self.document,
                     Item::new(kind, ""),
@@ -555,6 +606,7 @@ impl State {
                     &items,
                     selection,
                 );
+                self.settle(&before);
                 self.pane_mut().selection.focus(Some(editing.id()));
                 self.start_editing(Some(editing));
             }
@@ -723,6 +775,7 @@ impl State {
         let (id, started) = (editing.id(), editing.revision());
         let in_sidebar = self.sidebar.has_keys();
         let heading = !in_sidebar && Some(id) == self.container();
+        let listed = self.listings();
         let (transaction, before) = editing.finish(&mut self.document);
         if transaction.ops().is_empty() {
             self.saving.unchanged(started, self.document.revision());
@@ -744,6 +797,7 @@ impl State {
                 self.go(Go::Back);
             }
         }
+        self.settle(&listed);
         kept
     }
 
@@ -755,7 +809,8 @@ impl State {
     /// Applies `transaction` as one step to undo, then focuses `focused`, or the row nearest it
     /// when it is not a row.
     fn change_focusing(&mut self, transaction: Transaction, focused: Option<ItemId>) {
-        let before = self.rows();
+        let before = self.listings();
+        let listed_before = before.get(self.left.len()).map_or(&[][..], Vec::as_slice);
         let (shown, today, show_completed) =
             (self.pane().shown, self.today, self.pane().show_completed);
         let filter = self.pane().filter.clone();
@@ -764,7 +819,7 @@ impl State {
         self.history
             .commit(&mut self.document, transaction, selection, |document| {
                 let rows = listed(document, (shown, today), show_completed, &filter);
-                after.focus(focus::kept(&before, &rows, focused));
+                after.focus(focus::kept(listed_before, &rows, focused));
                 after
             })
             .expect("a transaction made from the document as it is fits it");
@@ -784,11 +839,6 @@ impl State {
         self.sidebar.toggle(near);
     }
 
-    /// Gives the keys to the sidebar while it shows, for `true`, or to the pane.
-    pub(super) fn focus_sidebar(&mut self, keys: bool) {
-        self.sidebar.focus(keys);
-    }
-
     /// Keeps the sidebar's focus on an entry once a message may have changed the tree.
     pub(super) fn settle_sidebar(&mut self) {
         self.sidebar.settle(&sidebar::entries(&self.document));
@@ -799,9 +849,9 @@ impl State {
     /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting,
     /// outdenting, converting and setting its dates, each one step to undo, opening Move to for
     /// it or the attachments panel on it, and opening the entry in the pane, `Enter` giving the
-    /// pane the keys; a view's entry is only opened. Quitting, undo and redo, the Navigator, the
-    /// sidebar's own commands, going home, back and
-    /// forward and the conflict prompt's commands pass to the app; every other command does
+    /// pane the keys, or in a new pane, which gets them; a view's entry is only opened. Quitting,
+    /// undo and redo, the Navigator, the sidebar's own commands, focusing a pane, going home, back
+    /// and forward and the conflict prompt's commands pass to the app; every other command does
     /// nothing.
     pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
         let passes = matches!(
@@ -811,8 +861,9 @@ impl State {
                 | Command::Redo
                 | Command::Navigator
                 | Command::Sidebar
-                | Command::FocusSidebar
-                | Command::FocusPane
+                | Command::FocusLeft
+                | Command::FocusRight
+                | Command::FocusPane(_)
                 | Command::Shortcuts
                 | Command::ScrollShortcuts(_)
                 | Command::Go(Go::Home | Go::Back | Go::Forward | Go::View(_))
@@ -840,6 +891,12 @@ impl State {
                 self.sidebar.focus(false);
             }
             (Command::Go(Go::Into), Some(shown)) => self.show(shown, None),
+            (Command::OpenInNewPane, Some(shown)) => {
+                self.open_pane(Visit {
+                    shown,
+                    focused: None,
+                });
+            }
             (Command::RenameContainer, Some(Shown::Container(id))) => {
                 self.editing = Editing::existing(&self.document, id, self.pane().selection.clone());
             }
@@ -897,14 +954,14 @@ impl State {
 
     /// Shows completed items, or hides them again, moving the focus on when its row hides.
     pub(super) fn toggle_show_completed(&mut self) {
-        let before = self.rows();
+        let before = self.listings();
         self.pane_mut().show_completed = !self.pane().show_completed;
         self.settle(&before);
     }
 
     /// Takes back the latest change and restores the selection from before it.
     pub(super) fn undo(&mut self) {
-        let before = self.rows();
+        let before = self.listings();
         let restored = self
             .history
             .undo(&mut self.document)
@@ -914,7 +971,7 @@ impl State {
 
     /// Makes the latest change taken back again and restores the selection from after it.
     pub(super) fn redo(&mut self) {
-        let before = self.rows();
+        let before = self.listings();
         let restored = self
             .history
             .redo(&mut self.document)
@@ -922,19 +979,28 @@ impl State {
         self.restore(restored, &before);
     }
 
-    /// Selects `selection`, if there is one, keeping the focus on a row shown.
-    fn restore(&mut self, selection: Option<Selection>, before: &[Row]) {
+    /// Selects `selection` in the pane with the keys, if there is one, keeping each pane's focus
+    /// on a row shown.
+    fn restore(&mut self, selection: Option<Selection>, before: &[Vec<Row>]) {
         if let Some(selection) = selection {
             self.pane_mut().selection = selection;
             self.settle(before);
         }
     }
 
-    /// Keeps the focus on a row now that the rows `before` have changed, and when the container
-    /// shown no longer opens gives way to the nearest one above it that does.
-    fn settle(&mut self, before: &[Row]) {
+    /// Keeps each pane's focus on a row now that the rows `before` it listed have changed, and
+    /// has a pane whose container shown no longer opens give way to the nearest one above it that
+    /// does, so that an edit in one pane shows in every pane at once (FR-PANE-01).
+    fn settle(&mut self, before: &[Vec<Row>]) {
         let (document, today) = (&self.document, self.today);
-        self.pane.settle(document, today, before);
+        let panes = self
+            .left
+            .iter_mut()
+            .chain([&mut self.pane])
+            .chain(&mut self.right);
+        for (pane, before) in panes.zip(before) {
+            pane.settle(document, today, before);
+        }
     }
 
     /// Shows the place `to` says.
@@ -942,23 +1008,8 @@ impl State {
         let document = &self.document;
         match to {
             Go::Into => {
-                let focused = self.pane().selection.focused();
-                let row = self
-                    .rows()
-                    .into_iter()
-                    .find(|row| Some(row.id()) == focused);
-                match row {
-                    Some(Row::Section(id) | Row::Project(id)) => {
-                        if container::opens(document, id) {
-                            self.open(id, None);
-                        }
-                    }
-                    Some(Row::Task { id, .. }) if self.container().is_none() => {
-                        if let Some(listing) = container::listing(document, id) {
-                            self.open(listing, Some(id));
-                        }
-                    }
-                    _ => {}
+                if let Some(visit) = self.inside_focused() {
+                    self.show(visit.shown, visit.focused);
                 }
             }
             Go::Up => {
@@ -980,6 +1031,125 @@ impl State {
         }
     }
 
+    /// Where going into the focused row leads: the section or project it is, when that opens, or
+    /// in a view the container listing its task, focused on it.
+    fn inside_focused(&self) -> Option<Visit> {
+        let document = &self.document;
+        let focused = self.pane().selection.focused();
+        let row = self
+            .rows()
+            .into_iter()
+            .find(|row| Some(row.id()) == focused)?;
+        match row {
+            Row::Section(id) | Row::Project(id) => {
+                container::opens(document, id).then_some(Visit {
+                    shown: Shown::Container(id),
+                    focused: None,
+                })
+            }
+            Row::Task { id, .. } if self.container().is_none() => container::listing(document, id)
+                .map(|listing| Visit {
+                    shown: Shown::Container(listing),
+                    focused: Some(id),
+                }),
+            Row::Task { .. } => None,
+        }
+    }
+
+    /// Opens what the focused row leads into, else the place the pane shows focused where it is,
+    /// in a new pane right of the one with the keys, which gets them (FR-PANE-02).
+    pub(super) fn open_in_new_pane(&mut self) {
+        let visit = self.inside_focused().unwrap_or_else(|| self.pane().visit());
+        self.open_pane(visit);
+    }
+
+    /// Adds a pane showing what `visit` shows right of the one with the keys and gives it the
+    /// keys. It shows completed items when that pane does, and has no history and no tag filter.
+    fn open_pane(&mut self, visit: Visit) {
+        let pane = Pane::new(
+            &self.document,
+            self.today,
+            visit,
+            self.pane().show_completed,
+        );
+        self.left.push(mem::replace(&mut self.pane, pane));
+        self.sidebar.focus(false);
+    }
+
+    /// Closes the pane with the keys, giving them to the pane on its left, or on its right when it
+    /// was the first. The only pane stays (FR-PANE-02).
+    pub(super) fn close_pane(&mut self) {
+        let next = self
+            .left
+            .pop()
+            .or_else(|| (!self.right.is_empty()).then(|| self.right.remove(0)));
+        if let Some(next) = next {
+            self.pane = next;
+        }
+    }
+
+    /// Gives the keys to the pane numbered `number`, counted from 1 on the left, when there is
+    /// one (FR-PANE-02).
+    pub(super) fn focus_pane(&mut self, number: usize) {
+        let Some(index) = number.checked_sub(1) else {
+            return;
+        };
+        if index > self.left.len() + self.right.len() {
+            return;
+        }
+        while self.left.len() > index {
+            self.step_left();
+        }
+        while self.left.len() < index {
+            self.step_right();
+        }
+        self.sidebar.focus(false);
+    }
+
+    /// Gives the keys to the pane on the left of the one with them, or from the first pane to the
+    /// sidebar while it shows (FR-PANE-02, FR-VIEW-10).
+    pub(super) fn focus_left(&mut self) {
+        if self.sidebar.has_keys() {
+            return;
+        }
+        if self.left.is_empty() {
+            self.sidebar.focus(true);
+        } else {
+            self.step_left();
+        }
+    }
+
+    /// Gives the keys from the sidebar back to the pane that had them, or to the pane on the right
+    /// of the one with them (FR-PANE-02, FR-VIEW-10).
+    pub(super) fn focus_right(&mut self) {
+        if self.sidebar.has_keys() {
+            self.sidebar.focus(false);
+        } else {
+            self.step_right();
+        }
+    }
+
+    /// Gives the keys to the pane on the left, if there is one.
+    fn step_left(&mut self) {
+        if let Some(left) = self.left.pop() {
+            self.right.insert(0, mem::replace(&mut self.pane, left));
+        }
+    }
+
+    /// Gives the keys to the pane on the right, if there is one.
+    fn step_right(&mut self) {
+        if !self.right.is_empty() {
+            let right = self.right.remove(0);
+            self.left.push(mem::replace(&mut self.pane, right));
+        }
+    }
+
+    /// Has the pane with the keys keep `width`, as the frontend measures it, from now on
+    /// (FR-PANE-02).
+    pub(super) fn set_pane_width(&mut self, width: u16) {
+        self.pane_mut().width = Some(width);
+    }
+
     /// Opens the Navigator on where the pane is, closing Move to, the date prompt and the tag
     /// picker, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
@@ -992,8 +1162,8 @@ impl State {
         };
     }
 
-    /// Applies `input` to the open Navigator: choosing a place closes it and opens the place.
-    /// Nothing happens while it is closed.
+    /// Applies `input` to the open Navigator: choosing a place closes it and opens the place in
+    /// the pane, or in a new pane (FR-PANE-02). Nothing happens while it is closed.
     pub(super) fn navigator_input(&mut self, input: PickerInput) {
         let Some(picked) = self
             .navigator
@@ -1003,10 +1173,16 @@ impl State {
             return;
         };
         self.navigator = None;
-        match picked {
-            Picked::Chosen(Stop::Place(place)) => self.open(place.id, None),
-            Picked::Chosen(Stop::View(view)) => self.go(Go::View(view)),
-            Picked::Dismissed => {}
+        if let Picked::Chosen(stop) = picked {
+            let visit = Visit {
+                shown: stop.shown(),
+                focused: None,
+            };
+            if input == PickerInput::ChooseInNewPane {
+                self.open_pane(visit);
+            } else {
+                self.show(visit.shown, visit.focused);
+            }
         }
     }
 
@@ -2302,6 +2478,245 @@ mod tests {
         assert_eq!(state.notice(), Some(&Notice::EmptyTrash(1)));
         state.empty_trash(true);
         assert_eq!(state.document().node(inbox_task), None, "emptied");
+        Ok(())
+    }
+
+    /// What each pane shows and focuses, left to right.
+    fn panes(state: &State) -> Vec<(Shown, Option<ItemId>)> {
+        state
+            .panes()
+            .map(|pane| (pane.shown(), pane.selection().focused()))
+            .collect()
+    }
+
+    // FR-PANE-01, FR-PANE-02
+    #[test]
+    fn the_focused_row_opens_in_a_new_pane_with_its_own_focus_and_history()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.toggle_show_completed();
+        state.pane_mut().selection.focus(Some(site));
+        state.open_in_new_pane();
+        assert_eq!(state.current_pane(), 1);
+        assert_eq!(
+            panes(&state),
+            [
+                (Shown::Container(work), Some(site)),
+                (Shown::Container(site), Some(in_site))
+            ]
+        );
+        assert!(state.shows_completed(), "as the pane it opened from");
+        state.go(Go::Back);
+        assert_eq!(state.container(), Some(site), "a new pane has no history");
+        state.open_in_new_pane();
+        assert_eq!(
+            panes(&state).get(1..),
+            Some(&[(Shown::Container(site), Some(in_site)); 2][..]),
+            "a task opens where it is"
+        );
+        state.toggle_show_completed();
+        state.focus_pane(1);
+        assert_eq!(at(&state), (Some(work), Some(site)));
+        assert!(
+            state.shows_completed(),
+            "each pane shows completed items or not"
+        );
+        state.go(Go::Back);
+        assert_eq!(state.container(), Some(state.document().inbox()));
+        Ok(())
+    }
+
+    // FR-PANE-02, FR-VIEW-06
+    #[test]
+    fn a_view_shown_or_a_task_in_it_opens_in_a_new_pane() -> Result<(), PlacementError> {
+        let Dated {
+            mut state, overdue, ..
+        } = dated()?;
+        state.go(Go::View(View::Today));
+        state.pane_mut().selection.focus(Some(overdue));
+        let mut into = state.clone();
+        into.go(Go::Into);
+        state.open_in_new_pane();
+        assert_eq!(at(&state), at(&into));
+        state.go(Go::View(View::Logbook));
+        state.open_in_new_pane();
+        assert_eq!(
+            state.shown(),
+            Shown::View(View::Logbook),
+            "with no row focused"
+        );
+        assert_eq!(state.panes().count(), 3);
+        Ok(())
+    }
+
+    // FR-PANE-02
+    #[test]
+    fn panes_are_focused_by_number_or_beside_and_closed() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            site,
+            ..
+        } = fixture()?;
+        let inbox = state.document().inbox();
+        state.open_in_new_pane();
+        navigate(&mut state, "Work");
+        state.open_in_new_pane();
+        navigate(&mut state, "Site");
+        let shown = |state: &State| -> Vec<Shown> {
+            panes(state).into_iter().map(|(shown, _)| shown).collect()
+        };
+        let [home, work, site] = [inbox, work, site].map(Shown::Container);
+        assert_eq!(shown(&state), [home, work, site]);
+        for (number, current) in [(1, 0), (0, 0), (4, 0), (3, 2), (2, 1)] {
+            state.focus_pane(number);
+            assert_eq!(state.current_pane(), current, "pane {number}");
+        }
+        state.focus_right();
+        state.focus_right();
+        assert_eq!(state.current_pane(), 2, "the last pane stays");
+        state.focus_left();
+        assert_eq!(state.shown(), work);
+        state.close_pane();
+        assert_eq!((shown(&state), state.current_pane()), (vec![home, site], 0));
+        state.close_pane();
+        assert_eq!((shown(&state), state.current_pane()), (vec![site], 0));
+        state.close_pane();
+        assert_eq!(shown(&state), [site], "the only pane stays");
+        state.focus_left();
+        state.focus_right();
+        assert_eq!(state.current_pane(), 0);
+        state.set_pane_width(40);
+        assert_eq!(state.pane_view().width(), Some(40));
+        Ok(())
+    }
+
+    // FR-PANE-01
+    #[test]
+    fn a_change_in_one_pane_shows_in_every_pane_at_once() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            loose,
+            section,
+            in_section,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Site");
+        state.open_in_new_pane();
+        navigate(&mut state, "Work");
+        state.open_in_new_pane();
+        state.pane_mut().selection.focus(Some(section));
+        state.delete(TODAY);
+        assert_eq!(
+            panes(&state),
+            [
+                (Shown::Container(site), Some(in_site)),
+                (Shown::Container(work), Some(loose)),
+                (Shown::Container(work), Some(site)),
+            ],
+            "the other panes keep their focus"
+        );
+        state.delete(TODAY);
+        assert_eq!(
+            panes(&state),
+            [(Shown::Container(work), Some(loose)); 3],
+            "a pane showing a container gone to the Trash gives way"
+        );
+        state.focus_pane(1);
+        state.undo();
+        assert_eq!(
+            state.selection().focused(),
+            Some(site),
+            "undo restores the selection here"
+        );
+        state.undo();
+        let in_section_shown = state
+            .panes()
+            .nth(2)
+            .is_some_and(|pane| pane.rows().iter().any(|row| row.id() == in_section));
+        assert!(in_section_shown);
+        let rows = state.panes().nth(1).map(|pane| pane.rows());
+        assert_eq!(rows.map(|rows| rows.len()), Some(state.rows().len()));
+        Ok(())
+    }
+
+    // FR-PANE-01, FR-OPS-08
+    #[test]
+    fn grouping_in_one_pane_moves_the_focus_on_in_the_others() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            loose,
+            section,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
+        state.pane_mut().selection.focus(Some(loose));
+        state.open_in_new_pane();
+        state.pane_mut().selection.focus(Some(loose));
+        state.group(ItemKind::Project);
+        assert_eq!(
+            panes(&state).first(),
+            Some(&(Shown::Container(work), Some(section))),
+            "the grouped task is no row here any more"
+        );
+        state.edit_input(EditInput::Done);
+        assert_eq!(
+            panes(&state).first(),
+            Some(&(Shown::Container(work), Some(section))),
+            "left unnamed, the group is undone and the focus stays"
+        );
+        state.focus_pane(1);
+        state.pane_mut().selection.focus(Some(loose));
+        state.focus_pane(2);
+        state.group(ItemKind::Project);
+        for c in "P".chars() {
+            state.edit_input(EditInput::Text(TextEdit::Insert(c)));
+        }
+        state.edit_input(EditInput::Done);
+        assert_eq!(
+            panes(&state).first(),
+            Some(&(Shown::Container(work), Some(section)))
+        );
+        Ok(())
+    }
+
+    // FR-PANE-02, FR-VIEW-07
+    #[test]
+    fn the_navigator_opens_a_place_in_a_new_pane_and_move_to_does_not() -> Result<(), PlacementError>
+    {
+        let Fixture {
+            mut state,
+            site,
+            in_site,
+            ..
+        } = fixture()?;
+        state.toggle_navigator();
+        for c in "Site".chars() {
+            state.navigator_input(PickerInput::Edit(TextEdit::Insert(c)));
+        }
+        state.navigator_input(PickerInput::ChooseInNewPane);
+        assert_eq!(state.current_pane(), 1);
+        assert_eq!(at(&state), (Some(site), Some(in_site)));
+        assert!(state.navigator().is_none());
+        state.open_move_to();
+        state.move_to_input(PickerInput::ChooseInNewPane);
+        assert!(state.move_to().is_some(), "Move to opens nothing in a pane");
+        state.move_to_input(PickerInput::Dismiss);
+        state.open_tags();
+        state.tags_input(PickerInput::ChooseInNewPane);
+        assert!(state.tags().is_some(), "nor does the tag picker");
+        assert_eq!(state.panes().count(), 2);
         Ok(())
     }
 }

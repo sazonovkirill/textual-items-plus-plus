@@ -100,10 +100,24 @@ pub enum Command {
     ClearTagFilter,
     /// Show the sidebar and give it the keys, or hide it when it has them (FR-VIEW-10).
     Sidebar,
-    /// Give the keys to the sidebar while it shows (FR-VIEW-10).
-    FocusSidebar,
-    /// Give the keys back to the pane (FR-VIEW-10).
-    FocusPane,
+    /// Give the keys to the pane on the left, or from the first pane to the sidebar while it
+    /// shows (FR-PANE-02, FR-VIEW-10).
+    FocusLeft,
+    /// Give the keys to the pane on the right, or from the sidebar back to the pane (FR-PANE-02,
+    /// FR-VIEW-10).
+    FocusRight,
+    /// Give the keys to the pane with this number, counted from 1 on the left (FR-PANE-02).
+    FocusPane(usize),
+    /// Show what the focused row opens, else the place shown, in a new pane right of the one with
+    /// the keys, which gets them (FR-PANE-02).
+    OpenInNewPane,
+    /// Close the pane with the keys, unless it is the only one (FR-PANE-02).
+    ClosePane,
+    /// Make the pane with the keys narrower (FR-PANE-02).
+    Narrow,
+    /// Make the pane with the keys wider, as [`Narrow`](Self::Narrow) makes it narrower
+    /// (FR-PANE-02).
+    Widen,
     /// Show the shortcuts panel, or hide it (FR-KEY-03).
     Shortcuts,
     /// Scroll the shortcuts panel a page this way (FR-KEY-03).
@@ -506,13 +520,78 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::FocusSidebar,
-        title: "Focus Sidebar",
+        command: Command::FocusLeft,
+        title: "Focus Pane Left",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::FocusPane,
-        title: "Focus Pane",
+        command: Command::FocusRight,
+        title: "Focus Pane Right",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(1),
+        title: "Focus Pane 1",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(2),
+        title: "Focus Pane 2",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(3),
+        title: "Focus Pane 3",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(4),
+        title: "Focus Pane 4",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(5),
+        title: "Focus Pane 5",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(6),
+        title: "Focus Pane 6",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(7),
+        title: "Focus Pane 7",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(8),
+        title: "Focus Pane 8",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::FocusPane(9),
+        title: "Focus Pane 9",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::OpenInNewPane,
+        title: "Open in New Pane",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ClosePane,
+        title: "Close Pane",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Narrow,
+        title: "Narrow Pane",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Widen,
+        title: "Widen Pane",
         context: Context::Navigate,
     },
     Entry {
@@ -638,10 +717,20 @@ mod tests {
         assert_eq!(context(Command::Navigator), Some(Context::Global));
     }
 
-    // FR-VIEW-10
+    // FR-VIEW-10, FR-PANE-02
     #[test]
-    fn the_sidebar_commands_are_navigate_commands() {
-        for command in [Command::Sidebar, Command::FocusSidebar, Command::FocusPane] {
+    fn the_sidebar_and_pane_commands_are_navigate_commands() {
+        for command in [
+            Command::Sidebar,
+            Command::FocusLeft,
+            Command::FocusRight,
+            Command::FocusPane(1),
+            Command::FocusPane(9),
+            Command::OpenInNewPane,
+            Command::ClosePane,
+            Command::Narrow,
+            Command::Widen,
+        ] {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);
             assert_eq!(
                 entry.map(|entry| entry.context),

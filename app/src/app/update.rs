@@ -28,6 +28,9 @@ pub enum Message {
     DatePrompt(DateInput),
     /// The user did something in the open attachments panel (FR-ATT-01).
     Attachments(AttachmentsInput),
+    /// The pane with the keys keeps this width from now on, as the frontend measures it, for
+    /// [`Command::Narrow`] and [`Command::Widen`] (FR-PANE-02).
+    PaneWidth(u16),
     /// The frontend's clock reads this, counted from any fixed moment, such as the start.
     Tick(Duration),
     /// The process was told to end, as by `SIGTERM` or `SIGHUP`: save first, then end anyway
@@ -71,6 +74,12 @@ pub enum Effect {
     /// Scroll the shortcuts panel a page this way, as far as it goes, while it shows; how much a
     /// page is depends on how the frontend draws it (FR-KEY-03).
     ScrollShortcuts(Direction),
+    /// Make the pane with the keys narrower; how wide it is drawn only the frontend knows, so it
+    /// answers with the width it keeps from now on as [`Message::PaneWidth`] (FR-PANE-02).
+    NarrowPane,
+    /// Make the pane with the keys wider, as [`NarrowPane`](Self::NarrowPane) makes it narrower
+    /// (FR-PANE-02).
+    WidenPane,
 }
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
@@ -157,8 +166,14 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Command(Command::FilterTags) => state.open_tag_filter(),
         Message::Command(Command::ClearTagFilter) => state.clear_tag_filter(),
         Message::Command(Command::Sidebar) => state.toggle_sidebar(),
-        Message::Command(Command::FocusSidebar) => state.focus_sidebar(true),
-        Message::Command(Command::FocusPane) => state.focus_sidebar(false),
+        Message::Command(Command::FocusLeft) => state.focus_left(),
+        Message::Command(Command::FocusRight) => state.focus_right(),
+        Message::Command(Command::FocusPane(number)) => state.focus_pane(number),
+        Message::Command(Command::OpenInNewPane) => state.open_in_new_pane(),
+        Message::Command(Command::ClosePane) => state.close_pane(),
+        Message::Command(Command::Narrow) => return vec![Effect::NarrowPane],
+        Message::Command(Command::Widen) => return vec![Effect::WidenPane],
+        Message::PaneWidth(width) => state.set_pane_width(width),
         Message::Command(Command::Shortcuts) => state.toggle_shortcuts(),
         Message::Command(Command::ScrollShortcuts(direction)) => {
             return vec![Effect::ScrollShortcuts(direction)];
@@ -497,7 +512,7 @@ mod tests {
             !state.sidebar_has_keys() && state.sidebar().is_some(),
             "Enter gives the keys to the pane"
         );
-        give(&mut state, Command::FocusSidebar);
+        give(&mut state, Command::FocusLeft);
         give(&mut state, Command::Navigator);
         assert!(state.navigator().is_some(), "the Navigator passes");
         Ok(())
@@ -584,11 +599,11 @@ mod tests {
             &before,
             "nothing is pasted from the sidebar"
         );
-        give(&mut state, Command::FocusPane);
+        give(&mut state, Command::FocusRight);
         assert!(!state.sidebar_has_keys() && state.sidebar().is_some());
         give(&mut state, Command::Focus(Focus::Last));
         assert_eq!(focused(&state), Some("b"), "the pane has the keys");
-        give(&mut state, Command::FocusSidebar);
+        give(&mut state, Command::FocusLeft);
         assert!(state.sidebar_has_keys());
         give(&mut state, Command::Sidebar);
         assert_eq!(state.sidebar(), None);
@@ -868,7 +883,7 @@ mod tests {
         past_the_views(&mut state);
         for command in [
             Command::Go(Go::Into),
-            Command::FocusPane,
+            Command::FocusRight,
             Command::Extend(Direction::Down),
             Command::GroupIntoSection,
         ] {
@@ -900,7 +915,7 @@ mod tests {
             ["b", "c", "a"],
             "left empty, nothing is grouped"
         );
-        give(&mut state, Command::FocusSidebar);
+        give(&mut state, Command::FocusLeft);
         give(&mut state, Command::Convert);
         assert_eq!(
             state
@@ -916,6 +931,48 @@ mod tests {
             Some(&Notice::Refused(Refusal::NoRoomForSection)),
             "a top-level project can't be a section"
         );
+        Ok(())
+    }
+
+    // FR-PANE-02, FR-VIEW-10
+    #[test]
+    fn panes_open_from_the_sidebar_and_take_the_keys_beside_it() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::Focus(Focus::Last));
+        give(&mut state, Command::OpenInNewPane);
+        assert_eq!((state.current_pane(), state.container()), (1, Some(work)));
+        assert!(!state.sidebar_has_keys(), "the new pane has the keys");
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::FocusLeft);
+        assert!(
+            state.sidebar_has_keys(),
+            "the sidebar is left of the first pane"
+        );
+        give(&mut state, Command::FocusLeft);
+        assert!(state.sidebar_has_keys());
+        give(&mut state, Command::FocusPane(2));
+        assert_eq!((state.current_pane(), state.sidebar_has_keys()), (1, false));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::FocusRight);
+        assert_eq!((state.current_pane(), state.sidebar_has_keys()), (0, false));
+        let before = state.clone();
+        assert_eq!(
+            update(&mut state, Message::Command(Command::Narrow), TODAY),
+            [Effect::NarrowPane]
+        );
+        assert_eq!(
+            update(&mut state, Message::Command(Command::Widen), TODAY),
+            [Effect::WidenPane]
+        );
+        assert_eq!(state, before, "the frontend answers with a width");
+        assert_eq!(update(&mut state, Message::PaneWidth(42), TODAY), []);
+        assert_eq!(state.pane_view().width(), Some(42));
+        give(&mut state, Command::ClosePane);
+        assert_eq!((state.panes().count(), state.container()), (1, Some(work)));
         Ok(())
     }
 }

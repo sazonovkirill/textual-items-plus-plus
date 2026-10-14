@@ -12,6 +12,7 @@ mod field;
 mod file;
 mod keymap;
 mod markdown;
+mod panes;
 mod picker;
 mod shortcuts;
 mod sidebar;
@@ -84,8 +85,10 @@ pub struct Tui {
     keymap: Keymap,
     theme: Theme,
     icons: IconSet,
-    /// The first line of the container pane's content on screen.
-    top: usize,
+    /// The first line of each pane's content on screen, left to right.
+    tops: Vec<usize>,
+    /// The first pane on screen, when they do not all fit.
+    first: usize,
     /// How the attachments panel is scrolled.
     panel: Scrolled,
     /// Where the app was last drawn.
@@ -116,7 +119,8 @@ impl Tui {
             keymap: Keymap::default(),
             theme: BuiltIn::default().colors(),
             icons: IconSet::default(),
-            top: 0,
+            tops: vec![0],
+            first: 0,
             panel: Scrolled::default(),
             area: Rect::default(),
             quit: false,
@@ -344,10 +348,33 @@ impl Tui {
         }
     }
 
-    /// Gives `message` to the core and carries out its effects.
+    /// Gives `message` to the core and carries out its effects, keeping each pane's scroll with
+    /// it as panes open and close.
     fn update(&mut self, message: Message) {
+        let (panes, current) = (self.state.panes().count(), self.state.current_pane());
         for effect in app::update(&mut self.state, message, self.today) {
             self.run(effect);
+        }
+        let after = self.state.panes().count();
+        if after > panes {
+            let opened = self.state.current_pane().min(self.tops.len());
+            self.tops.insert(opened, 0);
+        } else if after < panes && current < self.tops.len() {
+            self.tops.remove(current);
+        }
+        self.tops.resize(after, 0);
+    }
+
+    /// The width the pane with the keys keeps, `wider` or narrower than drawn by a step, no
+    /// narrower than a pane is drawn and no wider than the room beside the sidebar (FR-PANE-02).
+    fn resized(&self, wider: bool) -> u16 {
+        let [panes, ..] = self.layout(self.area);
+        let [_, room] = split(self.strip(panes), self.state.sidebar().is_some());
+        let width = self.current_area(room).width;
+        if wider {
+            width.saturating_add(panes::STEP).min(room.width)
+        } else {
+            width.saturating_sub(panes::STEP).max(panes::MIN_WIDTH)
         }
     }
 
@@ -413,21 +440,48 @@ impl Tui {
             return Some(tags_popup(&view, &self.theme, self.icons).caret(panes));
         }
         let sidebar = self.state.sidebar();
-        let [side, pane] = split(self.strip(panes), sidebar.is_some());
+        let [side, room] = split(self.strip(panes), sidebar.is_some());
         if let Some(view) = sidebar.filter(|view| view.keys) {
             return SidebarPane::new(&self.state, view, &self.theme, self.icons).caret(side);
         }
-        ContainerPane::new(&self.state, self.today, &self.theme, self.icons)
-            .caret(pane_layout(pane)[2], self.top)
+        let top = self
+            .tops
+            .get(self.state.current_pane())
+            .copied()
+            .unwrap_or_default();
+        self.current_pane()
+            .caret(pane_layout(self.current_area(room))[2], top)
     }
 
     /// The columns the description being edited wraps in, as last drawn.
     fn description_columns(&self) -> usize {
         let [panes, _, _] = self.layout(self.area);
-        let [_, pane] = split(self.strip(panes), self.state.sidebar().is_some());
-        ContainerPane::new(&self.state, self.today, &self.theme, self.icons)
-            .description_columns(pane_layout(pane)[2])
+        let [_, room] = split(self.strip(panes), self.state.sidebar().is_some());
+        self.current_pane()
+            .description_columns(pane_layout(self.current_area(room))[2])
             .unwrap_or(usize::MAX)
+    }
+
+    /// The pane with the keys, to draw.
+    fn current_pane(&self) -> ContainerPane<'_> {
+        let pane = self.state.pane_view();
+        ContainerPane::new(&self.state, pane, true, self.today, &self.theme, self.icons)
+    }
+
+    /// Where each pane on screen is drawn over `room`, the panes' room beside the sidebar, with
+    /// its position among the panes.
+    fn pane_areas(&self, room: Rect) -> Vec<(usize, Rect)> {
+        let widths: Vec<_> = self.state.panes().map(|pane| pane.width()).collect();
+        panes::strip(room, &widths, self.state.current_pane(), self.first)
+    }
+
+    /// Where the pane with the keys is drawn over `room`, the panes' room beside the sidebar.
+    fn current_area(&self, room: Rect) -> Rect {
+        let current = self.state.current_pane();
+        self.pane_areas(room)
+            .into_iter()
+            .find(|&(index, _)| index == current)
+            .map_or(room, |(_, area)| area)
     }
 
     /// The columns the note being edited wraps in, as last drawn.
@@ -464,6 +518,8 @@ impl Tui {
                 let branches = self.clipboard.branches();
                 self.update(Message::Paste(side, branches));
             }
+            Effect::NarrowPane => self.update(Message::PaneWidth(self.resized(false))),
+            Effect::WidenPane => self.update(Message::PaneWidth(self.resized(true))),
             Effect::ScrollShortcuts(direction) => {
                 let (scroll, _) = &mut self.shortcuts_scroll;
                 *scroll = match direction {
@@ -733,37 +789,67 @@ fn tags_popup<'a>(
 }
 
 impl Widget for &mut Tui {
-    /// Draws the pane, below its breadcrumbs and a rule, beside the sidebar while it shows and
-    /// the shortcuts panel at the right while it shows, over the status line, scrolling the pane to keep the focus in view, the date prompt between
+    /// Draws the panes side by side, a dim rule apart, each below its breadcrumbs and a rule,
+    /// beside the sidebar while it shows and the shortcuts panel at the right while it shows, over
+    /// the status line, scrolling each pane to keep its focus in view, the date prompt between
     /// them while it is open, and the Navigator, Move to, the attachments panel or the conflict
     /// prompt over them while it is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
         let [panes, prompt, status] = self.layout(area);
         let sidebar = self.state.sidebar();
-        let [side, pane] = split(self.strip(panes), sidebar.is_some());
+        let [side, room] = split(self.strip(panes), sidebar.is_some());
         if let Some(view) = sidebar {
             SidebarPane::new(&self.state, view, &self.theme, self.icons).render(side, buf);
         }
-        let [crumbs, rule, pane] = pane_layout(pane);
-        let path = self.state.path();
-        let view = match self.state.shown() {
-            Shown::View(view) => Some(view),
-            Shown::Container(_) => None,
-        };
-        Crumbs::new(self.state.document(), &path, view, &self.theme, self.icons)
-            .filter(self.state.tag_filter())
-            .render(crumbs, buf);
-        Line::styled(
-            "─".repeat(usize::from(rule.width)),
-            Style::new().fg(self.theme.rule),
-        )
-        .render(rule, buf);
-        ContainerPane::new(&self.state, self.today, &self.theme, self.icons).render(
-            pane,
-            buf,
-            &mut self.top,
-        );
+        let placed = self.pane_areas(room);
+        if let Some(&(first, _)) = placed.first() {
+            self.first = first;
+        }
+        let views: Vec<_> = self.state.panes().collect();
+        let current = self.state.current_pane();
+        for (index, (&pane, top)) in views.iter().zip(&mut self.tops).enumerate() {
+            let Some(&(_, area)) = placed.iter().find(|&&(placed, _)| placed == index) else {
+                continue;
+            };
+            let [crumbs, rule, rows] = pane_layout(area);
+            let path = pane.path();
+            let view = match pane.shown() {
+                Shown::View(view) => Some(view),
+                Shown::Container(_) => None,
+            };
+            let mut header =
+                Crumbs::new(self.state.document(), &path, view, &self.theme, self.icons)
+                    .filter(pane.tag_filter());
+            if views.len() > 1 {
+                header = header.number(index + 1);
+            }
+            if index != current {
+                header = header.dimmed();
+            }
+            header.render(crumbs, buf);
+            Line::styled(
+                "─".repeat(usize::from(rule.width)),
+                Style::new().fg(self.theme.rule),
+            )
+            .render(rule, buf);
+            ContainerPane::new(
+                &self.state,
+                pane,
+                index == current,
+                self.today,
+                &self.theme,
+                self.icons,
+            )
+            .render(rows, buf, top);
+            if area.right() < room.right() {
+                for y in area.top()..area.bottom() {
+                    if let Some(cell) = buf.cell_mut((area.right(), y)) {
+                        cell.set_symbol("│").set_fg(self.theme.rule);
+                    }
+                }
+            }
+        }
         let shortcuts = self.shortcuts_area(panes);
         self.render_shortcuts(shortcuts, buf);
         if let Some(view) = self.state.navigator() {

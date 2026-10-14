@@ -17,7 +17,7 @@ use ratatui::{
 use super::{Icon, IconSet, Theme, field};
 use crate::{
     app::{
-        Part, Row, Selection, State, TextField,
+        PaneView, Part, Row, Selection, State, TextField,
         view::{self, Group, Heading, Locating, Shown, View},
     },
     domain::{Document, Item, ItemId, ItemKind, Node, dates},
@@ -48,17 +48,26 @@ pub(super) struct ContainerPane<'a> {
 }
 
 impl<'a> ContainerPane<'a> {
-    /// The pane of the container or view `state` shows on `today`, drawn in `theme` with `icons`,
-    /// with the title edited and the focus marked unless the sidebar has the keys.
-    pub(super) fn new(state: &'a State, today: Date, theme: &'a Theme, icons: IconSet) -> Self {
+    /// `pane` of `state`, showing its container or view on `today`, drawn in `theme` with
+    /// `icons`; when it is the `current` pane, the one with the keys, with the title edited and
+    /// the focus marked unless the sidebar has the keys.
+    pub(super) fn new(
+        state: &'a State,
+        pane: PaneView<'a>,
+        current: bool,
+        today: Date,
+        theme: &'a Theme,
+        icons: IconSet,
+    ) -> Self {
+        let keys = current && !state.sidebar_has_keys();
         Self {
             document: state.document(),
-            shown: state.shown(),
-            rows: state.rows(),
-            groups: state.groups(),
-            selection: state.selection(),
-            editing: state.editing().filter(|_| !state.sidebar_has_keys()),
-            keys: !state.sidebar_has_keys(),
+            shown: pane.shown(),
+            rows: pane.rows(),
+            groups: pane.groups(),
+            selection: pane.selection(),
+            editing: state.editing().filter(|_| keys),
+            keys,
             today,
             theme,
             icons,
@@ -909,7 +918,14 @@ mod tests {
         let today = app::Command::Go(app::Go::View(View::Today));
         app::update(&mut state, app::Message::Command(today), TODAY);
         let theme = BuiltIn::default().colors();
-        let pane = ContainerPane::new(&state, TODAY, &theme, IconSet::Plain);
+        let pane = ContainerPane::new(
+            &state,
+            state.pane_view(),
+            true,
+            TODAY,
+            &theme,
+            IconSet::Plain,
+        );
         let mut buf = Buffer::empty(Rect::new(0, 0, 40, 8));
         pane.render(buf.area, &mut buf, &mut 0);
         assert_eq!(
@@ -938,7 +954,14 @@ mod tests {
         let trash = app::Command::Go(app::Go::View(View::Trash));
         app::update(&mut state, app::Message::Command(trash), TODAY);
         let theme = BuiltIn::default().colors();
-        let pane = ContainerPane::new(&state, TODAY, &theme, IconSet::Plain);
+        let pane = ContainerPane::new(
+            &state,
+            state.pane_view(),
+            true,
+            TODAY,
+            &theme,
+            IconSet::Plain,
+        );
         let mut buf = Buffer::empty(Rect::new(0, 0, 40, 6));
         pane.render(buf.area, &mut buf, &mut 0);
         assert_eq!(
@@ -964,7 +987,14 @@ mod tests {
         let extend = app::Message::Command(app::Command::Extend(app::Direction::Down));
         app::update(&mut state, extend, TODAY);
         let theme = BuiltIn::default().colors();
-        let pane = ContainerPane::new(&state, TODAY, &theme, IconSet::Plain);
+        let pane = ContainerPane::new(
+            &state,
+            state.pane_view(),
+            true,
+            TODAY,
+            &theme,
+            IconSet::Plain,
+        );
         let mut buf = Buffer::empty(Rect::new(0, 0, 30, 8));
         pane.render(buf.area, &mut buf, &mut 0);
         let rows = lines(&buf);

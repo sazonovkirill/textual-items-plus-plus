@@ -98,8 +98,13 @@ impl KeyGroup {
             | Command::FilterTags
             | Command::ClearTagFilter
             | Command::Sidebar
-            | Command::FocusSidebar
-            | Command::FocusPane
+            | Command::FocusLeft
+            | Command::FocusRight
+            | Command::FocusPane(_)
+            | Command::OpenInNewPane
+            | Command::ClosePane
+            | Command::Narrow
+            | Command::Widen
             | Command::Shortcuts
             | Command::ScrollShortcuts(_) => Self::View,
             Command::KeepMine | Command::TakeTheirs | Command::ShowDiff => Self::Conflict,

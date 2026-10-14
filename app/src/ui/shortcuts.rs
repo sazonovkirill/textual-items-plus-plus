@@ -140,6 +140,7 @@ fn picker_name(input: PickerInput) -> String {
         PickerInput::Previous => "Previous Match".to_owned(),
         PickerInput::Next => "Next Match".to_owned(),
         PickerInput::Choose => "Choose".to_owned(),
+        PickerInput::ChooseInNewPane => "Open in New Pane".to_owned(),
         PickerInput::Dismiss => "Close".to_owned(),
     }
 }
@@ -409,7 +410,7 @@ mod tests {
                 .map(|(heading, keys)| (heading, keys.len()))
                 .collect()
         };
-        assert_eq!(headings(Window::Picker), [("Picker", 4), ("Text", 16)]);
+        assert_eq!(headings(Window::Picker), [("Picker", 5), ("Text", 16)]);
         assert_eq!(
             headings(Window::DatePrompt),
             [("Date Prompt", 2), ("Text", 16)]
