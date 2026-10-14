@@ -30,6 +30,7 @@ mod shortcuts;
 mod sidebar;
 mod support;
 mod tagging;
+mod terminals;
 mod today;
 mod trash;
 mod upcoming;

@@ -57,14 +57,16 @@ impl<'a> DatePromptPanel<'a> {
     }
 
     /// Where the terminal's cursor goes when the panel is drawn over `area`: at the caret, or in
-    /// the last column inside the border when the text is wider.
-    pub(super) fn caret(&self, area: Rect) -> Position {
+    /// the last column inside the border when the text is wider; nowhere when the panel has no
+    /// room inside its border.
+    pub(super) fn caret(&self, area: Rect) -> Option<Position> {
         let inner = Block::bordered().inner(area);
         let field = self.view.field;
         let before = field.text().get(..field.caret()).unwrap_or_default();
         let column = u16::try_from(Span::raw(before).width() + 1).unwrap_or(u16::MAX);
         let last = inner.right().saturating_sub(1);
-        Position::new(inner.x.saturating_add(column).min(last), inner.y)
+        (!inner.is_empty())
+            .then(|| Position::new(inner.x.saturating_add(column).min(last), inner.y))
     }
 
     /// The text typed after a space, its selection in the selection colors.
@@ -274,8 +276,19 @@ mod tests {
             };
             DatePromptPanel::new(&view, &theme).caret(area)
         };
-        assert_eq!(caret(""), Position::new(2, 11));
-        assert_eq!(caret("fri"), Position::new(5, 11));
-        assert_eq!(caret("next friday +1w"), Position::new(10, 11));
+        assert_eq!(caret(""), Some(Position::new(2, 11)));
+        assert_eq!(caret("fri"), Some(Position::new(5, 11)));
+        assert_eq!(caret("next friday +1w"), Some(Position::new(10, 11)));
+        let field = TextField::new(String::new());
+        let view = DatePromptView {
+            kind: DateKind::Start,
+            field: &field,
+            date: Ok(None),
+        };
+        assert_eq!(
+            DatePromptPanel::new(&view, &theme).caret(Rect::new(0, 0, 1, 1)),
+            None,
+            "a prompt with no room inside its border has no caret (N-PORT-02)"
+        );
     }
 }

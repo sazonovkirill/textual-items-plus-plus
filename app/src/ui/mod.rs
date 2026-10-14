@@ -531,22 +531,22 @@ impl Tui {
                 .caret(AttachmentsPanel::area(self.strip(panes)), self.panel.top);
         }
         if let Some(view) = self.state.date_prompt() {
-            return Some(DatePromptPanel::new(&view, &self.theme).caret(prompt));
+            return DatePromptPanel::new(&view, &self.theme).caret(prompt);
         }
         if let Some(view) = self.state.navigator() {
-            return Some(navigator_popup(&view, &self.theme, self.icons()).caret(panes));
+            return navigator_popup(&view, &self.theme, self.icons()).caret(panes);
         }
         if let Some(view) = self.state.palette() {
-            return Some(palette_popup(&view, &self.theme, self.icons()).caret(panes));
+            return palette_popup(&view, &self.theme, self.icons()).caret(panes);
         }
         if let Some(view) = self.state.go_to_symbol() {
-            return Some(go_to_symbol_popup(&view, &self.theme, self.icons()).caret(panes));
+            return go_to_symbol_popup(&view, &self.theme, self.icons()).caret(panes);
         }
         if let Some(view) = self.state.move_to() {
-            return Some(move_to_popup(&view, &self.theme, self.icons()).caret(panes));
+            return move_to_popup(&view, &self.theme, self.icons()).caret(panes);
         }
         if let Some(view) = self.state.tags() {
-            return Some(tags_popup(&view, &self.theme, self.icons()).caret(panes));
+            return tags_popup(&view, &self.theme, self.icons()).caret(panes);
         }
         let sidebar = self.state.sidebar();
         let [side, room] = split(self.strip(panes), sidebar.is_some());

@@ -134,16 +134,18 @@ impl<'a, T> PickerPopup<'a, T> {
     }
 
     /// Where the terminal's cursor goes when the window is drawn over `area`: at the query's
-    /// caret, or at the window's last column when the query is wider than the window.
+    /// caret, or at the window's last column when the query is wider than the window; nowhere
+    /// when the window has no room inside its border (N-PORT-02).
     #[must_use]
-    pub fn caret(&self, area: Rect) -> Position {
+    pub fn caret(&self, area: Rect) -> Option<Position> {
         let inner = Block::bordered().inner(self.area(area));
         let query = self.view.query;
         let before = query.text().get(..query.caret()).unwrap_or_default();
         let column = Line::from(format!("{PROMPT}{before}")).width();
         let column = u16::try_from(column).unwrap_or(u16::MAX);
         let last = inner.right().saturating_sub(1);
-        Position::new(inner.x.saturating_add(column).min(last), inner.y)
+        (!inner.is_empty())
+            .then(|| Position::new(inner.x.saturating_add(column).min(last), inner.y))
     }
 
     /// The query line, its selection in the selection colors.
@@ -453,13 +455,20 @@ mod tests {
         let view = picker.view();
         let colors = theme();
         let popup = PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &colors);
-        assert_eq!(popup.caret(Rect::new(0, 0, 100, 30)), Position::new(17, 14));
+        assert_eq!(
+            popup.caret(Rect::new(0, 0, 100, 30)),
+            Some(Position::new(17, 14))
+        );
         let mut picker = Picker::<u8>::new(vec![]);
         typed(&mut picker, std::iter::repeat_n(TextEdit::Insert('x'), 200));
         let view = picker.view();
         let colors = theme();
         let popup = PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &colors);
-        assert_eq!(popup.caret(Rect::new(0, 0, 100, 30)), Position::new(88, 14));
+        assert_eq!(
+            popup.caret(Rect::new(0, 0, 100, 30)),
+            Some(Position::new(88, 14))
+        );
+        assert_eq!(popup.caret(Rect::default()), None, "no room, no caret");
     }
 
     // FR-VIEW-07
