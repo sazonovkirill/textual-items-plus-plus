@@ -20,11 +20,11 @@ use super::{
     date_prompt,
     edit_keys::{COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
     keymap::{Key, key_label},
-    picker, search, settings, text_keys,
+    picker, save_as, search, settings, text_keys,
 };
 use crate::app::{
     AttachmentsInput, DateInput, Direction, EditInput, Motion, Part, PickerInput, REGISTRY,
-    SearchInput, SettingsInput, TextEdit,
+    SaveAsInput, SearchInput, SettingsInput, TextEdit,
 };
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
@@ -46,6 +46,8 @@ pub(super) enum Window {
     Picker,
     /// The date prompt.
     DatePrompt,
+    /// The Save As prompt.
+    SaveAs,
     /// The settings window.
     Settings,
     /// Typing the words to search for.
@@ -61,6 +63,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
     let (heading, mut own): (_, Vec<(Key, String)>) = match window {
         Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
         Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
+        Window::SaveAs => ("Save As", named(save_as::KEYS, save_as_name)),
         Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
         Window::Search => ("Search", named(search::KEYS, search_name)),
         Window::Attachments => (
@@ -171,6 +174,15 @@ fn date_name(input: DateInput) -> String {
         DateInput::Edit(edit) => text_name(edit),
         DateInput::Apply => "Set Date".to_owned(),
         DateInput::Cancel => "Cancel".to_owned(),
+    }
+}
+
+/// What a key of the Save As prompt does, as the panel names it.
+fn save_as_name(input: SaveAsInput) -> String {
+    match input {
+        SaveAsInput::Edit(edit) => text_name(edit),
+        SaveAsInput::Apply => "Save".to_owned(),
+        SaveAsInput::Cancel => "Cancel".to_owned(),
     }
 }
 
@@ -485,6 +497,7 @@ mod tests {
         assert_eq!(picker_name(PickerInput::Edit(edit)), "Select All");
         assert_eq!(date_name(DateInput::Edit(edit)), "Select All");
         assert_eq!(search_name(SearchInput::Edit(edit)), "Select All");
+        assert_eq!(save_as_name(SaveAsInput::Edit(edit)), "Select All");
     }
 
     // FR-KEY-03, FR-ATT-04
@@ -500,6 +513,19 @@ mod tests {
         assert_eq!(
             headings(Window::DatePrompt),
             [("Date Prompt", 2), ("Text", 16)]
+        );
+        assert_eq!(
+            window_keys(Window::SaveAs),
+            [
+                (
+                    "Save As",
+                    vec![
+                        ("Save".to_owned(), "Enter".to_owned()),
+                        ("Cancel".to_owned(), "Esc".to_owned())
+                    ]
+                ),
+                window_keys(Window::DatePrompt)[1].clone(),
+            ]
         );
         assert_eq!(
             headings(Window::Editing(Part::Title)),

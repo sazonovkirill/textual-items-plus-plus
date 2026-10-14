@@ -163,6 +163,8 @@ pub enum Command {
     ScrollShortcuts(Direction),
     /// Open the settings window (FR-SET-02).
     Settings,
+    /// Write the document to another file, which saving follows from then on (FR-STORE-11).
+    SaveAs,
     /// Start the weather at once, whatever the settings say (FR-UI-08).
     StartWeather,
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
@@ -716,6 +718,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Settings,
         title: "Open Settings",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::SaveAs,
+        title: "Save As…",
         context: Context::Navigate,
     },
     Entry {

@@ -60,6 +60,22 @@ pub enum Job {
         /// The file.
         path: PathBuf,
     },
+    /// Write `document`, with `source`, to the file at `path`, another file than the one saved
+    /// so far: only when there is none there, unless `replace`, which first keeps the file it
+    /// replaces in a conflict copy named by the local time `now`, so that it is never lost
+    /// (FR-STORE-11). Reports [`Outcome::SavedAs`].
+    SaveAs {
+        /// The file.
+        path: PathBuf,
+        /// What it should hold.
+        document: Document,
+        /// The outline it is written back with.
+        source: Arc<Source>,
+        /// Whether a file there is replaced.
+        replace: bool,
+        /// The local time.
+        now: DateTime,
+    },
 }
 
 /// How a [`Job`] went.
@@ -100,6 +116,19 @@ pub enum Outcome {
         /// Its bytes, or `None` when there is no file.
         contents: Option<Vec<u8>>,
     },
+    /// The file of a [`Job::SaveAs`] was written, or why not.
+    SavedAs(Written),
+}
+
+/// How writing the document to another file went (FR-STORE-11).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Written {
+    /// The file was written, at this version.
+    Saved(Version),
+    /// Nothing was written, because a file is there and was not to be replaced.
+    Exists,
+    /// The file could not be written, for this reason, in words for the status line.
+    Failed(String),
 }
 
 /// The queue of disk work and the thread that does it. Dropping it waits for the queued work.
@@ -198,6 +227,19 @@ fn work(queue: &Receiver<Request>, mut report: impl FnMut(Outcome), mut backups:
                 Request::Job(Job::Check { path }) => read(&path)
                     .ok()
                     .map(|contents| Outcome::Checked { contents }),
+                Request::Job(Job::SaveAs {
+                    path,
+                    document,
+                    source,
+                    replace,
+                    now,
+                }) => Some(Outcome::SavedAs(save_as(
+                    &path,
+                    &encode(&document, &source),
+                    replace,
+                    now,
+                    &backups,
+                ))),
                 Request::Flush(done) => {
                     // The flusher waits for this answer and only stops waiting by being dropped.
                     let _ = done.send(());
@@ -226,6 +268,41 @@ fn save(path: &Path, text: &str, expected: Option<Version>) -> Outcome {
     saved.unwrap_or_else(|error| Outcome::SaveFailed {
         reason: reason(path, &error),
     })
+}
+
+/// Writes `text` to the file at `path` when there is none, or, when told to `replace` it, over
+/// the file there after keeping it in a conflict copy of `backups` named by the local time `now`
+/// (FR-STORE-11). A file that another program creates meanwhile is not replaced unasked.
+#[must_use]
+pub fn save_as(
+    path: &Path,
+    text: &str,
+    replace: bool,
+    now: DateTime,
+    backups: &Backups,
+) -> Written {
+    let saved = Written::Saved(Version::of(text.as_bytes()));
+    if !replace {
+        return match atomic::create(path, text.as_bytes(), None) {
+            Ok(()) => saved,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Written::Exists,
+            Err(error) => Written::Failed(reason(path, &error)),
+        };
+    }
+    let replaced = atomic::prepare(path, text.as_bytes()).and_then(|prepared| {
+        if let Some(bytes) = read(prepared.target())? {
+            backups
+                .conflict(prepared.target(), &bytes, now)
+                .map_err(|error| {
+                    io::Error::other(format!("cannot keep the file it replaces: {error}"))
+                })?;
+        }
+        prepared.commit()
+    });
+    match replaced {
+        Ok(()) => saved,
+        Err(error) => Written::Failed(reason(path, &error)),
+    }
 }
 
 /// Why writing the file at `path` failed with `error`: a missing folder in plain words, rather
@@ -505,6 +582,101 @@ mod tests {
             ],
             "a path that cannot be read reports nothing"
         );
+        Ok(())
+    }
+
+    /// Writing `text`, which writes back as it reads, to `path` as another file, replacing one
+    /// there only when told to.
+    fn save_as_job(path: &Path, text: &str, replace: bool) -> Job {
+        let (document, source) = decode(text.as_bytes()).expect("the text is UTF-8");
+        Job::SaveAs {
+            path: path.to_owned(),
+            document,
+            source: Arc::new(source),
+            replace,
+            now: TODAY.at(9, 30, 0, 0),
+        }
+    }
+
+    fn saved_as(text: &str) -> Outcome {
+        Outcome::SavedAs(Written::Saved(Version::of(text.as_bytes())))
+    }
+
+    /// The contents of each file in the folders of `backups`.
+    fn kept(backups: &Path) -> io::Result<Vec<String>> {
+        let mut kept = Vec::new();
+        for folder in fs::read_dir(backups)? {
+            for file in fs::read_dir(folder?.path())? {
+                let path = file?.path();
+                if path
+                    .extension()
+                    .is_some_and(|extension| extension == "taskpaper")
+                {
+                    kept.push(fs::read_to_string(path)?);
+                }
+            }
+        }
+        Ok(kept)
+    }
+
+    // FR-STORE-11
+    #[test]
+    fn saves_as_a_new_file_replacing_one_only_when_told_after_keeping_it() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let (disk, outcomes) = start(dir.path());
+        let path = dir.path().join("new.taskpaper");
+        let missing = dir.path().join("missing/x.taskpaper");
+        disk.submit(save_as_job(&path, "Inbox:\none", false));
+        disk.submit(save_as_job(&path, "Inbox:\ntwo", false));
+        disk.submit(save_as_job(&path, "Inbox:\ntwo", true));
+        disk.submit(save_as_job(&missing, "Inbox:\n", false));
+        disk.submit(save_as_job(&missing, "Inbox:\n", true));
+        disk.flush();
+        let folder = format!(
+            "the folder {} does not exist",
+            dir.path().join("missing").display()
+        );
+        assert_eq!(
+            taken(&outcomes),
+            [
+                saved_as("Inbox:\none"),
+                Outcome::SavedAs(Written::Exists),
+                saved_as("Inbox:\ntwo"),
+                Outcome::SavedAs(Written::Failed(folder.clone())),
+                Outcome::SavedAs(Written::Failed(folder)),
+            ]
+        );
+        assert_eq!(fs::read_to_string(&path)?, "Inbox:\ntwo");
+        assert_eq!(kept(&dir.path().join("backups"))?, ["Inbox:\none"]);
+        let fresh = dir.path().join("fresh.taskpaper");
+        disk.submit(save_as_job(&fresh, "Inbox:\n", true));
+        disk.flush();
+        assert_eq!(
+            taken(&outcomes),
+            [saved_as("Inbox:\n")],
+            "nothing to replace"
+        );
+        Ok(())
+    }
+
+    // FR-STORE-11: the file it replaces is never lost.
+    #[test]
+    fn a_file_that_cannot_be_kept_is_not_replaced() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("todo.taskpaper");
+        fs::write(&path, "theirs")?;
+        let written = save_as(
+            &path,
+            "Inbox:\n",
+            true,
+            TODAY.at(9, 30, 0, 0),
+            &Backups::new(None),
+        );
+        assert!(
+            matches!(&written, Written::Failed(reason) if reason.starts_with("cannot keep the file it replaces: ")),
+            "{written:?}"
+        );
+        assert_eq!(fs::read_to_string(&path)?, "theirs");
         Ok(())
     }
 

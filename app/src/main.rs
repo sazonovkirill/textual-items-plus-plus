@@ -40,7 +40,8 @@ fn main() -> anyhow::Result<()> {
         backups: store::backups_folder(env::var_os("XDG_DATA_HOME"), home.clone()),
         recovery: store::recovery_folder(env::var_os("XDG_STATE_HOME"), home.clone()),
         layouts: store::layouts_file(env::var_os("XDG_STATE_HOME"), home.clone()),
-        config: store::config_file(env::var_os("XDG_CONFIG_HOME"), home),
+        config: store::config_file(env::var_os("XDG_CONFIG_HOME"), home.clone()),
+        home,
         clock: || jiff::Zoned::now().datetime(),
         animations: ui::animations_default(
             env::var_os("SSH_CONNECTION").as_deref(),

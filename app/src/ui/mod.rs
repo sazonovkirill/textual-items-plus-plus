@@ -15,6 +15,7 @@ mod keymap;
 mod markdown;
 mod panes;
 mod picker;
+mod save_as;
 mod search;
 mod settings;
 mod shortcuts;
@@ -30,7 +31,7 @@ use std::{
 };
 
 use crossterm::event::{Event, KeyModifiers, MouseEvent, MouseEventKind};
-use jiff::civil::{Date, DateTime};
+use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Position, Rect},
@@ -48,9 +49,9 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction, EditInput,
-        Effect, Focus, Message, Opened, PaneView, Part, PickerInput, Place, SearchInput, Selected,
-        Settings, Side, State, Stop, Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit,
-        view::View,
+        Effect, Focus, Message, Opened, PaneView, Part, PickerInput, Place, Report, SaveAsInput,
+        SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol, TagEntry,
+        TagMark, TagsFor, TagsView, TextEdit, view::View,
     },
     domain::ItemKind,
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
@@ -62,6 +63,7 @@ use conflict::ConflictPrompt;
 use container::{ContainerPane, Top};
 use date_prompt::DatePromptPanel;
 use file::File;
+use save_as::SaveAsPanel;
 use settings::SettingsWindow;
 use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
 use sidebar::SidebarPane;
@@ -121,8 +123,10 @@ pub struct Tui {
     shortcuts_scroll: (usize, Option<Window>),
     /// How many lines a page of the shortcuts panel was at the last draw, which its keys scroll.
     shortcuts_page: usize,
-    /// The local time now, which stamps comments (FR-ATT-04).
-    clock: fn() -> DateTime,
+    /// The local time now, which stamps comments (FR-ATT-04), the home folder and where the app
+    /// keeps its own files and the disk worker and the watcher report, for the file Save As
+    /// opens for a document without one (FR-STORE-11).
+    edge: Edge,
     /// The frontend's clock, as last given, counted from the start of the session.
     now: Duration,
     /// The weather the app shows once it sits idle (FR-UI-08).
@@ -132,9 +136,10 @@ pub struct Tui {
 }
 
 impl Tui {
-    /// The app on `state`, without a file or a settings file, its local time read from `clock`.
+    /// The app on `state`, without a file or a settings file, its local time read from `edge`,
+    /// which says where the file Save As opens keeps its own files and reports (FR-STORE-11).
     #[must_use]
-    pub fn new(state: State, today: Date, clock: fn() -> DateTime) -> Self {
+    pub fn new(state: State, today: Date, edge: &Edge) -> Self {
         Self {
             tops: vec![Top::default(); state.panes().count()],
             theme: state.settings().theme.colors(),
@@ -152,7 +157,7 @@ impl Tui {
             keyboard: Keyboard::default(),
             shortcuts_scroll: (0, None),
             shortcuts_page: 1,
-            clock,
+            edge: edge.clone(),
             now: Duration::ZERO,
             weather: Weather::default(),
         }
@@ -196,13 +201,13 @@ impl Tui {
                 State::new(store::demo::document(today), Opened::Demo, today)
                     .with_settings(defaults, settings),
                 today,
-                edge.clock,
+                edge,
             ),
             Some(path) => {
                 let (file, state) = File::open(path, recovered, today, edge)?;
                 Self {
                     file: Some(file),
-                    ..Self::new(state.with_settings(defaults, settings), today, edge.clock)
+                    ..Self::new(state.with_settings(defaults, settings), today, edge)
                 }
             }
         };
@@ -294,7 +299,7 @@ impl Tui {
     /// command palette (FR-NAV-06), the Move to picker (FR-OPS-04) and, in edit mode, the title,
     /// description or note being edited take them the same way (FR-EDIT-01), `Ctrl+V` pasting the
     /// clipboard's text there as a terminal paste goes in (FR-EDIT-04), and so do the date
-    /// prompt (FR-DATE-02) and the settings window (FR-SET-02). The open attachments panel takes
+    /// prompt (FR-DATE-02), the Save As prompt (FR-STORE-11) and the settings window (FR-SET-02). The open attachments panel takes
     /// them, scrolling itself (FR-ATT-01), leaving quitting and the commands it acts on
     /// (FR-CHK-03). The mouse wheel scrolls the shortcuts panel while it shows, and the mouse
     /// does nothing else (D-74). A key, paste, click or resize while the weather plays only ends
@@ -351,6 +356,7 @@ impl Tui {
                 Some(PanelKey::Command(command)) => Some(Message::Command(command)),
                 Some(PanelKey::AddComment) => {
                     Some(Message::Attachments(AttachmentsInput::AddComment((self
+                        .edge
                         .clock)(
                     ))))
                 }
@@ -362,6 +368,10 @@ impl Tui {
         } else if self.state.date_prompt().is_some() {
             date_prompt::date_prompt_input(event)
                 .map(Message::DatePrompt)
+                .or_else(|| self.global(event))
+        } else if self.state.save_as().is_some() {
+            save_as::save_as_input(event)
+                .map(Message::SaveAs)
                 .or_else(|| self.global(event))
         } else if self.state.settings_window().is_some() {
             settings::settings_input(event)
@@ -428,8 +438,8 @@ impl Tui {
     /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
     /// it: a description or a note being edited takes it whole; a title being edited takes a
     /// single line, while several lines end editing and paste as items below; a comment being
-    /// edited, the query of the open Navigator, Move to or tag picker and the open date prompt
-    /// take it with its line breaks as spaces; otherwise the items it holds paste below the
+    /// edited, the query of the open Navigator, Move to or tag picker, the open date prompt and
+    /// the open Save As prompt take it with its line breaks as spaces; otherwise the items it holds paste below the
     /// focus, or, in the checklist of the attachments panel, one item for each line below the
     /// item selected (FR-CHK-03). The conflict prompt and the settings window take none, nor does
     /// the attachments panel while nothing in it is edited and no checklist entry is selected.
@@ -455,20 +465,10 @@ impl Tui {
             for c in text.chars() {
                 self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
             }
-        } else if self.state.date_prompt().is_some() {
+        } else if let Some(to_field) = self.line_field() {
             for c in text.chars() {
                 let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
-                self.update(Message::DatePrompt(DateInput::Edit(TextEdit::Insert(c))));
-            }
-        } else if self.state.search().is_some() {
-            for c in text.chars() {
-                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
-                self.update(Message::Search(SearchInput::Edit(TextEdit::Insert(c))));
-            }
-        } else if let Some(to_picker) = self.open_picker() {
-            for c in text.chars() {
-                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
-                self.update(to_picker(PickerInput::Edit(TextEdit::Insert(c))));
+                self.update(to_field(TextEdit::Insert(c)));
             }
         } else if self.in_checklist() {
             let branches = store::taskpaper::read_checklist(text);
@@ -476,6 +476,21 @@ impl Tui {
         } else {
             let branches = store::taskpaper::read_branches(text);
             self.update(Message::Paste(Side::Below, branches));
+        }
+    }
+
+    /// How an edit of the one-line text that has the keys reaches the core, if one does: the
+    /// open date prompt's or Save As prompt's, the words searched for, or the open picker's query.
+    fn line_field(&self) -> Option<Box<dyn Fn(TextEdit) -> Message>> {
+        if self.state.date_prompt().is_some() {
+            Some(Box::new(|edit| Message::DatePrompt(DateInput::Edit(edit))))
+        } else if self.state.save_as().is_some() {
+            Some(Box::new(|edit| Message::SaveAs(SaveAsInput::Edit(edit))))
+        } else if self.state.search().is_some() {
+            Some(Box::new(|edit| Message::Search(SearchInput::Edit(edit))))
+        } else {
+            let to_picker = self.open_picker()?;
+            Some(Box::new(move |edit| to_picker(PickerInput::Edit(edit))))
         }
     }
 
@@ -557,9 +572,10 @@ impl Tui {
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
     /// note being edited in the attachments panel while it is open, else at the caret of the
-    /// query of the Navigator, the command palette, Go to Symbol or Move to while one is open, at the caret of
-    /// the date prompt while it is open, at the caret of the text being edited in edit mode, in
-    /// the pane or the sidebar, else hidden; the weather covers it while it plays.
+    /// query of the Navigator, the command palette, Go to Symbol or Move to while one is open, at
+    /// the caret of the date prompt or the Save As prompt while one is open, at the caret of the
+    /// text being edited in edit mode, in the pane or the sidebar, else hidden; the weather
+    /// covers it while it plays.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
         if self.state.conflict().is_some() || self.weather.playing() {
@@ -572,6 +588,9 @@ impl Tui {
         }
         if let Some(view) = self.state.date_prompt() {
             return DatePromptPanel::new(&view, &self.theme).caret(prompt);
+        }
+        if let Some(view) = self.state.save_as() {
+            return SaveAsPanel::new(&view, &self.theme).caret(prompt);
         }
         if let Some(view) = self.state.navigator() {
             return navigator_popup(&view, &self.theme, self.icons()).caret(panes);
@@ -697,6 +716,7 @@ impl Tui {
                     )));
                 }
             }
+            Effect::SaveAs { path, replace } => self.save_as(&path, replace),
             Effect::StartWeather => match Season::of(self.today) {
                 Some(season) => self.weather.start(self.now, season),
                 None => self.update(Message::NoWeather),
@@ -707,12 +727,42 @@ impl Tui {
         }
     }
 
-    /// The parts of the screen: where the panes go, over the date prompt's panel while it is open,
-    /// over the status line. The panes give up the panel's rows rather than lie under it, so that
-    /// the focus scrolls into view above it, as in taskpaper-terminal.
+    /// Writes the document to the file at `path`, as the user typed it, or over the file there
+    /// when told to `replace` it, and has it saved there from then on (FR-STORE-11): on the disk
+    /// worker after the work asked of it so far, or at once for a document without a file, which
+    /// has none.
+    fn save_as(&mut self, path: &str, replace: bool) {
+        let edge = &self.edge;
+        let path = file::expand(path, edge.home.as_deref());
+        if let Some(file) = &mut self.file {
+            file.save_as(path, self.state.document(), replace);
+            return;
+        }
+        let report = match File::create(
+            path.clone(),
+            self.state.document(),
+            replace,
+            self.today,
+            edge,
+        ) {
+            Ok(file) => {
+                self.file = Some(file);
+                SaveAsReport::Saved(path)
+            }
+            Err(report) => report,
+        };
+        self.update(Message::Disk(Report::SaveAs(report)));
+    }
+
+    /// The parts of the screen: where the panes go, over the panel of the date prompt or the Save
+    /// As prompt while one is open, over the status line. The panes give up the panel's rows
+    /// rather than lie under it, so that the focus scrolls into view above it, as in
+    /// taskpaper-terminal.
     fn layout(&self, area: Rect) -> [Rect; 3] {
         let panel = if self.state.date_prompt().is_some() {
             DatePromptPanel::HEIGHT
+        } else if self.state.save_as().is_some() {
+            SaveAsPanel::HEIGHT
         } else {
             0
         };
@@ -759,6 +809,8 @@ impl Tui {
             Some(Window::Attachments)
         } else if self.state.date_prompt().is_some() {
             Some(Window::DatePrompt)
+        } else if self.state.save_as().is_some() {
+            Some(Window::SaveAs)
         } else if self.state.settings_window().is_some() {
             Some(Window::Settings)
         } else if self.state.search().is_some() {
@@ -1104,6 +1156,9 @@ impl Widget for &mut Tui {
         }
         if let Some(view) = self.state.date_prompt() {
             DatePromptPanel::new(&view, &self.theme).render(prompt, buf);
+        }
+        if let Some(view) = self.state.save_as() {
+            SaveAsPanel::new(&view, &self.theme).render(prompt, buf);
         }
         if let Some(view) = self.state.tags() {
             tags_popup(&view, &self.theme, icons).render(panes, buf);

@@ -214,6 +214,17 @@ impl Autosave {
         self.failure = None;
     }
 
+    /// The document at `revision` was written to another file, which is the one saved to from
+    /// now on: it holds that revision, a failed save of the file before no longer counts, and a
+    /// session waiting to end ends once the document is saved there.
+    pub fn saved_as(&mut self, revision: u64) {
+        self.saveable = true;
+        self.saved = Some(revision);
+        self.writing = None;
+        self.failure = None;
+        self.confirm_quit = false;
+    }
+
     /// The document went from revision `from` to `to` without changing, as an edit session
     /// that changes nothing does: when the file held it at `from`, it holds it at `to`, and a
     /// change seen at `from` is still the latest.

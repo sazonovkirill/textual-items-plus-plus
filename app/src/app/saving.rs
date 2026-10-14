@@ -10,7 +10,7 @@ use std::{path::PathBuf, time::Duration};
 use jiff::civil::Date;
 
 use super::{
-    Effect, Refusal, State,
+    Effect, Refusal, SaveAsReport, State,
     autosave::{Autosave, Ending, SaveState, Step},
     go_to_symbol,
     move_to::MoveTo,
@@ -34,6 +34,8 @@ pub enum Report {
     Copied(CopyId, PathBuf),
     /// This conflict copy asked for could not be written, for this reason.
     CopyFailed(CopyId, String),
+    /// How writing the document to another file went, as Save As asked (FR-STORE-11).
+    SaveAs(SaveAsReport),
 }
 
 /// Which conflict copy a [`Report`] tells of, as [`Effect::Copy`] asked for it, so that the
@@ -109,6 +111,9 @@ pub enum Notice {
     Settings(String),
     /// The weather was asked for in summer, which has none (FR-UI-08).
     NoWeather,
+    /// The document was written to the file at this path, which saving follows from now on
+    /// (FR-STORE-11).
+    SavedAs(PathBuf),
 }
 
 impl Notice {
@@ -200,6 +205,13 @@ impl Saving {
         }
     }
 
+    /// The document at `revision` was written to another file, which is the one saved from now
+    /// on, holding that revision (FR-STORE-11).
+    pub(super) fn saved_as(&mut self, revision: u64) {
+        self.autosave.saved_as(revision);
+        self.gone = false;
+    }
+
     /// The document went from `from` to `to` without changing, as an edit session that changes
     /// nothing does.
     pub(super) fn unchanged(&mut self, from: u64, to: u64) {
@@ -221,9 +233,10 @@ impl State {
 
     /// What saving asks of the frontend now that a message changed the state: nothing while the
     /// conflict prompt is open, since a save would be refused again at once, nor in edit mode,
-    /// whose title is not a change until editing ends.
+    /// whose title is not a change until editing ends, nor while Save As writes another file,
+    /// which saving follows once it is written.
     pub(super) fn step_saving(&mut self) -> Vec<Effect> {
-        if self.saving.conflict.is_some() || self.editing().is_some() {
+        if self.saving.conflict.is_some() || self.editing().is_some() || self.saving_as() {
             return Vec::new();
         }
         let saving = &mut self.saving;
@@ -294,6 +307,7 @@ impl State {
             Report::SaveRefused => saving.autosave.refused(),
             Report::BackupFailed(reason) => saving.notice = Some(Notice::BackupFailed(reason)),
             Report::Copied(id, copy) => return self.copied(id, copy),
+            Report::SaveAs(report) => return self.save_as_report(report),
             Report::CopyFailed(id, reason) => {
                 let Some(conflict) = &mut saving.conflict else {
                     return Vec::new();
@@ -351,6 +365,9 @@ impl State {
     /// file could not be read closes and the file reloads once it can. An edit under way is kept first,
     /// so it counts as a change the file lacks.
     pub(super) fn on_disk(&mut self, change: OnDisk) -> Vec<Effect> {
+        let Some(change) = self.held_back(change) else {
+            return Vec::new();
+        };
         self.finish_editing();
         let theirs = match change {
             OnDisk::Gone => {

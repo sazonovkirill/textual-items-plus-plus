@@ -363,6 +363,7 @@ impl App {
             recovery: Some(dir.join("recovery")),
             layouts: Some(dir.join("layouts.json")),
             config: Some(dir.join("config.toml")),
+            home: None,
             clock: || NOW,
             animations: Animations::Full,
         };

@@ -4,8 +4,10 @@
 use std::ops::Range;
 
 use ratatui::{
+    layout::{Position, Rect},
     style::Style,
     text::{Line, Span},
+    widgets::Block,
 };
 
 use super::Theme;
@@ -23,6 +25,26 @@ pub(super) fn selected<'a>(field: &'a TextField, line: Range<usize>, theme: &The
         Span::styled(text.get(start..end).unwrap_or_default(), style),
         Span::raw(text.get(end..line.end).unwrap_or_default()),
     ])
+}
+
+/// The text of a prompt's `field` after a space, its selection in the selection colors of `theme`,
+/// for the first line inside the prompt's border.
+pub(super) fn prompt_line<'a>(field: &'a TextField, theme: &Theme) -> Line<'a> {
+    let mut line = Line::from(" ");
+    line.spans
+        .extend(selected(field, 0..field.text().len(), theme).spans);
+    line
+}
+
+/// Where the terminal's cursor goes when a prompt with `field` drawn as [`prompt_line`] has the
+/// bordered `area`: at the caret, or in the last column inside the border when the text is
+/// wider; nowhere when the prompt has no room inside its border.
+pub(super) fn prompt_caret(field: &TextField, area: Rect) -> Option<Position> {
+    let inner = Block::bordered().inner(area);
+    let before = field.text().get(..field.caret()).unwrap_or_default();
+    let column = u16::try_from(Span::raw(before).width() + 1).unwrap_or(u16::MAX);
+    let last = inner.right().saturating_sub(1);
+    (!inner.is_empty()).then(|| Position::new(inner.x.saturating_add(column).min(last), inner.y))
 }
 
 /// The lines of `field`'s text wrapped as the field wraps them in `columns`, each drawn as

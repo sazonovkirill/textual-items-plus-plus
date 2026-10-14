@@ -128,6 +128,7 @@ impl Harness {
             recovery: Some(folders.path().join("recovery")),
             layouts: Some(folders.path().join("layouts.json")),
             config: Some(folders.path().join("config.toml")),
+            home: Some(folders.path().join("home")),
             clock: || NOW,
             animations,
         };
@@ -168,6 +169,12 @@ impl Harness {
     /// Where the app keeps its settings.
     pub fn config(&self) -> PathBuf {
         self.folders.path().join("config.toml")
+    }
+
+    /// The home folder, which `~` stands for in a path typed; it does not exist until a test
+    /// makes it.
+    pub fn home(&self) -> PathBuf {
+        self.folders.path().join("home")
     }
 
     /// Where the app keeps its recovery files.

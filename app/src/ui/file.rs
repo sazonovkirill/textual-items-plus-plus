@@ -13,11 +13,15 @@ use jiff::civil::{Date, DateTime};
 
 use super::Input;
 use crate::{
-    app::{Animations, ConflictSide, CopyId, Layout, Message, OnDisk, Opened, Report, State},
+    app::{
+        Animations, ConflictSide, CopyId, Layout, Message, OnDisk, Opened, Report, SaveAsReport,
+        State,
+    },
     domain::Document,
     store::{
         self, Backups, Disk, Job, Layouts, OpenError, OpenFile, Outcome, Recovery, RecoveryError,
-        Version, Watcher, taskpaper::Source,
+        Version, Watcher, Written,
+        taskpaper::{Source, parse, read_document},
     },
 };
 
@@ -35,6 +39,9 @@ pub struct Edge {
     pub layouts: Option<PathBuf>,
     /// The settings file, `None` when there is none (FR-SET-01).
     pub config: Option<PathBuf>,
+    /// The home folder, which `~` stands for in a path typed (FR-STORE-11), `None` when there is
+    /// none.
+    pub home: Option<PathBuf>,
     /// The local time now.
     pub clock: fn() -> DateTime,
     /// How much the app animates when the settings file does not say (FR-UI-07).
@@ -60,7 +67,12 @@ pub(super) struct File {
     recovery: Recovery,
     layouts: Layouts,
     clock: fn() -> DateTime,
-    _watcher: Option<Watcher>,
+    /// Where the watcher reports.
+    inputs: Sender<Input>,
+    /// Watches the file while it is kept.
+    watcher: Option<Watcher>,
+    /// The file Save As is writing, which this becomes once it is written (FR-STORE-11).
+    moving: Option<PathBuf>,
 }
 
 impl File {
@@ -100,39 +112,87 @@ impl File {
                 (State::recovered(document, opened, today), source, version)
             }
         };
-        let layouts = Layouts::new(edge.layouts.clone());
-        let state = match layouts.load(&path) {
+        let file = Self::start(path, source, version, today, edge);
+        let state = match file.layouts.load(&file.path) {
             Some(layout) => state.with_layout(&layout),
             None => state,
         };
+        Ok((file, state))
+    }
+
+    /// Writes `document`, which has no file yet, as the demo document has none, to a new file at
+    /// `path`, or over the file there when told to `replace` it after keeping it in a conflict
+    /// copy, and opens that file, which the document is saved to from then on (FR-STORE-11).
+    ///
+    /// # Errors
+    ///
+    /// How writing failed, as the core takes it.
+    pub(super) fn create(
+        path: PathBuf,
+        document: &Document,
+        replace: bool,
+        today: Date,
+        edge: &Edge,
+    ) -> Result<Self, SaveAsReport> {
+        let (_, source) = read_document(parse(""));
+        let text = store::encode(document, &source);
+        let backups = Backups::new(edge.backups.clone());
+        match store::save_as(&path, &text, replace, (edge.clock)(), &backups) {
+            Written::Saved(version) => Ok(Self::start(path, source, Some(version), today, edge)),
+            Written::Exists => Err(SaveAsReport::Exists),
+            Written::Failed(reason) => Err(SaveAsReport::Failed(reason)),
+        }
+    }
+
+    /// The file at `path`, read as `source` at `version`, `None` when there is none: starts the
+    /// disk worker, the watcher and, when the file exists, today's backup.
+    fn start(
+        path: PathBuf,
+        source: Source,
+        version: Option<Version>,
+        today: Date,
+        edge: &Edge,
+    ) -> Self {
         let inputs = edge.inputs.clone();
         let disk = Disk::start(
             // The event loop has ended once nothing receives, so the report has nowhere to go.
             move |outcome| drop(inputs.send(Input::Disk(outcome))),
             Backups::new(edge.backups.clone()),
         );
-        let inputs = edge.inputs.clone();
-        // A file that cannot be watched is still saved; its next save finds a change made
-        // elsewhere.
-        let watcher = store::watch(&path, move || drop(inputs.send(Input::Check))).ok();
         disk.submit(Job::Backup {
             path: path.clone(),
             today,
         });
-        let file = Self {
+        Self {
+            watcher: watch(&path, &edge.inputs),
             path,
             source: Arc::new(source),
             known: version,
             theirs: None,
             disk,
             copies: VecDeque::new(),
-            backups,
+            backups: Backups::new(edge.backups.clone()),
             recovery: Recovery::new(edge.recovery.clone()),
-            layouts,
+            layouts: Layouts::new(edge.layouts.clone()),
             clock: edge.clock,
-            _watcher: watcher,
-        };
-        Ok((file, state))
+            inputs: edge.inputs.clone(),
+            moving: None,
+        }
+    }
+
+    /// Writes `document` to the file at `path` after the disk work asked for so far, where there
+    /// is none, or over the file there when told to `replace` it after keeping it in a conflict
+    /// copy; once it is written, this is that file (FR-STORE-11). Until then the file is not
+    /// checked, since the check of the file this leaves would be reported after it.
+    pub(super) fn save_as(&mut self, path: PathBuf, document: &Document, replace: bool) {
+        self.disk.submit(Job::SaveAs {
+            path: path.clone(),
+            document: document.clone(),
+            source: Arc::clone(&self.source),
+            replace,
+            now: (self.clock)(),
+        });
+        self.moving = Some(path);
     }
 
     /// Saves `document` as the core asked, after making sure of the backup dated `today`.
@@ -160,11 +220,14 @@ impl File {
         self.disk.flush();
     }
 
-    /// Asks the worker to read the file, as after the watcher saw a change.
+    /// Asks the worker to read the file, as after the watcher saw a change, unless Save As is
+    /// writing another.
     pub(super) fn check(&self) {
-        self.disk.submit(Job::Check {
-            path: self.path.clone(),
-        });
+        if self.moving.is_none() {
+            self.disk.submit(Job::Check {
+                path: self.path.clone(),
+            });
+        }
     }
 
     /// Writes `side` to the conflict copy `id`: on the worker, or at once with a recovery file in
@@ -242,6 +305,35 @@ impl File {
                 ))]
             }
             Outcome::Checked { contents } => self.found(contents).into_iter().collect(),
+            Outcome::SavedAs(written) => vec![Message::Disk(Report::SaveAs(self.moved(written)))],
+        }
+    }
+
+    /// What writing the file Save As asked for tells the core: once it is written, this is that
+    /// file, at the version written, watched in place of the one before; otherwise this file is
+    /// read again.
+    fn moved(&mut self, written: Written) -> SaveAsReport {
+        let path = self
+            .moving
+            .take()
+            .expect("the worker reports only the Save As asked of it");
+        match written {
+            Written::Saved(version) => {
+                self.watcher = watch(&path, &self.inputs);
+                self.path.clone_from(&path);
+                self.known = Some(version);
+                self.theirs = None;
+                SaveAsReport::Saved(path)
+            }
+            // The watcher's news of this file went unchecked while writing.
+            Written::Exists => {
+                self.check();
+                SaveAsReport::Exists
+            }
+            Written::Failed(reason) => {
+                self.check();
+                SaveAsReport::Failed(reason)
+            }
         }
     }
 
@@ -289,5 +381,53 @@ impl File {
         self.disk.flush();
         self.recovery
             .write(Some(&self.path), &self.text(document), (self.clock)())
+    }
+}
+
+/// Watches the file at `path`, telling `inputs` to check it. A file that cannot be watched is
+/// still saved; its next save finds a change made elsewhere.
+fn watch(path: &Path, inputs: &Sender<Input>) -> Option<Watcher> {
+    let inputs = inputs.clone();
+    store::watch(path, move || drop(inputs.send(Input::Check))).ok()
+}
+
+/// The path `text` names: `~` alone or before a `/` stands for `home` when there is one, and a
+/// relative path is taken from the working folder (FR-STORE-11).
+pub(super) fn expand(text: &str, home: Option<&Path>) -> PathBuf {
+    let path = match (text.strip_prefix('~'), home) {
+        (Some(""), Some(home)) => home.to_owned(),
+        (Some(rest), Some(home)) if rest.starts_with('/') => {
+            home.join(rest.trim_start_matches('/'))
+        }
+        _ => PathBuf::from(text),
+    };
+    std::path::absolute(&path).unwrap_or(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // FR-STORE-11
+    #[test]
+    fn a_path_typed_stands_for_the_home_folder_with_a_tilde_and_is_made_absolute() {
+        let home = Path::new("/home/ann");
+        assert_eq!(expand("~", Some(home)), home);
+        assert_eq!(
+            expand("~/notes/a.taskpaper", Some(home)),
+            Path::new("/home/ann/notes/a.taskpaper")
+        );
+        assert_eq!(
+            expand("/tmp/a.taskpaper", Some(home)),
+            Path::new("/tmp/a.taskpaper")
+        );
+        let here = std::env::current_dir().expect("a working folder");
+        assert_eq!(
+            expand("~ann/a", Some(home)),
+            here.join("~ann/a"),
+            "not a home"
+        );
+        assert_eq!(expand("~/a", None), here.join("~/a"), "no home to expand");
+        assert_eq!(expand("a.taskpaper", Some(home)), here.join("a.taskpaper"));
     }
 }

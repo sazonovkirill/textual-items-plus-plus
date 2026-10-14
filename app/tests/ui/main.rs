@@ -23,6 +23,7 @@ mod palette;
 mod panes;
 mod quitting;
 mod rearranging;
+mod save_as;
 mod saving;
 mod search;
 mod selecting;

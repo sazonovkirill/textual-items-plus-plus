@@ -21,7 +21,7 @@ mod watch;
 
 pub use backup::{BackupError, Backups, KEEP as BACKUPS_KEPT};
 pub use config::{ConfigError, ConfigFile, ConfigProblem};
-pub use disk::{Disk, Job, Outcome};
+pub use disk::{Disk, Job, Outcome, Written, save_as};
 pub use folders::{
     backups as backups_folder, config as config_file, layouts as layouts_file,
     recovery as recovery_folder,

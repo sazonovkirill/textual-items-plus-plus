@@ -8,12 +8,12 @@ use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
     style::Style,
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, Clear, Widget},
 };
 
 use super::{
-    Theme,
+    Theme, field,
     keymap::{self, Key},
     text_keys,
 };
@@ -60,29 +60,7 @@ impl<'a> DatePromptPanel<'a> {
     /// the last column inside the border when the text is wider; nowhere when the panel has no
     /// room inside its border.
     pub(super) fn caret(&self, area: Rect) -> Option<Position> {
-        let inner = Block::bordered().inner(area);
-        let field = self.view.field;
-        let before = field.text().get(..field.caret()).unwrap_or_default();
-        let column = u16::try_from(Span::raw(before).width() + 1).unwrap_or(u16::MAX);
-        let last = inner.right().saturating_sub(1);
-        (!inner.is_empty())
-            .then(|| Position::new(inner.x.saturating_add(column).min(last), inner.y))
-    }
-
-    /// The text typed after a space, its selection in the selection colors.
-    fn input(&self) -> Line<'a> {
-        let field = self.view.field;
-        let text = field.text();
-        let selection = field.selection().unwrap_or(field.caret()..field.caret());
-        let selected = Style::new()
-            .bg(self.theme.selection)
-            .fg(self.theme.band_text);
-        Line::from(vec![
-            Span::raw(" "),
-            Span::raw(text.get(..selection.start).unwrap_or_default()),
-            Span::styled(text.get(selection.clone()).unwrap_or_default(), selected),
-            Span::raw(text.get(selection.end..).unwrap_or_default()),
-        ])
+        field::prompt_caret(self.view.field, area)
     }
 
     /// What `Enter` does with the text: set the date, remove it, or nothing, quoting where the
@@ -135,7 +113,7 @@ impl Widget for DatePromptPanel<'_> {
         frame.render(area, buf);
         let mut rows = inner.rows();
         if let Some(row) = rows.next() {
-            self.input().render(row, buf);
+            field::prompt_line(self.view.field, theme).render(row, buf);
         }
         if let Some(row) = rows.next() {
             self.preview().render(row, buf);

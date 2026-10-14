@@ -120,6 +120,7 @@ fn kept(state: &State) -> String {
         Notice::NotLater => "only a task or a project can be Later".to_owned(),
         Notice::Settings(problem) => format!("config.toml: {problem}"),
         Notice::NoWeather => "no weather in summer".to_owned(),
+        Notice::SavedAs(path) => format!("saved as {}", path.display()),
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()

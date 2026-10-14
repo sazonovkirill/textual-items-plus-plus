@@ -122,6 +122,7 @@ impl KeyGroup {
             | Command::ScrollShortcuts(_)
             | Command::Palette
             | Command::Settings
+            | Command::SaveAs
             | Command::StartWeather => Self::View,
             Command::KeepMine | Command::TakeTheirs | Command::ShowDiff => Self::Conflict,
         }
@@ -153,6 +154,7 @@ impl State {
             || self.tags.is_some()
             || self.date_prompt.is_some()
             || self.settings_window.is_some()
+            || self.save_as.is_some()
             || self.searching
         {
             context == Some(Context::Global)
@@ -323,6 +325,7 @@ mod tests {
             (Command::Focus(super::super::Focus::Next), true),
             (Command::Palette, true),
             (Command::Settings, true),
+            (Command::SaveAs, true),
             (Command::Shortcuts, true),
             (Command::ToggleCompleted, false),
             (Command::AddSection(super::super::End::Bottom), false),

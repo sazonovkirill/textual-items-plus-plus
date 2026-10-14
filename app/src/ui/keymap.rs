@@ -174,6 +174,9 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::ScrollShortcuts(Direction::Up), &["("]),
     // taskpaper-terminal's key: **g**o to the settings, `,` as macOS apps open theirs.
     (Command::Settings, &["g ,"]),
+    // Save, as `Ctrl+S` saves in most apps; this one saves every change already, so it saves
+    // to another file (D-90).
+    (Command::SaveAs, &["ctrl+s"]),
     // taskpaper-terminal's conflict prompt keys, which no plain letter is since the prompt can open
     // while the user types (its D-115, D-38); k**e**ep mine, since `Ctrl+K` opens the Navigator.
     (Command::KeepMine, &["ctrl+e"]),

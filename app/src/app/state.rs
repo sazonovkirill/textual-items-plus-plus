@@ -21,6 +21,7 @@ use super::{
     moving,
     navigator::{self, Stop},
     pane::{self, Pane, PaneView, listed},
+    save_as::SaveAs,
     saving::Saving,
     settings::{Setting, Settings},
     sidebar::{self, Sidebar},
@@ -46,7 +47,7 @@ pub enum Opened {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
     pub(super) document: Document,
-    opened: Opened,
+    pub(super) opened: Opened,
     /// The local date by the frontend's clock at the latest message, which views list by.
     pub(super) today: Date,
     /// The panes left of the one with the keys, left to right (FR-PANE-01).
@@ -81,6 +82,8 @@ pub struct State {
     pub(super) default_settings: Settings,
     /// The setting highlighted in the settings window, while it is open (FR-SET-02).
     pub(super) settings_window: Option<Setting>,
+    /// The Save As prompt, while it is open (FR-STORE-11).
+    pub(super) save_as: Option<SaveAs>,
     /// Whether the words the pane searches for are typed (FR-SRCH-01).
     pub(super) searching: bool,
     pub(super) saving: Saving,
@@ -124,6 +127,7 @@ impl State {
             settings: Settings::default(),
             default_settings: Settings::default(),
             settings_window: None,
+            save_as: None,
             searching: false,
             saving,
         }
@@ -1426,8 +1430,12 @@ impl State {
     }
 
     /// Opens the Navigator on where the pane is, closing the command palette, Go to Symbol, Move
-    /// to, the date prompt, the tag picker and the settings window, or closes it when it is open.
+    /// to, the date prompt, the tag picker, the settings window and the Save As prompt unless it
+    /// is writing the file, or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
+        if !self.saving_as() {
+            self.save_as = None;
+        }
         self.palette = None;
         self.go_to_symbol = None;
         self.settings_window = None;
@@ -1480,7 +1488,7 @@ impl State {
 /// Whether the sidebar passes `command` to the app while it has the keys: quitting, undo and
 /// redo, the Navigator, Go to Symbol, the command palette, searching, the sidebar's own commands,
 /// focusing a pane, going to the Inbox, a view, back and forward, the shortcuts panel, the
-/// settings window, the weather and the conflict prompt's commands (D-86).
+/// settings window, Save As, the weather and the conflict prompt's commands (D-86, D-90).
 fn sidebar_passes(command: Command) -> bool {
     matches!(
         command,
@@ -1501,6 +1509,7 @@ fn sidebar_passes(command: Command) -> bool {
             | Command::Shortcuts
             | Command::ScrollShortcuts(_)
             | Command::Settings
+            | Command::SaveAs
             | Command::StartWeather
             | Command::Go(_)
             | Command::KeepMine

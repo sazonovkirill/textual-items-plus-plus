@@ -7,8 +7,8 @@ use jiff::civil::Date;
 
 use super::{
     AttachmentsInput, Command, ConflictSide, CopyId, DateInput, Direction, EditInput, Notice,
-    OnDisk, PickerInput, Report, SearchInput, Selected, Setting, SettingsInput, Side, State,
-    autosave::Ending,
+    OnDisk, PickerInput, Report, SaveAsInput, SearchInput, Selected, Setting, SettingsInput, Side,
+    State, autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -37,6 +37,8 @@ pub enum Message {
     Attachments(AttachmentsInput),
     /// The user did something in the open settings window (FR-SET-02).
     Settings(SettingsInput),
+    /// The user did something in the open Save As prompt (FR-STORE-11).
+    SaveAs(SaveAsInput),
     /// Something went wrong with the settings file, as the frontend says it: what the file sets
     /// that the app ignored, or that a setting could not be kept (FR-SET-04).
     SettingsFailed(String),
@@ -100,6 +102,16 @@ pub enum Effect {
     /// Keep this setting as it is now in the settings file, and report a failure as
     /// [`Message::SettingsFailed`] (FR-SET-02, FR-SET-04).
     KeepSetting(Setting),
+    /// Write the document to the file at `path`, as the user typed it, where there is none, or
+    /// over the file there when told to `replace` it, after keeping it in a conflict copy; from
+    /// then on save to that file. Report how it went as [`Message::Disk`], naming the file
+    /// written as the frontend resolves `path` (FR-STORE-11).
+    SaveAs {
+        /// The path typed.
+        path: String,
+        /// Whether a file there is replaced.
+        replace: bool,
+    },
     /// Start the weather at once; the season it falls in is the frontend's to tell, and when it
     /// has none it answers [`Message::NoWeather`] (FR-UI-08).
     StartWeather,
@@ -169,6 +181,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Search(input) => state.search_input(input),
         Message::Attachments(input) => state.attachments_input(input),
         Message::Settings(input) => return state.settings_input(input),
+        Message::SaveAs(input) => return state.save_as_input(input),
         Message::SettingsFailed(problem) => state.settings_failed(problem),
         Message::NoWeather => state.notify(Notice::NoWeather),
         Message::Command(command) => return run(state, command, today, emptying),
@@ -255,6 +268,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
             return vec![Effect::ScrollShortcuts(direction)];
         }
         Command::Settings => state.open_settings(),
+        Command::SaveAs => state.open_save_as(),
         Command::StartWeather => return vec![Effect::StartWeather],
     }
     Vec::new()

@@ -55,10 +55,10 @@ fn every_size_down_to_nothing_shows_the_status_line_and_the_focused_row() {
 }
 
 // N-PORT-02: every window, the Navigator, the palette, Go to Symbol, Move to, the tag picker,
-// search, the sidebar, the attachments panel, the date prompt, the settings, the shortcuts panel,
-// every view, panes, editing and the weather open on every size without failing, the cursor
-// stays on the screen, and keys go on working. `\x02`, `\x06`, `\x07`, `\x10` and `\x17` stand
-// for `Ctrl` with `b`, `f`, `g`, `p` and `w`.
+// search, the sidebar, the attachments panel, the date prompt, Save As, the settings, the shortcuts
+// panel, every view, panes, editing and the weather open on every size without failing, the
+// cursor stays on the screen, and keys go on working. `\x02`, `\x06`, `\x07`, `\x10`, `\x13`
+// and `\x17` stand for `Ctrl` with `b`, `f`, `g`, `p`, `s` and `w`.
 #[test]
 fn every_window_opens_on_every_size() {
     let windows = [
@@ -81,6 +81,8 @@ fn every_window_opens_on_every_size() {
         "c",
         "md",
         "ms",
+        "\x13",
+        "\x13~/notes/a.taskpaper",
         "gt",
         "gU",
         "ga",
@@ -104,6 +106,7 @@ fn every_window_opens_on_every_size() {
                     '\x06' => app.ctrl('f'),
                     '\x07' => app.ctrl('g'),
                     '\x10' => app.ctrl('p'),
+                    '\x13' => app.ctrl('s'),
                     '\x17' => app.ctrl('w'),
                     key => app.press(KeyCode::Char(key), KeyModifiers::NONE),
                 }
