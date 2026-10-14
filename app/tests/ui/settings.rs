@@ -23,7 +23,8 @@ fn window(harness: &Harness) -> Vec<String> {
 // FR-SET-02, FR-SET-03
 #[test]
 fn g_comma_opens_the_settings_window_and_esc_closes_it() {
-    let mut harness = Harness::new(80, 24);
+    // Tall enough that the window leaves a task in view.
+    let mut harness = Harness::new(80, 30);
     harness.type_text("g,");
     let lines = window(&harness);
     assert_eq!(

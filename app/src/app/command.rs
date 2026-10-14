@@ -140,6 +140,8 @@ pub enum Command {
     ScrollShortcuts(Direction),
     /// Open the settings window (FR-SET-02).
     Settings,
+    /// Start the weather at once, whatever the settings say (FR-UI-08).
+    StartWeather,
     /// In the conflict prompt, overwrite the file on disk with the document (F-FILE-06).
     KeepMine,
     /// In the conflict prompt, reload the file on disk, discarding the unsaved changes
@@ -665,6 +667,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Settings,
         title: "Open Settings",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::StartWeather,
+        title: "Start Weather Animation",
         context: Context::Navigate,
     },
     // Global, so that its key closes the Navigator too.

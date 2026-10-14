@@ -113,7 +113,8 @@ impl KeyGroup {
             | Command::Shortcuts
             | Command::ScrollShortcuts(_)
             | Command::Palette
-            | Command::Settings => Self::View,
+            | Command::Settings
+            | Command::StartWeather => Self::View,
             Command::KeepMine | Command::TakeTheirs | Command::ShowDiff => Self::Conflict,
         }
     }

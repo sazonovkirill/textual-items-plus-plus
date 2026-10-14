@@ -86,6 +86,8 @@ pub enum Notice {
     TagInTitle,
     /// Something went wrong with the settings file, as the frontend said it (FR-SET-04).
     Settings(String),
+    /// The weather was asked for in summer, which has none (FR-UI-08).
+    NoWeather,
 }
 
 /// The conflict prompt as a frontend shows it.

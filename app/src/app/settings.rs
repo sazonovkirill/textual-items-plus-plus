@@ -1,8 +1,10 @@
 //! The settings and the settings window: which built-in theme the app draws in, which icons it
-//! draws and whether long text wraps, each changed in the window and kept at once, as
-//! taskpaper-terminal does ([ui.md §8](../../../specs/reference/taskpaper-terminal/specs/ui.md#8-settings-window-fr-set-02-fr-set-03),
-//! FR-SET-02, FR-SET-03, FR-UI-03, FR-UI-04, FR-UI-05). Names each choice; how it looks, and the
-//! file the settings are kept in, are the frontend's.
+//! draws, whether long text wraps and whether and when the weather plays, each changed in the
+//! window and kept at once, as taskpaper-terminal does ([ui.md §8](../../../specs/reference/taskpaper-terminal/specs/ui.md#8-settings-window-fr-set-02-fr-set-03),
+//! FR-SET-02, FR-SET-03, FR-UI-03, FR-UI-04, FR-UI-05, FR-UI-08). Names each choice; how it
+//! looks, and the file the settings are kept in, are the frontend's.
+
+use std::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
 
@@ -83,16 +85,23 @@ pub struct Settings {
     /// Whether long text wraps; without wrapping, a row's title takes one line and its
     /// description's first line one more, cut short (FR-UI-05).
     pub word_wrap: bool,
+    /// Whether the weather starts once the app has had no input for
+    /// [`weather_idle_minutes`](Self::weather_idle_minutes) (FR-UI-08).
+    pub weather: bool,
+    /// How many minutes without input the weather waits for (FR-UI-08).
+    pub weather_idle_minutes: NonZeroU32,
 }
 
 impl Default for Settings {
     /// Terminal Dark, Nerd Font icons and wrapping, as the app drew before it had settings
-    /// (D-30).
+    /// (D-30), and the weather after three minutes, as in taskpaper-terminal.
     fn default() -> Self {
         Self {
             theme: BuiltIn::default(),
             icons: IconSet::default(),
             word_wrap: true,
+            weather: true,
+            weather_idle_minutes: NonZeroU32::new(3).expect("three is not zero"),
         }
     }
 }
@@ -106,11 +115,21 @@ pub enum Setting {
     Icons,
     /// Word wrap.
     WordWrap,
+    /// Whether the weather plays once the app sits idle.
+    Weather,
+    /// How long the app sits idle before the weather starts.
+    WeatherIdle,
 }
 
 impl Setting {
     /// Every setting, in the order the window lists them.
-    pub const ALL: [Self; 3] = [Self::Theme, Self::Icons, Self::WordWrap];
+    pub const ALL: [Self; 5] = [
+        Self::Theme,
+        Self::Icons,
+        Self::WordWrap,
+        Self::Weather,
+        Self::WeatherIdle,
+    ];
 
     /// The key the settings file keeps it under, such as `word_wrap`.
     #[must_use]
@@ -119,6 +138,8 @@ impl Setting {
             Self::Theme => "theme",
             Self::Icons => "icons",
             Self::WordWrap => "word_wrap",
+            Self::Weather => "weather",
+            Self::WeatherIdle => "weather_idle_minutes",
         }
     }
 
@@ -129,6 +150,8 @@ impl Setting {
             Self::Theme => "Theme",
             Self::Icons => "Icons",
             Self::WordWrap => "Word wrap",
+            Self::Weather => "Weather animation",
+            Self::WeatherIdle => "Weather after idle",
         }
     }
 
@@ -137,6 +160,7 @@ impl Setting {
     pub fn group(self) -> &'static str {
         match self {
             Self::Theme | Self::Icons | Self::WordWrap => "Appearance",
+            Self::Weather | Self::WeatherIdle => "Weather",
         }
     }
 
@@ -147,6 +171,8 @@ impl Setting {
             Self::Theme => "The colors the app draws in",
             Self::Icons => "Nerd Font icons, or plain markers without the font",
             Self::WordWrap => "Long titles wrap; off, each takes one line, cut short",
+            Self::Weather => "The season's weather falls over the app while it sits idle",
+            Self::WeatherIdle => "How long the app sits idle before the weather starts",
         }
     }
 }
@@ -154,20 +180,20 @@ impl Setting {
 impl Settings {
     /// How `setting`'s value reads in the window.
     #[must_use]
-    pub fn value(&self, setting: Setting) -> &'static str {
+    pub fn value(&self, setting: Setting) -> String {
+        let switch = |on| if on { "On" } else { "Off" };
         match setting {
-            Setting::Theme => self.theme.name(),
+            Setting::Theme => self.theme.name().to_owned(),
             Setting::Icons => match self.icons {
-                IconSet::Nerd => "Nerd Font",
-                IconSet::Plain => "Plain",
+                IconSet::Nerd => "Nerd Font".to_owned(),
+                IconSet::Plain => "Plain".to_owned(),
             },
-            Setting::WordWrap => {
-                if self.word_wrap {
-                    "On"
-                } else {
-                    "Off"
-                }
-            }
+            Setting::WordWrap => switch(self.word_wrap).to_owned(),
+            Setting::Weather => switch(self.weather).to_owned(),
+            Setting::WeatherIdle => match self.weather_idle_minutes.get() {
+                1 => "1 minute".to_owned(),
+                minutes => format!("{minutes} minutes"),
+            },
         }
     }
 
@@ -179,11 +205,14 @@ impl Settings {
             Setting::Theme => self.theme == default.theme,
             Setting::Icons => self.icons == default.icons,
             Setting::WordWrap => self.word_wrap == default.word_wrap,
+            Setting::Weather => self.weather == default.weather,
+            Setting::WeatherIdle => self.weather_idle_minutes == default.weather_idle_minutes,
         }
     }
 
-    /// Gives `setting` its next value, toward `Down`, or its previous one, going round: the next
-    /// theme of [`BuiltIn::ALL`], the other icons, wrapping turned over.
+    /// Gives `setting` its next value, toward `Down`, or its previous one: going round, the next
+    /// theme of [`BuiltIn::ALL`], the other icons, wrapping or the weather turned over; a minute
+    /// more or less of idle time, no less than one.
     fn turn(&mut self, setting: Setting, direction: Direction) {
         match setting {
             Setting::Theme => {
@@ -207,6 +236,14 @@ impl Settings {
                 };
             }
             Setting::WordWrap => self.word_wrap = !self.word_wrap,
+            Setting::Weather => self.weather = !self.weather,
+            Setting::WeatherIdle => {
+                let minutes = self.weather_idle_minutes;
+                self.weather_idle_minutes = match direction {
+                    Direction::Down => minutes.saturating_add(1),
+                    Direction::Up => NonZeroU32::new(minutes.get() - 1).unwrap_or(minutes),
+                };
+            }
         }
     }
 
@@ -217,6 +254,8 @@ impl Settings {
             Setting::Theme => self.theme = default.theme,
             Setting::Icons => self.icons = default.icons,
             Setting::WordWrap => self.word_wrap = default.word_wrap,
+            Setting::Weather => self.weather = default.weather,
+            Setting::WeatherIdle => self.weather_idle_minutes = default.weather_idle_minutes,
         }
     }
 }
@@ -369,9 +408,11 @@ mod tests {
         input(&mut state, SettingsInput::Turn(Direction::Up));
         assert_eq!(state.settings().icons, IconSet::Plain);
         assert_eq!(state.settings().value(Setting::Icons), "Plain");
+        input(&mut state, SettingsInput::Turn(Direction::Down));
+        assert_eq!(state.settings().icons, IconSet::Nerd, "going round");
+        input(&mut state, SettingsInput::Turn(Direction::Down));
         input(&mut state, SettingsInput::Reset);
         assert_eq!(state.settings().value(Setting::Icons), "Nerd Font");
-        input(&mut state, SettingsInput::Focus(Direction::Down));
         input(&mut state, SettingsInput::Focus(Direction::Down));
         assert_eq!(state.settings_window(), Some(Setting::WordWrap));
         assert_eq!(state.settings().value(Setting::WordWrap), "On");
@@ -436,13 +477,41 @@ mod tests {
     #[test]
     fn each_setting_is_kept_under_its_key_with_the_values_the_window_names() {
         for setting in Setting::ALL {
-            assert_eq!(setting.group(), "Appearance");
             assert!(!setting.name().is_empty() && !setting.description().is_empty());
         }
+        let groups: Vec<_> = Setting::ALL.iter().map(|setting| setting.group()).collect();
+        assert_eq!(
+            groups,
+            [
+                "Appearance",
+                "Appearance",
+                "Appearance",
+                "Weather",
+                "Weather"
+            ]
+        );
         let keys: Vec<_> = Setting::ALL.iter().map(|setting| setting.key()).collect();
-        assert_eq!(keys, ["theme", "icons", "word_wrap"]);
+        assert_eq!(
+            keys,
+            [
+                "theme",
+                "icons",
+                "word_wrap",
+                "weather",
+                "weather_idle_minutes"
+            ]
+        );
         let names: Vec<_> = Setting::ALL.iter().map(|setting| setting.name()).collect();
-        assert_eq!(names, ["Theme", "Icons", "Word wrap"]);
+        assert_eq!(
+            names,
+            [
+                "Theme",
+                "Icons",
+                "Word wrap",
+                "Weather animation",
+                "Weather after idle"
+            ]
+        );
         for theme in BuiltIn::ALL {
             let settings = Settings {
                 theme,
@@ -450,6 +519,51 @@ mod tests {
             };
             assert_eq!(settings.value(Setting::Theme), theme.name());
         }
+    }
+
+    // FR-UI-08, FR-SET-02
+    #[test]
+    fn the_weather_turns_over_and_its_idle_time_goes_by_minutes_no_less_than_one() {
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY);
+        give(&mut state, Message::Command(Command::Settings));
+        for _ in 0..3 {
+            input(&mut state, SettingsInput::Focus(Direction::Down));
+        }
+        assert_eq!(state.settings_window(), Some(Setting::Weather));
+        assert_eq!(state.settings().value(Setting::Weather), "On");
+        assert_eq!(
+            input(&mut state, SettingsInput::Turn(Direction::Up)),
+            [Effect::KeepSetting(Setting::Weather)]
+        );
+        assert!(!state.settings().weather);
+        assert_eq!(state.settings().value(Setting::Weather), "Off");
+        input(&mut state, SettingsInput::Reset);
+        assert!(state.settings().weather);
+        input(&mut state, SettingsInput::Focus(Direction::Down));
+        input(&mut state, SettingsInput::Focus(Direction::Down));
+        assert_eq!(
+            state.settings_window(),
+            Some(Setting::WeatherIdle),
+            "the highlight stops at the last setting"
+        );
+        assert_eq!(state.settings().value(Setting::WeatherIdle), "3 minutes");
+        assert_eq!(
+            input(&mut state, SettingsInput::Turn(Direction::Down)),
+            [Effect::KeepSetting(Setting::WeatherIdle)]
+        );
+        assert_eq!(state.settings().value(Setting::WeatherIdle), "4 minutes");
+        assert!(!state.settings().is_default(Setting::WeatherIdle));
+        for _ in 0..3 {
+            input(&mut state, SettingsInput::Turn(Direction::Up));
+        }
+        assert_eq!(state.settings().value(Setting::WeatherIdle), "1 minute");
+        assert_eq!(
+            input(&mut state, SettingsInput::Turn(Direction::Up)),
+            [],
+            "no less than a minute"
+        );
+        input(&mut state, SettingsInput::Reset);
+        assert!(state.settings().is_default(Setting::WeatherIdle));
     }
 
     // FR-UI-03

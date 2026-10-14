@@ -43,6 +43,9 @@ pub enum Message {
     /// The pane with the keys keeps this width from now on, as the frontend measures it, for
     /// [`Command::Narrow`] and [`Command::Widen`] (FR-PANE-02).
     PaneWidth(u16),
+    /// The frontend has no weather to start this season, the answer to [`Effect::StartWeather`]
+    /// in summer (FR-UI-08).
+    NoWeather,
     /// The frontend's clock reads this, counted from any fixed moment, such as the start.
     Tick(Duration),
     /// The process was told to end, as by `SIGTERM` or `SIGHUP`: save first, then end anyway
@@ -95,6 +98,9 @@ pub enum Effect {
     /// Keep this setting as it is now in the settings file, and report a failure as
     /// [`Message::SettingsFailed`] (FR-SET-02, FR-SET-04).
     KeepSetting(Setting),
+    /// Start the weather at once; the season it falls in is the frontend's to tell, and when it
+    /// has none it answers [`Message::NoWeather`] (FR-UI-08).
+    StartWeather,
 }
 
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
@@ -145,6 +151,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Attachments(input) => state.attachments_input(input),
         Message::Settings(input) => return state.settings_input(input),
         Message::SettingsFailed(problem) => state.settings_failed(problem),
+        Message::NoWeather => state.notify(Notice::NoWeather),
         Message::Command(command) => return run(state, command, today, emptying),
     }
     Vec::new()
@@ -223,6 +230,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
             return vec![Effect::ScrollShortcuts(direction)];
         }
         Command::Settings => state.open_settings(),
+        Command::StartWeather => return vec![Effect::StartWeather],
     }
     Vec::new()
 }

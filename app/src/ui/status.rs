@@ -111,6 +111,7 @@ fn kept(state: &State) -> String {
         Notice::Refused(refusal) => why(*refusal).to_owned(),
         Notice::NoChecklist => "only a task has a checklist".to_owned(),
         Notice::Settings(problem) => format!("config.toml: {problem}"),
+        Notice::NoWeather => "no weather in summer".to_owned(),
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()

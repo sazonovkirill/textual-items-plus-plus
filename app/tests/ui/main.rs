@@ -32,3 +32,4 @@ mod tagging;
 mod today;
 mod trash;
 mod upcoming;
+mod weather;

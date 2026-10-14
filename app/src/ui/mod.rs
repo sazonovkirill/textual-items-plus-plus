@@ -22,6 +22,7 @@ mod sidebar;
 mod status;
 mod text_keys;
 mod theme;
+mod weather;
 
 use std::{
     path::{Path, PathBuf},
@@ -65,6 +66,7 @@ use settings::SettingsWindow;
 use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
 use sidebar::SidebarPane;
 use status::StatusLine;
+use weather::{Idle, Season, Weather};
 
 /// What reaches the event loop: what the terminal, the disk worker, the watcher and the process
 /// report.
@@ -113,6 +115,10 @@ pub struct Tui {
     shortcuts_page: usize,
     /// The local time now, which stamps comments (FR-ATT-04).
     clock: fn() -> DateTime,
+    /// The frontend's clock, as last given, counted from the start of the session.
+    now: Duration,
+    /// The weather the app shows once it sits idle (FR-UI-08).
+    weather: Weather,
 }
 
 impl Tui {
@@ -136,6 +142,8 @@ impl Tui {
             shortcuts_scroll: (0, None),
             shortcuts_page: 1,
             clock,
+            now: Duration::ZERO,
+            weather: Weather::default(),
         }
     }
 
@@ -216,11 +224,27 @@ impl Tui {
     }
 
     /// The frontend's clock reads `now`, counted from the start of the session, on `today`, the
-    /// local date: a save that is due starts, and a key sequence waiting too long ends.
+    /// local date: a save that is due starts, a key sequence waiting too long ends, and the
+    /// weather starts once the app has sat idle long enough, or moves on while it plays.
     pub fn tick(&mut self, now: Duration, today: Date) {
         self.today = today;
+        self.now = now;
         self.update(Message::Tick(now));
         self.keymap.tick(now);
+        self.weather.tick(now, self.idle());
+    }
+
+    /// What arms the weather's idle timer: the `weather` setting, with the season's weather to
+    /// start, none in summer, after the `weather_idle_minutes` setting (FR-UI-08).
+    fn idle(&self) -> Option<Idle> {
+        let settings = self.state.settings();
+        let minutes = u64::from(settings.weather_idle_minutes.get());
+        Season::of(self.today)
+            .filter(|_| settings.weather)
+            .map(|season| Idle {
+                season,
+                after: Duration::from_mins(minutes),
+            })
     }
 
     /// Waits until the disk work asked for so far is done and its reports are among the inputs.
@@ -233,10 +257,14 @@ impl Tui {
     /// When the next [`tick`](Self::tick) is due without any input, if one is.
     #[must_use]
     pub fn deadline(&self) -> Option<Duration> {
-        [self.state.deadline(), self.keymap.deadline()]
-            .into_iter()
-            .flatten()
-            .min()
+        [
+            self.state.deadline(),
+            self.keymap.deadline(),
+            self.weather.deadline(self.idle()),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// Handles one terminal event on `today`, the local date: the keys of a bound command give
@@ -247,9 +275,13 @@ impl Tui {
     /// description or note being edited take them the same way (FR-EDIT-01), and so do the date
     /// prompt (FR-DATE-02) and the settings window (FR-SET-02). The open attachments panel takes
     /// them, scrolling itself (FR-ATT-01), leaving quitting and the commands it acts on
-    /// (FR-CHK-03).
+    /// (FR-CHK-03). A key, paste, click or resize while the weather plays only ends it
+    /// (FR-UI-08).
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
+        if weather::is_input(event) && self.weather.input(self.now) {
+            return;
+        }
         if let Event::Paste(text) = event {
             self.paste(text);
             return;
@@ -462,10 +494,10 @@ impl Tui {
     /// note being edited in the attachments panel while it is open, else at the caret of the
     /// query of the Navigator, the command palette, Go to Symbol or Move to while one is open, at the caret of
     /// the date prompt while it is open, at the caret of the text being edited in edit mode, in
-    /// the pane or the sidebar, else hidden.
+    /// the pane or the sidebar, else hidden; the weather covers it while it plays.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
-        if self.state.conflict().is_some() {
+        if self.state.conflict().is_some() || self.weather.playing() {
             return None;
         }
         let [panes, prompt, _] = self.layout(area);
@@ -592,6 +624,10 @@ impl Tui {
                     )));
                 }
             }
+            Effect::StartWeather => match Season::of(self.today) {
+                Some(season) => self.weather.start(self.now, season),
+                None => self.update(Message::NoWeather),
+            },
             Effect::ScrollShortcuts(direction) => {
                 let (scroll, _) = &mut self.shortcuts_scroll;
                 *scroll = match direction {
@@ -947,7 +983,8 @@ impl Widget for &mut Tui {
     /// shortcuts panel at the right while it shows, over the status line, scrolling each pane to
     /// keep its focus in view, the date prompt between them while it is open, and the Navigator,
     /// the command palette, Go to Symbol, Move to, the tag picker, the settings window, the attachments panel or
-    /// the conflict prompt over them while it is open.
+    /// the conflict prompt over them while it is open, and the weather over everything while it
+    /// plays.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
         let icons = self.icons();
@@ -1010,5 +1047,6 @@ impl Widget for &mut Tui {
             ConflictPrompt::new(view, &theirs, &mine, &self.theme).render(panes, buf);
         }
         StatusLine::new(&self.state, self.keymap.pending(), &self.theme, icons).render(status, buf);
+        self.weather.draw(buf, area, icons);
     }
 }
