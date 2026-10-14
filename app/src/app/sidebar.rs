@@ -195,6 +195,19 @@ impl Sidebar {
         }
     }
 
+    /// Keeps the focused entry, the one to go back to and the collapsed areas on the items
+    /// `exact` finds them as in a document read again; a focused entry not found gives way to
+    /// the one now where it was, and the others are dropped.
+    pub(super) fn rematch(&mut self, exact: impl Fn(ItemId) -> Option<ItemId>) {
+        let rematched = |shown| match shown {
+            Shown::Container(id) => exact(id).map(Shown::Container),
+            Shown::View(_) => Some(shown),
+        };
+        self.focused = self.focused.and_then(rematched);
+        self.left = self.left.and_then(rematched);
+        self.collapsed = self.collapsed.iter().filter_map(|&id| exact(id)).collect();
+    }
+
     /// The index of the focused entry among `entries`, or of the one now where it was.
     fn at(&self, entries: &[Stop]) -> Option<usize> {
         let last = entries.len().checked_sub(1)?;
@@ -775,6 +788,37 @@ mod tests {
         sidebar.move_focus(&[], Focus::Next);
         assert_eq!(sidebar.focused(), None);
         Ok(())
+    }
+
+    // FR-VIEW-10, F-FILE-06
+    #[test]
+    fn a_reread_document_keeps_the_entries_found_again_and_drops_the_rest() {
+        let document = document();
+        let (work, site, home) = (
+            find(&document, "Work"),
+            find(&document, "Site"),
+            find(&document, "Home"),
+        );
+        let mut sidebar = Sidebar::default();
+        sidebar.toggle(Some(Shown::View(View::Today)));
+        sidebar.focus_new(work);
+        sidebar.collapsed = BTreeSet::from([work, site]);
+        sidebar.settle(&entries(&document));
+        let at = sidebar.index;
+        sidebar.rematch(|id| (id == work).then_some(home));
+        assert_eq!(sidebar.focused(), Some(Shown::Container(home)));
+        assert_eq!(sidebar.left, Some(Shown::View(View::Today)));
+        assert_eq!(sidebar.collapsed, BTreeSet::from([home]));
+        sidebar.rematch(|_| None);
+        assert_eq!(sidebar.left, Some(Shown::View(View::Today)));
+        assert!(sidebar.collapsed.is_empty());
+        let entries = entries(&document);
+        sidebar.settle(&entries);
+        assert_eq!(
+            sidebar.focused(),
+            Some(entries[at].shown()),
+            "the entry now where the one not found was"
+        );
     }
 
     // FR-VIEW-10, FR-EDIT-05

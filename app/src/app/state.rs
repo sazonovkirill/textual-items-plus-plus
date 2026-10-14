@@ -71,7 +71,7 @@ pub struct State {
     editing: Option<Editing>,
     /// The attachments panel, while it is open (FR-ATT-01).
     pub(super) panel: Option<Panel>,
-    sidebar: Sidebar,
+    pub(super) sidebar: Sidebar,
     /// Whether the shortcuts panel shows (FR-KEY-03).
     pub(super) shortcuts: bool,
     /// The settings the app runs with (FR-SET-03).

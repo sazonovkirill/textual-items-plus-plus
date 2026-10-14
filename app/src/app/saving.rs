@@ -443,9 +443,10 @@ impl State {
     /// query, Go to Symbol open on the items now listed with its query, Move to open on the
     /// destinations now listed with its query while an item it moves is found again, the date
     /// prompt open while an item it dates is, and the attachments panel open while its item is,
-    /// on what it selected as far as that is found again. The tag filter
-    /// stays while the container shown is found again as it was. The undo history is cleared,
-    /// since its steps fit only the document as it was.
+    /// on what it selected as far as that is found again, and the sidebar on its entry and its
+    /// collapsed areas as they are found again. The tag filter stays while the container shown is
+    /// found again as it was. The undo history is cleared, since its steps fit only the document
+    /// as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -479,6 +480,7 @@ impl State {
             .take()
             .and_then(|prompt| prompt.rematched(exact));
         self.panel = self.rematched_panel(&old, &exact);
+        self.sidebar.rematch(exact);
         if let Some(tags) = &self.tags {
             let items = tags.items().iter().filter_map(|&id| exact(id)).collect();
             let query = self.pane().query.text();
@@ -569,7 +571,9 @@ mod tests {
     use super::*;
     use crate::app::{
         AttachmentsInput, Command, DateInput, EditInput, Focus, Go, History, Message, Opened,
-        PickerInput, Selected, Side, TextEdit, Whose, update,
+        PickerInput, Selected, Side, TextEdit, Whose,
+        navigator::Stop,
+        update,
         view::{Shown, View},
     };
     use crate::domain::{Item, ItemId, ItemKind, Node, PlacementError, dates::DateKind};
@@ -1018,6 +1022,45 @@ mod tests {
         );
         send(&mut state, Message::GoToSymbol(PickerInput::Choose));
         assert_eq!(state.selection().focused(), titled(&state, "x"));
+        Ok(())
+    }
+
+    // F-FILE-06, FR-VIEW-10
+    #[test]
+    fn a_reload_keeps_the_sidebar_on_its_entry_and_its_areas_collapsed() -> TestResult {
+        let areas = |titles: &[&str]| -> Result<Document, PlacementError> {
+            let mut document = Document::new();
+            let inbox = document.inbox();
+            for title in titles {
+                document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, *title)))?;
+            }
+            for (area, project) in [("Alpha", "A1"), ("Beta", "B1")] {
+                let area = document.push(None, Node::Item(Item::new(ItemKind::Area, area)))?;
+                let project = Item::new(ItemKind::Project, project);
+                document.push(Some(area), Node::Item(project))?;
+            }
+            Ok(document)
+        };
+        let mut state = State::new(
+            areas(&["t1", "t2"])?,
+            Opened::File("todo.taskpaper".into()),
+            TODAY,
+        );
+        command(&mut state, Command::Sidebar);
+        command(&mut state, Command::Focus(Focus::Last));
+        for _ in 0..3 {
+            command(&mut state, Command::Focus(Focus::Previous));
+        }
+        command(&mut state, Command::Collapse);
+        send(&mut state, Message::OnDisk(OnDisk::Changed(areas(&[])?)));
+        let sidebar = state.sidebar().ok_or("shown")?;
+        let alpha = titled(&state, "Alpha").ok_or("Alpha")?;
+        let focused = sidebar.focused.and_then(|at| sidebar.entries.get(at));
+        assert!(
+            matches!(focused, Some(Stop::Place(place)) if place.id == alpha),
+            "{focused:?}"
+        );
+        assert_eq!(sidebar.collapsed, [alpha]);
         Ok(())
     }
 

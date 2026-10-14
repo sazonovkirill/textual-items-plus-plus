@@ -135,6 +135,22 @@ fn a_change_made_elsewhere_is_reloaded() {
     );
 }
 
+// F-FILE-06, FR-VIEW-10
+#[test]
+fn a_reload_keeps_the_sidebar_on_its_entry_and_its_areas_collapsed() {
+    let (_dir, path, mut harness) =
+        on_file("Inbox:\n\t- t1\n\t- t2\nAlpha: @area\n\tA1:\nBeta: @area\n\tB1:\n");
+    harness.type_text("g0Gkkk'");
+    fs::write(&path, "Inbox:\nAlpha: @area\n\tA1:\nBeta: @area\n\tB1:\n").expect("written");
+    harness.check();
+    let rows = harness.rows();
+    assert!(rows[8].starts_with("▌󰆧 ALPHA             ▸│"), "{rows:#?}");
+    assert!(
+        rows[11].starts_with(" # B1 "),
+        "Beta stays expanded: {rows:#?}"
+    );
+}
+
 // F-FILE-06
 #[test]
 fn the_watcher_sees_a_change_made_elsewhere() {
