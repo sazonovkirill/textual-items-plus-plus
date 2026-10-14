@@ -33,7 +33,8 @@ fn on_file(text: &str, width: u16, height: u16) -> (tempfile::TempDir, Harness) 
     (dir, harness)
 }
 
-// FR-STORE-01, FR-VIEW-05, FR-TASK-03, FR-TAG-03, FR-ORG-10, FR-UI-01, FR-UI-02, FR-UI-06, D-29
+// FR-STORE-01, FR-VIEW-05, FR-TASK-03, FR-TAG-03, FR-ORG-10, FR-UI-01, FR-UI-02, FR-UI-06, D-29,
+// FR-DATE-02
 #[test]
 fn without_a_file_the_app_shows_the_demo_inbox_at_80_by_24() {
     let harness = Harness::new(80, 24);
@@ -43,7 +44,8 @@ fn without_a_file_the_app_shows_the_demo_inbox_at_80_by_24() {
         "  󰚇 Inbox".to_owned(),
         "  Everything not sorted yet lands here.".to_owned(),
         String::new(),
-        "▌ - Call the bank about the card".to_owned(),
+        "▌ - Call the bank about the card                                          󱙬 Wed"
+            .to_owned(),
         "  - Buy coffee beans @errands".to_owned(),
         "  - Read the article Sam sent".to_owned(),
     ];
@@ -57,7 +59,7 @@ fn without_a_file_the_app_shows_the_demo_inbox_at_80_by_24() {
 #[test]
 fn j_k_and_the_arrows_move_between_rows_and_stop_at_the_ends() {
     let mut harness = Harness::new(80, 24);
-    let call = "- Call the bank about the card";
+    let call = "- Call the bank about the card                                          󱙬 Wed";
     let coffee = "- Buy coffee beans @errands";
     let read = "- Read the article Sam sent";
     harness.type_text("j");
@@ -85,7 +87,7 @@ fn j_k_and_the_arrows_move_between_rows_and_stop_at_the_ends() {
 #[test]
 fn gg_g_home_and_end_go_to_the_first_and_last_rows() {
     let mut harness = Harness::new(80, 24);
-    let first = "- Call the bank about the card";
+    let first = "- Call the bank about the card                                          󱙬 Wed";
     let last = "- Read the article Sam sent";
     harness.type_text("G");
     assert_eq!(focused(&harness).as_deref(), Some(last));
@@ -155,7 +157,7 @@ fn a_file_opens_on_its_inbox_saved() {
             "─".repeat(60).as_str(),
             "  󰚇 Inbox",
             "",
-            "▌ - Renew the passport",
+            "▌ - Renew the passport                         󱙬 in 27 days",
             "  - Book flights @travel",
             "",
             format!(" 󰆿 NAVIGATE · {} · saved", path.display()).as_str(),
@@ -219,9 +221,9 @@ fn a_small_terminal_shows_what_fits_and_keeps_working() {
         [
             "  󰋜 Inbox",
             "─".repeat(24).as_str(),
-            "",
-            "▌ - Call the bank about",
-            "▌   the card",
+            "▌ - Call the bank 󱙬 Wed",
+            "▌   about the",
+            "▌   card",
             " 󰆿 NAVIGATE · not saved",
         ]
     );

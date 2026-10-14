@@ -198,3 +198,9 @@ impl Harness {
         self.rows().join("\n")
     }
 }
+
+/// `text` up to the first date chip at the right of a row, without the spaces before it.
+pub fn without_chips(text: &str) -> &str {
+    let chip = ['\u{f166d}', '\u{f166c}', '\u{f0a31}'];
+    text.split(chip).next().unwrap_or(text).trim_end()
+}

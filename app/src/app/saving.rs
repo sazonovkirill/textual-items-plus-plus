@@ -370,9 +370,9 @@ impl State {
     /// Replaces the document with `document`, read again from the file, keeping the pane on the
     /// container it showed, its focus, what is picked and its history on the items they were on,
     /// as far as their text paths find them, the Navigator open on the places now listed with its
-    /// query, and Move to open on the destinations now listed with its query while an item it
-    /// moves is found again. The undo history is cleared, since its steps fit only the document
-    /// as it was.
+    /// query, Move to open on the destinations now listed with its query while an item it moves
+    /// is found again, and the date prompt open while an item it dates is. The undo history is
+    /// cleared, since its steps fit only the document as it was.
     fn reload(&mut self, document: Document) {
         let old = std::mem::replace(&mut self.document, document);
         let new = &self.document;
@@ -403,6 +403,10 @@ impl State {
             let items = move_to.items().iter().filter_map(|&id| exact(id)).collect();
             self.move_to = MoveTo::reopen(new, items, &query);
         }
+        self.date_prompt = self
+            .date_prompt
+            .take()
+            .and_then(|prompt| prompt.rematched(exact));
         self.history = super::History::default();
         self.saving.autosave.reloaded(new.revision());
     }
@@ -479,9 +483,10 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Command, EditInput, History, Message, Opened, PickerInput, Side, TextEdit, update,
+        Command, DateInput, EditInput, History, Message, Opened, PickerInput, Side, TextEdit,
+        update,
     };
-    use crate::domain::{Item, ItemKind, Node, PlacementError};
+    use crate::domain::{Item, ItemKind, Node, PlacementError, dates::DateKind};
 
     const TODAY: Date = date(2026, 10, 14);
 
@@ -712,6 +717,30 @@ mod tests {
             Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
         );
         assert!(state.move_to().is_none(), "a, which it moved, is gone");
+        Ok(())
+    }
+
+    // F-FILE-06, FR-DATE-02
+    #[test]
+    fn a_reload_keeps_the_date_prompt_open_while_an_item_it_dates_is_found_again() -> TestResult {
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::SetDate(DateKind::Due));
+        send(
+            &mut state,
+            Message::DatePrompt(DateInput::Edit(TextEdit::Insert('+'))),
+        );
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
+        );
+        assert_eq!(state.date_prompt().ok_or("open")?.field.text(), "+");
+        let mut state = opened(&["a"])?;
+        command(&mut state, Command::SetDate(DateKind::Due));
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["y"])?)),
+        );
+        assert!(state.date_prompt().is_none(), "a, which it dates, is gone");
         Ok(())
     }
 

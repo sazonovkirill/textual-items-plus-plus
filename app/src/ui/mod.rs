@@ -5,6 +5,7 @@ mod clipboard;
 mod conflict;
 mod container;
 mod crumbs;
+mod date_prompt;
 mod edit_keys;
 mod file;
 mod keymap;
@@ -37,8 +38,8 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
     app::{
-        self, Command, Context, Destination, EditInput, Effect, Message, Opened, Part, PickerInput,
-        Place, REGISTRY, Side, State, TextEdit,
+        self, Command, Context, DateInput, Destination, EditInput, Effect, Message, Opened, Part,
+        PickerInput, Place, REGISTRY, Side, State, TextEdit,
     },
     domain::ItemKind,
     store::{self, OpenError, Outcome, RecoveryError},
@@ -47,6 +48,7 @@ use clipboard::Clipboard;
 use conflict::ConflictPrompt;
 use container::ContainerPane;
 use crumbs::Crumbs;
+use date_prompt::DatePromptPanel;
 use file::File;
 use sidebar::SidebarPane;
 use status::StatusLine;
@@ -192,8 +194,8 @@ impl Tui {
     /// it takes only its own keys and quitting. While the Navigator is open it takes the keys,
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
     /// Move to picker (FR-OPS-04) and, in edit mode, the title or description being edited take
-    /// them the same way (FR-EDIT-01). A key that cuts a sequence short gives the sequence's command first,
-    /// then acts on its own.
+    /// them the same way (FR-EDIT-01), and so does the date prompt (FR-DATE-02). A key that cuts a
+    /// sequence short gives the sequence's command first, then acts on its own.
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
         if let Event::Paste(text) = event {
@@ -217,6 +219,10 @@ impl Tui {
             }
             .map(Message::Edit)
             .or_else(|| self.global(event))
+        } else if self.state.date_prompt().is_some() {
+            date_prompt::date_prompt_input(event)
+                .map(Message::DatePrompt)
+                .or_else(|| self.global(event))
         } else if self.state.navigator().is_some() {
             picker_input(event)
                 .map(Message::Navigator)
@@ -236,8 +242,8 @@ impl Tui {
     /// Takes in `text` pasted into the terminal (FR-OPS-05), without the line breaks that end
     /// it: a description being edited takes it whole; a title being edited takes a single line,
     /// while several lines end editing and paste as items below; the query of the open Navigator
-    /// or Move to takes it with its line breaks as spaces; otherwise the items it holds paste
-    /// below the focus. The conflict prompt takes none.
+    /// or Move to and the open date prompt take it with its line breaks as spaces; otherwise the
+    /// items it holds paste below the focus. The conflict prompt takes none.
     fn paste(&mut self, text: &str) {
         if self.state.conflict().is_some() {
             return;
@@ -253,15 +259,18 @@ impl Tui {
             for c in text.chars() {
                 self.update(Message::Edit(EditInput::Text(TextEdit::Insert(c))));
             }
-        } else if self.state.navigator().is_some() || self.state.move_to().is_some() {
-            let navigator = self.state.navigator().is_some();
+        } else if self.state.navigator().is_some()
+            || self.state.move_to().is_some()
+            || self.state.date_prompt().is_some()
+        {
             for c in text.chars() {
-                let c = if matches!(c, '\r' | '\n') { ' ' } else { c };
-                let input = PickerInput::Edit(TextEdit::Insert(c));
-                self.update(if navigator {
-                    Message::Navigator(input)
+                let edit = TextEdit::Insert(if matches!(c, '\r' | '\n') { ' ' } else { c });
+                self.update(if self.state.navigator().is_some() {
+                    Message::Navigator(PickerInput::Edit(edit))
+                } else if self.state.move_to().is_some() {
+                    Message::MoveTo(PickerInput::Edit(edit))
                 } else {
-                    Message::MoveTo(input)
+                    Message::DatePrompt(DateInput::Edit(edit))
                 });
             }
         } else {
@@ -293,8 +302,8 @@ impl Tui {
     }
 
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
-    /// commands and quitting, while the Navigator or Move to is open or in edit mode only global
-    /// ones, and otherwise any.
+    /// commands and quitting, while the Navigator, Move to or the date prompt is open or in edit
+    /// mode only global ones, and otherwise any.
     fn allows(&self, command: Command) -> bool {
         let context = REGISTRY
             .iter()
@@ -305,6 +314,7 @@ impl Tui {
         } else if self.state.editing().is_some()
             || self.state.navigator().is_some()
             || self.state.move_to().is_some()
+            || self.state.date_prompt().is_some()
         {
             context == Some(Context::Global)
         } else {
@@ -313,14 +323,18 @@ impl Tui {
     }
 
     /// Where the terminal's cursor goes when the app is drawn over `area`: at the caret of the
-    /// query of the Navigator or Move to while one is open, at the caret of the text being edited
-    /// in edit mode, in the pane or the sidebar, else hidden.
+    /// query of the Navigator or Move to while one is open, at the caret of the date prompt while
+    /// it is open, at the caret of the text being edited in edit mode, in the pane or the sidebar,
+    /// else hidden.
     #[must_use]
     pub fn cursor(&self, area: Rect) -> Option<Position> {
         if self.state.conflict().is_some() {
             return None;
         }
-        let [panes, _] = layout(area);
+        let [panes, prompt, _] = self.layout(area);
+        if let Some(view) = self.state.date_prompt() {
+            return Some(DatePromptPanel::new(&view, &self.theme).caret(prompt));
+        }
         if let Some(view) = self.state.navigator() {
             return Some(navigator_popup(&view, &self.theme, self.icons).caret(panes));
         }
@@ -332,15 +346,15 @@ impl Tui {
         if let Some(view) = sidebar.filter(|view| view.keys) {
             return SidebarPane::new(&self.state, view, &self.theme, self.icons).caret(side);
         }
-        ContainerPane::new(&self.state, &self.theme, self.icons)
+        ContainerPane::new(&self.state, self.today, &self.theme, self.icons)
             .caret(pane_layout(pane)[2], self.top)
     }
 
     /// The columns the description being edited wraps in, as last drawn.
     fn description_columns(&self) -> usize {
-        let [panes, _] = layout(self.area);
+        let [panes, _, _] = self.layout(self.area);
         let [_, pane] = split(panes, self.state.sidebar().is_some());
-        ContainerPane::new(&self.state, &self.theme, self.icons)
+        ContainerPane::new(&self.state, self.today, &self.theme, self.icons)
             .description_columns(pane_layout(pane)[2])
             .unwrap_or(usize::MAX)
     }
@@ -376,6 +390,23 @@ impl Tui {
         }
     }
 
+    /// The parts of the screen: where the panes go, over the date prompt's panel while it is open,
+    /// over the status line. The panes give up the panel's rows rather than lie under it, so that
+    /// the focus scrolls into view above it, as in taskpaper-terminal.
+    fn layout(&self, area: Rect) -> [Rect; 3] {
+        let panel = if self.state.date_prompt().is_some() {
+            DatePromptPanel::HEIGHT
+        } else {
+            0
+        };
+        Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(panel),
+            Constraint::Length(1),
+        ])
+        .areas(area)
+    }
+
     /// Whether the session has ended, so the event loop should stop.
     #[must_use]
     pub fn should_quit(&self) -> bool {
@@ -405,11 +436,6 @@ impl Tui {
             .left_in()
             .map(|copy| format!("tipp: left theirs on disk; mine is in {}", copy.display()))
     }
-}
-
-/// The parts of the screen: where the panes go over the status line.
-fn layout(area: Rect) -> [Rect; 2] {
-    Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area)
 }
 
 /// The parts of the panes' area: the sidebar, empty when it does not show, and the pane.
@@ -477,11 +503,12 @@ fn move_to_popup<'a>(
 
 impl Widget for &mut Tui {
     /// Draws the pane, below its breadcrumbs and a rule, beside the sidebar while it shows, over
-    /// the status line, scrolling the pane to keep the focus in view, and the Navigator, Move to
-    /// or the conflict prompt over them while it is open.
+    /// the status line, scrolling the pane to keep the focus in view, the date prompt between
+    /// them while it is open, and the Navigator, Move to or the conflict prompt over them while it
+    /// is open.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
-        let [panes, status] = layout(area);
+        let [panes, prompt, status] = self.layout(area);
         let sidebar = self.state.sidebar();
         let [side, pane] = split(panes, sidebar.is_some());
         if let Some(view) = sidebar {
@@ -495,12 +522,19 @@ impl Widget for &mut Tui {
             Style::new().fg(self.theme.rule),
         )
         .render(rule, buf);
-        ContainerPane::new(&self.state, &self.theme, self.icons).render(pane, buf, &mut self.top);
+        ContainerPane::new(&self.state, self.today, &self.theme, self.icons).render(
+            pane,
+            buf,
+            &mut self.top,
+        );
         if let Some(view) = self.state.navigator() {
             navigator_popup(&view, &self.theme, self.icons).render(panes, buf);
         }
         if let Some(view) = self.state.move_to() {
             move_to_popup(&view, &self.theme, self.icons).render(panes, buf);
+        }
+        if let Some(view) = self.state.date_prompt() {
+            DatePromptPanel::new(&view, &self.theme).render(prompt, buf);
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
             let (theirs, mine) = if view.diff {

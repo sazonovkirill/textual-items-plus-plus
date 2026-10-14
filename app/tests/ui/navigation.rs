@@ -99,7 +99,7 @@ fn open_work_website_from_the_navigator_and_come_back() {
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website");
     assert_eq!(
         harness.rows()[2].trim_end(),
-        "  󰉖 Website                                                               󱇗 󰆉 2"
+        "  󰉖 Website                                                  󱇗 󰆉 2 󱙬 in 20 days"
     );
     assert_eq!(
         focused(&harness).as_deref(),
@@ -109,7 +109,7 @@ fn open_work_website_from_the_navigator_and_come_back() {
     assert_eq!(crumbs(&harness), "  󰋜 Inbox");
     assert_eq!(
         focused(&harness).as_deref(),
-        Some("- Call the bank about the card")
+        Some("- Call the bank about the card                                          󱙬 Wed")
     );
     harness.type_text("L");
     assert_eq!(crumbs(&harness), "  󰋜 Work › Website");

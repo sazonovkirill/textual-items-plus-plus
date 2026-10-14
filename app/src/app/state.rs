@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use jiff::civil::Date;
 
 use super::{
-    Command, Direction, EditInput, Effect, Go, History, Notice, Part, Picked, Picker, PickerInput,
-    PickerView, Selection, Side, SidebarView, TextField, Whose, adding, clipboard, completion,
+    Command, DateInput, DatePromptView, Direction, EditInput, Effect, Go, History, Notice, Part,
+    Picked, Picker, PickerInput, PickerView, Selection, Side, SidebarView, TextField, Whose,
+    adding, clipboard, completion,
     container::{self, Row},
     converting,
+    date_prompt::{self, DatePrompt},
     editing::Editing,
     focus::{self, Focus},
     move_to::{Destination, MoveTo},
@@ -19,7 +21,7 @@ use super::{
     trash,
     visits::{Visit, Visits},
 };
-use crate::domain::{Branch, Document, ItemId, ItemKind, Transaction};
+use crate::domain::{Branch, Document, ItemId, ItemKind, Transaction, dates::DateKind};
 
 /// Where the document came from, which decides whether changes to it can be kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +46,8 @@ pub struct State {
     pub(super) navigator: Option<Picker<Place>>,
     /// Move to, while its picker is open (FR-OPS-04).
     pub(super) move_to: Option<MoveTo>,
+    /// The date prompt, while it is open (FR-DATE-02).
+    pub(super) date_prompt: Option<DatePrompt>,
     /// The item whose title or description is edited, in edit mode (FR-EDIT-01), in the sidebar
     /// while it has the keys.
     editing: Option<Editing>,
@@ -68,6 +72,7 @@ impl State {
             visits: Visits::default(),
             navigator: None,
             move_to: None,
+            date_prompt: None,
             editing: None,
             sidebar: Sidebar::default(),
             saving,
@@ -129,6 +134,12 @@ impl State {
     #[must_use]
     pub fn move_to(&self) -> Option<PickerView<'_, Destination>> {
         self.move_to.as_ref().map(MoveTo::view)
+    }
+
+    /// The date prompt, while it is open (FR-DATE-02).
+    #[must_use]
+    pub fn date_prompt(&self) -> Option<DatePromptView<'_>> {
+        self.date_prompt.as_ref().map(DatePrompt::view)
     }
 
     /// The sidebar, while it shows (FR-VIEW-10).
@@ -197,6 +208,40 @@ impl State {
     pub(super) fn toggle_completed(&mut self, today: Date) {
         let items = self.selection.items(&self.rows());
         let transaction = completion::toggle(&self.document, items, today);
+        self.change(transaction);
+    }
+
+    /// Opens the date prompt for the `kind` date of the selected items, resolving what is typed
+    /// against `today`. Nothing opens when none of them takes a date.
+    pub(super) fn open_date_prompt(&mut self, kind: DateKind, today: Date) {
+        let items = self.selection.items(&self.rows());
+        let focused = self.selection.focused();
+        self.date_prompt = DatePrompt::open(&self.document, items, kind, today, focused);
+    }
+
+    /// Applies `input` to the open date prompt: applying a date, or a blank text, closes it and
+    /// sets or removes the date of the items it was opened on as one step to undo. Nothing
+    /// happens while it is closed.
+    pub(super) fn date_prompt_input(&mut self, input: DateInput) {
+        let Some(prompt) = self.date_prompt.as_mut() else {
+            return;
+        };
+        match input {
+            DateInput::Edit(edit) => prompt.edit(edit),
+            DateInput::Cancel => self.date_prompt = None,
+            DateInput::Apply => {
+                if let Some(transaction) = prompt.transaction(&self.document) {
+                    self.date_prompt = None;
+                    self.change(transaction);
+                }
+            }
+        }
+    }
+
+    /// Sets the start date of the selected items to `today`, as one step to undo.
+    pub(super) fn start_today(&mut self, today: Date) {
+        let items = self.selection.items(&self.rows());
+        let transaction = date_prompt::set(&self.document, items, DateKind::Start, Some(today));
         self.change(transaction);
     }
 
@@ -561,7 +606,8 @@ impl State {
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, adding a project, as
     /// `o` and `O` do since it lists no tasks, or an area, deleting, moving, indenting,
-    /// outdenting and converting, each one step to undo, and opening the entry in the pane.
+    /// outdenting, converting and setting its dates, each one step to undo, and opening the entry
+    /// in the pane.
     /// Quitting, undo and redo, the Navigator, the sidebar's own commands, going home, back and
     /// forward and the conflict prompt's commands pass to the app; every other command does
     /// nothing.
@@ -614,6 +660,14 @@ impl State {
             }
             (Command::Outdent, Some(id)) => apply(self, sidebar::outdent(&self.document, id)),
             (Command::Go(Go::Into), Some(id)) => self.open(id, None),
+            (Command::SetDate(kind), Some(id)) => {
+                self.date_prompt = DatePrompt::open(&self.document, [id], kind, today, Some(id));
+            }
+            (Command::StartToday, Some(id)) => {
+                let transaction =
+                    date_prompt::set(&self.document, [id], DateKind::Start, Some(today));
+                self.change(transaction);
+            }
             _ => {}
         }
         true
@@ -737,9 +791,11 @@ impl State {
         }
     }
 
-    /// Opens the Navigator on where the pane is, closing Move to, or closes it when it is open.
+    /// Opens the Navigator on where the pane is, closing Move to and the date prompt, or closes it
+    /// when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         self.move_to = None;
+        self.date_prompt = None;
         self.navigator = match self.navigator {
             Some(_) => None,
             None => Some(navigator::open(&self.document, self.container)),

@@ -3,6 +3,7 @@
 //! shortcuts panel.
 
 use super::{Direction, Focus, Side};
+use crate::domain::dates::DateKind;
 
 /// A command: one user intent, whatever key, menu or palette gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,6 +47,10 @@ pub enum Command {
     NewArea(Side),
     /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
     EditDescription(Whose),
+    /// Open the date prompt for the selected items' start or due date (FR-DATE-02, FR-OPS-06).
+    SetDate(DateKind),
+    /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
+    StartToday,
     /// Move the selected items to the Trash (FR-OPS-05, OQ-19).
     Delete,
     /// Open the picker that moves the selected items to another container (FR-OPS-04).
@@ -388,6 +393,21 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::SetDate(DateKind::Start),
+        title: "Set Start Date",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::SetDate(DateKind::Due),
+        title: "Set Due Date",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::StartToday,
+        title: "Start Today",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::Sidebar,
         title: "Toggle Sidebar",
         context: Context::Navigate,
@@ -503,6 +523,24 @@ mod tests {
     #[test]
     fn the_sidebar_commands_are_navigate_commands() {
         for command in [Command::Sidebar, Command::FocusSidebar, Command::FocusPane] {
+            let entry = REGISTRY.iter().find(|entry| entry.command == command);
+            assert_eq!(
+                entry.map(|entry| entry.context),
+                Some(Context::Navigate),
+                "{command:?}"
+            );
+        }
+    }
+
+    // FR-DATE-02, FR-KEY-06
+    #[test]
+    fn the_date_commands_are_navigate_commands() {
+        let dating = [
+            Command::SetDate(DateKind::Start),
+            Command::SetDate(DateKind::Due),
+            Command::StartToday,
+        ];
+        for command in dating {
             let entry = REGISTRY.iter().find(|entry| entry.command == command);
             assert_eq!(
                 entry.map(|entry| entry.context),

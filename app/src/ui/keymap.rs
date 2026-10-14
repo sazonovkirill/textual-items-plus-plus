@@ -6,7 +6,10 @@ use std::{collections::HashMap, time::Duration};
 
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
-use crate::app::{Command, Direction, Focus, Go, Side, Whose};
+use crate::{
+    app::{Command, Direction, Focus, Go, Side, Whose},
+    domain::dates::DateKind,
+};
 
 /// How long a sequence waits for its next key, as in taskpaper-terminal (its keybindings.md §1).
 const TIMEOUT: Duration = Duration::from_secs(1);
@@ -89,6 +92,10 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // the rows (D-43).
     (Command::EditDescription(Whose::Focused), &["m n"]),
     (Command::EditDescription(Whose::Shown), &["m N"]),
+    // taskpaper-terminal's date prompt keys, and `t` to start today (D-23).
+    (Command::SetDate(DateKind::Start), &["m s"]),
+    (Command::SetDate(DateKind::Due), &["m d"]),
+    (Command::StartToday, &["m t"]),
     // Todoist's sidebar key, and taskpaper-terminal's keys to focus the pane left and right
     // (D-45).
     (Command::Sidebar, &["M"]),

@@ -5,9 +5,10 @@ use std::{fs, path::PathBuf};
 use crossterm::event::{KeyCode, KeyModifiers};
 use tempfile::TempDir;
 
-use crate::support::Harness;
+use crate::support::{Harness, without_chips};
 
-/// The rows below the breadcrumbs that show a title, trimmed, the focused ones starred.
+/// The rows below the breadcrumbs that show a title, trimmed and without date chips, the focused
+/// ones starred.
 fn listed(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
@@ -15,7 +16,7 @@ fn listed(harness: &Harness) -> Vec<String> {
         .skip(2)
         .filter_map(|row| {
             let focused = row.starts_with('▌');
-            let text = row.trim_start_matches('▌').trim();
+            let text = without_chips(row.trim_start_matches('▌').trim());
             let title = text.strip_prefix("- ").unwrap_or(text);
             if title.is_empty() {
                 return None;

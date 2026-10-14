@@ -4,6 +4,8 @@
 
 use jiff::civil::Date;
 
+use super::dates::DateKind;
+
 /// Names one node of a document, an item, a checklist item or content kept as read, for as long
 /// as the app runs, whatever is renamed or moved; never reused for another node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -115,6 +117,21 @@ impl Item {
             tags: Vec::new(),
         }
     }
+
+    /// Its `kind` date, if it has one.
+    #[must_use]
+    pub fn date(&self, kind: DateKind) -> Option<Date> {
+        match kind {
+            DateKind::Start => self.start,
+            DateKind::Due => self.due,
+        }
+    }
+
+    /// Whether it is overdue on `today`: due before it and not completed (FR-DATE-04).
+    #[must_use]
+    pub fn overdue(&self, today: Date) -> bool {
+        self.completed.is_none() && self.due.is_some_and(|due| due < today)
+    }
 }
 
 /// How an item was completed.
@@ -137,6 +154,8 @@ pub struct Tag {
 
 #[cfg(test)]
 mod tests {
+    use jiff::civil::date;
+
     use super::*;
     use ItemKind::{Area, ChecklistItem, Inbox, Project, Section, Task};
 
@@ -196,5 +215,29 @@ mod tests {
         assert_eq!((item.start, item.due, item.deleted), (None, None, None));
         assert_eq!(item.completed, None);
         assert_eq!(item.tags, []);
+    }
+
+    // FR-DATE-01
+    #[test]
+    fn an_item_has_a_start_and_a_due_date() {
+        let mut item = Item::new(Project, "p");
+        item.start = Some(date(2026, 10, 1));
+        item.due = Some(date(2026, 10, 9));
+        assert_eq!(item.date(DateKind::Start), Some(date(2026, 10, 1)));
+        assert_eq!(item.date(DateKind::Due), Some(date(2026, 10, 9)));
+    }
+
+    // FR-DATE-04
+    #[test]
+    fn an_item_due_before_today_is_overdue_until_completed() {
+        let today = date(2026, 10, 14);
+        let mut item = Item::new(Task, "t");
+        assert!(!item.overdue(today), "no due date");
+        item.due = Some(today);
+        assert!(!item.overdue(today), "due today");
+        item.due = Some(date(2026, 10, 13));
+        assert!(item.overdue(today));
+        item.completed = Some(Completion::Undated);
+        assert!(!item.overdue(today), "completed");
     }
 }

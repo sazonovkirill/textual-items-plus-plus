@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
@@ -123,6 +123,17 @@ fn today() -> jiff::civil::Date {
     jiff::Zoned::now().date()
 }
 
+/// How long until the local date changes, when the screen is drawn again so that date chips name
+/// dates from the new day (FR-DATE-02); a day when that cannot be told.
+fn until_midnight() -> Duration {
+    let now = jiff::Zoned::now();
+    now.tomorrow()
+        .and_then(|tomorrow| tomorrow.start_of_day())
+        .ok()
+        .and_then(|midnight| Duration::try_from(now.duration_until(&midnight)).ok())
+        .unwrap_or(Duration::from_hours(24))
+}
+
 /// Turns `SIGTERM` and `SIGHUP` into [`Input::Terminate`], so the document is saved first.
 fn forward_signals(inputs: Sender<Input>) -> io::Result<()> {
     let mut signals = Signals::new([SIGTERM, SIGHUP])?;
@@ -150,8 +161,8 @@ fn forward_terminal_events(inputs: Sender<Input>) {
     });
 }
 
-/// Draws the app and hands it each input, and the time whenever a save falls due, until it
-/// quits.
+/// Draws the app and hands it each input, and the time whenever a save falls due or the local
+/// date changes, until it quits.
 #[expect(
     clippy::disallowed_methods,
     reason = "the event loop is the edge that reads the clock and passes time to the app"
@@ -172,14 +183,16 @@ fn run(
                 }
             })
             .context("cannot draw")?;
-        let input = match tui.deadline() {
-            None => Some(received.recv()?),
-            Some(deadline) => match received.recv_timeout(deadline.saturating_sub(start.elapsed()))
-            {
-                Ok(input) => Some(input),
-                Err(RecvTimeoutError::Timeout) => None,
-                Err(error) => return Err(error.into()),
-            },
+        let wait = tui
+            .deadline()
+            .map_or(Duration::MAX, |deadline| {
+                deadline.saturating_sub(start.elapsed())
+            })
+            .min(until_midnight());
+        let input = match received.recv_timeout(wait) {
+            Ok(input) => Some(input),
+            Err(RecvTimeoutError::Timeout) => None,
+            Err(error) => return Err(error.into()),
         };
         tui.tick(start.elapsed(), today());
         if let Some(input) = input {

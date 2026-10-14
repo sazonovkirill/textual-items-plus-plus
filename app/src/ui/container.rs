@@ -7,6 +7,7 @@
 
 use std::ops::Range;
 
+use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
@@ -18,7 +19,7 @@ use ratatui::{
 use super::{Icon, IconSet, Theme};
 use crate::{
     app::{Part, Row, Selection, State, TextField},
-    domain::{Document, Item, ItemId, ItemKind, Node},
+    domain::{Document, Item, ItemId, ItemKind, Node, dates},
 };
 
 /// The columns left of the rows that hold the focus marker.
@@ -37,14 +38,16 @@ pub(super) struct ContainerPane<'a> {
     editing: Option<(ItemId, Part, &'a TextField)>,
     /// Whether the pane has the keys, which its focus marker and band show.
     keys: bool,
+    /// The local date, which date chips are named relative to.
+    today: Date,
     theme: &'a Theme,
     icons: IconSet,
 }
 
 impl<'a> ContainerPane<'a> {
-    /// The pane of the container `state` shows, drawn in `theme` with `icons`, with the title
-    /// edited and the focus marked unless the sidebar has the keys.
-    pub(super) fn new(state: &'a State, theme: &'a Theme, icons: IconSet) -> Self {
+    /// The pane of the container `state` shows on `today`, drawn in `theme` with `icons`, with the
+    /// title edited and the focus marked unless the sidebar has the keys.
+    pub(super) fn new(state: &'a State, today: Date, theme: &'a Theme, icons: IconSet) -> Self {
         Self {
             document: state.document(),
             container: state.container(),
@@ -52,6 +55,7 @@ impl<'a> ContainerPane<'a> {
             selection: state.selection(),
             editing: state.editing().filter(|_| !state.sidebar_has_keys()),
             keys: !state.sidebar_has_keys(),
+            today,
             theme,
             icons,
         }
@@ -329,7 +333,7 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// The line naming `item`: its marker or icon, then its title and its tags wrapping under
-    /// the title's start, with its attachment icons at the right.
+    /// the title's start, with its attachment icons and date chips at the right.
     fn title(&self, item: &'a Item, row: Option<usize>) -> Piece<'a> {
         let mut spans = vec![Span::styled(item.title.as_str(), self.title_style(item))];
         for tag in &item.tags {
@@ -343,21 +347,22 @@ impl<'a> ContainerPane<'a> {
             x: self.title_column(item),
             text: wrapped(Text::from(Line::from(spans))),
             left: Line::styled(self.marker(item), self.marker_style(item)),
-            right: self.attachments(item),
+            right: Line::from([self.attachments(item).spans, self.chips(item)].concat()),
             row,
             caret: None,
         }
     }
 
     /// The line of `item`, numbered `row` if it is one, while `field` edits its title: its marker,
-    /// then the text edited, without tags, the selected part in the selection colors, on one line
-    /// that scrolls sideways to keep the caret in view.
+    /// then the text edited, without tags or date chips, the selected part in the selection
+    /// colors, on one line that scrolls sideways to keep the caret in view.
     fn field(&self, item: &'a Item, field: &'a TextField, row: Option<usize>) -> Piece<'a> {
         let text = field.text();
         let caret = text.get(..field.caret()).unwrap_or_default();
         Piece {
             caret: Some((0, Span::raw(caret).width())),
             text: Paragraph::new(self.selected(field, 0..text.len())),
+            right: self.attachments(item),
             ..self.title(item, row)
         }
     }
@@ -441,6 +446,38 @@ impl<'a> ContainerPane<'a> {
             ));
         }
         Line::from(spans)
+    }
+
+    /// The chips of `item`'s start and due dates, each its icon and the date named relative to
+    /// today, a space after each: start in the start color and due in the due color, or, when it
+    /// is overdue, with the overdue icon, bold and reversed in the overdue color; all dimmed once
+    /// it is completed (FR-DATE-02, FR-DATE-04).
+    fn chips(&self, item: &Item) -> Vec<Span<'a>> {
+        let theme = self.theme;
+        let chip = |icon: Icon, date: Date, style: Style| {
+            let style = if item.completed.is_some() {
+                style.add_modifier(Modifier::DIM)
+            } else {
+                style
+            };
+            let name = dates::relative(date, self.today);
+            [
+                Span::styled(format!("{} {name}", icon.glyph(self.icons)), style),
+                Span::raw(" "),
+            ]
+        };
+        let start = item
+            .start
+            .map(|date| chip(Icon::Start, date, Style::new().fg(theme.start)));
+        let due = item.due.map(|date| {
+            if item.overdue(self.today) {
+                let style = Style::new().fg(theme.overdue).bold().reversed();
+                chip(Icon::Overdue, date, style)
+            } else {
+                chip(Icon::Due, date, Style::new().fg(theme.due))
+            }
+        });
+        start.into_iter().chain(due).flatten().collect()
     }
 
     /// The marker of a task or the icon of a container.
@@ -561,6 +598,8 @@ mod tests {
         ui::BuiltIn,
     };
 
+    const TODAY: Date = date(2026, 10, 5);
+
     /// The node of `document` titled `title`, depth first.
     fn find(document: &Document, title: &str) -> ItemId {
         fn walk(document: &Document, ids: &[ItemId], title: &str) -> Option<ItemId> {
@@ -597,6 +636,7 @@ mod tests {
             selection: &selection,
             editing: None,
             keys: true,
+            today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
         };
@@ -605,7 +645,7 @@ mod tests {
         buf
     }
 
-    /// Draws the Inbox of the demo document, `width` by 8, while `field` edits the title of
+    /// Draws the Inbox of the demo document, `width` by 10, while `field` edits the title of
     /// its task titled `title`, and returns the buffer and where the caret is.
     fn draw_editing(title: &str, field: &TextField, width: u16) -> (Buffer, Option<Position>) {
         let document = demo();
@@ -620,10 +660,11 @@ mod tests {
             selection: &selection,
             editing: Some((id, Part::Title, field)),
             keys: true,
+            today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
         };
-        let mut buf = Buffer::empty(Rect::new(0, 0, width, 8));
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, 10));
         let caret = pane.caret(buf.area, 0);
         pane.render(buf.area, &mut buf, &mut 0);
         (buf, caret)
@@ -644,6 +685,7 @@ mod tests {
             selection: &selection,
             editing: Some((document.inbox(), Part::Title, &field)),
             keys: true,
+            today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
         };
@@ -675,6 +717,7 @@ mod tests {
             selection: &selection,
             editing: Some((id, Part::Description, field)),
             keys: true,
+            today: TODAY,
             theme: &theme,
             icons: IconSet::Plain,
         };
@@ -723,8 +766,8 @@ mod tests {
         assert_eq!(
             lines(&buf),
             [
-                "▌   about   ",
-                "▌   the card",
+                "▌   r       ",
+                "▌   d       ",
                 "▌   one two ",
                 "▌   three   ",
             ],
@@ -758,9 +801,9 @@ mod tests {
     fn picked_rows_get_the_focus_marker_dimmed() {
         let mut state = app::State::new(demo(), app::Opened::Demo);
         let extend = app::Message::Command(app::Command::Extend(app::Direction::Down));
-        app::update(&mut state, extend, date(2026, 10, 5));
+        app::update(&mut state, extend, TODAY);
         let theme = BuiltIn::default().colors();
-        let pane = ContainerPane::new(&state, &theme, IconSet::Plain);
+        let pane = ContainerPane::new(&state, TODAY, &theme, IconSet::Plain);
         let mut buf = Buffer::empty(Rect::new(0, 0, 30, 8));
         pane.render(buf.area, &mut buf, &mut 0);
         let rows = lines(&buf);
@@ -779,8 +822,8 @@ mod tests {
         assert_eq!(
             marked,
             [
-                line("▌ - Call the bank about the", Modifier::DIM),
-                line("▌   card", Modifier::DIM),
+                line("▌ - Call the bank about ⇥ Wed", Modifier::DIM),
+                line("▌   the card", Modifier::DIM),
                 line("▌ - Buy coffee beans @errands", Modifier::empty()),
             ],
             "every line of a picked row; the focused one as ever"
@@ -829,7 +872,7 @@ mod tests {
         assert_eq!(caret, Some(Position::new(4, 5)));
         assert_eq!(
             draw_editing("Buy coffee beans", &start, 20).1,
-            Some(Position::new(4, 7)),
+            Some(Position::new(4, 9)),
             "the caret goes where the edited row is"
         );
         assert_eq!(
@@ -847,7 +890,7 @@ mod tests {
     }
 
     fn demo() -> Document {
-        demo::document(date(2026, 10, 5))
+        demo::document(TODAY)
     }
 
     /// `rows` padded to `width` columns.
@@ -855,7 +898,7 @@ mod tests {
         rows.iter().map(|row| format!("{row:width$}")).collect()
     }
 
-    // FR-VIEW-05, FR-ORG-05, FR-ORG-10, FR-TASK-03, FR-TAG-03, FR-UI-02
+    // FR-VIEW-05, FR-ORG-05, FR-ORG-10, FR-TASK-03, FR-TAG-03, FR-UI-02, FR-DATE-02, FR-DATE-05
     #[test]
     fn a_project_shows_its_title_description_tasks_sections_and_projects() {
         let document = demo();
@@ -872,7 +915,7 @@ mod tests {
             padded(
                 50,
                 &[
-                    "  ○ Website                                 ≡ ❞ 2",
+                    "  ○ Website                    ≡ ❞ 2 ⇥ in 20 days",
                     "  The new marketing site, built with the design",
                     "  team.",
                     "",
@@ -880,9 +923,9 @@ mod tests {
                     "",
                     "  § Launch",
                     "    What has to happen before launch.",
-                    "▌ - Write the announcement @writing         ≡ ❞ 1",
+                    "▌ - Write the announcement @writing ≡ ❞ 1 ↦ today",
                     "▌   Keep it under 300 words.",
-                    "  - Book the launch call @meeting",
+                    "  - Book the launch call @meeting           ⇥ Sat",
                     "",
                     "  § Polish",
                     "  - Fix the footer links",
@@ -910,7 +953,7 @@ mod tests {
                 &[
                     "  ◆ Home",
                     "",
-                    "  - Water the plants",
+                    "  - Water the plants        ↦ yesterday",
                     "",
                     "  ○ Move to the new flat",
                     "",
@@ -970,8 +1013,9 @@ mod tests {
         assert_eq!(tag.fg, Some(theme.tag));
         assert!(tag.add_modifier.contains(Modifier::DIM));
         assert_eq!(at(4, 9).fg, Some(theme.dim_text), "a task's description");
-        let icons = at(44, 8);
+        let icons = at(36, 8);
         assert_eq!(icons.fg, Some(theme.headers));
+        assert_eq!(at(42, 8).fg, Some(theme.start), "a start date chip");
         assert_eq!(
             at(4, 10).bg,
             Some(Color::Reset),
@@ -1006,10 +1050,10 @@ mod tests {
                     "  sorted yet lands",
                     "  here.",
                     "",
-                    "▌ - Call the bank",
-                    "▌   about the card",
-                    "  - Buy coffee beans",
-                    "    @errands",
+                    "▌ - Call the  ⇥ Wed",
+                    "▌   bank",
+                    "▌   about the",
+                    "▌   card",
                 ]
             )
         );
@@ -1066,7 +1110,7 @@ mod tests {
         assert_eq!(top, 8, "a row taller than the pane shows its first line");
         assert_eq!(
             lines(&buf)[0].trim_end(),
-            "▌ - Write the announcement @writing         ≡ ❞ 1"
+            "▌ - Write the announcement @writing ≡ ❞ 1 ↦ today"
         );
     }
 

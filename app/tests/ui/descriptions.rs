@@ -41,7 +41,7 @@ fn describe_a_task_in_place_and_undo_it() {
     assert_eq!(
         pane(&harness)[3..8],
         [
-            "▌ - Call the bank about the card",
+            "▌ - Call the bank about the card  󱙬 Wed",
             "▌   Ask about the fees on the new card",
             "▌   before Friday",
             "▌   - call before 5",
@@ -55,7 +55,7 @@ fn describe_a_task_in_place_and_undo_it() {
     assert_eq!(
         pane(&harness)[3..7],
         [
-            "▌ - Call the bank about the card",
+            "▌ - Call the bank about the card  󱙬 Wed",
             "▌   Ask about the fees on the new card",
             "▌   before Friday",
             "  - Buy coffee beans @errands",
@@ -66,7 +66,7 @@ fn describe_a_task_in_place_and_undo_it() {
     assert_eq!(
         pane(&harness)[3..5],
         [
-            "▌ - Call the bank about the card",
+            "▌ - Call the bank about the card  󱙬 Wed",
             "  - Buy coffee beans @errands"
         ],
         "the whole edit is one step to undo"

@@ -2,10 +2,10 @@
 
 use crossterm::event::KeyCode;
 
-use crate::support::Harness;
+use crate::support::{Harness, without_chips};
 
 /// The rows of the container's items between the Inbox's title and description and the status
-/// line, each without its marker or trailing spaces, the focused one starred.
+/// line, each without its marker, date chips or trailing spaces, the focused one starred.
 fn items(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
@@ -13,7 +13,7 @@ fn items(harness: &Harness) -> Vec<String> {
         .skip(5)
         .filter_map(|row| {
             let (focus, rest) = row.split_at(row.char_indices().nth(2)?.0);
-            let title = rest.split_once(' ')?.1.trim_end();
+            let title = without_chips(rest.split_once(' ')?.1);
             if title.is_empty() {
                 return None;
             }

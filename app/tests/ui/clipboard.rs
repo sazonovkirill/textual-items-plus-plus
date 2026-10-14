@@ -63,8 +63,8 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
-            "▌ - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
+            "▌ - Call the bank about the card                                          󱙬 Wed",
             "  - Buy coffee beans @errands",
             "  - Read the article Sam sent",
         ],
@@ -75,8 +75,8 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
-            "▌ - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
+            "▌ - Call the bank about the card                                          󱙬 Wed",
             "  - Buy coffee beans @errands",
             "  - Read the article Sam sent",
         ],
@@ -87,7 +87,7 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
             "▌ - Read the article Sam sent",
         ],
         "cutting takes the task out"
@@ -96,7 +96,7 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
             "  - Read the article Sam sent",
             "▌ - Buy coffee beans @errands",
         ]
@@ -105,7 +105,7 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
             "  - Read the article Sam sent",
             "▌ - Buy coffee beans @errands",
             "  - Buy coffee beans @errands",
@@ -129,7 +129,7 @@ fn copy_to_and_paste_a_list_from_the_system_clipboard() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
             "  - Milk",
             "▌ - Eggs @errands",
             "  - Buy coffee beans @errands",
@@ -148,7 +148,7 @@ fn text_pasted_into_the_terminal_becomes_tasks_or_goes_into_the_text_typed() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
             "  - Milk",
             "▌ - Eggs",
             "  - Buy coffee beans @errands",
@@ -168,7 +168,7 @@ fn text_pasted_into_the_terminal_becomes_tasks_or_goes_into_the_text_typed() {
     assert_eq!(
         tasks(&harness),
         [
-            "  - Call the bank about the card",
+            "  - Call the bank about the card                                          󱙬 Wed",
             "  - Milk",
             "  - Eggs and bread",
             "  - Tea",
@@ -221,7 +221,7 @@ fn text_pasted_into_a_description_keeps_its_lines() {
         rows.get(..3),
         Some(
             [
-                "▌ - Call the bank about the card",
+                "▌ - Call the bank about the card                                          󱙬 Wed",
                 "▌   First line",
                 "▌   second line",
             ]

@@ -2,10 +2,10 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use crate::support::Harness;
+use crate::support::{Harness, without_chips};
 
-/// The titles of the Inbox's items between its title and description and the status line, a
-/// row marked as focused or picked starred.
+/// The titles of the Inbox's items between its title and description and the status line,
+/// without their date chips, a row marked as focused or picked starred.
 fn items(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
@@ -13,7 +13,7 @@ fn items(harness: &Harness) -> Vec<String> {
         .skip(5)
         .filter_map(|row| {
             let (marker, rest) = row.split_at(row.char_indices().nth(2)?.0);
-            let title = rest.split_once(' ')?.1.trim_end();
+            let title = without_chips(rest.split_once(' ')?.1);
             if title.is_empty() {
                 return None;
             }

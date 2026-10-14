@@ -6,7 +6,8 @@ use std::time::Duration;
 use jiff::civil::Date;
 
 use super::{
-    Command, ConflictSide, EditInput, OnDisk, PickerInput, Report, Side, State, autosave::Ending,
+    Command, ConflictSide, DateInput, EditInput, OnDisk, PickerInput, Report, Side, State,
+    autosave::Ending,
 };
 use crate::domain::{Branch, ItemKind};
 
@@ -21,6 +22,8 @@ pub enum Message {
     MoveTo(PickerInput),
     /// The user did something while editing a title or a description (FR-EDIT-01).
     Edit(EditInput),
+    /// The user did something in the open date prompt (FR-DATE-02).
+    DatePrompt(DateInput),
     /// The frontend's clock reads this, counted from any fixed moment, such as the start.
     Tick(Duration),
     /// The process was told to end, as by `SIGTERM` or `SIGHUP`: save first, then end anyway
@@ -115,6 +118,8 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
             state.new_container(ItemKind::Project, side);
         }
         Message::Command(Command::NewArea(side)) => state.new_container(ItemKind::Area, side),
+        Message::Command(Command::SetDate(kind)) => state.open_date_prompt(kind, today),
+        Message::Command(Command::StartToday) => state.start_today(today),
         Message::Command(Command::Delete) => state.delete(today),
         Message::Command(Command::MoveTo) => state.open_move_to(),
         Message::Command(Command::Duplicate) => state.duplicate(),
@@ -137,6 +142,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Navigator(input) => state.navigator_input(input),
         Message::MoveTo(input) => state.move_to_input(input),
         Message::Edit(input) => state.edit_input(input),
+        Message::DatePrompt(input) => state.date_prompt_input(input),
     }
     Vec::new()
 }
@@ -147,7 +153,9 @@ mod tests {
 
     use super::*;
     use crate::app::{Direction, Focus, Go, Notice, Opened, Refusal, Side, TextEdit};
-    use crate::domain::{Completion, Document, Item, ItemKind, Node, PlacementError};
+    use crate::domain::{
+        Completion, Document, Item, ItemKind, Node, PlacementError, dates::DateKind,
+    };
 
     const TODAY: Date = date(2026, 10, 14);
 
@@ -547,6 +555,132 @@ mod tests {
         type_into(&mut state, "P");
         edit(&mut state, EditInput::Done);
         assert_eq!(sidebar(&state), (Some("P".into()), vec!["P".into()]));
+    }
+
+    /// The dates of the Inbox task titled `title`, which the Inbox view leaves out once it has a
+    /// start date (FR-VIEW-01).
+    fn dates(state: &State, title: &str) -> (Option<Date>, Option<Date>) {
+        let document = state.document();
+        let item = document
+            .children(document.inbox())
+            .iter()
+            .filter_map(|&id| document.node(id)?.item())
+            .find(|item| item.title == title)
+            .cloned()
+            .expect("a row titled so");
+        (item.start, item.due)
+    }
+
+    fn prompt(state: &mut State, input: DateInput) {
+        assert_eq!(update(state, Message::DatePrompt(input), TODAY), []);
+    }
+
+    fn type_date(state: &mut State, text: &str) {
+        for c in text.chars() {
+            prompt(state, DateInput::Edit(TextEdit::Insert(c)));
+        }
+    }
+
+    // FR-DATE-01, FR-DATE-02, FR-KEY-06, FR-OPS-06, FR-EDIT-06
+    #[test]
+    fn the_date_prompt_sets_and_removes_dates_of_the_selection_one_step_each()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::SelectAll);
+        give(&mut state, Command::SetDate(DateKind::Due));
+        type_date(&mut state, "fri");
+        assert_eq!(
+            state.date_prompt().map(|view| view.date),
+            Some(Ok(Some(date(2026, 10, 16))))
+        );
+        prompt(&mut state, DateInput::Apply);
+        assert!(state.date_prompt().is_none());
+        assert_eq!(dates(&state, "a"), (None, Some(date(2026, 10, 16))));
+        assert_eq!(dates(&state, "b"), (None, Some(date(2026, 10, 16))));
+        give(&mut state, Command::Undo);
+        assert_eq!(dates(&state, "a"), (None, None));
+        assert_eq!(dates(&state, "b"), (None, None));
+        give(&mut state, Command::Redo);
+        give(&mut state, Command::ClearSelection);
+        give(&mut state, Command::SetDate(DateKind::Due));
+        let text = state.date_prompt().map(|view| view.field.text().to_owned());
+        assert_eq!(text.as_deref(), Some("2026-10-16"));
+        prompt(&mut state, DateInput::Edit(TextEdit::DeleteBackward));
+        prompt(&mut state, DateInput::Apply);
+        assert_eq!(dates(&state, "a"), (None, None), "blank removes it");
+        assert_eq!(dates(&state, "b"), (None, Some(date(2026, 10, 16))));
+        Ok(())
+    }
+
+    // FR-DATE-02
+    #[test]
+    fn the_date_prompt_stays_open_on_a_text_that_is_no_date_and_closes_on_cancel()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::SetDate(DateKind::Start));
+        type_date(&mut state, "soon");
+        let before = state.document().clone();
+        prompt(&mut state, DateInput::Apply);
+        assert!(state.date_prompt().is_some());
+        prompt(&mut state, DateInput::Cancel);
+        assert!(state.date_prompt().is_none());
+        assert_eq!(state.document(), &before);
+        prompt(&mut state, DateInput::Apply);
+        assert_eq!(
+            state.document(),
+            &before,
+            "nothing happens while it is closed"
+        );
+        give(&mut state, Command::SetDate(DateKind::Start));
+        give(&mut state, Command::Navigator);
+        assert!(state.date_prompt().is_none(), "the Navigator closes it");
+        assert!(state.navigator().is_some());
+        let mut empty = State::new(Document::new(), Opened::Demo);
+        give(&mut empty, Command::SetDate(DateKind::Start));
+        assert!(empty.date_prompt().is_none(), "nothing to date");
+        Ok(())
+    }
+
+    // FR-KEY-06, FR-OPS-06
+    #[test]
+    fn start_today_starts_the_selection_today() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::StartToday);
+        assert_eq!(dates(&state, "a"), (Some(TODAY), None));
+        assert_eq!(dates(&state, "b"), (None, None));
+        give(&mut state, Command::SelectAll);
+        give(&mut state, Command::StartToday);
+        assert_eq!(dates(&state, "b"), (Some(TODAY), None));
+        give(&mut state, Command::Undo);
+        assert_eq!(dates(&state, "a"), (Some(TODAY), None));
+        assert_eq!(dates(&state, "b"), (None, None));
+        Ok(())
+    }
+
+    // FR-DATE-01, FR-DATE-05, FR-VIEW-10
+    #[test]
+    fn the_sidebar_dates_its_focused_entry() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
+        let mut state = State::new(document, Opened::Demo);
+        let dated = |state: &State| {
+            let item = state.document().node(work).and_then(Node::item);
+            item.map(|item| (item.start, item.due))
+        };
+        give(&mut state, Command::Sidebar);
+        give(&mut state, Command::StartToday);
+        assert_eq!(dated(&state), Some((Some(TODAY), None)));
+        give(&mut state, Command::SetDate(DateKind::Due));
+        type_date(&mut state, "tomorrow");
+        prompt(&mut state, DateInput::Apply);
+        assert_eq!(dated(&state), Some((Some(TODAY), Some(date(2026, 10, 15)))));
+        let mut empty = State::new(Document::new(), Opened::Demo);
+        give(&mut empty, Command::Sidebar);
+        let before = empty.clone();
+        give(&mut empty, Command::SetDate(DateKind::Due));
+        give(&mut empty, Command::StartToday);
+        assert_eq!(empty, before, "an empty sidebar dates nothing");
+        Ok(())
     }
 
     // FR-NAV-02, FR-VIEW-07

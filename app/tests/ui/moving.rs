@@ -84,8 +84,8 @@ fn move_a_task_to_another_project() {
             "  󰉖 Learn Rust",
             "  A project outside any area.",
             "▌ - Finish the ownership chapter @rust",
-            "  - Write a small CLI @rust",
-            "  - Call the bank about the card",
+            "  - Write a small CLI @rust                                          󱙭 tomorrow",
+            "  - Call the bank about the card                                          󱙬 Wed",
         ],
         "the task is the project's last"
     );
@@ -100,7 +100,7 @@ fn move_a_task_to_another_project() {
     harness.type_text("z");
     assert_eq!(
         pane(&harness).get(2).map(String::as_str),
-        Some("▌ - Call the bank about the card"),
+        Some("▌ - Call the bank about the card                                          󱙬 Wed"),
         "undo puts it back, focused"
     );
 }
