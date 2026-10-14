@@ -252,9 +252,9 @@ fn visit(document: &Document, query: &Query, id: ItemId, found: &mut Vec<(bool, 
     if let Some(row) = row
         && query.finds(document, id, item)
     {
-        found.push((item.completed.is_some(), row));
+        found.push((item.completion().is_some(), row));
     }
-    if item.completed.is_none() {
+    if item.completion().is_none() {
         for &child in document.children(id) {
             visit(document, query, child, found);
         }

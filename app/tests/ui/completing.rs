@@ -1,5 +1,7 @@
 //! Completing tasks in the container view, showing the completed ones, and undoing and redoing.
 
+use std::fs;
+
 use crossterm::event::KeyCode;
 
 use crate::support::{Harness, without_chips};
@@ -81,4 +83,39 @@ fn dot_completes_a_task_a_section_and_a_project_as_x_does() {
     harness.type_text("zz");
     let screen = harness.screen();
     assert!(screen.contains("# Blog") && screen.contains("Review two portfolios"));
+}
+
+// FR-ORG-09, FR-VIEW-03, FR-STORE-10, D-81
+#[test]
+fn an_area_is_not_completed_and_one_its_file_marks_done_stays_open() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\nWork: @area @done(2026-10-01)\n\t- Work out\n";
+    fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path.clone(), 60, 12);
+    harness.type_text("gL");
+    assert!(!harness.screen().contains("Work"), "{}", harness.screen());
+    harness.ctrl('g');
+    harness.type_text("work");
+    harness.key(KeyCode::Enter);
+    let screen = harness.screen();
+    assert!(screen.contains("☐ Work out"), "{screen}");
+    harness.ctrl('f');
+    harness.type_text("work");
+    harness.key(KeyCode::Esc);
+    harness.key(KeyCode::Char('x'));
+    let status = harness.rows().last().map(|row| row.trim_end().to_owned());
+    assert!(
+        status.is_some_and(|status| status.ends_with("an area can't be completed")),
+        "{}",
+        harness.screen()
+    );
+    harness.ctrl('a');
+    harness.key(KeyCode::Char('.'));
+    harness.wait(1000);
+    let file = fs::read_to_string(&path).expect("the file is there");
+    assert!(
+        file.starts_with("Inbox:\nWork: @area @done(2026-10-01)\n\t- Work out @done("),
+        "only the task completes and the area keeps its tag: {file}"
+    );
 }

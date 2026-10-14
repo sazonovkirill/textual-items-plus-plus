@@ -285,7 +285,7 @@ fn holds(document: &Document, id: ItemId, filter: &[String]) -> bool {
         .iter()
         .any(|&child| match item(document, child) {
             Some(item) if item.deleted.is_none() => {
-                (item.completed.is_none() && inherits(document, child, filter))
+                (item.completion().is_none() && inherits(document, child, filter))
                     || holds(document, child, filter)
             }
             _ => false,

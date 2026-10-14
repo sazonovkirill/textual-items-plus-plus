@@ -85,6 +85,8 @@ pub enum Notice {
     AreaUndated,
     /// Tags were asked for on an area, which has none (FR-TAG-01, D-75).
     AreaUntagged,
+    /// Completing was asked for on an area, which is not completed (FR-ORG-09, D-81).
+    AreaUncompleted,
     /// Typing `@` at the start of a word of a title was refused: the word would read back as a
     /// tag, and tags go on from the tag picker (FR-TAG-02).
     TagInTitle,
@@ -105,6 +107,7 @@ impl Notice {
                 | Self::CannotTakeTheirs
                 | Self::AreaUndated
                 | Self::AreaUntagged
+                | Self::AreaUncompleted
         )
     }
 }

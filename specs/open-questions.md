@@ -53,7 +53,7 @@ Things 3 asks whether to complete or cancel the project's open to-dos, then logs
 - **C.** As A, plus a separate Canceled state for tasks and projects, as in Things 3.
 
 **Proposed default:** A; a Canceled state later if wanted.
-**Decision (2026-10-13):** none of the options as written: completing any item, an area, project, section or task, leaves everything inside it uncompleted, in its own state, but no longer shown anywhere; uncompleting the item shows it all again. Recorded in FR-ORG-09.
+**Decision (2026-10-13):** none of the options as written: completing any item, an area, project, section or task, leaves everything inside it uncompleted, in its own state, but no longer shown anywhere; uncompleting the item shows it all again. Recorded in FR-ORG-09. Since D-81 an area is not completed.
 **Affects:** FR-ORG-09, FR-VIEW-03.
 
 ### OQ-5 · When completed items move to the Logbook — decided

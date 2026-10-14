@@ -118,7 +118,8 @@ pub struct Item {
     pub start: Option<Date>,
     /// The day it must be done.
     pub due: Option<Date>,
-    /// Whether, and when, it was completed; a checklist item's done state.
+    /// Whether, and when, it was completed; a checklist item's done state. What the app goes by
+    /// is its [`completion`](Item::completion).
     pub completed: Option<Completion>,
     /// The day it was moved to the Trash (OQ-19).
     pub deleted: Option<Date>,
@@ -164,10 +165,17 @@ impl Item {
         }
     }
 
+    /// Whether, and when, the app takes it as completed: never for an area, which is not
+    /// completed, though a file may mark it done (D-81).
+    #[must_use]
+    pub fn completion(&self) -> Option<Completion> {
+        self.completed.filter(|_| self.kind != ItemKind::Area)
+    }
+
     /// Whether it is overdue on `today`: due before it and not completed (FR-DATE-04).
     #[must_use]
     pub fn overdue(&self, today: Date) -> bool {
-        self.completed.is_none() && self.due.is_some_and(|due| due < today)
+        self.completion().is_none() && self.due.is_some_and(|due| due < today)
     }
 }
 
@@ -306,6 +314,17 @@ mod tests {
             .filter(|kind| kind.takes_tags_and_dates())
             .collect();
         assert_eq!(taking, [Inbox, Project, Section, Task, ChecklistItem]);
+    }
+
+    // FR-ORG-09
+    #[test]
+    fn an_area_a_file_marks_done_is_not_completed() {
+        let mut area = Item::new(Area, "Home");
+        area.completed = Some(Completion::Undated);
+        assert_eq!(area.completion(), None);
+        let mut project = Item::new(Project, "Garden");
+        project.completed = Some(Completion::Undated);
+        assert_eq!(project.completion(), Some(Completion::Undated));
     }
 
     #[test]

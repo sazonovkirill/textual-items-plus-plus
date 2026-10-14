@@ -182,7 +182,7 @@ pub(super) fn shown(document: &Document, id: ItemId) -> Option<&Item> {
     document
         .node(id)
         .and_then(Node::item)
-        .filter(|item| item.deleted.is_none() && item.completed.is_none())
+        .filter(|item| item.deleted.is_none() && item.completion().is_none())
 }
 
 #[cfg(test)]

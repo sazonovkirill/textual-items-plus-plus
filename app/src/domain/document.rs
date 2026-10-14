@@ -153,7 +153,7 @@ impl Document {
             if self
                 .node(id)
                 .and_then(Node::item)
-                .is_some_and(|item| item.completed.is_some())
+                .is_some_and(|item| item.completion().is_some())
             {
                 return true;
             }
@@ -392,18 +392,20 @@ mod tests {
     #[test]
     fn a_completed_item_conceals_everything_inside_it() -> Result<(), PlacementError> {
         let mut document = Document::new();
-        let mut done = Item::new(Area, "done");
+        let mut done = Item::new(Project, "done");
         done.completed = Some(Completion::Undated);
-        let area = document.push(None, Node::Item(done))?;
-        let line = document.push(Some(area), kept())?;
-        let project = document.push(Some(area), item(Project))?;
-        let task = document.push(Some(project), item(Task))?;
-        let open = document.push(None, item(Area))?;
-        let inside_open = document.push(Some(open), item(Task))?;
-        for id in [area, line, project, task] {
+        let project = document.push(None, Node::Item(done))?;
+        let line = document.push(Some(project), kept())?;
+        let section = document.push(Some(project), item(Section))?;
+        let task = document.push(Some(section), item(Task))?;
+        let mut marked = Item::new(Area, "marked");
+        marked.completed = Some(Completion::Undated);
+        let area = document.push(None, Node::Item(marked))?;
+        let inside_area = document.push(Some(area), item(Task))?;
+        for id in [project, line, section, task] {
             assert!(document.conceals(id), "{id:?}");
         }
-        for id in [open, inside_open, document.inbox(), ItemId::new(99)] {
+        for id in [area, inside_area, document.inbox(), ItemId::new(99)] {
             assert!(!document.conceals(id), "{id:?}");
         }
         Ok(())

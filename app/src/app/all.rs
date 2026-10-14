@@ -56,7 +56,7 @@ fn list(document: &Document, id: ItemId, show_completed: bool, groups: &mut Vec<
     };
     if !matches!(item.kind, ItemKind::Area | ItemKind::Project)
         || item.deleted.is_some()
-        || item.completed.is_some()
+        || item.completion().is_some()
     {
         return;
     }

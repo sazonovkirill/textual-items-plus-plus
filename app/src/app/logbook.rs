@@ -50,7 +50,7 @@ fn collect(
         if item.deleted.is_some() || item.kind == ItemKind::ChecklistItem {
             continue;
         }
-        match item.completed {
+        match item.completion() {
             Some(completion) => completed.push((
                 match completion {
                     Completion::On(day) => Some(day),

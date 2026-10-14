@@ -6,8 +6,8 @@ use jiff::civil::Date;
 use crate::domain::{Completion, Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 
 /// The transaction that uncompletes `items` when every one of them is completed, and otherwise
-/// completes those that are not, on `today`. Only areas, projects, sections and tasks are
-/// completed; anything else among `items` is left alone.
+/// completes those that are not, on `today`. Only projects, sections and tasks are completed;
+/// anything else among `items`, such as an area, is left alone (D-81).
 pub(super) fn toggle(
     document: &Document,
     items: impl IntoIterator<Item = ItemId>,
@@ -19,7 +19,7 @@ pub(super) fn toggle(
         .filter(|(_, item)| {
             matches!(
                 item.kind,
-                ItemKind::Area | ItemKind::Project | ItemKind::Section | ItemKind::Task
+                ItemKind::Project | ItemKind::Section | ItemKind::Task
             )
         })
         .collect();
@@ -91,16 +91,18 @@ mod tests {
 
     // FR-ORG-09
     #[test]
-    fn containers_complete_but_not_the_inbox_or_checklist_items() -> Result<(), PlacementError> {
+    fn sections_and_projects_complete_but_no_area_inbox_or_checklist_item()
+    -> Result<(), PlacementError> {
         let (mut document, _, _, check) = document()?;
         let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "x")))?;
         let section = document.push(Some(area), Node::Item(Item::new(ItemKind::Section, "s")))?;
         let project = document.push(Some(area), Node::Item(Item::new(ItemKind::Project, "p")))?;
         let line = document.push(None, Node::Kept("text".to_owned()))?;
-        let others = [document.inbox(), check, line, ItemId::new(99)];
+        let others = [area, document.inbox(), check, line, ItemId::new(99)];
         assert_eq!(toggle(&document, others, TODAY), Transaction::default());
         document.apply(&toggle(&document, [area, section, project], TODAY))?;
-        for id in [area, section, project] {
+        assert_eq!(completed(&document, area), None);
+        for id in [section, project] {
             assert_eq!(completed(&document, id), Some(Completion::On(TODAY)));
         }
         Ok(())

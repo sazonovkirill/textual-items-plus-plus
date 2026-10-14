@@ -1059,7 +1059,7 @@ impl<'a> ContainerPane<'a> {
             ItemKind::Section => Style::new().fg(theme.kind(item.kind)).bold().italic(),
             ItemKind::Task | ItemKind::ChecklistItem => Style::new(),
         };
-        if item.completed.is_some() {
+        if item.completion().is_some() {
             style.fg(theme.done).add_modifier(Modifier::CROSSED_OUT)
         } else {
             style

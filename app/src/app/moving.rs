@@ -43,7 +43,8 @@ fn shift(document: &Document, rows: &[Row], id: ItemId, direction: Direction) ->
     let Some((at, &row)) = rows.iter().enumerate().find(|(_, row)| row.id() == id) else {
         return Transaction::default();
     };
-    let completed = |row: &Row| item(document, row.id()).is_some_and(|it| it.completed.is_some());
+    let completed =
+        |row: &Row| item(document, row.id()).is_some_and(|it| it.completion().is_some());
     let peer = |other: &&Row| {
         let same_group = match (row, **other) {
             (

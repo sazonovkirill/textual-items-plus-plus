@@ -203,7 +203,7 @@ impl<'a> Group<'a> {
                         .is_some_and(|item| {
                             item.kind == kind
                                 && item.deleted.is_none()
-                                && item.completed.is_some() == completed
+                                && item.completion().is_some() == completed
                                 && !scheduled_out_of_inbox(self.document, parent, item)
                         })
                 })
@@ -455,9 +455,14 @@ mod tests {
             [Row::Section(section), Row::Project(project)]
         );
         assert_eq!(rows(&document, section, true), []);
-        complete(&mut document, area);
-        assert_eq!(rows(&document, area, true), []);
+        complete(&mut document, project);
         assert_eq!(rows(&document, project, true), []);
+        complete(&mut document, area);
+        assert_eq!(
+            rows(&document, area, true),
+            [Row::Section(section), Row::Project(project)],
+            "an area marked done is not completed (D-81)"
+        );
         Ok(())
     }
 

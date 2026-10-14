@@ -336,9 +336,13 @@ impl State {
     }
 
     /// Completes the selected items on `today`, or uncompletes them when all are completed, as
-    /// one step to undo, moving the focus on when its row hides.
+    /// one step to undo, moving the focus on when its row hides; on areas alone the status line
+    /// says they are not completed (D-81).
     pub(super) fn toggle_completed(&mut self, today: Date) {
         let items = self.pane().selection.items(&self.listed());
+        if self.refuses_areas(&items, Notice::AreaUncompleted) {
+            return;
+        }
         let transaction = completion::toggle(&self.document, items, today);
         self.change(transaction);
     }
@@ -414,8 +418,8 @@ impl State {
         }
     }
 
-    /// Whether `items` are all areas, which have no tags or dates, saying so with `notice` when
-    /// they are (D-75).
+    /// Whether `items` are all areas, which have no tags or dates and are not completed, saying so
+    /// with `notice` when they are (D-75, D-81).
     fn refuses_areas(&mut self, items: &[ItemId], notice: Notice) -> bool {
         let areas = !items.is_empty()
             && items.iter().all(|&id| {
@@ -1233,7 +1237,7 @@ impl State {
             .focused
             .and_then(|id| self.document.node(id))
             .and_then(Node::item)
-            .is_some_and(|item| item.completed.is_some())
+            .is_some_and(|item| item.completion().is_some())
     }
 
     /// Opens what the focused row leads into, else the place the pane shows focused where it is,
@@ -2202,20 +2206,21 @@ mod tests {
     #[test]
     fn new_containers_go_only_where_they_can_show() -> Result<(), PlacementError> {
         let Fixture {
-            mut state, work, ..
+            mut state,
+            work,
+            site,
+            ..
         } = fixture()?;
         let before = state.clone();
         state.new_container(ItemKind::Section, Side::Below);
         assert_eq!(state, before, "the Inbox holds no section");
-        navigate(&mut state, "Work");
-        let mut done = Item::new(ItemKind::Area, "Work");
+        navigate(&mut state, "Site");
+        let mut done = Item::new(ItemKind::Project, "Site");
         done.completed = Some(crate::domain::Completion::Undated);
-        state.document.set(work, done)?;
+        state.document.set(site, done)?;
         let before = state.clone();
-        for kind in [ItemKind::Section, ItemKind::Project] {
-            state.new_container(kind, Side::Below);
-            assert_eq!(state, before, "{kind:?} in a completed area");
-        }
+        state.new_container(ItemKind::Section, Side::Below);
+        assert_eq!(state, before, "no section in a completed project");
         state.new_container(ItemKind::Area, Side::Below);
         let (area, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(state.document().top_level(), [work, area]);
