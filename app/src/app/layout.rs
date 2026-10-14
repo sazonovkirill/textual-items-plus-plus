@@ -1,6 +1,7 @@
 //! The pane layout as it is kept between sessions, for a frontend to keep with the file and give
 //! back on the next launch (FR-PANE-03): the panes in order, each with what it shows, its focus,
-//! its history, whether it shows completed items and its width, and which pane has the keys.
+//! its history, whether it shows completed items, its width and its search words, and which pane
+//! has the keys.
 //! Items are kept by their text paths, which outlive the ids of one session, and restoring drops
 //! what no longer matches
 //! ([file-io.md §5](../../../specs/reference/taskpaper-terminal/specs/file-io.md#5-view-state-persistence)).
@@ -10,7 +11,7 @@ use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    State, container,
+    State, TextField, container,
     pane::Pane,
     text_path::TextPath,
     view::{Shown, View},
@@ -38,6 +39,9 @@ struct KeptPane {
     forward: Vec<KeptVisit>,
     show_completed: bool,
     width: Option<u16>,
+    /// The words searched for, missing from a layout kept before they were.
+    #[serde(default)]
+    query: String,
 }
 
 /// A [`Visit`] as kept.
@@ -110,12 +114,16 @@ impl KeptPane {
             forward: kept(forward),
             show_completed: pane.show_completed,
             width: pane.width,
+            query: pane.query.text().to_owned(),
         }
     }
 
     /// The pane this is in `document` on `today`.
     fn restore(&self, document: &Document, today: Date) -> Pane {
-        let mut pane = Pane::new(document, today, self.at.land(document), self.show_completed);
+        let at = self.at.land(document);
+        let mut pane = Pane::new(document, today, at, self.show_completed);
+        pane.query = TextField::new(self.query.clone());
+        pane.arrive(document, today, at);
         let found = |visits: &[KeptVisit]| {
             visits
                 .iter()
@@ -189,7 +197,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::{Go, Opened, PickerInput, TextEdit},
+        app::{Go, Opened, PickerInput, SearchInput, TextEdit},
         domain::{Item, ItemKind, Node, PlacementError},
     };
 
@@ -327,6 +335,45 @@ mod tests {
             restored.pane.shown,
             Shown::View(View::Today),
             "the visit of a container gone leaves the history"
+        );
+        Ok(())
+    }
+
+    // FR-PANE-03, FR-SRCH-01
+    #[test]
+    fn a_pane_comes_back_with_its_search_words_and_their_results() -> TestResult {
+        let (document, [.., q]) = document()?;
+        let mut state = State::new(document.clone(), Opened::Demo, TODAY);
+        state.open_search();
+        state.search_input(SearchInput::Edit(TextEdit::Insert('q')));
+        state.search_input(SearchInput::Done);
+        let restore = |state: &State| {
+            State::new(document.clone(), Opened::Demo, TODAY).with_layout(&state.layout())
+        };
+        let mut restored = restore(&state);
+        assert_eq!(restored.pane_view().query().map(TextField::text), Some("q"));
+        assert_eq!(restored.selection().focused(), Some(q));
+        state.go(Go::Inbox);
+        restored = restore(&state);
+        restored.go(Go::Back);
+        assert_eq!(
+            restored.pane_view().query().map(TextField::text),
+            Some("q"),
+            "Back returns to the words"
+        );
+        assert_eq!(restored.selection().focused(), Some(q));
+        let mut json = serde_json::to_value(state.layout())?;
+        json["panes"][0]
+            .as_object_mut()
+            .ok_or("a pane is an object")?
+            .remove("query");
+        let older: Layout = serde_json::from_value(json)?;
+        restored = State::new(document, Opened::Demo, TODAY).with_layout(&older);
+        restored.go(Go::Back);
+        assert_eq!(
+            restored.pane_view().query().map(TextField::text),
+            Some(""),
+            "a layout kept without words still loads"
         );
         Ok(())
     }
