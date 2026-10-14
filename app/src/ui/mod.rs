@@ -227,8 +227,7 @@ impl Tui {
     /// leaving only those of global commands, such as its own, which closes it (FR-VIEW-07); the
     /// Move to picker (FR-OPS-04) and, in edit mode, the title, description or note being edited
     /// take them the same way (FR-EDIT-01), and so does the date prompt (FR-DATE-02). The open
-    /// attachments panel takes them leaving only quitting, scrolling itself (FR-ATT-01). A key
-    /// that cuts a sequence short gives the sequence's command first, then acts on its own.
+    /// attachments panel takes them leaving only quitting, scrolling itself (FR-ATT-01).
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.today = today;
         if let Event::Paste(text) = event {

@@ -28,11 +28,11 @@ fn open_today() {
         "▌   Work",
         "  - Write the announcement @writing           \u{f11d7} \u{f0189} 1 \u{f166d} today",
         "    Work / Website › Launch",
-        "    Keep it under 300 words.",
         "  - Review two portfolios                           \u{f166c} today",
         "    Work › Hiring",
         "  - Water the plants                            \u{f166d} yesterday",
         "    Home",
+        "",
         "",
         "",
         " \u{f01bf} NAVIGATE · Demo data · not saved",
@@ -40,7 +40,7 @@ fn open_today() {
     assert_eq!(
         trimmed(&harness),
         today,
-        "one list, the overdue task first, each row saying where it is under its title (D-51)"
+        "one list, the overdue task first, each row saying where it is under its title instead of its description (D-51)"
     );
 }
 
@@ -60,7 +60,7 @@ fn going_into_a_task_in_today_shows_it_where_it_lives_and_back_returns() {
     let rows = trimmed(&harness);
     assert_eq!(rows[0], "  \u{f0599} Today");
     assert!(
-        rows[9].starts_with("▌ - Review two portfolios"),
+        rows[8].starts_with("▌ - Review two portfolios"),
         "{rows:#?}"
     );
 }
@@ -79,7 +79,6 @@ fn filter_today_by_a_tag() {
         "",
         "▌ - Write the announcement @writing           \u{f11d7} \u{f0189} 1 \u{f166d} today",
         "▌   Work / Website › Launch",
-        "▌   Keep it under 300 words.",
     ];
     filtered.resize(15, "");
     filtered.push(" \u{f01bf} NAVIGATE · Demo data · not saved");

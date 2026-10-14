@@ -382,8 +382,9 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// Adds to `pieces` the lines of `row`, numbered `index`, showing `shown`, in content
-    /// `width`: its title, or the field editing it, where it is when the view says so under the
-    /// title, and the first line of its description, or the field editing it.
+    /// `width`: its title, or the field editing it, then, when the view says where it is under
+    /// the title, that line, and otherwise the first line of its description; the field editing
+    /// its description shows either way.
     fn row_pieces(
         &self,
         index: usize,
@@ -404,6 +405,10 @@ impl<'a> ContainerPane<'a> {
             None => self.title_then(shown, Some(index), after),
         });
         let x = self.title_column(shown);
+        // Where a view says under the title where its rows are, the second line is kept for that,
+        // so its rows show no description and none takes three lines (owner, D-51).
+        let under =
+            matches!(self.shown, Shown::View(view) if view.locates() == Some(Locating::Under));
         if let Some((Locating::Under, text)) = location {
             pieces.push(Piece {
                 x,
@@ -416,7 +421,7 @@ impl<'a> ContainerPane<'a> {
         }
         if let Some(field) = self.edited(row.id(), Part::Description) {
             pieces.push(self.description_field(field, x, width, Some(index)));
-        } else if let Some(first) = shown.description.lines().next() {
+        } else if !under && let Some(first) = shown.description.lines().next() {
             pieces.push(Piece {
                 x,
                 text: wrapped(Text::styled(first, self.description_style())),
@@ -945,6 +950,88 @@ mod tests {
             ]
         );
         assert_eq!(buf[(4, 4)].fg, theme.dim_text, "where it is, dimmed");
+    }
+
+    // FR-VIEW-06, D-51
+    #[test]
+    fn today_shows_a_description_only_while_it_is_edited() {
+        let mut state = app::State::new(demo(), app::Opened::Demo, TODAY);
+        let theme = BuiltIn::default().colors();
+        let draw = |state: &mut app::State, message| {
+            app::update(state, message, TODAY);
+            let pane = ContainerPane::new(
+                state,
+                state.pane_view(),
+                true,
+                TODAY,
+                &theme,
+                IconSet::Plain,
+            );
+            let mut buf = Buffer::empty(Rect::new(0, 0, 40, 6));
+            pane.render(buf.area, &mut buf, &mut 0);
+            lines(&buf)[2..]
+                .iter()
+                .map(|line| line.trim_end().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let today = app::Command::Go(app::Go::View(View::Today));
+        draw(&mut state, app::Message::Command(today));
+        let describe = app::Command::EditDescription(app::Whose::Focused);
+        draw(&mut state, app::Message::Command(describe));
+        let typed = app::Message::Edit(app::EditInput::Text(app::TextEdit::Insert('N')));
+        assert_eq!(
+            draw(&mut state, typed),
+            [
+                "▌ - Answer the recruiter's  ! yesterday",
+                "▌   email",
+                "▌   Work",
+                "▌   N",
+            ]
+        );
+        assert_eq!(
+            draw(&mut state, app::Message::Edit(app::EditInput::Done)),
+            [
+                "▌ - Answer the recruiter's  ! yesterday",
+                "▌   email",
+                "▌   Work",
+                "  - Write the             ≡ ❞ 1 ↦ today",
+            ],
+            "the row says where it is instead"
+        );
+    }
+
+    // FR-VIEW-06, D-51
+    #[test]
+    fn today_shows_no_description_of_a_top_level_project_either() -> Result<(), PlacementError> {
+        let mut document = demo();
+        let mut garden = Item::new(ItemKind::Project, "Garden");
+        garden.start = Some(TODAY);
+        garden.description = "Plans for spring".to_owned();
+        document.push(None, Node::Item(garden))?;
+        let mut state = app::State::new(document, app::Opened::Demo, TODAY);
+        let today = app::Command::Go(app::Go::View(View::Today));
+        app::update(&mut state, app::Message::Command(today), TODAY);
+        let theme = BuiltIn::default().colors();
+        let pane = ContainerPane::new(
+            &state,
+            state.pane_view(),
+            true,
+            TODAY,
+            &theme,
+            IconSet::Plain,
+        );
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 16));
+        pane.render(buf.area, &mut buf, &mut 0);
+        let lines = lines(&buf);
+        assert!(
+            lines.iter().any(|line| line.contains("Garden")),
+            "{lines:#?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.contains("Plans")),
+            "{lines:#?}"
+        );
+        Ok(())
     }
 
     // FR-VIEW-04
