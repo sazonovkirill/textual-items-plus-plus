@@ -284,3 +284,19 @@ pub fn without_chips(text: &str) -> &str {
     let chip = ['\u{f166d}', '\u{f166c}', '\u{f0a31}'];
     text.split(chip).next().unwrap_or(text).trim_end()
 }
+
+/// Whether `shown` is `path` as the app writes it where it may not fit: whole, or after `…` an end
+/// of it that holds at least the file's name with the separator before it, so that a test passes
+/// whatever the length of the temporary folder it runs in.
+pub fn shows_path(shown: &str, path: &Path) -> bool {
+    let whole = path.display().to_string();
+    let name = path.file_name().map(|name| name.display().to_string());
+    shown == whole
+        || shown.strip_prefix('…').is_some_and(|end| {
+            whole.ends_with(end)
+                && name.is_some_and(|name| {
+                    end.strip_suffix(name.as_str())
+                        .is_some_and(|folder| folder.ends_with(std::path::MAIN_SEPARATOR))
+                })
+        })
+}

@@ -6,7 +6,7 @@ use std::fs;
 use crossterm::event::{Event, KeyCode};
 use ratatui::style::Color;
 
-use crate::support::Harness;
+use crate::support::{Harness, shows_path};
 
 /// The window's rows on an 80-column screen, trimmed, without its border.
 fn window(harness: &Harness) -> Vec<String> {
@@ -39,8 +39,8 @@ fn g_comma_opens_the_settings_window_and_esc_closes_it() {
             "   Long titles wrap; off, each takes one line, cut short",
         ]
     );
-    let config = harness.config().display().to_string();
-    assert_eq!(lines.last().map(|line| line.trim()), Some(config.as_str()));
+    let foot = lines.last().map(|line| line.trim()).unwrap_or_default();
+    assert!(shows_path(foot, &harness.config()), "{foot}");
     assert!(harness.screen().contains("┌ Settings "));
     harness.type_text("x");
     assert!(

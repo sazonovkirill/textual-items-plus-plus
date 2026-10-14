@@ -5,7 +5,7 @@ use std::{fmt::Write, fs};
 
 use crossterm::event::{Event, KeyCode};
 
-use crate::support::Harness;
+use crate::support::{Harness, shows_path};
 
 /// The row the focus marker is on, without the marker and trailing spaces.
 fn focused(harness: &Harness) -> Option<String> {
@@ -129,12 +129,10 @@ fn a_file_opens_on_its_inbox_saved() {
     let text = "Inbox:\n\t- Renew the passport @due(2026-11-01)\n\t- Book flights @travel\nWork: @area\n\t- Not in the Inbox\n";
     let (dir, mut harness) = on_file(text, 60, 8);
     let path = dir.path().join("todo.taskpaper");
+    let rows = harness.rows();
+    let rows = rows.iter().map(|row| row.trim_end()).collect::<Vec<_>>();
     assert_eq!(
-        harness
-            .rows()
-            .iter()
-            .map(|row| row.trim_end())
-            .collect::<Vec<_>>(),
+        rows[..7],
         [
             "  󰚇 Inbox",
             "",
@@ -143,8 +141,15 @@ fn a_file_opens_on_its_inbox_saved() {
             "",
             "",
             "",
-            format!(" 󰆿 NAVIGATE · {} · saved", path.display()).as_str(),
         ]
+    );
+    let shown = rows[7]
+        .strip_prefix(" 󰆿 NAVIGATE · ")
+        .and_then(|rest| rest.strip_suffix(" · saved"));
+    assert!(
+        shown.is_some_and(|shown| shows_path(shown, &path)),
+        "{}",
+        rows[7]
     );
     harness.type_text("j");
     assert_eq!(focused(&harness).as_deref(), Some("☐ Book flights @travel"));
