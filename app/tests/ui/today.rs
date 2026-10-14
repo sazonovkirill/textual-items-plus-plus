@@ -171,9 +171,9 @@ fn me_puts_a_task_in_the_evening_at_the_bottom_of_today_and_takes_it_out() {
     );
 }
 
-// FR-VIEW-13, FR-STORE-07
+// FR-VIEW-13
 #[test]
-fn the_evening_is_kept_in_the_file_for_the_day_and_only_today_takes_me() {
+fn the_evening_is_not_kept_in_the_file_and_only_today_takes_me() {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let path = dir.path().join("todo.taskpaper");
     std::fs::write(&path, "Inbox:\n\t- Call mom @start(2026-10-05)\n").expect("written");
@@ -199,7 +199,13 @@ fn the_evening_is_kept_in_the_file_for_the_day_and_only_today_takes_me() {
     harness.wait(1000);
     assert_eq!(
         std::fs::read_to_string(&path).expect("saved"),
-        "Inbox:\n\t- Call mom @start(2026-10-05) @evening(2026-10-05)\n",
-        "the day it was put in the Evening, and nothing from me in the Inbox"
+        "Inbox:\n\t- Call mom @start(2026-10-05)\n",
+        "the file never keeps the Evening"
     );
+    let evening = |harness: &Harness| trimmed(harness).contains(&"  \u{f0594} Evening".to_owned());
+    assert!(evening(&harness));
+    drop(harness);
+    let mut restarted = Harness::open(path, 60, 12);
+    restarted.type_text("gt");
+    assert!(!evening(&restarted), "a restart empties the Evening");
 }

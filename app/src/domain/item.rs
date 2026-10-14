@@ -136,8 +136,9 @@ pub struct Item {
     /// Whether it is a project the sidebar and the Navigator also list among the pinned ones
     /// (FR-VIEW-12).
     pub pinned: bool,
-    /// The day it was put in the Evening part of Today, which it is in only on that day
-    /// (FR-VIEW-13). What the app goes by is [`in_evening`](Item::in_evening).
+    /// The day it was put in the Evening part of Today, which it is in only on that day and while
+    /// the app runs: the file never keeps it (FR-VIEW-13). What the app goes by is
+    /// [`in_evening`](Item::in_evening).
     pub evening: Option<Date>,
     /// The user's tags, and any other tag the model does not interpret, in their order.
     pub tags: Vec<Tag>,
@@ -233,8 +234,8 @@ pub struct Tag {
 /// The tag names the app writes itself, and those TaskPaper reads as plain text, which no tag of
 /// the user's takes (FR-STORE-10, OQ-11).
 const RESERVED: &[&str] = &[
-    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "pinned", "evening",
-    "id", "text", "type",
+    "start", "due", "done", "deleted", "later", "hidden", "area", "section", "pinned", "id",
+    "text", "type",
 ];
 
 impl Tag {
