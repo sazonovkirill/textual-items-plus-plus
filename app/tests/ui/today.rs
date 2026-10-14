@@ -102,7 +102,9 @@ fn open_today_from_the_sidebar() {
     assert!(rows[2].starts_with(" 󰖙 Today"), "{rows:#?}");
     assert!(rows[0].contains("│  󰖙 Today"), "Enter opens it: {rows:#?}");
     assert!(
-        !rows.iter().any(|row| row.contains("Logbook")),
-        "the Logbook is left out of the sidebar"
+        rows[4].starts_with(" 󰉹 All")
+            && rows[5].starts_with(" 󱓳 Logbook")
+            && rows[6].starts_with(" 󰩺 Trash"),
+        "the Logbook between All and the Trash: {rows:#?}"
     );
 }

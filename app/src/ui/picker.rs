@@ -72,6 +72,7 @@ pub struct PickerPopup<'a, T> {
     depth: Option<&'a dyn Fn(&T) -> usize>,
     badge: Option<&'a dyn Fn(&T) -> String>,
     color: Option<fn(&Theme, &T) -> Color>,
+    icon_color: Option<fn(&Theme, &T) -> Color>,
     icons: IconSet,
     theme: &'a Theme,
 }
@@ -94,6 +95,7 @@ impl<'a, T> PickerPopup<'a, T> {
             depth: None,
             badge: None,
             color: None,
+            icon_color: None,
             icons,
             theme,
         }
@@ -113,6 +115,14 @@ impl<'a, T> PickerPopup<'a, T> {
     #[must_use]
     pub fn color(mut self, color: fn(&Theme, &T) -> Color) -> Self {
         self.color = Some(color);
+        self
+    }
+
+    /// The window with each entry's icon in the color of the theme `icon_color` gives it, apart
+    /// from its text's.
+    #[must_use]
+    pub fn icon_color(mut self, icon_color: fn(&Theme, &T) -> Color) -> Self {
+        self.icon_color = Some(icon_color);
         self
     }
 
@@ -197,9 +207,12 @@ impl<T> Widget for PickerPopup<'_, T> {
             let style = self.color.map_or_else(Style::new, |color| {
                 Style::new().fg(color(theme, &entry.value))
             });
+            let icon_style = self
+                .icon_color
+                .map_or(style, |color| Style::new().fg(color(theme, &entry.value)));
             let mut line = Line::from(vec![
                 Span::raw(" ".repeat(indent + 1)),
-                Span::styled((self.icon)(&entry.value).glyph(self.icons), style),
+                Span::styled((self.icon)(&entry.value).glyph(self.icons), icon_style),
                 Span::raw(" "),
                 Span::styled(entry.text.as_str(), style),
             ]);
@@ -210,6 +223,9 @@ impl<T> Widget for PickerPopup<'_, T> {
                 buf.set_style(row, Style::new().bg(theme.selection).fg(theme.band_text));
             }
             line.render(row, buf);
+            if index == focused {
+                super::band_text(buf, row, theme.band_text);
+            }
             let badge = self
                 .badge
                 .map(|badge| badge(&entry.value))
@@ -493,11 +509,16 @@ mod tests {
                 .badge(&badge)
                 .color(|_, value| {
                     if *value == 2 {
-                        Color::Red
+                        Color::Reset
                     } else {
                         Color::Green
                     }
                 })
+                .icon_color(
+                    |_, value| {
+                        if *value == 3 { Color::Blue } else { Color::Red }
+                    },
+                )
                 .render(area, &mut buf);
             buf
         };
@@ -520,9 +541,19 @@ mod tests {
             ]
         );
         assert_eq!(
-            (buf[(4, 2)].fg, buf[(6, 2)].fg, buf[(4, 3)].fg),
-            (Color::Red, Color::Red, Color::Green),
-            "each entry's icon and text in its color"
+            (
+                buf[(2, 3)].fg,
+                buf[(4, 3)].fg,
+                buf[(6, 4)].fg,
+                buf[(8, 4)].fg
+            ),
+            (Color::Red, Color::Green, Color::Blue, Color::Green),
+            "each entry's icon and text in their colors"
+        );
+        assert_eq!(
+            (buf[(4, 2)].fg, buf[(6, 2)].fg),
+            (Color::Red, theme().band_text),
+            "text in no color of its own takes the band's on the focused row"
         );
         assert_eq!(buf[(22, 2)].fg, theme().dim_text);
         assert_eq!(buf[(22, 2)].bg, theme().selection, "on the focused row");

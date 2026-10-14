@@ -131,9 +131,9 @@ impl<'a> SidebarPane<'a> {
         }
     }
 
-    /// How the title of `stop` is drawn: in its color, areas bold as headers.
+    /// How the title of `stop` is drawn: in its color, areas bold as headers (D-78).
     fn title_style(&self, stop: Stop) -> Style {
-        let style = Style::new().fg(super::stop_color(self.theme, stop));
+        let style = Style::new().fg(super::stop_title_color(self.theme, stop));
         if matches!(stop, Stop::Place(place) if place.kind == ItemKind::Area) {
             style.add_modifier(Modifier::BOLD)
         } else {
@@ -141,8 +141,8 @@ impl<'a> SidebarPane<'a> {
         }
     }
 
-    /// The line of the title of `stop`: its text, or the text edited with the selected part in
-    /// the selection colors.
+    /// The line of the title of `stop`: its text, an area's in capitals as a header, or the text
+    /// edited with the selected part in the selection colors.
     fn title_line(&self, stop: Stop) -> Line<'a> {
         let style = self.title_style(stop);
         match (self.editing, stop) {
@@ -164,7 +164,11 @@ impl<'a> SidebarPane<'a> {
                     .node(place.id)
                     .and_then(Node::item)
                     .map_or("", |item| item.title.as_str());
-                Line::styled(title, style)
+                if place.kind == ItemKind::Area {
+                    Line::styled(title.to_uppercase(), style)
+                } else {
+                    Line::styled(title, style)
+                }
             }
             (_, Stop::View(view)) => Line::styled(view.title(), style),
         }
@@ -194,10 +198,13 @@ impl Widget for SidebarPane<'_> {
                 .editing
                 .is_some_and(|(id, _)| stop.shown() == Shown::Container(id));
             // The text field marks its selection on the selection background.
-            if Some(stop.shown()) == self.current && !editing {
-                buf.set_style(row, Style::new().bg(theme.selection));
-            } else if focused {
-                buf.set_style(row, Style::new().bg(theme.current_line));
+            let band = if Some(stop.shown()) == self.current && !editing {
+                Some(theme.selection)
+            } else {
+                focused.then_some(theme.current_line)
+            };
+            if let Some(band) = band {
+                buf.set_style(row, Style::new().bg(band));
             }
             if focused {
                 buf.set_string(row.x, row.y, FOCUS_MARKER, Style::new().fg(theme.focus));
@@ -223,7 +230,7 @@ impl Widget for SidebarPane<'_> {
             let icon_area = Rect::new(title.icon, row.y, title.x.saturating_sub(title.icon), 1);
             Span::styled(
                 super::stop_icon(stop).glyph(self.icons),
-                self.title_style(stop),
+                Style::new().fg(super::stop_icon_color(theme, stop)),
             )
             .render(icon_area.intersection(row), buf);
             let right = if editing { 0 } else { count_width };
@@ -244,6 +251,9 @@ impl Widget for SidebarPane<'_> {
                     1,
                 );
                 count.render(at.intersection(row), buf);
+            }
+            if band.is_some() {
+                super::band_text(buf, row, theme.band_text);
             }
         }
     }
@@ -346,7 +356,7 @@ mod tests {
         (rows, buf, caret)
     }
 
-    // FR-VIEW-10, FR-UI-04
+    // FR-VIEW-10, FR-UI-04, D-78
     #[test]
     fn draws_the_groups_with_counts_and_marks_the_focus_while_it_has_the_keys()
     -> Result<(), PlacementError> {
@@ -354,7 +364,7 @@ mod tests {
         for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
             give(&mut state, Command::Focus(motion));
         }
-        let (rows, buf, caret) = draw(&state, 20, 13);
+        let (rows, buf, caret) = draw(&state, 20, 14);
         assert_eq!(
             rows,
             [
@@ -363,11 +373,12 @@ mod tests {
                 " ☼ Today           │",
                 " » Upcoming        │",
                 " ∷ All             │",
+                " ▤ Logbook         │",
                 " ✕ Trash           │",
                 "                   │",
                 " # Learn Rust      │",
                 "                   │",
-                " ◆ Work           3│",
+                " ◆ WORK           3│",
                 "▌# Website        3│",
                 " # Blog            │",
                 "                   │",
@@ -378,22 +389,47 @@ mod tests {
             let at = rows.iter().position(|row| row.contains(title));
             at.and_then(|at| u16::try_from(at).ok()).unwrap_or(u16::MAX)
         };
-        let (today, work, website) = (line("Today"), line("Work"), line("Website"));
+        let (today, work, website) = (line("Today"), line("WORK"), line("Website"));
         let theme = BuiltIn::default().colors();
         assert_eq!(buf[(5, website)].bg, theme.current_line);
         assert_eq!(buf[(0, website)].fg, theme.focus);
         assert_eq!(
-            (buf[(3, 0)].fg, buf[(5, 0)].bg),
-            (theme.primary, theme.selection),
-            "the Inbox, shown in the pane"
+            (buf[(1, 0)].fg, buf[(3, 0)].fg, buf[(5, 0)].bg),
+            (theme.inbox_icon, theme.band_text, theme.selection),
+            "the Inbox, shown in the pane, its title in the band's text color"
         );
-        assert_eq!(buf[(3, today)].fg, theme.primary, "a view");
-        assert_eq!(buf[(3, work)].fg, theme.headers, "an area");
-        assert_eq!(buf[(3, website)].fg, theme.primary, "a project");
+        let icons = [
+            ("Today", theme.today_icon),
+            ("Upcoming", theme.upcoming_icon),
+            ("All", theme.all_icon),
+            ("Logbook", theme.logbook_icon),
+            ("Trash", theme.trash_icon),
+        ];
+        for (view, color) in icons {
+            let at = line(view);
+            assert_eq!(
+                (buf[(1, at)].fg, buf[(3, at)].fg),
+                (color, theme.text),
+                "{view}"
+            );
+        }
+        let (work_icon, work_title) = (&buf[(1, work)], &buf[(3, work)]);
+        assert_eq!(
+            (work_icon.fg, work_title.fg),
+            (theme.headers, theme.headers)
+        );
+        assert!(work_title.modifier.contains(Modifier::BOLD), "an area");
+        let rust = line("Learn Rust");
+        assert_eq!(
+            (buf[(1, rust)].fg, buf[(3, rust)].fg),
+            (theme.primary, theme.text),
+            "a project"
+        );
+        assert_eq!(buf[(3, website)].fg, theme.band_text, "on the band");
         assert_eq!(buf[(17, work)].fg, theme.dim_text, "a count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusRight);
-        let (rows, buf, _) = draw(&state, 20, 13);
+        let (rows, buf, _) = draw(&state, 20, 14);
         assert!(
             rows[usize::from(website)].starts_with(" # Website"),
             "no marker: {rows:?}"
@@ -401,20 +437,24 @@ mod tests {
         assert_ne!(buf[(5, website)].bg, theme.current_line);
         give(&mut state, Command::FocusLeft);
         give(&mut state, Command::Go(crate::app::Go::Into));
-        let (_, buf, _) = draw(&state, 20, 13);
+        let (_, buf, _) = draw(&state, 20, 14);
         assert_eq!(
-            (buf[(5, website)].fg, buf[(5, website)].bg),
-            (theme.primary, theme.selection),
-            "the container shown keeps its kind's color on the selection background"
+            (
+                buf[(1, website)].fg,
+                buf[(5, website)].fg,
+                buf[(5, website)].bg
+            ),
+            (theme.primary, theme.band_text, theme.selection),
+            "the container shown keeps its colors on the selection background"
         );
         assert_ne!(buf[(5, 0)].bg, theme.selection);
         give(&mut state, Command::Go(crate::app::Go::View(View::Today)));
-        let (_, buf, _) = draw(&state, 20, 13);
+        let (_, buf, _) = draw(&state, 20, 14);
         assert_eq!(buf[(5, today)].bg, theme.selection, "the view shown");
         Ok(())
     }
 
-    // FR-VIEW-10, D-67
+    // FR-VIEW-10, D-67, D-78
     #[test]
     fn a_collapsed_area_shows_a_marker_before_its_count() -> Result<(), PlacementError> {
         let mut state = state()?;
@@ -426,19 +466,22 @@ mod tests {
             give(&mut state, Command::Focus(motion));
         }
         give(&mut state, Command::Collapse);
-        let (rows, buf, _) = draw(&state, 20, 10);
+        let (rows, buf, _) = draw(&state, 20, 11);
         assert_eq!(
-            rows.get(7..10),
+            rows.get(8..11),
             Some(
                 &[
                     " # Learn Rust      │".to_owned(),
                     "                   │".to_owned(),
-                    "▌◆ Work         ▸ 3│".to_owned(),
+                    "▌◆ WORK         ▸ 3│".to_owned(),
                 ][..]
             )
         );
         let theme = BuiltIn::default().colors();
-        assert_eq!(buf[(15, 9)].fg, theme.dim_text);
+        assert_eq!(buf[(15, 10)].fg, theme.dim_text);
+        give(&mut state, Command::RenameContainer);
+        let (rows, _, _) = draw(&state, 20, 11);
+        assert_eq!(rows[10], "▌◆ Work            │", "edited as it is written");
         Ok(())
     }
 
@@ -454,7 +497,7 @@ mod tests {
             Command::Focus(crate::app::Focus::PreviousSection),
         );
         let (rows, _, _) = draw(&state, 20, 2);
-        assert_eq!(rows, ["                   │", "▌◆ Work           3│"]);
+        assert_eq!(rows, ["                   │", "▌◆ WORK           3│"]);
         let mut new = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut new, Command::Sidebar);
         let (rows, _, _) = draw(&new, 20, 2);

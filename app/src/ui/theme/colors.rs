@@ -48,6 +48,18 @@ pub struct Theme {
     pub tag: Color,
     /// Completed items and checked checklist items, faded on purpose.
     pub done: Color,
+    /// The Inbox's icon in the sidebar and the Navigator: a blue.
+    pub inbox_icon: Color,
+    /// Today's icon there: a yellow.
+    pub today_icon: Color,
+    /// Upcoming's icon there: a red.
+    pub upcoming_icon: Color,
+    /// All's icon there: a green.
+    pub all_icon: Color,
+    /// The Logbook's icon there: a purple.
+    pub logbook_icon: Color,
+    /// The Trash's icon there: a grey.
+    pub trash_icon: Color,
 }
 
 impl Theme {
@@ -103,6 +115,12 @@ const TERMINAL_DARK: Theme = Theme {
     error: Color::Red,
     tag: Color::Cyan,
     done: Color::Indexed(244),
+    inbox_icon: Color::LightBlue,
+    today_icon: Color::Yellow,
+    upcoming_icon: Color::Red,
+    all_icon: Color::Green,
+    logbook_icon: Color::Magenta,
+    trash_icon: Color::Indexed(244),
 };
 
 /// Catppuccin Mocha, as themes.md lists it.
@@ -126,6 +144,12 @@ const CATPPUCCIN_MOCHA: Theme = Theme {
     error: Color::Rgb(0xf3, 0x8b, 0xa8),
     tag: Color::Rgb(0x94, 0xe2, 0xd5),
     done: Color::Rgb(0x7f, 0x84, 0x9c),
+    inbox_icon: Color::Rgb(0x89, 0xb4, 0xfa),
+    today_icon: Color::Rgb(0xf9, 0xe2, 0xaf),
+    upcoming_icon: Color::Rgb(0xf3, 0x8b, 0xa8),
+    all_icon: Color::Rgb(0xa6, 0xe3, 0xa1),
+    logbook_icon: Color::Rgb(0xcb, 0xa6, 0xf7),
+    trash_icon: Color::Rgb(0x93, 0x99, 0xb2),
 };
 
 /// Tokyo Night (Night), as themes.md lists it.
@@ -149,6 +173,12 @@ const TOKYO_NIGHT: Theme = Theme {
     error: Color::Rgb(0xf7, 0x76, 0x8e),
     tag: Color::Rgb(0x73, 0xda, 0xca),
     done: Color::Rgb(0x73, 0x7a, 0xa2),
+    inbox_icon: Color::Rgb(0x7a, 0xa2, 0xf7),
+    today_icon: Color::Rgb(0xe0, 0xaf, 0x68),
+    upcoming_icon: Color::Rgb(0xf7, 0x76, 0x8e),
+    all_icon: Color::Rgb(0x9e, 0xce, 0x6a),
+    logbook_icon: Color::Rgb(0x9d, 0x7c, 0xd8),
+    trash_icon: Color::Rgb(0x73, 0x7a, 0xa2),
 };
 
 /// GitHub Light Default, as themes.md lists it.
@@ -172,6 +202,12 @@ const GITHUB_LIGHT: Theme = Theme {
     error: Color::Rgb(0xd1, 0x24, 0x2f),
     tag: Color::Rgb(0x95, 0x38, 0x00),
     done: Color::Rgb(0x6e, 0x77, 0x81),
+    inbox_icon: Color::Rgb(0x09, 0x69, 0xda),
+    today_icon: Color::Rgb(0x9a, 0x67, 0x00),
+    upcoming_icon: Color::Rgb(0xcf, 0x22, 0x2e),
+    all_icon: Color::Rgb(0x1a, 0x7f, 0x37),
+    logbook_icon: Color::Rgb(0x82, 0x50, 0xdf),
+    trash_icon: Color::Rgb(0x6e, 0x77, 0x81),
 };
 
 /// Flexoki Light, as themes.md lists it.
@@ -195,6 +231,12 @@ const FLEXOKI_LIGHT: Theme = Theme {
     error: Color::Rgb(0xaf, 0x30, 0x29),
     tag: Color::Rgb(0x24, 0x83, 0x7b),
     done: Color::Rgb(0x87, 0x85, 0x80),
+    inbox_icon: Color::Rgb(0x20, 0x5e, 0xa6),
+    today_icon: Color::Rgb(0x8e, 0x6b, 0x01),
+    upcoming_icon: Color::Rgb(0xaf, 0x30, 0x29),
+    all_icon: Color::Rgb(0x66, 0x80, 0x0b),
+    logbook_icon: Color::Rgb(0x5e, 0x40, 0x9d),
+    trash_icon: Color::Rgb(0x87, 0x85, 0x80),
 };
 
 #[cfg(test)]
@@ -202,7 +244,7 @@ mod tests {
     use super::*;
 
     /// Every color of `theme`, each with its role.
-    fn roles(theme: &Theme) -> [(&'static str, Color); 19] {
+    fn roles(theme: &Theme) -> [(&'static str, Color); 25] {
         [
             ("background", theme.background),
             ("text", theme.text),
@@ -223,6 +265,12 @@ mod tests {
             ("error", theme.error),
             ("tag", theme.tag),
             ("done", theme.done),
+            ("inbox_icon", theme.inbox_icon),
+            ("today_icon", theme.today_icon),
+            ("upcoming_icon", theme.upcoming_icon),
+            ("all_icon", theme.all_icon),
+            ("logbook_icon", theme.logbook_icon),
+            ("trash_icon", theme.trash_icon),
         ]
     }
 
@@ -348,6 +396,29 @@ mod tests {
             }
             let done = contrast(colors.done, colors.background);
             assert!(done >= 3.0, "{id} done: {done:.2}");
+        }
+    }
+
+    // FR-VIEW-10, D-78
+    #[test]
+    fn each_view_icon_has_a_color_of_its_own_that_stands_out() {
+        for theme in BuiltIn::ALL {
+            let (colors, id) = (theme.colors(), theme.id());
+            let icons = [
+                colors.inbox_icon,
+                colors.today_icon,
+                colors.upcoming_icon,
+                colors.all_icon,
+                colors.logbook_icon,
+                colors.trash_icon,
+            ];
+            for (at, color) in icons.iter().enumerate() {
+                assert!(!icons[at + 1..].contains(color), "{id}: {color:?} twice");
+                if channels(colors.background).is_some() {
+                    let ratio = contrast(*color, colors.background);
+                    assert!(ratio >= 3.0, "{id} {color:?}: {ratio:.2}");
+                }
+            }
         }
     }
 

@@ -33,7 +33,7 @@ fn entries(harness: &Harness) -> Vec<String> {
 fn sidebar() -> Harness {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjj");
+    harness.type_text("jjjjjj");
     harness
 }
 
@@ -48,12 +48,13 @@ fn reorder_areas_in_the_sidebar() {
             " 󰖙 Today",
             " 󱄵 Upcoming",
             " 󰉹 All",
+            " 󱓳 Logbook",
             " 󰩺 Trash",
             "*# Learn Rust           2",
-            " 󰆧 Work                 7",
+            " 󰆧 WORK                 7",
             " # Website              4",
             " # Blog                 1",
-            " 󰆧 Home                 5",
+            " 󰆧 HOME                 5",
             " # Move to the new flat 4",
         ]
     );
@@ -63,12 +64,12 @@ fn reorder_areas_in_the_sidebar() {
             .is_some_and(|row| row.chars().take(25).all(|c| c == ' '))
     };
     assert!(
-        blank(1) && blank(6) && blank(8) && blank(12),
+        blank(1) && blank(7) && blank(9) && blank(13),
         "blank lines set the groups off"
     );
     harness.press(KeyCode::Char('j'), KeyModifiers::ALT);
     assert_eq!(
-        entries(&harness).get(5).map(String::as_str),
+        entries(&harness).get(6).map(String::as_str),
         Some("*# Learn Rust           2"),
         "no other project in no area to change places with"
     );
@@ -77,20 +78,20 @@ fn reorder_areas_in_the_sidebar() {
     harness.press(KeyCode::Char('k'), KeyModifiers::ALT);
     let moved = entries(&harness);
     assert_eq!(
-        moved.get(6..9),
+        moved.get(7..10),
         Some(
             &[
-                "*󰆧 Home                 5".to_owned(),
+                "*󰆧 HOME                 5".to_owned(),
                 " # Move to the new flat 4".to_owned(),
-                " 󰆧 Work                 7".to_owned(),
+                " 󰆧 WORK                 7".to_owned(),
             ][..]
         ),
         "{moved:?}"
     );
     harness.type_text("z");
     assert_eq!(
-        entries(&harness).get(9).map(String::as_str),
-        Some("*󰆧 Home                 5")
+        entries(&harness).get(10).map(String::as_str),
+        Some("*󰆧 HOME                 5")
     );
     harness.ctrl('b');
     assert!(
@@ -108,14 +109,14 @@ fn add_rename_and_open_entries_in_the_sidebar() {
     harness.type_text("o");
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
-        Some(Position::new(3, 7)),
+        Some(Position::new(3, 8)),
         "the caret in the new entry, first of the projects in no area"
     );
     harness.type_text("Garden");
     harness.key(KeyCode::Enter);
     let added = entries(&harness);
     assert_eq!(
-        added.get(5).map(String::as_str),
+        added.get(6).map(String::as_str),
         Some("*# Garden"),
         "{added:?}"
     );
@@ -127,15 +128,15 @@ fn add_rename_and_open_entries_in_the_sidebar() {
     harness.type_text("s");
     harness.key(KeyCode::Enter);
     assert_eq!(
-        entries(&harness).get(5).map(String::as_str),
+        entries(&harness).get(6).map(String::as_str),
         Some("*# Gardens")
     );
     harness.type_text("A");
     harness.type_text("Errands");
     harness.key(KeyCode::Enter);
     assert_eq!(
-        entries(&harness).get(7).map(String::as_str),
-        Some("*󰆧 Errands"),
+        entries(&harness).get(8).map(String::as_str),
+        Some("*󰆧 ERRANDS"),
         "first of the areas"
     );
     harness.key(KeyCode::Enter);
@@ -162,7 +163,7 @@ fn move_a_project_into_an_area_and_back_to_the_top_level() {
     harness.type_text("gm");
     harness.key(KeyCode::Enter);
     assert_eq!(
-        entries(&harness).get(5).map(String::as_str),
+        entries(&harness).get(6).map(String::as_str),
         Some("*# Learn Rust           2")
     );
 }
@@ -212,12 +213,12 @@ fn the_keys_go_to_the_pane_and_back_to_the_sidebar() {
     harness.ctrl('w');
     harness.key(KeyCode::Left);
     assert_eq!(
-        entries(&harness).get(5).map(String::as_str),
+        entries(&harness).get(6).map(String::as_str),
         Some("*# Learn Rust           2")
     );
     harness.type_text("k");
     assert_eq!(pane_focus(&harness), None);
-    assert_eq!(entries(&harness)[4], "*󰩺 Trash");
+    assert_eq!(entries(&harness)[5], "*󰩺 Trash");
 }
 
 // FR-VIEW-10, FR-EDIT-04, FR-UI-05
@@ -246,11 +247,11 @@ fn collapse_an_area_and_expand_it_again() {
     let mut harness = sidebar();
     harness.type_text("j'");
     assert_eq!(
-        entries(&harness).get(6..9),
+        entries(&harness).get(7..10),
         Some(
             &[
-                "*󰆧 Work               ▸ 7".to_owned(),
-                " 󰆧 Home                 5".to_owned(),
+                "*󰆧 WORK               ▸ 7".to_owned(),
+                " 󰆧 HOME                 5".to_owned(),
                 " # Move to the new flat 4".to_owned(),
             ][..]
         ),
@@ -258,12 +259,12 @@ fn collapse_an_area_and_expand_it_again() {
     );
     harness.type_text("j'");
     assert_eq!(
-        entries(&harness).get(7).map(String::as_str),
-        Some("*󰆧 Home               ▸ 5")
+        entries(&harness).get(8).map(String::as_str),
+        Some("*󰆧 HOME               ▸ 5")
     );
     harness.type_text("k'");
     assert_eq!(
-        entries(&harness).get(7).map(String::as_str),
+        entries(&harness).get(8).map(String::as_str),
         Some(" # Website              4")
     );
     harness.type_text("G");
@@ -271,10 +272,10 @@ fn collapse_an_area_and_expand_it_again() {
     harness.key(KeyCode::Enter);
     let added = entries(&harness);
     assert_eq!(
-        added.get(9..12),
+        added.get(10..13),
         Some(
             &[
-                " 󰆧 Home                 5".to_owned(),
+                " 󰆧 HOME                 5".to_owned(),
                 " # Move to the new flat 4".to_owned(),
                 "*# Boxes".to_owned(),
             ][..]

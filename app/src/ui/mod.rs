@@ -903,7 +903,8 @@ fn navigator_popup<'a>(
     PickerPopup::new("Navigator", view, icon, icons, theme)
         // v1 nests no project in another (D-57), so no entry is indented.
         .tree(&|_| 0)
-        .color(|theme, &stop| stop_color(theme, stop))
+        .color(|theme, &stop| stop_title_color(theme, stop))
+        .icon_color(|theme, &stop| stop_icon_color(theme, stop))
         .badge(&|stop| match stop {
             Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
             Stop::Place(place) => place.open_tasks.to_string(),
@@ -949,12 +950,39 @@ fn stop_icon(stop: Stop) -> Icon {
     }
 }
 
-/// The color of `stop` in the Navigator and the sidebar: a place's kind's, or for a view the
-/// color its pane's heading has.
-fn stop_color(theme: &Theme, stop: Stop) -> Color {
+/// The color of the icon of `stop` in the Navigator and the sidebar: the Inbox's and each view's
+/// own, or a place's kind's (D-78).
+fn stop_icon_color(theme: &Theme, stop: Stop) -> Color {
     match stop {
+        Stop::Place(place) if place.kind == ItemKind::Inbox => theme.inbox_icon,
         Stop::Place(place) => theme.kind(place.kind),
-        Stop::View(_) => theme.primary,
+        Stop::View(View::Today) => theme.today_icon,
+        Stop::View(View::Upcoming) => theme.upcoming_icon,
+        Stop::View(View::All) => theme.all_icon,
+        Stop::View(View::Logbook) => theme.logbook_icon,
+        // Search is opened by searching, never listed as a stop.
+        Stop::View(View::Trash | View::Search) => theme.trash_icon,
+    }
+}
+
+/// The color of the title of `stop` in the Navigator and the sidebar: an area's kind's, which
+/// heads what it holds, and the text color for the rest (D-78).
+fn stop_title_color(theme: &Theme, stop: Stop) -> Color {
+    match stop {
+        Stop::Place(place) if place.kind == ItemKind::Area => theme.headers,
+        _ => theme.text,
+    }
+}
+
+/// Gives the text in `area` drawn in no color of its own `color`, the text color of the band or
+/// selection behind it, so that it reads there whatever the terminal's own text color.
+fn band_text(buf: &mut Buffer, area: Rect, color: Color) {
+    for position in area.positions() {
+        if let Some(cell) = buf.cell_mut(position)
+            && cell.fg == Color::Reset
+        {
+            cell.set_fg(color);
+        }
     }
 }
 

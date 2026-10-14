@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use super::{
     Direction, Focus, Side, container,
     navigator::{self, Stop},
-    view::{Shown, View},
+    view::Shown,
 };
 use crate::domain::{Destination, Document, ItemId, ItemKind, Node, Transaction};
 
@@ -203,8 +203,7 @@ impl Sidebar {
 
 /// The entries of `document` as the sidebar lists them: the Navigator's with the Inbox and the
 /// views first, then the projects in no area and then the areas, each followed by what it holds,
-/// as Things 3's sidebar groups them. Within each group they keep the order of the file. The
-/// Logbook is left out, as the owner's order of the sidebar leaves it (D-45).
+/// as Things 3's sidebar groups them. Within each group they keep the order of the file.
 pub(super) fn entries(document: &Document) -> Vec<Stop> {
     let (mut first, mut projects, mut areas) = (Vec::new(), Vec::new(), Vec::new());
     let mut group = ItemKind::Inbox;
@@ -213,9 +212,7 @@ pub(super) fn entries(document: &Document) -> Vec<Stop> {
         .map(|candidate| candidate.value)
     {
         let Stop::Place(place) = stop else {
-            if stop != Stop::View(View::Logbook) {
-                first.push(stop);
-            }
+            first.push(stop);
             continue;
         };
         if place.depth == 0 {
@@ -358,7 +355,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::app::view::REGISTRY;
+    use crate::app::view::{REGISTRY, View};
     use crate::domain::{Item, PlacementError};
     use ItemKind::{Area, Project, Section, Task};
 
@@ -444,13 +441,13 @@ mod tests {
         let views: Vec<Stop> = REGISTRY
             .iter()
             .map(|entry| Stop::View(entry.view))
-            .filter(|&stop| stop != Stop::View(View::Logbook))
             .collect();
         let listed = entries(&document);
         assert_eq!(listed.get(1..=views.len()), Some(&views[..]));
-        assert!(
-            !listed.contains(&Stop::View(View::Logbook)),
-            "the owner's order leaves the Logbook out"
+        assert_eq!(
+            listed.get(3..=5),
+            Some(&[View::All, View::Logbook, View::Trash].map(Stop::View)[..]),
+            "the Logbook between All and the Trash (D-78)"
         );
         assert_eq!(
             tree(&document),

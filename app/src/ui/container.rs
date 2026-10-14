@@ -11,7 +11,7 @@ use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Paragraph, StatefulWidget, Widget, Wrap},
 };
@@ -1111,13 +1111,8 @@ impl<'a> ContainerPane<'a> {
     /// Gives the text on the band that has no color of its own the band's text color.
     fn band_text(&self, area: Rect, buf: &mut Buffer, start: usize, end: usize, top: usize) {
         for y in band_rows(area, start, end, top) {
-            for x in area.left()..area.right() {
-                if let Some(cell) = buf.cell_mut((x, y))
-                    && cell.fg == Color::Reset
-                {
-                    cell.set_fg(self.theme.band_text);
-                }
-            }
+            let row = Rect::new(area.x, y, area.width, 1);
+            super::band_text(buf, row, self.theme.band_text);
         }
     }
 }

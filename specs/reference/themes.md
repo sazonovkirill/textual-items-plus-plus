@@ -1,7 +1,7 @@
 # Built-in Themes
 
 - Status: Reference
-- Last updated: 2026-10-13
+- Last updated: 2026-10-14
 
 This page defines the color themes compiled into the app for v1: two dark and two light. Each was chosen on its own merits from what is popular and maintained in 2025-2026 across Neovim (the dotfyle usage ranking), terminal emulators (all four ship in Ghostty's bundled catalog, which comes from iTerm2-Color-Schemes), and editors. Each one has a permissive license, verified in its own repository, so its palette can be built into the binary with attribution. Every hex value below comes from the theme's official palette file. The app also keeps its "Terminal Dark" theme, which uses the terminal's own 16 ANSI colors; its roles are listed [after the four](#terminal-dark). Candidates evaluated for later releases are listed at the end, without palettes.
 
@@ -39,6 +39,7 @@ Each theme provides an exact hex value for every role below. Roles are foregroun
 | Tag text | foreground | Default color of `@tag` labels that have no assigned tag color. |
 | Checklist done | foreground | Checked checklist items and completed tasks. They are intentionally faded and may sit slightly below 4.5:1, but never below 3:1. |
 | Tag 1-6 | foreground | Six user-assignable tag/label colors, in this order: blue, green, yellow, orange, pink/red, purple. Each theme uses its nearest palette hue. |
+| View icons | foreground (non-text) | The icons of the Inbox and the views in the sidebar and the Navigator, each in a hue of its own, as the owner chose: Inbox blue, Today yellow, Upcoming red, All green, Logbook purple, Trash grey (D-78). Each theme uses its nearest palette hue, and each clears 3:1. |
 
 ## 1. Catppuccin Mocha
 
@@ -71,6 +72,12 @@ Each theme provides an exact hex value for every role below. Roles are foregroun
 | Tag 4 | `#fab387` | peach | 9.27:1 |
 | Tag 5 | `#f5c2e7` | pink | 10.74:1 |
 | Tag 6 | `#cba6f7` | mauve | 8.07:1 |
+| Inbox icon | `#89b4fa` | blue | 7.79:1 |
+| Today icon | `#f9e2af` | yellow | 12.91:1 |
+| Upcoming icon | `#f38ba8` | red | 7.08:1 |
+| All icon | `#a6e3a1` | green | 11.03:1 |
+| Logbook icon | `#cba6f7` | mauve | 8.07:1 |
+| Trash icon | `#9399b2` | overlay2 | 5.81:1 |
 
 Notes: `subtext0` is used for dim text rather than `overlay0`/`overlay1` (the comment greys) so secondary text clears 4.5:1. Checklist done uses `overlay1` at 4.44:1, deliberately just below body-text level.
 
@@ -105,6 +112,12 @@ Notes: `subtext0` is used for dim text rather than `overlay0`/`overlay1` (the co
 | Tag 4 | `#ff9e64` | orange | 8.40:1 |
 | Tag 5 | `#bb9af7` | magenta | 7.39:1 |
 | Tag 6 | `#7dcfff` | cyan | 9.96:1 |
+| Inbox icon | `#7aa2f7` | blue | 6.79:1 |
+| Today icon | `#e0af68` | yellow | 8.55:1 |
+| Upcoming icon | `#f7768e` | red | 6.46:1 |
+| All icon | `#9ece6a` | green | 9.35:1 |
+| Logbook icon | `#9d7cd8` | purple | 5.13:1 |
+| Trash icon | `#737aa2` | dark5 | 4.10:1 |
 
 Notes: dim text is `fg_dark`, not `comment` (`#565f89`, 2.76:1). Overdue uses `magenta2` (`#ff007c`), the theme's hot accent, so it stands apart from the normal red due chip. `red1` (`#db4b4b`, the theme's error color in diagnostics) is only 4.17:1, so error uses `red` instead.
 
@@ -139,6 +152,12 @@ Notes: dim text is `fg_dark`, not `comment` (`#565f89`, 2.76:1). Overdue uses `m
 | Tag 4 | `#bc4c00` | orange.5 | 5.03:1 |
 | Tag 5 | `#bf3989` | pink.5 | 5.05:1 |
 | Tag 6 | `#8250df` | purple.5 | 5.05:1 |
+| Inbox icon | `#0969da` | blue.5 | 5.19:1 |
+| Today icon | `#9a6700` | yellow.5 | 4.87:1 |
+| Upcoming icon | `#cf222e` | red.5 | 5.36:1 |
+| All icon | `#1a7f37` | green.5 | 5.08:1 |
+| Logbook icon | `#8250df` | purple.5 | 5.05:1 |
+| Trash icon | `#6e7781` | fg.subtle | 4.55:1 |
 
 Notes: every role clears 4.5:1. Checklist done uses `fg.subtle`, which happens to pass as well.
 
@@ -173,6 +192,12 @@ Notes: every role clears 4.5:1. Checklist done uses `fg.subtle`, which happens t
 | Tag 4 | `#bc5215` | orange-600 | 4.69:1 |
 | Tag 5 | `#a02f6f` | magenta-600 | 6.53:1 |
 | Tag 6 | `#5e409d` | purple-600 | 7.58:1 |
+| Inbox icon | `#205ea6` | blue-600 | 6.36:1 |
+| Today icon | `#8e6b01` | yellow-700 | 4.80:1 |
+| Upcoming icon | `#af3029` | red-600 | 6.23:1 |
+| All icon | `#66800b` | green-600 | 4.39:1 |
+| Logbook icon | `#5e409d` | purple-600 | 7.58:1 |
+| Trash icon | `#878580` | base-500 | 3.59:1 |
 
 Notes: the yellow tag uses `yellow-700` from the extended palette because `yellow-600` is 3.39:1 on paper. Cyan-600 and green-600 sit just under 4.5:1 (4.43 and 4.39). Their darker 700 steps are available if the app wants AA for every role.
 ## Terminal Dark
@@ -202,6 +227,12 @@ It draws in the terminal's 16 ANSI colors, so it follows the user's palette and 
 | Error | red |
 | Tag text | cyan |
 | Checklist done | grey 244 |
+| Inbox icon | bright blue |
+| Today icon | yellow |
+| Upcoming icon | red |
+| All icon | green |
+| Logbook icon | magenta |
+| Trash icon | grey 244 |
 
 ## Contrast summary
 
