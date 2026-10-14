@@ -1,7 +1,7 @@
 //! The shortcuts panel: showing and hiding it with `?`, what it lists in each context, scrolling
 //! it and where it goes on screens of each size.
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::support::Harness;
 
@@ -105,6 +105,67 @@ fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
     assert!(
         harness.rows().iter().all(|row| !row.contains("Shortcuts")),
         "scrolling shows nothing"
+    );
+}
+
+/// The mouse doing `kind` over the pane.
+fn mouse(kind: MouseEventKind) -> Event {
+    Event::Mouse(MouseEvent {
+        kind,
+        column: 10,
+        row: 5,
+        modifiers: KeyModifiers::NONE,
+    })
+}
+
+// FR-KEY-03, D-74
+#[test]
+fn the_wheel_scrolls_the_panel_three_lines_and_the_mouse_is_reported_only_while_it_shows() {
+    let mut harness = Harness::new(160, 30);
+    assert!(!harness.tui.captures_mouse());
+    harness.type_text("?");
+    assert!(harness.tui.captures_mouse());
+    let top = panel(&harness, 40);
+    harness.send(&mouse(MouseEventKind::ScrollDown));
+    assert_eq!(
+        panel(&harness, 40).get(1..3).unwrap_or_default(),
+        [
+            "│ ↑ more                              (",
+            "│  First Item                  gg, Home",
+        ],
+        "three lines down: Moving, Next Item and Previous Item went"
+    );
+    let scrolled = harness.screen();
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+        MouseEventKind::Moved,
+        MouseEventKind::ScrollLeft,
+    ] {
+        harness.send(&mouse(kind));
+    }
+    assert_eq!(harness.screen(), scrolled, "the mouse does nothing else");
+    for _ in 0..30 {
+        harness.send(&mouse(MouseEventKind::ScrollDown));
+    }
+    harness.type_text("))))))))");
+    let end = harness.screen();
+    harness.send(&mouse(MouseEventKind::ScrollDown));
+    assert_eq!(harness.screen(), end, "no further than the end");
+    harness.send(&mouse(MouseEventKind::ScrollUp));
+    assert_ne!(harness.screen(), end, "back up from the end at once");
+    for _ in 0..30 {
+        harness.send(&mouse(MouseEventKind::ScrollUp));
+    }
+    assert_eq!(panel(&harness, 40), top, "back at the top");
+    harness.type_text("?");
+    assert!(!harness.tui.captures_mouse());
+    let hidden = harness.screen();
+    harness.send(&mouse(MouseEventKind::ScrollDown));
+    assert_eq!(
+        harness.screen(),
+        hidden,
+        "without the panel the wheel does nothing"
     );
 }
 

@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 
-use crossterm::event::{Event, KeyModifiers};
+use crossterm::event::{Event, KeyModifiers, MouseEvent, MouseEventKind};
 use jiff::civil::{Date, DateTime};
 use ratatui::{
     buffer::Buffer,
@@ -70,6 +70,10 @@ use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
 use sidebar::SidebarPane;
 use status::StatusLine;
 use weather::{Idle, Season, Weather};
+
+/// How many lines a turn of the mouse wheel scrolls the shortcuts panel, as terminals and
+/// editors commonly scroll (D-74).
+const WHEEL: usize = 3;
 
 /// What reaches the event loop: what the terminal, the disk worker, the watcher and the process
 /// report.
@@ -290,8 +294,9 @@ impl Tui {
     /// description or note being edited take them the same way (FR-EDIT-01), and so do the date
     /// prompt (FR-DATE-02) and the settings window (FR-SET-02). The open attachments panel takes
     /// them, scrolling itself (FR-ATT-01), leaving quitting and the commands it acts on
-    /// (FR-CHK-03). A key, paste, click or resize while the weather plays only ends it
-    /// (FR-UI-08).
+    /// (FR-CHK-03). The mouse wheel scrolls the shortcuts panel while it shows, and the mouse
+    /// does nothing else (D-74). A key, paste, click or resize while the weather plays only ends
+    /// it (FR-UI-08).
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.input(Input::Terminal(event.clone()), today);
     }
@@ -305,6 +310,10 @@ impl Tui {
         }
         if let Event::Paste(text) = event {
             self.paste(text);
+            return;
+        }
+        if let Event::Mouse(mouse) = event {
+            self.wheel(*mouse);
             return;
         }
         if keymap::key_press(event)
@@ -363,6 +372,28 @@ impl Tui {
         if let Some(message) = message {
             self.update(message);
         }
+    }
+
+    /// Scrolls the shortcuts panel [`WHEEL`] lines while it shows when `mouse` turns the wheel,
+    /// the only thing the mouse does (D-74).
+    fn wheel(&mut self, mouse: MouseEvent) {
+        let direction = match mouse.kind {
+            MouseEventKind::ScrollUp => Direction::Up,
+            MouseEventKind::ScrollDown => Direction::Down,
+            _ => return,
+        };
+        if self.state.shows_shortcuts() {
+            self.scroll_shortcuts(direction, WHEEL);
+        }
+    }
+
+    /// Scrolls the shortcuts panel `lines` in `direction`, as far as drawing lets it go.
+    fn scroll_shortcuts(&mut self, direction: Direction, lines: usize) {
+        let (scroll, _) = &mut self.shortcuts_scroll;
+        *scroll = match direction {
+            Direction::Down => scroll.saturating_add(lines),
+            Direction::Up => scroll.saturating_sub(lines),
+        };
     }
 
     /// Scrolls the open attachments panel as `scroll` says, through what is selected while it
@@ -654,11 +685,7 @@ impl Tui {
                 None => self.update(Message::NoWeather),
             },
             Effect::ScrollShortcuts(direction) => {
-                let (scroll, _) = &mut self.shortcuts_scroll;
-                *scroll = match direction {
-                    Direction::Down => scroll.saturating_add(self.shortcuts_page),
-                    Direction::Up => scroll.saturating_sub(self.shortcuts_page),
-                };
+                self.scroll_shortcuts(direction, self.shortcuts_page);
             }
         }
     }
@@ -833,6 +860,13 @@ impl Tui {
         self.shortcuts_scroll.0 = self.shortcuts_scroll.0.min(last);
         self.shortcuts_page = page;
         panel.scrolled(self.shortcuts_scroll.0).render(area, buf);
+    }
+
+    /// Whether the terminal should report the mouse: only while the shortcuts panel shows, whose
+    /// wheel scrolls it, so that the terminal selects text with the mouse otherwise (D-74).
+    #[must_use]
+    pub fn captures_mouse(&self) -> bool {
+        self.state.shows_shortcuts()
     }
 
     /// Whether the session has ended, so the event loop should stop.

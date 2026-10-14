@@ -14,8 +14,8 @@ use anyhow::Context;
 use crossterm::{
     clipboard::CopyToClipboard,
     event::{
-        self, DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute, queue,
     terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate},
@@ -81,6 +81,9 @@ fn main() -> anyhow::Result<()> {
         // As for the keyboard flags above.
         let _ = execute!(io::stdout(), DisableBracketedPaste);
     }
+    // The session may end, or have panicked, while the mouse is reported (D-74); a terminal
+    // that does not report it ignores this.
+    let _ = execute!(io::stdout(), DisableMouseCapture);
     ratatui::restore();
     if let Some(farewell) = tui.farewell() {
         eprintln!("{farewell}");
@@ -181,7 +184,18 @@ fn run(
     received: &Receiver<Input>,
 ) -> anyhow::Result<()> {
     let start = Instant::now();
+    let mut mouse = false;
     while !tui.should_quit() {
+        if tui.captures_mouse() != mouse {
+            mouse = !mouse;
+            // A terminal that cannot report the mouse keeps the wheel to itself, and one that is
+            // gone is noticed by drawing.
+            let _ = if mouse {
+                execute!(terminal.backend_mut(), EnableMouseCapture)
+            } else {
+                execute!(terminal.backend_mut(), DisableMouseCapture)
+            };
+        }
         // The terminal shows each frame whole, as an effect changes many cells at once. One that
         // does not know synchronized output ignores it, and one that is gone is noticed by
         // drawing.
