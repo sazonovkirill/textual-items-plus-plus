@@ -12,6 +12,7 @@ use ratatui::{
     text::Line,
     widgets::{Block, Borders, Clear, Padding, Widget},
 };
+use unicode_width::UnicodeWidthStr;
 
 use super::{
     Theme,
@@ -249,6 +250,34 @@ pub(super) fn width(width: u16) -> u16 {
     (width / 4).clamp(36, 48)
 }
 
+/// `keys`, separated by commas, broken between keys into lines: the first `first` columns wide,
+/// the rest `rest` wide, each line ending in the comma before the key on the next. The first line
+/// is empty when not even the first key fits on it; a key wider than a line has one of its own.
+fn broken(keys: &str, first: usize, rest: usize) -> Vec<String> {
+    let mut lines = vec![String::new()];
+    let mut room = first;
+    let mut keys = keys.split(", ").peekable();
+    while let Some(key) = keys.next() {
+        let key = if keys.peek().is_some() {
+            format!("{key},")
+        } else {
+            key.to_owned()
+        };
+        let line = lines.last_mut().expect("lines starts with one");
+        let after = if line.is_empty() { 0 } else { line.width() + 1 };
+        if after + key.width() <= room {
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(&key);
+        } else {
+            lines.push(key);
+            room = rest;
+        }
+    }
+    lines
+}
+
 /// The shortcuts panel: titled "Shortcuts" beside a rule down its left edge, each group's name
 /// in the headers color over its commands, each command's name with its keys at the right in
 /// the primary color, scrolled, with a `↑ more` line first while lines are hidden above and a
@@ -299,9 +328,9 @@ impl<'a> ShortcutsPanel<'a> {
     /// How far the list scrolls when the panel is drawn over `area`, and how many lines a page
     /// scrolls: the lines shown between the `↑ more` and `↓ more` lines, at least one.
     pub(super) fn scroll_range(&self, area: Rect) -> (usize, usize) {
-        let height = usize::from(self.list(area).height);
-        let last = self.shown(height, usize::MAX).first;
-        (last, height.saturating_sub(2).max(1))
+        let list = self.list(area);
+        let end = self.shown(list, usize::MAX).first;
+        (end, usize::from(list.height).saturating_sub(2).max(1))
     }
 
     /// The list's area when the panel is drawn over `area`: inside the frame, above the notes.
@@ -312,10 +341,11 @@ impl<'a> ShortcutsPanel<'a> {
         list
     }
 
-    /// The lines a list `height` lines tall shows scrolled `scroll` lines down, as far as the
+    /// The lines the list drawn over `list` shows scrolled `scroll` lines down, as far as the
     /// list goes: all of them when they fit, else as many as fit beside the `more` lines.
-    fn shown(&self, height: usize, scroll: usize) -> Shown {
-        let lines = self.rows().len();
+    fn shown(&self, list: Rect, scroll: usize) -> Shown {
+        let height = usize::from(list.height);
+        let lines = self.rows(list.width).len();
         if lines <= height {
             return Shown {
                 first: 0,
@@ -345,8 +375,11 @@ impl<'a> ShortcutsPanel<'a> {
             .title(Line::from("Shortcuts").bold())
     }
 
-    /// The list's rows: each group's name, then each of its commands' names with their keys.
-    fn rows(&self) -> Vec<(Line<'static>, Line<'static>)> {
+    /// The rows of a list `width` columns wide: each group's name, then each of its commands'
+    /// names with their keys, the keys that do not fit beside the name going on in the rows
+    /// below it, broken between keys (D-88).
+    fn rows(&self, width: u16) -> Vec<(Line<'static>, Line<'static>)> {
+        let width = usize::from(width);
         let mut rows = Vec::new();
         for (heading, entries) in self.groups {
             rows.push((
@@ -354,10 +387,15 @@ impl<'a> ShortcutsPanel<'a> {
                 Line::default(),
             ));
             for (name, keys) in entries {
-                rows.push((
-                    Line::from(format!(" {name}")),
-                    Line::styled(keys.clone(), Style::new().fg(self.theme.primary)),
-                ));
+                let name = format!(" {name}");
+                let beside = width.saturating_sub(name.width() + 1);
+                let mut name = Some(Line::from(name));
+                for keys in broken(keys, beside, width) {
+                    rows.push((
+                        name.take().unwrap_or_default(),
+                        Line::styled(keys, Style::new().fg(self.theme.primary)),
+                    ));
+                }
             }
         }
         rows
@@ -391,13 +429,18 @@ impl Widget for ShortcutsPanel<'_> {
         let inner = frame.inner(area);
         frame.render(area, buf);
         let list = self.list(area);
-        let shown = self.shown(usize::from(list.height), self.scroll);
+        let shown = self.shown(list, self.scroll);
         let [up, down] = self.keys;
         let rows = shown
             .above
             .then(|| self.more("↑", up))
             .into_iter()
-            .chain(self.rows().into_iter().skip(shown.first).take(shown.count))
+            .chain(
+                self.rows(list.width)
+                    .into_iter()
+                    .skip(shown.first)
+                    .take(shown.count),
+            )
             .chain(shown.below.then(|| self.more("↓", down)));
         for ((name, keys), row) in rows.zip(list.rows()) {
             let width = u16::try_from(keys.width()).unwrap_or(u16::MAX);
@@ -418,8 +461,10 @@ impl Widget for ShortcutsPanel<'_> {
 #[cfg(test)]
 mod tests {
     use crossterm::event::KeyCode;
+    use ratatui::buffer::Cell;
 
     use super::*;
+    use crate::ui::BuiltIn;
 
     // FR-KEY-03
     #[test]
@@ -493,6 +538,55 @@ mod tests {
             [
                 ("Up".to_owned(), "↑, Ctrl+P".to_owned()),
                 ("Down".to_owned(), "k".to_owned())
+            ]
+        );
+    }
+
+    // FR-KEY-03
+    #[test]
+    fn a_name_is_never_cut_and_keys_that_do_not_fit_beside_it_go_on_below_broken_between_keys() {
+        let groups: [Listing; 1] = [(
+            "View and Panels",
+            [
+                ("Focus Pane Left", "Ctrl+W h, Ctrl+W ←, Ctrl+Shift+←"),
+                ("Narrow Pane", "Ctrl+W <"),
+                ("Previous Sidebar Entry", "gk, Ctrl+↑"),
+            ]
+            .map(|(name, keys)| (name.to_owned(), keys.to_owned()))
+            .to_vec(),
+        )];
+        let theme = BuiltIn::default().colors();
+        let keyboard = Keyboard {
+            kitty: true,
+            alt_seen: true,
+        };
+        let panel = ShortcutsPanel::new(&groups, keyboard, &theme, ["(", ")"]);
+        assert_eq!(
+            panel.scroll_range(Rect::new(0, 0, 36, 6)),
+            (4, 1),
+            "scrolling counts the lines the keys go on to"
+        );
+        let area = Rect::new(0, 0, 36, 10);
+        let mut buf = Buffer::empty(area);
+        panel.render(area, &mut buf);
+        let lines: Vec<String> = buf
+            .content()
+            .chunks(usize::from(area.width))
+            .map(|line| line.iter().map(Cell::symbol).collect())
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "│Shortcuts                          ",
+                "│ View and Panels                   ",
+                "│  Focus Pane Left        Ctrl+W h, ",
+                "│            Ctrl+W ←, Ctrl+Shift+← ",
+                "│  Narrow Pane             Ctrl+W < ",
+                "│  Previous Sidebar Entry       gk, ",
+                "│                            Ctrl+↑ ",
+                "│                                   ",
+                "│                                   ",
+                "│ Kitty keyboard protocol: on       ",
             ]
         );
     }

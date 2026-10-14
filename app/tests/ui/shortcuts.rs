@@ -89,6 +89,31 @@ fn the_brackets_and_braces_are_listed_as_date_nudges() {
 
 // FR-KEY-03
 #[test]
+fn a_narrow_panel_keeps_every_name_whole_with_its_keys_going_on_below() {
+    let mut harness = Harness::new(100, 200);
+    harness.type_text("?");
+    let lines = panel(&harness, 36);
+    let at = |name: &str| {
+        lines
+            .iter()
+            .position(|line| line.starts_with(&format!("│  {name} ")))
+            .unwrap_or_else(|| panic!("{name}: {lines:#?}"))
+    };
+    for name in ["Focus Pane Left", "Focus Pane Right", "Open in New Pane"] {
+        at(name);
+    }
+    let left = at("Focus Pane Left");
+    assert_eq!(
+        lines.get(left..left + 2).unwrap_or_default(),
+        [
+            "│  Focus Pane Left        Ctrl+W h,",
+            "│            Ctrl+W ←, Ctrl+Shift+←"
+        ]
+    );
+}
+
+// FR-KEY-03
+#[test]
 fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
     let mut harness = Harness::new(160, 30);
     harness.type_text("?)");
