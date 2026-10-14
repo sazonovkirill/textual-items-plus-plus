@@ -44,13 +44,13 @@ fn g_comma_opens_the_settings_window_and_esc_closes_it() {
     assert!(harness.screen().contains("┌ Settings "));
     harness.type_text("x");
     assert!(
-        harness.screen().contains("- Call the bank"),
+        harness.screen().contains("☐ Call the bank"),
         "x completes nothing"
     );
     harness.key(KeyCode::Esc);
     assert!(!harness.screen().contains("Settings"));
     harness.type_text("x");
-    assert!(!harness.screen().contains("- Call the bank"));
+    assert!(!harness.screen().contains("☐ Call the bank"));
     harness.type_text("g,");
     harness.ctrl('g');
     assert!(
@@ -107,7 +107,7 @@ fn icons_and_word_wrap_change_what_the_panes_draw() {
     harness.key(KeyCode::Esc);
     let screen = harness.screen();
     assert!(screen.contains("⊔ Inbox"), "plain icons: {screen}");
-    assert!(screen.contains("▌ - Call the bank abou…"), "{screen}");
+    assert!(screen.contains("▌ ☐ Call the bank abou…"), "{screen}");
     assert!(!screen.contains("bank about the card"), "{screen}");
     assert_eq!(
         fs::read_to_string(harness.config()).ok().as_deref(),

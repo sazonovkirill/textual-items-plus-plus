@@ -1426,10 +1426,10 @@ mod tests {
             [
                 "  ☼ Today",
                 "",
-                "▌ - Answer the recruiter's  ! yesterday",
+                "▌ ☐ Answer the recruiter's  ! yesterday",
                 "▌   email",
                 "▌   Work",
-                "  - Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
+                "  ☐ Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
                 "    announcement",
                 "    @writing",
                 "    Work / Website › Launch",
@@ -1468,7 +1468,7 @@ mod tests {
         assert_eq!(
             draw(&mut state, typed),
             [
-                "▌ - Answer the recruiter's  ! yesterday",
+                "▌ ☐ Answer the recruiter's  ! yesterday",
                 "▌   email",
                 "▌   Work",
                 "▌   N",
@@ -1477,10 +1477,10 @@ mod tests {
         assert_eq!(
             draw(&mut state, app::Message::Edit(app::EditInput::Done)),
             [
-                "▌ - Answer the recruiter's  ! yesterday",
+                "▌ ☐ Answer the recruiter's  ! yesterday",
                 "▌   email",
                 "▌   Work",
-                "  - Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
+                "  ☐ Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
             ],
             "the row says where it is instead"
         );
@@ -1545,8 +1545,8 @@ mod tests {
             [
                 "  ✕ Trash",
                 "",
-                "▌ - Cancel the newspaper · Inbox",
-                "  - Paint the hallway · Home › Move to",
+                "▌ ☐ Cancel the newspaper · Inbox",
+                "  ☐ Paint the hallway · Home › Move to",
                 "    the new flat",
                 "",
             ]
@@ -1589,7 +1589,7 @@ mod tests {
             [
                 "  ⌕ Search  SHARED writing",
                 "",
-                "▌ - Write the announcement @writing · Work ›      ☑ 1/5 ≡ ❞ 1 ↦ today",
+                "▌ ☐ Write the announcement @writing · Work ›      ☑ 1/5 ≡ ❞ 1 ↦ today",
                 "▌   Website › Launch",
                 "▌   ≡ Draft in the shared doc.",
             ]
@@ -1683,9 +1683,9 @@ mod tests {
         assert_eq!(
             marked,
             [
-                line("▌ - Call the bank about ⇥ Wed", Modifier::DIM),
+                line("▌ ☐ Call the bank about ⇥ Wed", Modifier::DIM),
                 line("▌   the card", Modifier::DIM),
-                line("▌ - Buy coffee beans @errands", Modifier::empty()),
+                line("▌ ☐ Buy coffee beans @errands", Modifier::empty()),
             ],
             "every line of a picked row; the focused one as ever"
         );
@@ -1702,7 +1702,7 @@ mod tests {
         let rows = lines(&buf);
         assert_eq!(
             rows.get(6).map(String::as_str),
-            Some("▌ - Buy beans                 ")
+            Some("▌ ☐ Buy beans                 ")
         );
         let theme = BuiltIn::default().colors();
         assert_eq!(buf[(8, 6)].bg, theme.selection, "the selected word");
@@ -1718,7 +1718,7 @@ mod tests {
         let rows = lines(&buf);
         assert_eq!(
             rows.get(5).map(String::as_str),
-            Some("▌ -  about the card ")
+            Some("▌ ☐  about the card ")
         );
         assert_eq!(caret, Some(Position::new(19, 5)));
         let start = field.edited(app::TextEdit::Move {
@@ -1728,7 +1728,7 @@ mod tests {
         let (buf, caret) = draw_editing("Call the bank about the card", &start, 20);
         assert_eq!(
             lines(&buf).get(5).map(String::as_str),
-            Some("▌ - Call the bank ab")
+            Some("▌ ☐ Call the bank ab")
         );
         assert_eq!(caret, Some(Position::new(4, 5)));
         assert_eq!(
@@ -1789,17 +1789,17 @@ mod tests {
                     "  The new marketing site, built with the design",
                     "  team.",
                     "",
-                    "  - Collect logos from partners",
+                    "  ☐ Collect logos from partners",
                     "",
                     "  / Launch",
                     "    What has to happen before launch.",
-                    "▌ - Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today",
+                    "▌ ☐ Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today",
                     "▌   @writing",
                     "▌   Keep it under 300 words.",
-                    "  - Book the launch call @meeting           ⇥ Sat",
+                    "  ☐ Book the launch call @meeting           ⇥ Sat",
                     "",
                     "  / Polish",
-                    "  - Fix the footer links",
+                    "  ☐ Fix the footer links",
                     "  ✔ Compress the hero image",
                     "",
                     "",
@@ -1849,7 +1849,7 @@ mod tests {
                 &[
                     "  ◆ Home",
                     "",
-                    "  - Water the plants        ↦ yesterday",
+                    "  ☐ Water the plants        ↦ yesterday",
                     "",
                     "  # Move to the new flat",
                     "",
@@ -1948,9 +1948,9 @@ mod tests {
                     "  ⊔ Inbox",
                     "  Everything not so…",
                     "",
-                    "▌ - Call the… ⇥ Wed",
-                    "  - Buy coffee bean…",
-                    "  - Read the articl…",
+                    "▌ ☐ Call the… ⇥ Wed",
+                    "  ☐ Buy coffee bean…",
+                    "  ☐ Read the articl…",
                 ]
             )
         );
@@ -1971,13 +1971,13 @@ mod tests {
                     "  # Website      ≡ ❞ 2 ⇥ in 20 days",
                     "  The new marketing site, built wit…",
                     "",
-                    "  - Collect logos from partners",
+                    "  ☐ Collect logos from partners",
                     "",
                     "  / Launch",
                     "    What has to happen before launc…",
-                    "  - Write the … ☑ 1/5 ≡ ❞ 1 ↦ today",
+                    "  ☐ Write the … ☑ 1/5 ≡ ❞ 1 ↦ today",
                     "    Keep it under 300 words.",
-                    "  - Book the launch call @me… ⇥ Sat",
+                    "  ☐ Book the launch call @me… ⇥ Sat",
                 ]
             ),
             "a description shows its first line under the title"
@@ -2006,7 +2006,7 @@ mod tests {
                     "  sorted yet lands",
                     "  here.",
                     "",
-                    "▌ - Call the  ⇥ Wed",
+                    "▌ ☐ Call the  ⇥ Wed",
                     "▌   bank",
                     "▌   about the",
                     "▌   card",
@@ -2032,16 +2032,16 @@ mod tests {
         assert_eq!(line, "    Keep it under 300 words.");
         assert_eq!(
             last.as_deref().map(str::trim_end),
-            Some("▌ - Fix the footer links")
+            Some("▌ ☐ Fix the footer links")
         );
         assert_eq!(
             first("Compress the hero image", 5, &mut top).0,
-            "  - Book the launch call @meeting           ⇥ Sat",
+            "  ☐ Book the launch call @meeting           ⇥ Sat",
             "one row further down scrolls one line"
         );
         assert_eq!(
             first("Fix the footer links", 5, &mut top).0,
-            "  - Book the launch call @meeting           ⇥ Sat",
+            "  ☐ Book the launch call @meeting           ⇥ Sat",
             "a row in view does not scroll"
         );
         assert_eq!(first("Launch", 5, &mut top).0, "▌ / Launch");
@@ -2052,7 +2052,7 @@ mod tests {
         );
         assert_eq!(
             first("Write the announcement", 1, &mut top).0,
-            "▌ - Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today",
+            "▌ ☐ Write the announcement    ☑ 1/5 ≡ ❞ 1 ↦ today",
             "a row taller than the pane shows its first line"
         );
     }
@@ -2183,7 +2183,7 @@ mod tests {
                 &[
                     "  ⊔ Inbox",
                     "",
-                    "  - Plan @where(home) @soon ≡",
+                    "  ☐ Plan @where(home) @soon ≡",
                     "  ✔ Talk @x               ❞ 3"
                 ]
             )

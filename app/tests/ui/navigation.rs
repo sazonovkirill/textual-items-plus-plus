@@ -111,13 +111,13 @@ fn open_work_website_from_the_navigator_and_come_back() {
     );
     assert_eq!(
         focused(&harness).as_deref(),
-        Some("- Collect logos from partners")
+        Some("☐ Collect logos from partners")
     );
     harness.type_text("H");
     assert_eq!(title(&harness), "󰚇 Inbox");
     assert_eq!(
         focused(&harness).as_deref(),
-        Some("- Call the bank about the card                                          󱙬 Wed")
+        Some("☐ Call the bank about the card                                          󱙬 Wed")
     );
     harness.type_text("L");
     assert_eq!(title(&harness), "# Website");

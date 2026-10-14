@@ -9,7 +9,7 @@ fn opens_the_demo_inbox_moves_through_it_and_quits_with_ctrl_q_restoring_the_ter
     let mut terminal = termlens::bin!("tipp")?;
     terminal.wait_until(|screen| screen.text().contains("Call the bank about the card"))?;
     terminal.send(termlens::Key::Char('j'))?;
-    terminal.wait_until(|screen| screen.text().contains("▌ - Buy coffee beans"))?;
+    terminal.wait_until(|screen| screen.text().contains("▌ ☐ Buy coffee beans"))?;
     terminal.send(termlens::Key::Char('q'))?;
     terminal.send(termlens::Key::Ctrl('q'))?;
     assert!(terminal.wait_exit()?.success());

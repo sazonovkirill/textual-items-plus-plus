@@ -36,8 +36,8 @@ fn open_the_trash() {
         trimmed(&harness),
         trash(
             &[
-                "▌ - Cancel the newspaper · Inbox",
-                "  - Paint the hallway · Home › Move to the new flat",
+                "▌ ☐ Cancel the newspaper · Inbox",
+                "  ☐ Paint the hallway · Home › Move to the new flat",
             ],
             SAVED
         ),
@@ -53,13 +53,13 @@ fn restore_a_deleted_task() {
     assert_eq!(
         trimmed(&harness),
         trash(
-            &["▌ - Paint the hallway · Home › Move to the new flat"],
+            &["▌ ☐ Paint the hallway · Home › Move to the new flat"],
             SAVED
         )
     );
     harness.type_text("gi");
     assert!(
-        harness.screen().contains("- Cancel the newspaper"),
+        harness.screen().contains("☐ Cancel the newspaper"),
         "back in the Inbox:\n{}",
         harness.screen()
     );
@@ -73,14 +73,14 @@ fn deleting_in_the_trash_deletes_for_good_and_undo_brings_it_back() {
     assert_eq!(
         trimmed(&harness),
         trash(
-            &["▌ - Paint the hallway · Home › Move to the new flat"],
+            &["▌ ☐ Paint the hallway · Home › Move to the new flat"],
             SAVED
         )
     );
     harness.type_text("gi");
     assert!(!harness.screen().contains("Cancel the newspaper"));
     harness.type_text("gdz");
-    assert!(harness.screen().contains("▌ - Cancel the newspaper"));
+    assert!(harness.screen().contains("▌ ☐ Cancel the newspaper"));
 }
 
 // FR-VIEW-04, FR-EDIT-06
@@ -93,8 +93,8 @@ fn empty_the_trash_after_confirming() {
         trimmed(&harness),
         trash(
             &[
-                "▌ - Cancel the newspaper · Inbox",
-                "  - Paint the hallway · Home › Move to the new flat",
+                "▌ ☐ Cancel the newspaper · Inbox",
+                "  ☐ Paint the hallway · Home › Move to the new flat",
             ],
             asked
         ),

@@ -20,22 +20,22 @@ fn open_upcoming() {
         "  \u{f1135} Upcoming",
         "",
         "  Tomorrow · Tue 6 Oct",
-        "▌ - Write a small CLI @rust                      \u{f166d} tomorrow",
+        "▌ ☐ Write a small CLI @rust                      \u{f166d} tomorrow",
         "",
         "  Wed 7 Oct",
-        "  - Call the bank about the card                      \u{f166c} Wed",
+        "  ☐ Call the bank about the card                      \u{f166c} Wed",
         "",
         "  Thu 8 Oct",
-        "  - Plan the weekend trip                             \u{f166d} Thu",
+        "  ☐ Plan the weekend trip                             \u{f166d} Thu",
         "",
         "  Sat 10 Oct",
-        "  - Book the launch call @meeting                     \u{f166c} Sat",
+        "  ☐ Book the launch call @meeting                     \u{f166c} Sat",
         "",
         "  Next Mon · Mon 12 Oct",
-        "  - Register at the town hall                    \u{f166d} next Mon",
+        "  ☐ Register at the town hall                    \u{f166d} next Mon",
         "",
         "  Rest of October",
-        "  - Hand back the old keys                       \u{f166c} next Sat",
+        "  ☐ Hand back the old keys                       \u{f166c} next Sat",
         "  # Website                              \u{f11d7} \u{f0189} 2 \u{f166c} in 20 days",
         "    The new marketing site, built with the design team.",
         "",
@@ -59,7 +59,7 @@ fn completing_a_task_in_upcoming_takes_it_out_until_completed_items_are_shown() 
     let rows = trimmed(&harness);
     assert_eq!(rows[2], "  Wed 7 Oct", "{rows:#?}");
     assert!(
-        rows[3].starts_with("▌ - Call the bank about the card"),
+        rows[3].starts_with("▌ ☐ Call the bank about the card"),
         "the focus moves on: {rows:#?}"
     );
     harness.ctrl('o');

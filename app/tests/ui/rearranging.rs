@@ -16,7 +16,7 @@ fn listed(harness: &Harness) -> Vec<String> {
         .filter_map(|row| {
             let focused = row.starts_with('▌');
             let text = without_chips(row.trim_start_matches('▌').trim());
-            let title = text.strip_prefix("- ").unwrap_or(text);
+            let title = text.strip_prefix("☐ ").unwrap_or(text);
             if title.is_empty() {
                 return None;
             }

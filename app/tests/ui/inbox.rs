@@ -14,7 +14,7 @@ fn tasks(harness: &Harness) -> Vec<String> {
         .iter()
         .filter_map(|row| {
             let row = row.trim_start_matches('▌').trim();
-            row.strip_prefix("- ")
+            row.strip_prefix("☐ ")
                 .map(|title| without_chips(title).to_owned())
         })
         .collect()

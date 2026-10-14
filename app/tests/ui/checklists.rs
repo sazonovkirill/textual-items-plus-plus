@@ -63,9 +63,9 @@ fn build_a_nested_checklist() {
     assert_eq!(
         panel(&harness)[4..8],
         [
-            "│ - Documents                          │",
+            "│ ☐ Documents                          │",
             "│   ✔ ID card                          │",
-            "│   - Proof of address                 │",
+            "│   ☐ Proof of address                 │",
             "│                                      │",
         ],
         "Enter adds the next item, ] nests it, Esc on an empty one adds none, x checks"
@@ -77,19 +77,19 @@ fn build_a_nested_checklist() {
     assert_eq!(
         panel(&harness)[4..10],
         [
-            "│ - Documents                          │",
+            "│ ☐ Documents                          │",
             "│   ✔ ID card                          │",
-            "│   - Call                             │",
-            "│     - Ask about fees                 │",
-            "│   - Proof of address                 │",
-            "│   - Thank them                       │",
+            "│   ☐ Call                             │",
+            "│     ☐ Ask about fees                 │",
+            "│   ☐ Proof of address                 │",
+            "│   ☐ Thank them                       │",
         ],
         "a paste adds an item for each line, nested by its indentation, and Alt+j moves one down"
     );
     harness.type_text("d");
     assert_eq!(
         panel(&harness)[8],
-        "│   - Proof of address                 │"
+        "│   ☐ Proof of address                 │"
     );
     harness.key(KeyCode::Esc);
     assert!(
@@ -149,8 +149,8 @@ fn items_copied_paste_into_a_checklist_one_for_each_line() {
     assert_eq!(
         panel(&harness)[4..6],
         [
-            "│ - Buy tape                           │",
-            "│   - for the boxes                    │",
+            "│ ☐ Buy tape                           │",
+            "│   ☐ for the boxes                    │",
         ],
         "the copied task and its note line arrive as checklist items"
     );

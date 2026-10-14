@@ -53,7 +53,7 @@ fn add_an_area_with_a_project_and_a_section() {
     harness.key(KeyCode::Esc);
     assert_eq!(
         pane(&harness),
-        ["  󰆧 Home", "", "  / Chores", "▌ - Sweep", "", "  # Garden",]
+        ["  󰆧 Home", "", "  / Chores", "▌ ☐ Sweep", "", "  # Garden",]
     );
 }
 
@@ -140,7 +140,7 @@ fn the_title_of_the_project_shown_is_a_row_its_own_commands_act_on() {
     harness.key(KeyCode::Esc);
     assert_eq!(
         pane(&harness)[3..5],
-        ["▌ - Draft", "  - Pick the first three topics"],
+        ["▌ ☐ Draft", "  ☐ Pick the first three topics"],
         "below the title, the first task"
     );
     harness.type_text("kn");

@@ -43,7 +43,7 @@ fn uncomplete_a_task_from_the_logbook() {
     assert!(
         trimmed(&harness)
             .iter()
-            .any(|row| row.ends_with("- Compress the hero image")),
+            .any(|row| row.ends_with("☐ Compress the hero image")),
         "the task is open again where it was: {:#?}",
         trimmed(&harness)
     );

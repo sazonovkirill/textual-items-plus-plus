@@ -86,13 +86,13 @@ fn md_then_fri_sets_the_due_date_shown_in_its_chip() {
     harness.key(KeyCode::Enter);
     assert_eq!(
         focused(&harness),
-        Some(row("▌ - Call the bank about the card", "󱙬 Fri"))
+        Some(row("▌ ☐ Call the bank about the card", "󱙬 Fri"))
     );
     assert_eq!(rows(&harness, 19..23), ["", "", "", ""], "the panel closed");
     harness.type_text("z");
     assert_eq!(
         focused(&harness),
-        Some(row("▌ - Call the bank about the card", "󱙬 Wed")),
+        Some(row("▌ ☐ Call the bank about the card", "󱙬 Wed")),
         "one step to undo"
     );
 }
@@ -117,9 +117,9 @@ fn the_prompt_takes_the_keys_until_enter_or_esc() {
     assert_eq!(
         rows(&harness, 3..6),
         [
-            row("▌ - Call the bank about the card", "󱙬 Wed"),
-            "  - Buy coffee beans @errands".to_owned(),
-            "  - Read the article Sam sent".to_owned(),
+            row("▌ ☐ Call the bank about the card", "󱙬 Wed"),
+            "  ☐ Buy coffee beans @errands".to_owned(),
+            "  ☐ Read the article Sam sent".to_owned(),
         ],
         "nothing changed"
     );
@@ -152,8 +152,8 @@ fn mt_starts_the_selection_today_and_both_are_saved() {
     assert_eq!(
         rows(&harness, 2..4),
         [
-            row("▌ - Renew the passport", "󱙭 today 󱙬 in 27 days"),
-            row("▌ - Book flights", "󱙭 today"),
+            row("▌ ☐ Renew the passport", "󱙭 today 󱙬 in 27 days"),
+            row("▌ ☐ Book flights", "󱙭 today"),
         ]
     );
     harness.key(KeyCode::Esc);
@@ -191,7 +191,7 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
     assert_eq!(
         rows(&harness, 2..4),
         [
-            row("▌ - Late", "󰨱 yesterday"),
+            row("▌ ☐ Late", "󰨱 yesterday"),
             row("  ✔ Done late", "󱙬 4 days ago"),
         ]
     );

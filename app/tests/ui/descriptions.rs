@@ -40,11 +40,11 @@ fn describe_a_task_in_place_and_undo_it() {
     assert_eq!(
         pane(&harness)[3..8],
         [
-            "▌ - Call the bank about the card  󱙬 Wed",
+            "▌ ☐ Call the bank about the card  󱙬 Wed",
             "▌   Ask about the fees on the new card",
             "▌   before Friday",
             "▌   - call before 5",
-            "  - Buy coffee beans @errands",
+            "  ☐ Buy coffee beans @errands",
         ],
         "the whole description shows while it is edited"
     );
@@ -54,10 +54,10 @@ fn describe_a_task_in_place_and_undo_it() {
     assert_eq!(
         pane(&harness)[3..7],
         [
-            "▌ - Call the bank about the card  󱙬 Wed",
+            "▌ ☐ Call the bank about the card  󱙬 Wed",
             "▌   Ask about the fees on the new card",
             "▌   before Friday",
-            "  - Buy coffee beans @errands",
+            "  ☐ Buy coffee beans @errands",
         ],
         "a row shows its description's first line"
     );
@@ -65,8 +65,8 @@ fn describe_a_task_in_place_and_undo_it() {
     assert_eq!(
         pane(&harness)[3..5],
         [
-            "▌ - Call the bank about the card  󱙬 Wed",
-            "  - Buy coffee beans @errands"
+            "▌ ☐ Call the bank about the card  󱙬 Wed",
+            "  ☐ Buy coffee beans @errands"
         ],
         "the whole edit is one step to undo"
     );
@@ -153,6 +153,6 @@ fn a_description_is_saved_as_guarded_lines_and_reads_back() {
     reopened.type_text("mn");
     assert_eq!(
         pane(&reopened)[2..5],
-        ["▌ - Renew the passport", "▌   - bring photos", "▌   Goals:",]
+        ["▌ ☐ Renew the passport", "▌   - bring photos", "▌   Goals:",]
     );
 }

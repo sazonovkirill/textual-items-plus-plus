@@ -37,7 +37,7 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives() {
     assert_eq!(
         results(&harness),
         [
-            "▌ - Write the announcement @writing · Work › Website ›      \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+            "▌ ☐ Write the announcement @writing · Work › Website ›      \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
             "▌   Launch",
             "▌   \u{f0189} Ask design for screenshots",
         ],
@@ -55,7 +55,7 @@ fn search_a_word_only_in_a_comment_and_open_the_task_where_it_lives() {
     assert!(rows[0].starts_with("  # Website "), "{rows:#?}");
     assert!(
         rows.iter()
-            .any(|row| row.starts_with("▌ - Write the announcement")),
+            .any(|row| row.starts_with("▌ ☐ Write the announcement")),
         "{rows:#?}"
     );
     harness.type_text("H");
@@ -100,7 +100,7 @@ fn a_result_opens_in_a_new_pane() {
     );
     assert!(
         rows.iter()
-            .any(|row| row.contains("│▌ - Review two portfolios")),
+            .any(|row| row.contains("│▌ ☐ Review two portfolios")),
         "{rows:#?}"
     );
 }
@@ -138,7 +138,7 @@ fn text_pasted_goes_into_the_words_typed() {
     harness.type_text("gs");
     harness.send(&Event::Paste("coffee\nbeans".to_owned()));
     assert_eq!(trimmed(&harness)[0], "  \u{f0349} Search  coffee beans");
-    assert_eq!(results(&harness), ["▌ - Buy coffee beans @errands · Inbox"]);
+    assert_eq!(results(&harness), ["▌ ☐ Buy coffee beans @errands · Inbox"]);
 }
 
 // FR-KEY-03, FR-NAV-06

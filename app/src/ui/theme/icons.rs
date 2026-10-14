@@ -82,8 +82,8 @@ impl Icon {
             Self::Project => ("#", "#"),
             Self::Section => ("/", "/"),
             // The task markers and the fold markers stay plain with Nerd Font icons too, as in
-            // taskpaper-terminal (its D-59, D-60).
-            Self::Task => ("-", "-"),
+            // taskpaper-terminal (its D-59, D-60); an open task's is the owner's checkbox.
+            Self::Task => ("☐", "☐"),
             Self::DoneTask => ("✔", "✔"),
             Self::Expanded => ("▾", "▾"),
             Self::Collapsed => ("▸", "▸"),
@@ -192,7 +192,7 @@ mod tests {
         for icon in MARKERS {
             assert_eq!(icon.glyph(IconSet::Nerd), icon.glyph(IconSet::Plain));
         }
-        assert_eq!(Icon::Task.glyph(IconSet::Plain), "-");
+        assert_eq!(Icon::Task.glyph(IconSet::Plain), "☐");
         assert_eq!(Icon::DoneTask.glyph(IconSet::Plain), "✔");
     }
 

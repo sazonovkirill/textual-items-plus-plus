@@ -42,10 +42,10 @@ fn without_a_file_the_app_shows_the_demo_inbox_at_80_by_24() {
         "  󰚇 Inbox".to_owned(),
         "  Everything not sorted yet lands here.".to_owned(),
         String::new(),
-        "▌ - Call the bank about the card                                          󱙬 Wed"
+        "▌ ☐ Call the bank about the card                                          󱙬 Wed"
             .to_owned(),
-        "  - Buy coffee beans @errands".to_owned(),
-        "  - Read the article Sam sent".to_owned(),
+        "  ☐ Buy coffee beans @errands".to_owned(),
+        "  ☐ Read the article Sam sent".to_owned(),
     ];
     expected.resize(23, String::new());
     expected.push(" 󰆿 NAVIGATE · Demo data · not saved".to_owned());
@@ -57,9 +57,9 @@ fn without_a_file_the_app_shows_the_demo_inbox_at_80_by_24() {
 #[test]
 fn j_k_and_the_arrows_move_between_rows_and_stop_at_the_ends() {
     let mut harness = Harness::new(80, 24);
-    let call = "- Call the bank about the card                                          󱙬 Wed";
-    let coffee = "- Buy coffee beans @errands";
-    let read = "- Read the article Sam sent";
+    let call = "☐ Call the bank about the card                                          󱙬 Wed";
+    let coffee = "☐ Buy coffee beans @errands";
+    let read = "☐ Read the article Sam sent";
     harness.type_text("j");
     assert_eq!(focused(&harness).as_deref(), Some(coffee));
     harness.key(KeyCode::Down);
@@ -85,8 +85,8 @@ fn j_k_and_the_arrows_move_between_rows_and_stop_at_the_ends() {
 #[test]
 fn gg_g_home_and_end_go_to_the_first_and_last_rows() {
     let mut harness = Harness::new(80, 24);
-    let first = "- Call the bank about the card                                          󱙬 Wed";
-    let last = "- Read the article Sam sent";
+    let first = "☐ Call the bank about the card                                          󱙬 Wed";
+    let last = "☐ Read the article Sam sent";
     harness.type_text("G");
     assert_eq!(focused(&harness).as_deref(), Some(last));
     harness.type_text("g");
@@ -118,7 +118,7 @@ fn a_key_after_g_that_continues_nothing_cancels_it() {
     harness.type_text("j");
     assert_eq!(
         focused(&harness).as_deref(),
-        Some("- Buy coffee beans @errands"),
+        Some("☐ Buy coffee beans @errands"),
         "the next key acts alone"
     );
 }
@@ -153,8 +153,8 @@ fn a_file_opens_on_its_inbox_saved() {
         [
             "  󰚇 Inbox",
             "",
-            "▌ - Renew the passport                         󱙬 in 27 days",
-            "  - Book flights @travel",
+            "▌ ☐ Renew the passport                         󱙬 in 27 days",
+            "  ☐ Book flights @travel",
             "",
             "",
             "",
@@ -162,7 +162,7 @@ fn a_file_opens_on_its_inbox_saved() {
         ]
     );
     harness.type_text("j");
-    assert_eq!(focused(&harness).as_deref(), Some("- Book flights @travel"));
+    assert_eq!(focused(&harness).as_deref(), Some("☐ Book flights @travel"));
     assert_eq!(fs::read_to_string(&path).expect("the file is there"), text);
 }
 
@@ -200,8 +200,8 @@ fn moving_past_the_bottom_scrolls_the_focus_into_view() {
     let (_dir, mut harness) = on_file(&text, 40, 10);
     harness.type_text("G");
     let rows = harness.rows();
-    assert_eq!(rows[8].trim_end(), "▌ - Task 30");
-    assert_eq!(rows[0].trim_end(), "  - Task 22");
+    assert_eq!(rows[8].trim_end(), "▌ ☐ Task 30");
+    assert_eq!(rows[0].trim_end(), "  ☐ Task 22");
     harness.type_text("gg");
     assert_eq!(harness.rows()[0].trim_end(), "  󰚇 Inbox");
 }
@@ -219,16 +219,16 @@ fn a_small_terminal_shows_what_fits_and_keeps_working() {
         [
             "  yet lands here.",
             "",
-            "▌ - Call the bank 󱙬 Wed",
+            "▌ ☐ Call the bank 󱙬 Wed",
             "▌   about the",
             "▌   card",
             " 󰆿 NAVIGATE · not saved",
         ]
     );
     harness.type_text("G");
-    assert_eq!(focused(&harness).as_deref(), Some("- Read the article Sam"));
+    assert_eq!(focused(&harness).as_deref(), Some("☐ Read the article Sam"));
     harness.send(&Event::Resize(10, 2));
     harness.terminal.backend_mut().resize(10, 2);
     harness.draw();
-    assert_eq!(harness.rows()[0], "▌ - Read  ");
+    assert_eq!(harness.rows()[0], "▌ ☐ Read  ");
 }

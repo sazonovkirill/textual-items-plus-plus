@@ -14,7 +14,7 @@ fn tasks(harness: &Harness) -> Vec<String> {
         .take(rows.len() - 1)
         .filter_map(|row| {
             let focused = row.starts_with('▌');
-            let title = without_chips(row.trim_start_matches('▌').trim()).strip_prefix("- ")?;
+            let title = without_chips(row.trim_start_matches('▌').trim()).strip_prefix("☐ ")?;
             Some(if focused {
                 format!("*{title}")
             } else {

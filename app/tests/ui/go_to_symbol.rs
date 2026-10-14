@@ -51,7 +51,7 @@ fn slash_lists_areas_projects_and_sections_then_tasks_where_they_are_and_typing_
             .as_slice()
         )
     );
-    assert!(listed.contains(&" - Buy coffee beans  Inbox".to_owned()));
+    assert!(listed.contains(&" ☐ Buy coffee beans  Inbox".to_owned()));
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
         Some(Position::new(3, 3)),
@@ -62,8 +62,8 @@ fn slash_lists_areas_projects_and_sections_then_tasks_where_they_are_and_typing_
         window(&harness).get(1..3),
         Some(
             [
-                " - Write the announcement  Work › Website › Launch",
-                " - Write a small CLI  Learn Rust",
+                " ☐ Write the announcement  Work › Website › Launch",
+                " ☐ Write a small CLI  Learn Rust",
             ]
             .map(str::to_owned)
             .as_slice()
@@ -75,7 +75,7 @@ fn slash_lists_areas_projects_and_sections_then_tasks_where_they_are_and_typing_
     assert!(
         focused(&harness)
             .first()
-            .is_some_and(|row| row.starts_with("- Write the announcement")),
+            .is_some_and(|row| row.starts_with("☐ Write the announcement")),
         "the task chosen has the focus where it is"
     );
 }

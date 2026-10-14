@@ -69,8 +69,8 @@ fn move_a_task_to_another_project() {
         [
             "  󰚇 Inbox",
             "  Everything not sorted yet lands here.",
-            "▌ - Buy coffee beans @errands",
-            "  - Read the article Sam sent",
+            "▌ ☐ Buy coffee beans @errands",
+            "  ☐ Read the article Sam sent",
         ],
         "the pane stays and the focus moves on"
     );
@@ -82,9 +82,9 @@ fn move_a_task_to_another_project() {
         [
             "  # Learn Rust",
             "  A project outside any area.",
-            "▌ - Finish the ownership chapter @rust",
-            "  - Write a small CLI @rust                                          󱙭 tomorrow",
-            "  - Call the bank about the card                                          󱙬 Wed",
+            "▌ ☐ Finish the ownership chapter @rust",
+            "  ☐ Write a small CLI @rust                                          󱙭 tomorrow",
+            "  ☐ Call the bank about the card                                          󱙬 Wed",
         ],
         "the task is the project's last"
     );
@@ -99,7 +99,7 @@ fn move_a_task_to_another_project() {
     harness.type_text("z");
     assert_eq!(
         pane(&harness).get(2).map(String::as_str),
-        Some("▌ - Call the bank about the card                                          󱙬 Wed"),
+        Some("▌ ☐ Call the bank about the card                                          󱙬 Wed"),
         "undo puts it back, focused"
     );
 }

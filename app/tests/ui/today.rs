@@ -22,13 +22,13 @@ fn open_today() {
     let today = [
         "  \u{f0599} Today",
         "",
-        "▌ - Answer the recruiter's email                \u{f0a31} yesterday",
+        "▌ ☐ Answer the recruiter's email                \u{f0a31} yesterday",
         "▌   Work",
-        "  - Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+        "  ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
         "    Work / Website › Launch",
-        "  - Review two portfolios                           \u{f166c} today",
+        "  ☐ Review two portfolios                           \u{f166c} today",
         "    Work › Hiring",
-        "  - Water the plants                            \u{f166d} yesterday",
+        "  ☐ Water the plants                            \u{f166d} yesterday",
         "    Home",
         "",
         "",
@@ -53,14 +53,14 @@ fn going_into_a_task_in_today_shows_it_where_it_lives_and_back_returns() {
     assert_eq!(rows[0], "  \u{f01a7} Work");
     assert!(
         rows.iter()
-            .any(|row| row.starts_with("▌ - Review two portfolios")),
+            .any(|row| row.starts_with("▌ ☐ Review two portfolios")),
         "{rows:#?}"
     );
     harness.type_text("H");
     let rows = trimmed(&harness);
     assert_eq!(rows[0], "  \u{f0599} Today");
     assert!(
-        rows[6].starts_with("▌ - Review two portfolios"),
+        rows[6].starts_with("▌ ☐ Review two portfolios"),
         "{rows:#?}"
     );
 }
@@ -75,7 +75,7 @@ fn filter_today_by_a_tag() {
     let mut filtered = vec![
         "  \u{f0599} Today                                        \u{f04fc} @writing",
         "",
-        "▌ - Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+        "▌ ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
         "▌   Work / Website › Launch",
     ];
     filtered.resize(15, "");

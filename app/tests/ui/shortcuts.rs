@@ -56,7 +56,7 @@ fn question_mark_shows_the_keys_of_every_command_grouped_at_the_right() {
     );
     let screen = harness.screen();
     assert!(
-        screen.contains("- Call the bank about the card"),
+        screen.contains("☐ Call the bank about the card"),
         "{screen}"
     );
     harness.type_text("?");
@@ -287,7 +287,7 @@ fn a_narrow_screen_draws_the_panel_over_the_pane_and_a_tiny_one_has_no_room() {
         "{rows:#?}"
     );
     assert!(
-        rows.iter().any(|row| row.starts_with("▌ - Call the bank")),
+        rows.iter().any(|row| row.starts_with("▌ ☐ Call the bank")),
         "the pane keeps its width under the panel: {rows:#?}"
     );
     let mut harness = Harness::new(39, 24);

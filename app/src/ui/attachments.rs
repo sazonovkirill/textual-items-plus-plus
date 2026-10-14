@@ -1129,8 +1129,8 @@ mod tests {
                 "│                                      │",
                 "│                          ☑ Checklist │",
                 "│ ✔ Books                              │",
-                "│   - Novels                           │",
-                "│ - Plates @home(kitchen)              │",
+                "│   ☐ Novels                           │",
+                "│ ☐ Plates @home(kitchen)              │",
                 "│                                      │",
                 "│                           ❞ Comments │",
                 "│ No comments                          │",
@@ -1193,7 +1193,7 @@ mod tests {
         assert_eq!(
             (rows(&buf)[7].as_str(), rows(&buf)[14].as_str()),
             (
-                "│ - Plates and bowls and cups          │",
+                "│ ☐ Plates and bowls and cups          │",
                 "│ Enter next · Esc done                │",
             )
         );
@@ -1203,7 +1203,7 @@ mod tests {
         assert_eq!(
             rows(&buf)[7..9],
             [
-                "│ - Plates and bowls and cups and      │",
+                "│ ☐ Plates and bowls and cups and      │",
                 "│   glasses                            │",
             ],
             "wrapping after the marker"

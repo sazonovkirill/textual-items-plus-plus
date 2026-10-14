@@ -120,8 +120,8 @@ fn a_change_made_elsewhere_is_reloaded() {
     fs::write(&path, "Inbox:\n\t- Pack\n\t- Book flights\n").expect("written");
     harness.check();
     let screen = harness.screen();
-    assert!(screen.contains("▌ - Book flights"), "{screen}");
-    assert!(screen.contains("  - Pack"), "{screen}");
+    assert!(screen.contains("▌ ☐ Book flights"), "{screen}");
+    assert!(screen.contains("  ☐ Pack"), "{screen}");
     assert!(
         status(&harness).ends_with("· reloaded (changed on disk)"),
         "{}",
@@ -140,7 +140,7 @@ fn a_change_made_elsewhere_is_reloaded() {
 fn the_watcher_sees_a_change_made_elsewhere() {
     let (_dir, path, mut harness) = on_file(TEXT);
     fs::write(&path, "Inbox:\n\t- Pack\n").expect("written");
-    harness.watch_until(|harness| harness.screen().contains("- Pack"));
+    harness.watch_until(|harness| harness.screen().contains("☐ Pack"));
     assert!(status(&harness).ends_with("· reloaded (changed on disk)"));
 }
 
@@ -236,7 +236,7 @@ fn take_theirs_keeps_mine_in_a_conflict_copy_and_reloads_the_file() {
     assert_eq!(copies.len(), 1);
     assert!(read(&copies[0]).contains("@done"));
     let screen = harness.screen();
-    assert!(screen.contains("- Book trains"), "{screen}");
+    assert!(screen.contains("☐ Book trains"), "{screen}");
     assert!(
         status(&harness).contains("took theirs; mine is in"),
         "{}",
