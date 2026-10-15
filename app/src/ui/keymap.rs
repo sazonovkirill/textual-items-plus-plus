@@ -105,10 +105,15 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Paste(Side::Above), &["alt+v"]),
     // The container shown, which no row of its own shows (D-40); deleting it has no key (D-83).
     (Command::RenameContainer, &["R"]),
-    // `Alt` with a motion moves, leaving taskpaper-terminal's `Tab`/`Shift+Tab` to move between
-    // panes; the attachments panel's own keys nest checklist items (D-24, D-42, D-79, D-82).
-    (Command::Move(Direction::Up), &["alt+k", "alt+up"]),
-    (Command::Move(Direction::Down), &["alt+j", "alt+down"]),
+    // `m` and a vim motion move, as macOS terminals type a character for `Option` with a letter,
+    // and `Alt` with a motion, leaving taskpaper-terminal's `Tab`/`Shift+Tab` to move between
+    // panes; the attachments panel's own keys nest checklist items (D-24, D-42, D-79, D-82,
+    // owner, D-124).
+    (Command::Move(Direction::Up), &["m k", "alt+k", "alt+up"]),
+    (
+        Command::Move(Direction::Down),
+        &["m j", "alt+j", "alt+down"],
+    ),
     // taskpaper-terminal's convert type and group keys; `S` for a section beside its `G`, which
     // groups in a new parent as a new project does here (D-47).
     (Command::Convert, &["m y"]),
@@ -551,6 +556,16 @@ mod tests {
             ('}', Command::DayLater(DateKind::Due)),
         ] {
             assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
+        }
+    }
+
+    // FR-OPS-02, FR-KEY-02, D-124
+    #[test]
+    fn m_and_a_vim_motion_move() {
+        let mut keymap = Keymap::default();
+        for (motion, direction) in [('k', Direction::Up), ('j', Direction::Down)] {
+            assert_eq!(keymap.press(&char('m')), None);
+            assert_eq!(keymap.press(&char(motion)), Some(Command::Move(direction)));
         }
     }
 

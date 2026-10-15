@@ -59,7 +59,7 @@ fn website(row: usize) -> Harness {
 fn move_a_task_from_one_section_into_the_next() {
     let mut harness = website(3);
     assert!(listed(&harness).contains(&"*Book the launch call @meeting".to_owned()));
-    alt(&mut harness, KeyCode::Char('j'));
+    harness.type_text("mj");
     let moved = listed(&harness);
     let polish = moved.iter().position(|row| row.ends_with("Polish"));
     let book = moved
