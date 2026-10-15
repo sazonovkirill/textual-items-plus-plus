@@ -469,3 +469,32 @@ fn completing_a_task_counts_the_views_again() {
         ]
     );
 }
+
+// FR-VIEW-10, D-45, D-80, D-137
+#[test]
+fn go_up_and_the_section_keys_do_nothing_in_the_sidebar_and_are_not_listed_there() {
+    let mut harness = Harness::new(80, 24);
+    harness.ctrl('b');
+    harness.type_text("G");
+    let before = harness.screen();
+    harness.type_text("sS>");
+    harness.press(KeyCode::Char('h'), KeyModifiers::ALT);
+    harness.press(KeyCode::Left, KeyModifiers::ALT);
+    assert_eq!(harness.screen(), before, "nothing changes");
+    harness.ctrl('p');
+    harness.type_text("section");
+    let screen = harness.screen();
+    assert!(
+        !screen.contains("New Section"),
+        "the palette leaves them out:\n{screen}"
+    );
+    harness.key(KeyCode::Esc);
+    harness.ctrl('b');
+    harness.ctrl('p');
+    harness.type_text("section");
+    assert!(
+        harness.screen().contains("New Section at Bottom"),
+        "as it lists them in a pane:\n{}",
+        harness.screen()
+    );
+}

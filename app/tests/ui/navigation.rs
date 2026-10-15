@@ -247,3 +247,69 @@ fn a_place_without_open_tasks_shows_no_count() {
         ]
     );
 }
+
+// FR-VIEW-07, FR-EDIT-01, FR-ATT-01, D-137
+#[test]
+fn the_navigator_opened_while_editing_ends_the_edit_kept_and_takes_the_keys() {
+    let edits = [
+        ("a title", "\n", "Call the bank about the cardA"),
+        ("a description", "mn", "   A"),
+        ("the description of what is shown", "mN", "lands here.A"),
+    ];
+    for (edit, keys, kept) in edits {
+        let mut harness = Harness::new(80, 16);
+        for key in keys.chars() {
+            match key {
+                '\n' => harness.key(KeyCode::Enter),
+                key => harness.type_text(&key.to_string()),
+            }
+        }
+        harness.type_text("A");
+        harness.ctrl('g');
+        harness.type_text("in");
+        assert_eq!(
+            navigator(&harness).first().map(String::as_str),
+            Some("› in"),
+            "the Navigator takes what is typed after {edit}:\n{}",
+            harness.screen()
+        );
+        harness.key(KeyCode::Esc);
+        harness.type_text("B");
+        let screen = harness.screen();
+        assert!(
+            screen.contains(kept) && !screen.contains("AB") && !screen.contains("Ain"),
+            "{edit} ended, kept, and nothing after went into it:\n{screen}"
+        );
+        assert!(
+            screen.contains("NAVIGATE"),
+            "back in navigate mode after {edit}"
+        );
+    }
+    let mut harness = Harness::new(80, 16);
+    harness.ctrl('b');
+    harness.type_text("GRA");
+    harness.ctrl('g');
+    harness.type_text("in");
+    assert_eq!(
+        navigator(&harness).first().map(String::as_str),
+        Some("› in"),
+        "and after a rename in the sidebar:\n{}",
+        harness.screen()
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("B");
+    let screen = harness.screen();
+    assert!(
+        screen.contains("new flatA") && !screen.contains("AB") && !screen.contains("Ain"),
+        "which ends, kept:\n{screen}"
+    );
+    let mut harness = Harness::new(80, 16);
+    harness.type_text("ckkeA");
+    harness.ctrl('g');
+    harness.type_text("in");
+    let screen = harness.screen();
+    assert!(
+        navigator(&harness).is_empty() && screen.contains("│▌Ain"),
+        "the attachments panel does not offer it while its note is edited:\n{screen}"
+    );
+}
