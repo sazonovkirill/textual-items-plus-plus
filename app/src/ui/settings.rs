@@ -223,7 +223,6 @@ mod tests {
         assert_eq!(
             drawn(settings, Some(path), 24),
             [
-                "",
                 "┌ Settings ────────────┐",
                 "│ Appearance           │",
                 "│   The… Terminal Dark │",
@@ -236,6 +235,8 @@ mod tests {
                 "│   Long titles wrap; …│",
                 "│   Animations    Full │",
                 "│   Full, reduced to f…│",
+                "│   Display task c… On │",
+                "│   The sidebar shows …│",
                 "│ Weather              │",
                 "│   Weather animat… On │",
                 "│   The season's weath…│",
@@ -244,7 +245,6 @@ mod tests {
                 "│                      │",
                 "│ …us-plus/config.toml │",
                 "└──────────────────────┘",
-                "",
             ]
         );
         let theme = BuiltIn::default().colors();
@@ -257,11 +257,11 @@ mod tests {
             &theme,
         )
         .render(area, &mut buf);
-        assert_eq!(buf[(4, 7)].bg, theme.selection, "the highlighted setting");
-        assert_eq!(buf[(4, 8)].bg, theme.selection, "and its description");
-        assert_eq!(buf[(4, 4)].bg, theme.background);
+        assert_eq!(buf[(4, 6)].bg, theme.selection, "the highlighted setting");
+        assert_eq!(buf[(4, 7)].bg, theme.selection, "and its description");
+        assert_eq!(buf[(4, 3)].bg, theme.background);
         assert!(
-            buf[(18, 7)].modifier.contains(Modifier::BOLD),
+            buf[(18, 6)].modifier.contains(Modifier::BOLD),
             "a changed value"
         );
         assert!(!buf[(18, 3)].modifier.contains(Modifier::BOLD));

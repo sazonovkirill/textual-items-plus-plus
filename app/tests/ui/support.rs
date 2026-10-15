@@ -222,7 +222,8 @@ impl Harness {
     }
 
     /// Hands the app every report of the disk work it asked for, and of what that asked for in
-    /// turn, then draws it.
+    /// turn, then draws it, and, as the event loop does, ticks and draws again while a deadline
+    /// is already due, such as the sidebar's task counts left stale by a change.
     pub fn settle(&mut self) {
         loop {
             self.tui.flush();
@@ -236,6 +237,14 @@ impl Harness {
             }
         }
         self.draw();
+        if self
+            .tui
+            .deadline()
+            .is_some_and(|deadline| deadline <= self.now)
+        {
+            self.tui.tick(self.now, TODAY);
+            self.settle();
+        }
     }
 
     /// Presses `code` with `modifiers`.

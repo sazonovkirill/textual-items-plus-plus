@@ -3,12 +3,14 @@
 //! collapsed (FR-VIEW-10, FR-VIEW-12, OQ-10). Hides which entry it keeps focused as the tree changes, which areas it collapses and
 //! where its changes put items in the document.
 
-use std::collections::BTreeSet;
+use std::{cell::RefCell, collections::BTreeSet};
+
+use jiff::civil::Date;
 
 use super::{
     Direction, Focus, Refusal, Side, container,
     navigator::{self, Stop},
-    view::Shown,
+    view::{self, Shown, View},
 };
 use crate::domain::{Destination, Document, Item, ItemId, ItemKind, Node, Transaction};
 
@@ -24,7 +26,48 @@ pub(super) struct Sidebar {
     left: Option<Entry>,
     /// The areas whose projects are hidden, for as long as the app runs (D-67, D-75).
     collapsed: BTreeSet<ItemId>,
+    counted: Counted,
 }
+
+/// How many tasks each view of the registry listed when last counted, with the revision of the
+/// document and the day they were counted on. Counting every view takes a walk of the document
+/// for each, too long to add to a keystroke on a large file (N-PERF-02), so they are counted when
+/// first drawn and then again only once a frame has shown the change, by
+/// [`recount`](Sidebar::recount). They are counted only in the document of the state holding the
+/// sidebar, whose revisions never repeat, and a reload, which brings another document, forgets
+/// them. Every count is equal to every other, since they only stand for the document.
+#[derive(Debug, Clone, Default)]
+struct Counted(RefCell<Option<ViewCounts>>);
+
+/// How many tasks each view of the registry lists, and in what.
+#[derive(Debug, Clone)]
+struct ViewCounts {
+    revision: u64,
+    today: Date,
+    views: Vec<(View, usize)>,
+}
+
+impl ViewCounts {
+    /// The views' counts in `document` on `today`.
+    fn of(document: &Document, today: Date) -> Self {
+        Self {
+            revision: document.revision(),
+            today,
+            views: view::REGISTRY
+                .iter()
+                .map(|entry| (entry.view, view::tasks(document, entry.view, today)))
+                .collect(),
+        }
+    }
+}
+
+impl PartialEq for Counted {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Counted {}
 
 /// An entry the sidebar focuses: what it opens, and whether it is that project's entry among the
 /// pinned projects, which list a pinned project a second time (FR-VIEW-12).
@@ -64,6 +107,10 @@ pub struct SidebarView {
     pub keys: bool,
     /// The areas among the entries whose projects are hidden.
     pub collapsed: Vec<ItemId>,
+    /// How many tasks each of the entries lists, in their order: a container's open tasks, a
+    /// view's tasks as it lists them with completed ones hidden (FR-VIEW-10); none while the
+    /// settings hide task counts.
+    pub counts: Vec<usize>,
 }
 
 impl Sidebar {
@@ -174,9 +221,47 @@ impl Sidebar {
                     })
                     .filter(|&id| self.collapsed.contains(&id) && holds_projects(document, id))
                     .collect(),
+                counts: Vec::new(),
                 entries,
             }
         })
+    }
+
+    /// How many tasks each of `entries` lists in `document`, in their order: a container's open
+    /// tasks, and a view's tasks as [`view::tasks`] counts them, as last counted, or now on
+    /// `today` when they have not been counted in this document yet.
+    pub(super) fn counts(&self, document: &Document, entries: &[Stop], today: Date) -> Vec<usize> {
+        let mut counted = self.counted.0.borrow_mut();
+        let views = &counted
+            .get_or_insert_with(|| ViewCounts::of(document, today))
+            .views;
+        entries
+            .iter()
+            .map(|stop| match stop {
+                Stop::Place(place) => place.open_tasks,
+                Stop::View(shown) => views
+                    .iter()
+                    .find(|(view, _)| view == shown)
+                    .map_or(0, |&(_, tasks)| tasks),
+            })
+            .collect()
+    }
+
+    /// Whether the views' tasks were counted before the latest change to `document` or on another
+    /// day than `today`.
+    pub(super) fn stale(&self, document: &Document, today: Date) -> bool {
+        self.counted
+            .0
+            .borrow()
+            .as_ref()
+            .is_some_and(|counts| counts.revision != document.revision() || counts.today != today)
+    }
+
+    /// Counts the views' tasks again in `document` on `today` when they are [stale](Self::stale).
+    pub(super) fn recount(&mut self, document: &Document, today: Date) {
+        if self.stale(document, today) {
+            *self.counted.0.get_mut() = Some(ViewCounts::of(document, today));
+        }
     }
 
     /// The entries the sidebar lists of `document`: [`entries`] less those inside a collapsed
@@ -267,7 +352,7 @@ impl Sidebar {
 
     /// Keeps the focused entry, the one to go back to and the collapsed areas on the items
     /// `exact` finds them as in a document read again; a focused entry not found gives way to
-    /// the one now where it was, and the others are dropped.
+    /// the one now where it was, and the others are dropped. The views' counts are forgotten.
     pub(super) fn rematch(&mut self, exact: impl Fn(ItemId) -> Option<ItemId>) {
         let rematched = |entry: Entry| match entry.shown {
             Shown::Container(id) => exact(id).map(|id| Entry {
@@ -279,6 +364,7 @@ impl Sidebar {
         self.focused = self.focused.and_then(rematched);
         self.left = self.left.and_then(rematched);
         self.collapsed = self.collapsed.iter().filter_map(|&id| exact(id)).collect();
+        self.counted = Counted::default();
     }
 
     /// The index of the focused entry among `entries`, or of the one now where it was.
@@ -446,7 +532,7 @@ fn kind(document: &Document, id: ItemId) -> Option<ItemKind> {
 
 #[cfg(test)]
 mod tests {
-    use jiff::civil::date;
+    use jiff::civil::{Date, date};
 
     use super::*;
     use crate::app::view::{REGISTRY, View};
@@ -795,6 +881,103 @@ mod tests {
             Shown::Container(id) => Some(document.node(id)?.item()?.title.clone()),
             Shown::View(view) => Some(view.title().to_owned()),
         }
+    }
+
+    /// Each entry's title with the count `sidebar` gives it in `document` on `today`.
+    fn counted(sidebar: &Sidebar, document: &Document, today: Date) -> Vec<(String, usize)> {
+        let entries = sidebar.visible(document);
+        let counts = sidebar.counts(document, &entries, today);
+        let titles = entries.iter().map(|stop| match stop {
+            Stop::Place(place) => document
+                .node(place.id)
+                .and_then(Node::item)
+                .map_or_else(String::new, |item| item.title.clone()),
+            Stop::View(view) => view.title().to_owned(),
+        });
+        titles.zip(counts).collect()
+    }
+
+    // FR-VIEW-10
+    #[test]
+    fn counts_the_tasks_of_each_entry_again_after_a_change_or_on_another_day() {
+        let today = date(2026, 10, 14);
+        let mut document = document();
+        let mut sidebar = Sidebar::open(Shown::View(View::Today));
+        assert_eq!(
+            sidebar.view(&document).map(|view| view.counts),
+            Some(Vec::new()),
+            "counted only when asked"
+        );
+        let count = |sidebar: &Sidebar, document: &Document, today, title: &str| {
+            counted(sidebar, document, today)
+                .into_iter()
+                .find(|(entry, _)| entry == title)
+                .map(|(_, count)| count)
+        };
+        assert_eq!(
+            counted(&sidebar, &document, today),
+            [
+                ("Inbox", 0),
+                ("Today", 0),
+                ("Upcoming", 0),
+                ("Flagged", 0),
+                ("All", 1),
+                ("Logbook", 0),
+                ("Trash", 0),
+                ("Solo", 0),
+                ("Work", 1),
+                ("Site", 0),
+                ("Blog", 0),
+                ("Docs", 0),
+                ("Home", 0),
+            ]
+            .map(|(title, count)| (title.to_owned(), count))
+        );
+        assert!(!sidebar.stale(&document, today));
+        let mut tomorrow = Item::new(Task, "Tomorrow");
+        tomorrow.start = Some(date(2026, 10, 15));
+        document
+            .push(Some(document.inbox()), Node::Item(tomorrow))
+            .expect("a task goes in the Inbox");
+        assert!(sidebar.stale(&document, today), "changed");
+        assert_eq!(
+            count(&sidebar, &document, today, "All"),
+            Some(1),
+            "as last counted"
+        );
+        assert_eq!(count(&sidebar, &document, today, "Inbox"), Some(0));
+        sidebar.recount(&document, today);
+        assert!(!sidebar.stale(&document, today));
+        assert_eq!(count(&sidebar, &document, today, "All"), Some(2));
+        assert_eq!(count(&sidebar, &document, today, "Upcoming"), Some(1));
+        assert_eq!(count(&sidebar, &document, today, "Today"), Some(0));
+        let next_day = date(2026, 10, 15);
+        assert!(sidebar.stale(&document, next_day), "another day");
+        sidebar.recount(&document, next_day);
+        assert_eq!(count(&sidebar, &document, next_day, "Today"), Some(1));
+        assert_eq!(count(&sidebar, &document, next_day, "Upcoming"), Some(0));
+    }
+
+    // FR-VIEW-10
+    #[test]
+    fn a_reload_counts_the_document_read_again_whatever_its_revision() {
+        let today = date(2026, 10, 14);
+        let mut before = Document::new();
+        let inbox = before.inbox();
+        add(&mut before, Some(inbox), Task, "a");
+        let mut after = Document::new();
+        add(&mut after, None, Area, "Home");
+        assert_eq!(before.revision(), after.revision());
+        let all = |sidebar: &Sidebar, document: &Document| {
+            counted(sidebar, document, today)
+                .into_iter()
+                .find(|(title, _)| title == "All")
+                .map(|(_, count)| count)
+        };
+        let mut sidebar = Sidebar::open(Shown::View(View::All));
+        assert_eq!(all(&sidebar, &before), Some(1));
+        sidebar.rematch(|_| None);
+        assert_eq!(all(&sidebar, &after), Some(0));
     }
 
     // FR-VIEW-10

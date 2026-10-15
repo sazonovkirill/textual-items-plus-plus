@@ -214,3 +214,84 @@ fn the_shortcuts_panel_lists_the_windows_keys_and_pastes_go_nowhere() {
     harness.key(KeyCode::Esc);
     assert!(!harness.screen().contains("New task"));
 }
+
+/// The sidebar's rows on an 80-column screen, trimmed, without the status line.
+fn sidebar(harness: &Harness) -> Vec<String> {
+    let rows = harness.rows();
+    rows.iter()
+        .take(rows.len() - 1)
+        .map(|row| {
+            let row: String = row.chars().take(25).collect();
+            row.trim_matches(['▌', ' ']).to_owned()
+        })
+        .filter(|row| !row.is_empty())
+        .collect()
+}
+
+/// The Navigator's rows, trimmed, without its border.
+fn navigator(harness: &mut Harness) -> Vec<String> {
+    harness.ctrl('g');
+    let rows = window(harness);
+    harness.key(KeyCode::Esc);
+    rows.into_iter().map(|row| row.trim().to_owned()).collect()
+}
+
+// FR-VIEW-10, FR-VIEW-07, FR-SET-01, FR-SET-02
+#[test]
+fn turning_task_counts_off_hides_the_sidebars_and_the_navigators_counts_and_keeps_it() {
+    let mut harness = Harness::new(80, 24);
+    harness.ctrl('b');
+    let counted = sidebar(&harness);
+    assert_eq!(
+        counted.get(..7).unwrap_or_default(),
+        [
+            "󰚇 Inbox                3",
+            "󰖙 Today                4",
+            "󱄵 Upcoming             6",
+            "󰈻 Flagged",
+            "󰉹 All                 18",
+            "󱓳 Logbook              1",
+            "󰩺 Trash                2",
+        ]
+    );
+    assert!(navigator(&mut harness).contains(
+        &"# Learn Rust                                                               2".to_owned()
+    ));
+    harness.type_text("g,jjjjjl");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        fs::read_to_string(harness.config()).ok().as_deref(),
+        Some("task_counts = false\n")
+    );
+    let uncounted = sidebar(&harness);
+    assert_eq!(
+        uncounted.get(..7).unwrap_or_default(),
+        [
+            "󰚇 Inbox",
+            "󰖙 Today",
+            "󱄵 Upcoming",
+            "󰈻 Flagged",
+            "󰉹 All",
+            "󱓳 Logbook",
+            "󰩺 Trash",
+        ]
+    );
+    assert!(
+        uncounted.iter().all(|row| !row.ends_with(char::is_numeric)),
+        "{uncounted:#?}"
+    );
+    let places = navigator(&mut harness);
+    assert!(places.contains(&"# Learn Rust".to_owned()), "{places:#?}");
+}
+
+// FR-VIEW-10, FR-SET-01
+#[test]
+fn the_app_starts_without_task_counts_when_the_file_turns_them_off() {
+    let folders = tempfile::tempdir().expect("a temporary folder");
+    fs::write(folders.path().join("config.toml"), "task_counts = false\n")
+        .expect("the file is written");
+    let mut harness = Harness::launched_in(folders, None, 80, 24).expect("the demo opens");
+    harness.ctrl('b');
+    let rows = sidebar(&harness);
+    assert_eq!(rows.get(..2).unwrap_or_default(), ["󰚇 Inbox", "󰖙 Today"]);
+}

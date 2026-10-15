@@ -172,7 +172,10 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         return Vec::new();
     }
     match message {
-        Message::Tick(now) => state.tick(now),
+        Message::Tick(now) => {
+            state.tick(now);
+            state.recount();
+        }
         Message::Terminate => return state.end(Ending::Terminate),
         Message::Disk(report) => return state.disk_report(report),
         Message::OnDisk(change) => return state.on_disk(change),
@@ -304,7 +307,8 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Direction, End, Focus, Go, Notice, Opened, Part, Refusal, Side, Stop, TextEdit, Whose,
+        Direction, End, Focus, Go, Notice, Opened, Part, Refusal, Settings, Side, Stop, TextEdit,
+        Whose,
         view::{Shown, View},
     };
     use crate::domain::{
@@ -378,6 +382,80 @@ mod tests {
 
     fn give(state: &mut State, command: Command) {
         assert_eq!(update(state, Message::Command(command), TODAY), []);
+    }
+
+    /// The count the sidebar shows beside `view`, if it shows counts.
+    fn view_count(state: &State, view: View) -> Option<usize> {
+        let sidebar = state.sidebar()?;
+        let at = sidebar
+            .entries
+            .iter()
+            .position(|&stop| stop == Stop::View(view))?;
+        sidebar.counts.get(at).copied()
+    }
+
+    // FR-VIEW-10, N-PERF-02, N-PERF-03
+    #[test]
+    fn a_change_shows_first_and_the_sidebar_counts_the_views_again_at_the_next_tick()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        assert_eq!(view_count(&state, View::All), Some(2));
+        assert_eq!(state.recount_deadline(), None, "nothing to count");
+        let effects = update(
+            &mut state,
+            Message::Command(Command::ToggleCompleted),
+            TODAY,
+        );
+        assert!(effects.is_empty(), "{effects:?}");
+        assert_eq!(view_count(&state, View::All), Some(2), "as last counted");
+        assert_eq!(
+            state.recount_deadline(),
+            Some(Duration::ZERO),
+            "due at once"
+        );
+        update(&mut state, Message::Tick(Duration::from_secs(1)), TODAY);
+        assert_eq!(view_count(&state, View::All), Some(1));
+        assert_eq!(view_count(&state, View::Logbook), Some(1));
+        assert_eq!(state.recount_deadline(), None);
+        update(
+            &mut state,
+            Message::Tick(Duration::from_secs(2)),
+            date(2026, 10, 15),
+        );
+        assert_eq!(
+            state.recount_deadline(),
+            None,
+            "counted again on the new day"
+        );
+        Ok(())
+    }
+
+    // FR-VIEW-10, N-PERF-03
+    #[test]
+    fn hidden_counts_are_neither_counted_nor_due() -> Result<(), PlacementError> {
+        let off = Settings {
+            task_counts: false,
+            ..Settings::default()
+        };
+        let mut uncounted = state()?.with_settings(Settings::default(), off);
+        assert_eq!(
+            uncounted.sidebar().map(|sidebar| sidebar.counts),
+            Some(Vec::new())
+        );
+        give(&mut uncounted, Command::ToggleCompleted);
+        assert_eq!(uncounted.recount_deadline(), None);
+        let mut hidden = state()?;
+        assert_eq!(view_count(&hidden, View::All), Some(2));
+        give(&mut hidden, Command::Sidebar);
+        give(&mut hidden, Command::Sidebar);
+        assert_eq!(hidden.sidebar(), None);
+        give(&mut hidden, Command::ToggleCompleted);
+        assert_eq!(
+            hidden.recount_deadline(),
+            None,
+            "while the sidebar is hidden"
+        );
+        Ok(())
     }
 
     fn titles(state: &State) -> Vec<&str> {

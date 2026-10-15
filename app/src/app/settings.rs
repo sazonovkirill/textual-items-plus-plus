@@ -1,6 +1,6 @@
 //! The settings and the settings window: which built-in theme the app draws in, whether in its
-//! grays alone, which icons it draws, whether long text wraps and whether and when the weather
-//! plays, each changed in the window and kept at once, as taskpaper-terminal does ([ui.md §8](../../../specs/reference/taskpaper-terminal/specs/ui.md#8-settings-window-fr-set-02-fr-set-03),
+//! grays alone, which icons it draws, whether long text wraps, whether the sidebar counts tasks
+//! and whether and when the weather plays, each changed in the window and kept at once, as taskpaper-terminal does ([ui.md §8](../../../specs/reference/taskpaper-terminal/specs/ui.md#8-settings-window-fr-set-02-fr-set-03),
 //! FR-SET-02, FR-SET-03, FR-UI-03, FR-UI-04, FR-UI-05, FR-UI-08, FR-UI-11). Names each choice;
 //! how it looks, and the file the settings are kept in, are the frontend's.
 
@@ -172,6 +172,10 @@ impl Animations {
 /// The settings the app runs with, each kept under its [`Setting::key`] (FR-SET-01, FR-SET-03).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each is a switch of its own, kept as `true` or `false` under its key in the file"
+)]
 pub struct Settings {
     /// The theme the app draws in (FR-UI-03).
     pub theme: BuiltIn,
@@ -184,6 +188,8 @@ pub struct Settings {
     pub word_wrap: bool,
     /// How much the frontend animates (FR-UI-07).
     pub animations: Animations,
+    /// Whether the sidebar shows how many tasks each entry lists (FR-VIEW-10).
+    pub task_counts: bool,
     /// Whether the weather starts once the app has had no input for
     /// [`weather_idle_minutes`](Self::weather_idle_minutes) (FR-UI-08).
     pub weather: bool,
@@ -193,7 +199,7 @@ pub struct Settings {
 
 impl Default for Settings {
     /// Terminal Dark, Nerd Font icons and wrapping, as the app drew before it had settings
-    /// (D-30), and the weather after three minutes, as in taskpaper-terminal.
+    /// (D-30), task counts, and the weather after three minutes, as in taskpaper-terminal.
     fn default() -> Self {
         Self {
             theme: BuiltIn::default(),
@@ -201,6 +207,7 @@ impl Default for Settings {
             icons: IconSet::default(),
             word_wrap: true,
             animations: Animations::default(),
+            task_counts: true,
             weather: true,
             weather_idle_minutes: NonZeroU32::new(3).expect("three is not zero"),
         }
@@ -220,6 +227,8 @@ pub enum Setting {
     WordWrap,
     /// Animations.
     Animations,
+    /// Whether the sidebar counts tasks.
+    TaskCounts,
     /// Whether the weather plays once the app sits idle.
     Weather,
     /// How long the app sits idle before the weather starts.
@@ -228,12 +237,13 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, in the order the window lists them.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Theme,
         Self::Grayscale,
         Self::Icons,
         Self::WordWrap,
         Self::Animations,
+        Self::TaskCounts,
         Self::Weather,
         Self::WeatherIdle,
     ];
@@ -247,6 +257,7 @@ impl Setting {
             Self::Icons => "icons",
             Self::WordWrap => "word_wrap",
             Self::Animations => "animations",
+            Self::TaskCounts => "task_counts",
             Self::Weather => "weather",
             Self::WeatherIdle => "weather_idle_minutes",
         }
@@ -261,6 +272,7 @@ impl Setting {
             Self::Icons => "Icons",
             Self::WordWrap => "Word wrap",
             Self::Animations => "Animations",
+            Self::TaskCounts => "Display task counts",
             Self::Weather => "Weather animation",
             Self::WeatherIdle => "Weather after idle",
         }
@@ -270,9 +282,12 @@ impl Setting {
     #[must_use]
     pub fn group(self) -> &'static str {
         match self {
-            Self::Theme | Self::Grayscale | Self::Icons | Self::WordWrap | Self::Animations => {
-                "Appearance"
-            }
+            Self::Theme
+            | Self::Grayscale
+            | Self::Icons
+            | Self::WordWrap
+            | Self::Animations
+            | Self::TaskCounts => "Appearance",
             Self::Weather | Self::WeatherIdle => "Weather",
         }
     }
@@ -286,6 +301,7 @@ impl Setting {
             Self::Icons => "Nerd Font icons, or plain markers without the font",
             Self::WordWrap => "Long titles wrap; off, each takes one line, cut short",
             Self::Animations => "Full, reduced to flashes without fades, or off",
+            Self::TaskCounts => "The sidebar shows how many tasks each list and view holds",
             Self::Weather => "The season's weather falls over the app while it sits idle",
             Self::WeatherIdle => "How long the app sits idle before the weather starts",
         }
@@ -305,6 +321,7 @@ impl Settings {
                 IconSet::Plain => "Plain".to_owned(),
             },
             Setting::WordWrap => switch(self.word_wrap).to_owned(),
+            Setting::TaskCounts => switch(self.task_counts).to_owned(),
             Setting::Weather => switch(self.weather).to_owned(),
             Setting::WeatherIdle => match self.weather_idle_minutes.get() {
                 1 => "1 minute".to_owned(),
@@ -329,15 +346,16 @@ impl Settings {
             Setting::Icons => self.icons == default.icons,
             Setting::WordWrap => self.word_wrap == default.word_wrap,
             Setting::Animations => self.animations == default.animations,
+            Setting::TaskCounts => self.task_counts == default.task_counts,
             Setting::Weather => self.weather == default.weather,
             Setting::WeatherIdle => self.weather_idle_minutes == default.weather_idle_minutes,
         }
     }
 
     /// Gives `setting` its next value, toward `Down`, or its previous one: going round, the next
-    /// theme of [`BuiltIn::ALL`], grayscale, the other icons, wrapping or the weather turned
-    /// over, the next of full, reduced and no animations; a minute more or less of idle time, no
-    /// less than one.
+    /// theme of [`BuiltIn::ALL`], grayscale, the other icons, wrapping, task counts or the
+    /// weather turned over, the next of full, reduced and no animations; a minute more or less of
+    /// idle time, no less than one.
     fn turn(&mut self, setting: Setting, direction: Direction) {
         match setting {
             Setting::Theme => self.theme = turned(&BuiltIn::ALL, self.theme, direction),
@@ -349,6 +367,7 @@ impl Settings {
                 };
             }
             Setting::WordWrap => self.word_wrap = !self.word_wrap,
+            Setting::TaskCounts => self.task_counts = !self.task_counts,
             Setting::Animations => {
                 self.animations = turned(&Animations::ALL, self.animations, direction);
             }
@@ -371,6 +390,7 @@ impl Settings {
             Setting::Icons => self.icons = default.icons,
             Setting::WordWrap => self.word_wrap = default.word_wrap,
             Setting::Animations => self.animations = default.animations,
+            Setting::TaskCounts => self.task_counts = default.task_counts,
             Setting::Weather => self.weather = default.weather,
             Setting::WeatherIdle => self.weather_idle_minutes = default.weather_idle_minutes,
         }
@@ -696,6 +716,7 @@ mod tests {
                 "Appearance",
                 "Appearance",
                 "Appearance",
+                "Appearance",
                 "Weather",
                 "Weather"
             ]
@@ -709,6 +730,7 @@ mod tests {
                 "icons",
                 "word_wrap",
                 "animations",
+                "task_counts",
                 "weather",
                 "weather_idle_minutes"
             ]
@@ -722,6 +744,7 @@ mod tests {
                 "Icons",
                 "Word wrap",
                 "Animations",
+                "Display task counts",
                 "Weather animation",
                 "Weather after idle"
             ]
@@ -740,7 +763,7 @@ mod tests {
     fn the_weather_turns_over_and_its_idle_time_goes_by_minutes_no_less_than_one() {
         let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut state, Message::Command(Command::Settings));
-        for _ in 0..5 {
+        for _ in 0..6 {
             input(&mut state, SettingsInput::Focus(Direction::Down));
         }
         assert_eq!(state.settings_window(), Some(Setting::Weather));
@@ -786,6 +809,34 @@ mod tests {
                 .settings()
                 .is_default(Setting::WeatherIdle, &Settings::default())
         );
+    }
+
+    // FR-VIEW-10, FR-SET-02
+    #[test]
+    fn task_counts_are_on_by_default_and_turn_over() {
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY);
+        assert!(Settings::default().task_counts);
+        give(&mut state, Message::Command(Command::Settings));
+        for _ in 0..5 {
+            input(&mut state, SettingsInput::Focus(Direction::Down));
+        }
+        assert_eq!(state.settings_window(), Some(Setting::TaskCounts));
+        assert_eq!(state.settings().value(Setting::TaskCounts), "On");
+        assert_eq!(
+            input(&mut state, SettingsInput::Turn(Direction::Down)),
+            [Effect::KeepSetting(Setting::TaskCounts)]
+        );
+        assert_eq!(state.settings().value(Setting::TaskCounts), "Off");
+        assert!(
+            !state
+                .settings()
+                .is_default(Setting::TaskCounts, &Settings::default())
+        );
+        input(&mut state, SettingsInput::Turn(Direction::Up));
+        assert!(state.settings().task_counts, "turned over either way");
+        input(&mut state, SettingsInput::Turn(Direction::Up));
+        input(&mut state, SettingsInput::Reset);
+        assert!(state.settings().task_counts);
     }
 
     // FR-UI-11, FR-SET-02

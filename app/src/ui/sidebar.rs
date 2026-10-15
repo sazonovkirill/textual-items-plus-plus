@@ -1,6 +1,6 @@
 //! The sidebar left of the pane: the Inbox, the views, the pinned projects, the areas and projects
-//! as a tree, each after its icon with a container's open tasks counted at the right, as the
-//! Navigator lists them, after a marker on a collapsed area, the entry of what the pane shows on
+//! as a tree, each after its icon with the tasks it lists counted at the right while the settings
+//! show task counts, as the Navigator lists them, after a marker on a collapsed area, the entry of what the pane shows on
 //! the selection background, the focused one marked while the sidebar has the keys and the title
 //! being edited there as a text field in its row (FR-VIEW-10, FR-VIEW-12).
 
@@ -228,14 +228,15 @@ impl Widget for SidebarPane<'_> {
             }
             let title = self.title(index, stop, content);
             // A collapsed project's marker stands before its count, as Todoist's does (D-67).
-            let (marker, tasks) = match stop {
-                Stop::Place(place) => (
-                    (!place.in_pinned && self.view.collapsed.contains(&place.id))
-                        .then(|| Icon::Collapsed.glyph(self.icons).to_owned()),
-                    (place.open_tasks > 0).then(|| place.open_tasks.to_string()),
-                ),
-                Stop::View(_) => (None, None),
+            let marker = match stop {
+                Stop::Place(place) => (!place.in_pinned && self.view.collapsed.contains(&place.id))
+                    .then(|| Icon::Collapsed.glyph(self.icons).to_owned()),
+                Stop::View(_) => None,
             };
+            // A zero is left out, as Things 3 leaves it out.
+            let tasks = (self.view.counts.get(index))
+                .filter(|&&tasks| tasks > 0)
+                .map(usize::to_string);
             let count = marker
                 .into_iter()
                 .chain(tasks)
@@ -390,7 +391,7 @@ mod tests {
                 " ☼ Today           │",
                 " » Upcoming        │",
                 " ⚑ Flagged         │",
-                " ∷ All             │",
+                " ∷ All            3│",
                 " ▤ Logbook         │",
                 " ✕ Trash           │",
                 "                   │",
@@ -451,6 +452,7 @@ mod tests {
         );
         assert_eq!(buf[(3, website)].fg, theme.band_text, "on the band");
         assert_eq!(buf[(17, work)].fg, theme.dim_text, "a count");
+        assert_eq!(buf[(18, line("All"))].fg, theme.dim_text, "a view's count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusRight);
         let (rows, buf, _) = draw(&state, 20, 14);

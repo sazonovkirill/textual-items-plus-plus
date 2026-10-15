@@ -294,6 +294,7 @@ impl Tui {
     pub fn deadline(&self) -> Option<Duration> {
         [
             self.state.deadline(),
+            self.state.recount_deadline(),
             self.keymap.deadline(),
             self.weather.deadline(self.idle()),
             self.animator.deadline(),
@@ -724,7 +725,8 @@ impl Tui {
             return SaveAsPanel::new(&view, &self.theme).caret(prompt);
         }
         if let Some(view) = self.state.navigator() {
-            return navigator_popup(&view, &self.theme, self.icons()).caret(panes);
+            let counts = self.state.settings().task_counts;
+            return navigator_popup(&view, &self.theme, self.icons(), counts).caret(panes);
         }
         if let Some(view) = self.state.palette() {
             return palette_popup(&view, &self.theme, self.icons()).caret(panes);
@@ -1198,23 +1200,27 @@ fn split(panes: Rect, sidebar: bool) -> [Rect; 2] {
 }
 
 /// The Navigator's window, each place after its kind's icon and each view after its own, in a
-/// tree with its open tasks counted at the right (FR-VIEW-07).
+/// tree with its open tasks counted at the right when `counts` (FR-VIEW-07).
 fn navigator_popup<'a>(
     view: &'a app::PickerView<'a, Stop>,
     theme: &'a Theme,
     icons: IconSet,
+    counts: bool,
 ) -> PickerPopup<'a, Stop> {
     let icon: &dyn Fn(&Stop) -> Icon = &|&stop| stop_icon(stop);
-    PickerPopup::new("Navigator", view, icon, icons, theme)
+    let popup = PickerPopup::new("Navigator", view, icon, icons, theme)
         // v1 nests no project in another (D-57), so no entry is indented.
         .tree(&|_| 0)
         .color(|theme, &stop| stop_title_color(theme, stop))
         .icon_color(|theme, &stop| stop_icon_color(theme, stop))
-        .mark(stop_flag)
-        .badge(&|stop| match stop {
-            Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
-            Stop::Place(place) => place.open_tasks.to_string(),
-        })
+        .mark(stop_flag);
+    if !counts {
+        return popup;
+    }
+    popup.badge(&|stop| match stop {
+        Stop::Place(Place { open_tasks: 0, .. }) | Stop::View(_) => String::new(),
+        Stop::Place(place) => place.open_tasks.to_string(),
+    })
 }
 
 /// The command palette's window, each command after the command icon; drawn, it shows each
@@ -1462,7 +1468,8 @@ impl Widget for &mut Tui {
         let shortcuts = self.shortcuts_area(panes);
         self.render_shortcuts(shortcuts, buf);
         if let Some(view) = self.state.navigator() {
-            navigator_popup(&view, &self.theme, icons).render(panes, buf);
+            let counts = self.state.settings().task_counts;
+            navigator_popup(&view, &self.theme, icons, counts).render(panes, buf);
         }
         if let Some(view) = self.state.palette() {
             let keys = |&command: &Command| self.keymap.labels(command);

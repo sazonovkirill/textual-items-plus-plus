@@ -1,6 +1,6 @@
 //! The application state a frontend renders, changed only by [`update`](super::update).
 
-use std::{mem, path::PathBuf, rc::Rc};
+use std::{mem, path::PathBuf, rc::Rc, time::Duration};
 
 use jiff::civil::Date;
 
@@ -292,10 +292,39 @@ impl State {
         self.tags.as_ref().map(TagPicker::view)
     }
 
-    /// The sidebar, while it shows (FR-VIEW-10).
+    /// The sidebar, while it shows, with its entries' task counts while the settings show them
+    /// (FR-VIEW-10).
     #[must_use]
     pub fn sidebar(&self) -> Option<SidebarView> {
-        self.sidebar.view(&self.document)
+        let mut view = self.sidebar.view(&self.document)?;
+        if self.settings.task_counts {
+            view.counts = self
+                .sidebar
+                .counts(&self.document, &view.entries, self.today);
+        }
+        Some(view)
+    }
+
+    /// Whether the sidebar shows task counts that a change or a new day has left stale.
+    fn counts_stale(&self) -> bool {
+        self.settings.task_counts
+            && self.sidebar.shows()
+            && self.sidebar.stale(&self.document, self.today)
+    }
+
+    /// When the sidebar's task counts are due to be counted again, if they are: at once, once a
+    /// frame has shown a change or a new day that left them stale, so that the frame comes
+    /// first (N-PERF-02).
+    #[must_use]
+    pub fn recount_deadline(&self) -> Option<Duration> {
+        self.counts_stale().then_some(Duration::ZERO)
+    }
+
+    /// Counts the sidebar's tasks again while they are stale.
+    pub(super) fn recount(&mut self) {
+        if self.counts_stale() {
+            self.sidebar.recount(&self.document, self.today);
+        }
     }
 
     /// Whether the sidebar has the keys, so that commands and the title edited are its own.

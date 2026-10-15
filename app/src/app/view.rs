@@ -161,6 +161,17 @@ pub(super) fn groups(
     }
 }
 
+/// How many tasks `view` lists of `document` on `today`, completed ones hidden: the Logbook's
+/// completed tasks and the Trash's deleted ones. Sections, projects and areas are not counted.
+#[must_use]
+pub(super) fn tasks(document: &Document, view: View, today: Date) -> usize {
+    groups(document, view, today, false, "")
+        .iter()
+        .flat_map(|group| &group.rows)
+        .filter(|row| matches!(row, Row::Task { .. }))
+        .count()
+}
+
 /// The containers holding `id`, from the top level down, the Inbox left out: where a view's row
 /// says its item is (FR-VIEW-03, D-126).
 #[must_use]
@@ -199,8 +210,12 @@ pub(super) fn rows(
 
 #[cfg(test)]
 mod tests {
+    use jiff::civil::date;
+
     use super::*;
-    use crate::domain::{Item, ItemKind, Node, PlacementError};
+    use crate::domain::{Completion, Item, ItemKind, Node, PlacementError};
+
+    const TODAY: Date = date(2026, 10, 14);
 
     fn push(
         document: &mut Document,
@@ -244,6 +259,58 @@ mod tests {
         let work = push(&mut document, None, ItemKind::Area, "Work")?;
         assert_eq!(location(&document, work), []);
         assert_eq!(location(&Document::new(), work), [], "no such node");
+        Ok(())
+    }
+
+    // FR-VIEW-10
+    #[test]
+    fn each_view_counts_the_tasks_it_lists_with_completed_ones_hidden() -> Result<(), PlacementError>
+    {
+        use ItemKind::{Project, Section, Task};
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let mut push = |parent, item| document.push(parent, Node::Item(item));
+        push(inbox, Item::new(Task, "Call the bank"))?;
+        let mut home = Item::new(Project, "Home");
+        home.flagged = true;
+        let home = Some(push(None, home)?);
+        let mut due = Item::new(Task, "Due today");
+        due.due = Some(TODAY);
+        due.flagged = true;
+        push(home, due.clone())?;
+        let mut later = Item::new(Task, "Starts later");
+        later.start = Some(date(2026, 10, 17));
+        push(home, later)?;
+        let mut done = due;
+        done.title = "Done".to_owned();
+        done.completed = Some(Completion::On(TODAY));
+        push(home, done)?;
+        let mut deleted = Item::new(Task, "Deleted");
+        deleted.deleted = Some(TODAY);
+        push(home, deleted)?;
+        let errands = Some(push(home, Item::new(Section, "Errands"))?);
+        push(errands, Item::new(Task, "Milk"))?;
+        let mut old = Item::new(Project, "Old");
+        old.deleted = Some(TODAY);
+        let old = Some(push(None, old)?);
+        push(old, Item::new(Task, "Inside the Trash"))?;
+        let counts: Vec<_> = REGISTRY
+            .iter()
+            .map(|entry| (entry.title, tasks(&document, entry.view, TODAY)))
+            .collect();
+        assert_eq!(
+            counts,
+            [
+                ("Today", 1),
+                ("Upcoming", 1),
+                ("Flagged", 1),
+                ("All", 4),
+                ("Logbook", 1),
+                ("Trash", 1),
+            ],
+            "neither the flagged project, the section nor the deleted project count"
+        );
+        assert_eq!(tasks(&Document::new(), View::All, TODAY), 0, "empty");
         Ok(())
     }
 }

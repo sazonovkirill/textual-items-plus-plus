@@ -45,12 +45,12 @@ fn reorder_areas_in_the_sidebar() {
         entries(&harness),
         [
             " 󰚇 Inbox                3",
-            " 󰖙 Today",
-            " 󱄵 Upcoming",
+            " 󰖙 Today                4",
+            " 󱄵 Upcoming             6",
             " 󰈻 Flagged",
-            " 󰉹 All",
-            " 󱓳 Logbook",
-            " 󰩺 Trash",
+            " 󰉹 All                 18",
+            " 󱓳 Logbook              1",
+            " 󰩺 Trash                2",
             "*# Learn Rust           2",
             " 󰆧 WORK                 7",
             " # Website              4",
@@ -227,7 +227,7 @@ fn the_keys_go_to_the_pane_and_back_to_the_sidebar() {
     );
     harness.type_text("k");
     assert_eq!(pane_focus(&harness), None);
-    assert_eq!(entries(&harness)[6], "*󰩺 Trash");
+    assert_eq!(entries(&harness)[6], "*󰩺 Trash                2");
 }
 
 // FR-VIEW-10, FR-EDIT-04, FR-UI-05
@@ -435,4 +435,37 @@ fn gj_gk_and_ctrl_arrows_browse_the_sidebar_in_the_first_pane_from_anywhere() {
         header(&harness, 28)
     );
     assert_eq!(marker_columns(&harness), [0], "the sidebar keeps the keys");
+}
+
+// FR-VIEW-10, N-PERF-02
+#[test]
+fn completing_a_task_counts_the_views_again() {
+    let mut harness = Harness::new(80, 24);
+    harness.ctrl('b');
+    harness.type_text("j");
+    harness.ctrl('w');
+    harness.type_text("l");
+    let before = entries(&harness);
+    assert_eq!(
+        before.get(1..6).unwrap_or_default(),
+        [
+            " 󰖙 Today                4".to_owned(),
+            " 󱄵 Upcoming             6".to_owned(),
+            " 󰈻 Flagged".to_owned(),
+            " 󰉹 All                 18".to_owned(),
+            " 󱓳 Logbook              1".to_owned(),
+        ]
+    );
+    harness.type_text("x");
+    let after = entries(&harness);
+    assert_eq!(
+        after.get(1..6).unwrap_or_default(),
+        [
+            " 󰖙 Today                3".to_owned(),
+            " 󱄵 Upcoming             6".to_owned(),
+            " 󰈻 Flagged".to_owned(),
+            " 󰉹 All                 17".to_owned(),
+            " 󱓳 Logbook              2".to_owned(),
+        ]
+    );
 }
