@@ -161,12 +161,13 @@ pub(super) fn groups(
     }
 }
 
-/// The containers holding `id`, from the top level down: where a view's row says its item is
-/// (FR-VIEW-03).
+/// The containers holding `id`, from the top level down, the Inbox left out: where a view's row
+/// says its item is (FR-VIEW-03, D-126).
 #[must_use]
 pub fn location(document: &Document, id: ItemId) -> Vec<ItemId> {
     let mut path = container::path(document, id);
     path.pop();
+    path.retain(|&container| container != document.inbox());
     path
 }
 
@@ -193,5 +194,56 @@ pub(super) fn rows(
             .into_iter()
             .flat_map(|group| group.rows)
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{Item, ItemKind, Node, PlacementError};
+
+    fn push(
+        document: &mut Document,
+        parent: Option<ItemId>,
+        kind: ItemKind,
+        title: &str,
+    ) -> Result<ItemId, PlacementError> {
+        document.push(parent, Node::Item(Item::new(kind, title)))
+    }
+
+    // FR-VIEW-06
+    #[test]
+    fn the_location_is_the_containers_holding_an_item_from_the_top_level_down()
+    -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = push(&mut document, None, ItemKind::Area, "Work")?;
+        let site = push(&mut document, Some(work), ItemKind::Project, "Site")?;
+        let launch = push(&mut document, Some(site), ItemKind::Section, "Launch")?;
+        let ship = push(&mut document, Some(launch), ItemKind::Task, "Ship")?;
+        let hire = push(&mut document, Some(work), ItemKind::Task, "Hire")?;
+        assert_eq!(location(&document, ship), [work, site, launch]);
+        assert_eq!(location(&document, hire), [work]);
+        assert_eq!(location(&document, launch), [work, site]);
+        Ok(())
+    }
+
+    // FR-VIEW-06, D-126
+    #[test]
+    fn the_inbox_is_no_location() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let call = push(&mut document, Some(inbox), ItemKind::Task, "Call")?;
+        assert_eq!(location(&document, call), [], "an Inbox task is nowhere");
+        assert_eq!(location(&document, inbox), []);
+        Ok(())
+    }
+
+    #[test]
+    fn an_item_at_the_top_level_or_no_item_has_no_location() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let work = push(&mut document, None, ItemKind::Area, "Work")?;
+        assert_eq!(location(&document, work), []);
+        assert_eq!(location(&Document::new(), work), [], "no such node");
+        Ok(())
     }
 }

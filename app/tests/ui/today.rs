@@ -44,6 +44,27 @@ fn open_today() {
     );
 }
 
+// FR-VIEW-06, D-126
+#[test]
+fn an_inbox_task_in_today_says_nothing_of_where_it_is() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\n\t- Call mom @start(2026-10-05)\nHome: @area\n\t- Water the plants @start(2026-10-05)\n";
+    std::fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path, 60, 12);
+    harness.type_text("gt");
+    assert_eq!(
+        trimmed(&harness)[2..6],
+        [
+            "▌ ☐ Call mom                                        \u{f166d} today",
+            "  ☐ Water the plants                                \u{f166d} today",
+            "    Home",
+            "",
+        ],
+        "giving an Inbox task a date takes it out of the Inbox, so its row names no place"
+    );
+}
+
 // FR-VIEW-06, FR-NAV-02, FR-NAV-04
 #[test]
 fn a_task_in_today_opens_where_it_lives_in_a_new_pane() {

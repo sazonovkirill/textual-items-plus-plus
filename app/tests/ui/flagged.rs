@@ -76,7 +76,7 @@ fn mf_flags_tasks_and_projects_which_the_flagged_view_lists_projects_first() {
             "",
             "▌ # 󰈻 Site · Work",
             "",
-            "  ☐ 󰈻 Call mom · Inbox",
+            "  ☐ 󰈻 Call mom",
             "  ☐ 󰈻 Draft · Work › Site",
             "",
         ]
@@ -84,17 +84,13 @@ fn mf_flags_tasks_and_projects_which_the_flagged_view_lists_projects_first() {
     harness.type_text("mf");
     assert_eq!(
         top(&harness, 3)[2],
-        "▌ ☐ 󰈻 Call mom · Inbox",
+        "▌ ☐ 󰈻 Call mom",
         "unflagged, it leaves"
     );
     harness.type_text("z");
     assert_eq!(top(&harness, 3)[2], "▌ # 󰈻 Site · Work", "one step to undo");
     harness.ctrl('o');
-    assert_eq!(
-        top(&harness, 7)[6],
-        "  ✔ 󰈻 Called · Inbox",
-        "completed, shown last"
-    );
+    assert_eq!(top(&harness, 7)[6], "  ✔ 󰈻 Called", "completed, shown last");
     let flag = &harness.terminal.backend().buffer()[(4, 6)];
     assert!(
         flag.modifier.contains(ratatui::style::Modifier::DIM),

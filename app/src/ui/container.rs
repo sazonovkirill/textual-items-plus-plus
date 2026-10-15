@@ -677,7 +677,8 @@ impl<'a> ContainerPane<'a> {
 
     /// Where item `id` is, when the view shown says so of its rows, and how: the containers
     /// holding it from the top level down, joined by ` › `, as `Work › Website › Launch`
-    /// (FR-VIEW-03, D-75); nothing for an item at the top level, or in a container's rows.
+    /// (FR-VIEW-03, D-75); nothing for an item at the top level or in the Inbox (D-126), or in a
+    /// container's rows.
     fn location(&self, id: ItemId) -> Option<(Locating, String)> {
         let Shown::View(view) = self.shown else {
             return None;
@@ -1576,7 +1577,7 @@ mod tests {
             [
                 "  ✕ Trash",
                 "",
-                "▌ ☐ Cancel the newspaper · Inbox",
+                "▌ ☐ Cancel the newspaper",
                 "  ☐ Paint the hallway · Home › Move to",
                 "    the new flat",
                 "",

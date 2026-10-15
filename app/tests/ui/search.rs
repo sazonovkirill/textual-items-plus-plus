@@ -140,7 +140,7 @@ fn text_pasted_goes_into_the_words_typed() {
     harness.type_text("gs");
     harness.send(&Event::Paste("coffee\nbeans".to_owned()));
     assert_eq!(trimmed(&harness)[0], "  \u{f0349} Search  coffee beans");
-    assert_eq!(results(&harness), ["▌ ☐ Buy coffee beans @errands · Inbox"]);
+    assert_eq!(results(&harness), ["▌ ☐ Buy coffee beans @errands"]);
 }
 
 // FR-KEY-03, FR-NAV-06

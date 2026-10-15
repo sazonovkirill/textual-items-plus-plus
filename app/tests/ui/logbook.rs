@@ -76,7 +76,7 @@ Work:
             "▌ ✔ Write the report · Work",
             "",
             "  Yesterday · Sun 4 Oct",
-            "  ✔ Call the bank · Inbox",
+            "  ✔ Call the bank",
             "",
             "  2 days ago · Sat 3 Oct",
             "  # Site · Work",
@@ -85,7 +85,7 @@ Work:
             "  ✔ Plan · Work",
             "",
             "  No date",
-            "  ✔ Old note · Inbox",
+            "  ✔ Old note",
         ]
     );
     assert_eq!(

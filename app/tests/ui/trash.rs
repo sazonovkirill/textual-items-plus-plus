@@ -36,12 +36,12 @@ fn open_the_trash() {
         trimmed(&harness),
         trash(
             &[
-                "▌ ☐ Cancel the newspaper · Inbox",
+                "▌ ☐ Cancel the newspaper",
                 "  ☐ Paint the hallway · Home › Move to the new flat",
             ],
             SAVED
         ),
-        "the latest deleted first, each with where it was"
+        "the latest deleted first, each with where it was, an Inbox task nowhere (D-126)"
     );
 }
 
@@ -93,7 +93,7 @@ fn empty_the_trash_after_confirming() {
         trimmed(&harness),
         trash(
             &[
-                "▌ ☐ Cancel the newspaper · Inbox",
+                "▌ ☐ Cancel the newspaper",
                 "  ☐ Paint the hallway · Home › Move to the new flat",
             ],
             asked
@@ -121,7 +121,7 @@ fn empty_the_trash_after_confirming() {
 fn a_copy_from_the_trash_pastes_live_and_nothing_else_acts_there() {
     let mut harness = Harness::new(60, 12);
     let listed = [
-        "▌ ☐ Cancel the newspaper · Inbox",
+        "▌ ☐ Cancel the newspaper",
         "  ☐ Paint the hallway · Home › Move to the new flat",
     ];
     let refused = "…a · only restore and delete work in the Trash";
