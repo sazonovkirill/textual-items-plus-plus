@@ -240,7 +240,7 @@ mod tests {
                 "│ Weather              │",
                 "│   Weather animat… On │",
                 "│   The season's weath…│",
-                "│   Weather… 3 minutes │",
+                "│   Weathe… 30 minutes │",
                 "│   How long the app s…│",
                 "│                      │",
                 "│ …us-plus/config.toml │",
@@ -278,7 +278,7 @@ mod tests {
         let rows: Vec<String> = (0..area.height)
             .map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect())
             .collect();
-        assert_eq!(rows[6], "│   Weather after idle       3 minutes │");
+        assert_eq!(rows[6], "│   Weather after idle      30 minutes │");
         assert_eq!(rows[7], "│   How long the app sits idle before …│");
         assert_eq!(buf[(4, 6)].bg, theme.selection);
         let mut buf = Buffer::empty(area);

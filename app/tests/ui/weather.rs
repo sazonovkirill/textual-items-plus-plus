@@ -41,21 +41,21 @@ fn status(harness: &Harness) -> String {
 
 // FR-UI-08, N-PERF-03
 #[test]
-fn after_three_idle_minutes_autumn_leaves_fall_and_pile_up_until_a_key_which_does_nothing_else() {
+fn after_half_an_idle_hour_autumn_leaves_fall_and_pile_up_until_a_key_which_does_nothing_else() {
     let mut harness = animated(60, 18);
     harness.type_text("j");
     let before = frame(&harness);
     assert_eq!(
         harness.tui.deadline(),
-        Some(Duration::from_mins(3)),
+        Some(Duration::from_mins(30)),
         "nothing but the idle timer"
     );
-    harness.wait(179_999);
+    harness.wait(1_799_999);
     assert_eq!(frame(&harness), before, "not a moment before");
     harness.wait(1);
     assert_eq!(
         harness.tui.deadline(),
-        Some(Duration::from_micros(180_033_333)),
+        Some(Duration::from_micros(1_800_033_333)),
         "a frame at a time while it plays"
     );
     play(&mut harness, 60);
@@ -69,7 +69,7 @@ fn after_three_idle_minutes_autumn_leaves_fall_and_pile_up_until_a_key_which_doe
         before,
         "the key only ended the weather: nothing was completed"
     );
-    assert_eq!(harness.tui.deadline(), Some(Duration::from_secs(420)));
+    assert_eq!(harness.tui.deadline(), Some(Duration::from_mins(61)));
     harness.type_text("x");
     assert_ne!(frame(&harness), before, "the next key works");
 }
@@ -79,12 +79,12 @@ fn after_three_idle_minutes_autumn_leaves_fall_and_pile_up_until_a_key_which_doe
 fn a_paste_or_a_resize_ends_the_weather_too_and_is_dropped() {
     let mut harness = animated(60, 18);
     let before = frame(&harness);
-    harness.wait(180_000);
+    harness.wait(1_800_000);
     play(&mut harness, 5);
     assert!(leaves(&harness));
     harness.send(&Event::Paste("Buy milk".into()));
     assert_eq!(frame(&harness), before, "the paste went nowhere");
-    harness.wait(180_000);
+    harness.wait(1_800_000);
     play(&mut harness, 5);
     harness.send(&Event::Resize(60, 18));
     assert!(!leaves(&harness));
@@ -141,7 +141,7 @@ fn turning_the_weather_off_in_the_settings_window_stops_the_idle_timer() {
     harness.wait(200);
     assert_eq!(harness.tui.deadline(), None, "once the window has closed");
     let before = frame(&harness);
-    harness.wait(600_000);
+    harness.wait(3_600_000);
     assert_eq!(frame(&harness), before);
     let config = fs::read_to_string(harness.config()).expect("the setting is kept");
     assert_eq!(config, "weather = false\n");
@@ -161,7 +161,7 @@ fn the_settings_file_sets_the_idle_minutes_and_a_zero_is_named_and_ignored() {
         "{}",
         status(&harness)
     );
-    assert_eq!(harness.tui.deadline(), Some(Duration::from_mins(3)));
+    assert_eq!(harness.tui.deadline(), Some(Duration::from_mins(30)));
 }
 
 // FR-UI-08, FR-UI-07

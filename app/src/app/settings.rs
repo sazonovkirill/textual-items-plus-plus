@@ -212,7 +212,7 @@ pub struct Settings {
 
 impl Default for Settings {
     /// Terminal Dark, Nerd Font icons and wrapping, as the app drew before it had settings
-    /// (D-30), task counts, and the weather after three minutes, as in taskpaper-terminal.
+    /// (D-30), task counts, and the weather after half an hour (D-147).
     fn default() -> Self {
         Self {
             theme: BuiltIn::default(),
@@ -222,7 +222,7 @@ impl Default for Settings {
             animations: Animations::default(),
             task_counts: true,
             weather: true,
-            weather_idle_minutes: NonZeroU32::new(3).expect("three is not zero"),
+            weather_idle_minutes: NonZeroU32::new(30).expect("thirty is not zero"),
         }
     }
 }
@@ -796,18 +796,18 @@ mod tests {
             Some(Setting::WeatherIdle),
             "the highlight stops at the last setting"
         );
-        assert_eq!(state.settings().value(Setting::WeatherIdle), "3 minutes");
+        assert_eq!(state.settings().value(Setting::WeatherIdle), "30 minutes");
         assert_eq!(
             input(&mut state, SettingsInput::Turn(Direction::Down)),
             [Effect::KeepSetting(Setting::WeatherIdle)]
         );
-        assert_eq!(state.settings().value(Setting::WeatherIdle), "4 minutes");
+        assert_eq!(state.settings().value(Setting::WeatherIdle), "31 minutes");
         assert!(
             !state
                 .settings()
                 .is_default(Setting::WeatherIdle, &Settings::default())
         );
-        for _ in 0..3 {
+        for _ in 0..30 {
             input(&mut state, SettingsInput::Turn(Direction::Up));
         }
         assert_eq!(state.settings().value(Setting::WeatherIdle), "1 minute");

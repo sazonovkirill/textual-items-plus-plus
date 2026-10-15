@@ -25,6 +25,9 @@ const CATCH_UP: u32 = 30;
 /// How long a raindrop's splash shows on the bottom row: three frames.
 const SPLASH: Duration = FRAME.saturating_mul(3);
 
+/// How fast the weather moves against the clock: half speed, to be calm to watch (D-147).
+const PACE: f32 = 0.5;
+
 /// How many columns rain moves right for each row it falls.
 const SLANT: f32 = 0.25;
 
@@ -187,7 +190,7 @@ struct Particle {
     /// The column it drifts about, and the row, from the top of the screen.
     x: f32,
     y: f32,
-    /// How fast it falls, in rows a second.
+    /// How fast it falls, in rows a second at full [`PACE`].
     speed: f32,
     /// How far it sways to each side of `x` (leaves, snow), or how fast it moves right in
     /// columns a second (rain).
@@ -317,7 +320,7 @@ impl Sky {
 
     /// Moves every particle by a frame, settling or splashing those that reach the ground.
     fn step(&mut self) {
-        let seconds = FRAME.as_secs_f32();
+        let seconds = FRAME.as_secs_f32() * PACE;
         let bottom = self.area.height.saturating_sub(1);
         let heights: Vec<u16> = (0..self.area.width)
             .map(|column| self.height(column))
@@ -853,8 +856,8 @@ mod tests {
 
     // ui.md §10.2
     #[test]
-    fn a_frame_moves_rain_down_and_right_and_leaves_down_along_their_sway() {
-        let seconds = FRAME.as_secs_f32();
+    fn a_frame_moves_rain_down_and_right_and_leaves_down_along_their_sway_at_half_speed() {
+        let seconds = FRAME.as_secs_f32() / 2.0;
         let drop = moved(
             Season::Spring,
             particle(1.0, 2.0, 24.0, 6.0, 0.0),
@@ -914,7 +917,7 @@ mod tests {
     fn a_landed_particle_starts_again_above_the_screen() {
         let leaf = moved(
             Season::Autumn,
-            particle(3.0, 8.95, 3.0, 0.0, 0.0),
+            particle(3.0, 8.98, 3.0, 0.0, 0.0),
             (10, 10),
             1,
         );
@@ -955,7 +958,7 @@ mod tests {
         let sky = weather.sky.as_mut().expect("it plays");
         sky.particles = vec![Particle {
             x: 0.0,
-            y: 1.5,
+            y: 1.6,
             speed: 30.0,
             drift: 0.0,
             phase: 0.0,
