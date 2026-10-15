@@ -872,9 +872,9 @@ impl State {
 
     /// Adds an empty task that starts today to the Inbox, which Today then lists, focuses it and
     /// starts editing its title (D-128). It goes on `side` of the focused row when that is an
-    /// Inbox task, so that Today shows it beside that row, and else at that end of the Inbox. It
-    /// joins the focused row's part of Today, the Evening when that row is in it, and the place
-    /// on `side` of that row in the order the user gave Today, if that row has one (D-131).
+    /// Inbox task, and else at that end of the Inbox. Today shows it on `side` of the focused
+    /// row, in that row's part, the Evening when that row is in it, and at the place beside it in
+    /// the order the user gave Today (D-131, D-132).
     fn new_task_today(&mut self, side: Side) {
         let inbox = self.document.inbox();
         let below = usize::from(side == Side::Below);
@@ -886,9 +886,9 @@ impl State {
         let beside = focused
             .and_then(|id| self.document.node(id))
             .and_then(Node::item);
-        let today_place = beside
-            .and_then(|item| item.today_place)
-            .map(|place| place + below);
+        let place =
+            focused.and_then(|id| today::place_beside(&self.document, &self.groups(), id, side));
+        let (today_place, room) = place.unzip();
         let item = Item {
             start: Some(self.today),
             evening: beside
@@ -897,7 +897,6 @@ impl State {
             today_place,
             ..self.new_item(ItemKind::Task)
         };
-        let room = today_place.map(|place| today::make_room(&self.document, place));
         self.add_task(item, (inbox, index), &room.unwrap_or_default());
     }
 

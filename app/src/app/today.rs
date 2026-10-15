@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use jiff::civil::Date;
 
 use super::{
-    Direction,
+    Direction, Side,
     container::Row,
     view::{Group, Heading},
 };
@@ -121,26 +121,71 @@ pub(super) fn reorder(
     Transaction::new(ops)
 }
 
+/// The place in Today's order for a new item to take on `side` of the row of `beside`, which a
+/// pane shows in the groups `shown`, and the transaction that makes room for it there (D-108,
+/// D-131, D-132). When `beside` has no place, it and the rows before it in its group that have
+/// none take places first, in the order shown, after every place given, so that no row moves;
+/// `None` when it has none and is not shown.
+#[must_use]
+pub(super) fn place_beside(
+    document: &Document,
+    shown: &[Group],
+    beside: ItemId,
+    side: Side,
+) -> Option<(usize, Transaction)> {
+    let below = usize::from(side == Side::Below);
+    if let Some(place) = place(document, beside) {
+        let at = place + below;
+        return Some((at, make_room(document, at)));
+    }
+    let group = shown
+        .iter()
+        .find(|group| group.rows.iter().any(|row| row.id() == beside))?;
+    let next = placed(document)
+        .last()
+        .and_then(|&id| place(document, id))
+        .map_or(0, |place| place + 1);
+    let mut before: Vec<ItemId> = group
+        .rows
+        .iter()
+        .map(|row| row.id())
+        .take_while(|&id| id != beside)
+        .filter(|&id| place(document, id).is_none())
+        .collect();
+    let at = next + before.len() + below;
+    before.push(beside);
+    let ops = before
+        .into_iter()
+        .zip(next..)
+        .filter_map(|(id, place)| placing(document, id, if place < at { place } else { place + 1 }))
+        .collect();
+    Some((at, Transaction::new(ops)))
+}
+
 /// The transaction that makes room at `at` in the order the user gave Today, for an item to
 /// take that place, by moving each item at it or after it one place on (D-108).
-#[must_use]
-pub(super) fn make_room(document: &Document, at: usize) -> Transaction {
+fn make_room(document: &Document, at: usize) -> Transaction {
     let ops = placed(document)
         .into_iter()
         .filter_map(|id| {
-            let before = document.node(id).and_then(Node::item)?;
-            let place = before.today_place.filter(|&place| place >= at)?;
-            Some(Op::Set {
-                id,
-                before: before.clone(),
-                after: Item {
-                    today_place: Some(place + 1),
-                    ..before.clone()
-                },
-            })
+            let place = place(document, id).filter(|&place| place >= at)?;
+            placing(document, id, place + 1)
         })
         .collect();
     Transaction::new(ops)
+}
+
+/// The operation that gives the item `id` the place `place` in Today's order, if it is an item.
+fn placing(document: &Document, id: ItemId, place: usize) -> Option<Op> {
+    let before = document.node(id).and_then(Node::item)?;
+    Some(Op::Set {
+        id,
+        before: before.clone(),
+        after: Item {
+            today_place: Some(place),
+            ..before.clone()
+        },
+    })
 }
 
 /// `ids` with each of `items` moved one step `direction` past the next of `ids` that is not one

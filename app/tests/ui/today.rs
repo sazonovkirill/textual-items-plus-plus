@@ -413,3 +413,33 @@ fn a_task_added_in_today_shows_beside_the_focused_row() {
     harness.key(KeyCode::Esc);
     assert_eq!(titles(&harness), ["C", "X", "Y", "A", "B"], "just above A");
 }
+
+// FR-VIEW-06, FR-EDIT-05, D-108, D-131, D-132
+#[test]
+fn a_task_added_beside_a_row_without_a_place_in_today_shows_beside_it() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\n\t- I @start(2026-10-05)\nWork:\n\t- w1 @start(2026-10-05)\n\t- w2 @start(2026-10-05)\n\t- w3 @start(2026-10-05)\n";
+    std::fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path, 60, 20);
+    harness.type_text("gtjjoX");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        titles(&harness),
+        ["I", "w1", "w2", "X", "w3"],
+        "just below w2, nothing else moving"
+    );
+    harness.type_text("jOY");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        titles(&harness),
+        ["I", "w1", "w2", "X", "Y", "w3"],
+        "just above w3, which had no place either"
+    );
+    harness.type_text("z");
+    assert_eq!(
+        titles(&harness),
+        ["I", "w1", "w2", "X", "w3"],
+        "one step to undo"
+    );
+}
