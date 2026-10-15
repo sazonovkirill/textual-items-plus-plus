@@ -333,6 +333,24 @@ impl State {
         self.sidebar.has_keys()
     }
 
+    /// Whether a window takes the keys: a picker, the command palette, the context menu, Go to
+    /// Symbol, the date prompt, Quick Add, the edit dialog, the settings window or the Save As
+    /// prompt is open, or the words to search for are typed.
+    pub(super) fn window_open(&self) -> bool {
+        self.navigator.is_some()
+            || self.palette.is_some()
+            || self.context_menu.is_some()
+            || self.go_to_symbol.is_some()
+            || self.move_to.is_some()
+            || self.tags.is_some()
+            || self.date_prompt.is_some()
+            || self.quick_add.is_some()
+            || self.edit_dialog.is_some()
+            || self.settings_window.is_some()
+            || self.save_as.is_some()
+            || self.searching
+    }
+
     /// The item edited, which of its texts and the text edited, in edit mode: the note of the
     /// item the attachments panel is on, an entry's item while the sidebar has the keys, else a
     /// row's item or the container shown, whose title and description head the pane.
@@ -1503,8 +1521,8 @@ impl State {
     }
 
     /// Closes the pane with the keys, with its attachments panel, giving them to the list of the
-    /// pane on its left, or on its right when it was the first. The only pane stays
-    /// (FR-PANE-02).
+    /// pane on its left, or on its right when it was the first, or to its panel while that covers
+    /// the list. The only pane stays (FR-PANE-02, D-112).
     pub(super) fn close_pane(&mut self) {
         let next = self
             .left
@@ -1512,7 +1530,7 @@ impl State {
             .or_else(|| (!self.right.is_empty()).then(|| self.right.remove(0)));
         if let Some(next) = next {
             self.pane = next;
-            self.in_panel = false;
+            self.in_panel = self.pane.list_covered();
         }
     }
 
@@ -1538,7 +1556,7 @@ impl State {
             self.step_right();
         }
         self.sidebar.focus(false);
-        self.in_panel = false;
+        self.in_panel = self.pane.list_covered();
     }
 
     /// Where the keys can go, in order: the sidebar while it shows, then each pane's list unless

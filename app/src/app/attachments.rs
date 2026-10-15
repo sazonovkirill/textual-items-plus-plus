@@ -138,22 +138,29 @@ impl State {
         )
     }
 
-    /// Whether the panel of the pane with the keys has them, rather than its list, as it always
-    /// does while it covers the list (D-112).
+    /// Whether the panel of the pane with the keys has them, rather than its list.
     pub(super) fn panel_has_keys(&self) -> bool {
-        (self.in_panel || self.pane.covered)
-            && self.pane.panel.is_some()
-            && !self.sidebar.has_keys()
+        self.in_panel && self.pane.panel.is_some() && !self.sidebar.has_keys()
     }
 
     /// Has the pane at `index` among the [`panes`](Self::panes) know whether its panel, while
-    /// open, covers the whole of it as a frontend draws it, keeping the keys from its list; a
-    /// panel that has the keys keeps them once it no longer covers it (D-112).
+    /// open, covers the whole of it as a frontend draws it, keeping the keys from its list: once
+    /// no window holds them, a panel that comes to cover the list with the keys takes them,
+    /// ending the list's edit, kept. A panel that has the keys keeps them once it no longer
+    /// covers it (D-112, D-136).
     pub fn set_covered(&mut self, index: usize, covered: bool) {
-        self.in_panel |= self.panel_has_keys();
         let panes = self.left.iter_mut().chain([&mut self.pane]);
         if let Some(pane) = panes.chain(&mut self.right).nth(index) {
             pane.covered = covered;
+        }
+        if index == self.left.len()
+            && self.pane.list_covered()
+            && !self.in_panel
+            && !self.sidebar.has_keys()
+            && !self.window_open()
+        {
+            self.finish_editing();
+            self.in_panel = true;
         }
     }
 
@@ -544,12 +551,14 @@ fn without_comment(document: &Document, id: ItemId, index: usize) -> Transaction
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use jiff::civil::{Date, date};
 
     use super::*;
     use crate::app::{
-        Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, Refusal, TextEdit,
-        update, view::View,
+        Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, Prefill,
+        QuickAddInput, Refusal, TextEdit, autosave, update, view::View,
     };
     use crate::domain::{Completion, PlacementError};
 
@@ -1437,6 +1446,62 @@ mod tests {
             keys(&state),
             Some((1, false)),
             "Esc gives the list the keys"
+        );
+        Ok(())
+    }
+
+    // FR-ATT-01, FR-EDIT-01, D-105, D-112, D-136
+    #[test]
+    fn a_panel_that_comes_to_cover_its_list_takes_the_keys_once_no_window_holds_them()
+    -> Result<(), PlacementError> {
+        let (mut state, a, _) = two_tasks()?;
+        give(&mut state, Command::OpenNote(Whose::Focused));
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::QuickAdd(Prefill::Nothing));
+        state.set_covered(0, true);
+        assert_eq!(keys(&state), Some((0, false)), "Quick Add keeps the keys");
+        update(&mut state, Message::QuickAdd(QuickAddInput::Cancel), TODAY);
+        assert_eq!(keys(&state), Some((0, false)), "until the frontend draws");
+        state.set_covered(0, true);
+        assert_eq!(keys(&state), Some((0, true)), "then the panel takes them");
+        state.set_covered(0, false);
+        give(&mut state, Command::FocusLeft);
+        give(&mut state, Command::EditTitle);
+        edit(&mut state, EditInput::Text(TextEdit::Insert('!')));
+        assert_eq!(state.deadline(), None, "nothing is saved while editing");
+        state.set_covered(0, true);
+        assert!(state.editing().is_none(), "covering the list ends its edit");
+        let title = |state: &State| {
+            state
+                .document
+                .node(a)
+                .and_then(Node::item)
+                .map(|item| item.title.clone())
+        };
+        assert_eq!(title(&state), Some("a!".to_owned()), "kept");
+        assert_eq!(
+            keys(&state),
+            Some((0, true)),
+            "and the panel takes the keys"
+        );
+        assert_eq!(
+            state.deadline(),
+            Some(Duration::ZERO),
+            "saving steps at once"
+        );
+        update(&mut state, Message::Tick(Duration::ZERO), TODAY);
+        assert_eq!(
+            state.deadline(),
+            Some(autosave::DELAY),
+            "and the save is due"
+        );
+        give(&mut state, Command::EditTitle);
+        edit(&mut state, EditInput::Text(TextEdit::Insert('?')));
+        state.set_covered(0, true);
+        assert_eq!(
+            state.editing().map(|(_, part, _)| part),
+            Some(Part::Note),
+            "the panel's own edit carries on"
         );
         Ok(())
     }

@@ -147,6 +147,12 @@ impl Autosave {
         if finished { Step::End } else { Step::Wait }
     }
 
+    /// Whether [`step`](Self::step) has been called with `revision` last.
+    #[must_use]
+    pub fn has_seen(&self, revision: u64) -> bool {
+        self.seen == revision
+    }
+
     fn failed_at(&self, revision: u64) -> bool {
         self.failure
             .as_ref()

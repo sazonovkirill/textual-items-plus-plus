@@ -602,11 +602,16 @@ impl State {
         self.saving.left_in.as_deref()
     }
 
-    /// When saving is next due without anything else happening, so the frontend can wake then.
+    /// When saving is next due without anything else happening, so the frontend can wake then:
+    /// at once for a change no message has stepped saving for yet, as an edit that ends when a
+    /// panel comes to cover its list as a frontend draws it (D-136).
     #[must_use]
     pub fn deadline(&self) -> Option<Duration> {
         if self.saving.conflict.is_some() || self.editing().is_some() {
             return None;
+        }
+        if !self.saving.autosave.has_seen(self.document.revision()) {
+            return Some(Duration::ZERO);
         }
         self.saving.autosave.deadline()
     }

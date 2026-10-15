@@ -3,7 +3,7 @@
 
 use std::fs;
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::layout::{Position, Rect};
 
 use crate::support::Harness;
@@ -382,4 +382,151 @@ fn the_keys_never_go_to_a_list_its_panel_covers() {
     );
     harness.key(KeyCode::Esc);
     assert_eq!(mode(&harness), "NAVIGATE", "Esc gives the list the keys");
+}
+
+/// The app at 100 by 14 on a file holding a task with a checklist and a task after it, with the
+/// first task's panel open at half beside the list, which has the keys.
+fn beside_its_list() -> (tempfile::TempDir, Harness) {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\n\t- Alpha task\n\t\t- one\n\t\t- two\n\t- Beta task\n";
+    fs::write(&path, text).expect("the fixture is written");
+    let mut harness = Harness::open(path, 100, 14);
+    harness.type_text("ckk");
+    harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
+    (dir, harness)
+}
+
+/// Makes the terminal 38 columns wide, so that the panel covers the whole of its pane.
+fn narrow(harness: &mut Harness) {
+    harness.terminal.backend_mut().resize(38, 14);
+    harness.send(&Event::Resize(38, 14));
+}
+
+/// What opens a window from the list.
+type Opening = fn(&mut Harness);
+
+// FR-ATT-01, FR-UI-06, D-112, D-136
+#[test]
+fn a_window_keeps_the_keys_when_the_panel_comes_to_cover_its_list() {
+    let windows: [(&str, Opening, &str); 5] = [
+        (
+            "the edit dialog",
+            |harness| harness.type_text("e"),
+            "Alpha taskjd",
+        ),
+        ("the date prompt", |harness| harness.type_text("ms"), " jd"),
+        ("Quick Add", |harness| harness.type_text("qq"), "jd"),
+        ("the context menu", |harness| harness.ctrl('\\'), "jd"),
+        ("the command palette", |harness| harness.ctrl('p'), "jd"),
+    ];
+    for (window, opening, typed) in windows {
+        let (_dir, mut harness) = beside_its_list();
+        opening(&mut harness);
+        narrow(&mut harness);
+        harness.type_text("jd");
+        assert!(
+            harness.rows().iter().any(|row| row.contains(typed)),
+            "{window} takes what is typed:\n{}",
+            harness.screen()
+        );
+        assert_ne!(mode(&harness), "ATTACHMENTS", "{window} keeps the keys");
+        harness.key(KeyCode::Esc);
+        assert_eq!(
+            mode(&harness),
+            "ATTACHMENTS",
+            "once {window} closes, the panel takes them"
+        );
+        assert!(
+            harness.screen().contains("☐ one"),
+            "and its checklist is as it was after {window}"
+        );
+    }
+}
+
+// FR-ATT-01, FR-KEY-07, FR-NAV-06, D-112, D-136
+#[test]
+fn a_command_chosen_from_a_menu_the_panel_comes_to_cover_acts_on_the_list() {
+    let menus: [(&str, Opening); 2] = [
+        ("the context menu", |harness| harness.ctrl('\\')),
+        ("the command palette", |harness| harness.ctrl('p')),
+    ];
+    for (menu, opening) in menus {
+        let (_dir, mut harness) = beside_its_list();
+        opening(&mut harness);
+        narrow(&mut harness);
+        harness.type_text("delete");
+        harness.key(KeyCode::Enter);
+        let screen = harness.screen();
+        assert!(
+            !screen.contains("Alpha task") && screen.contains("Beta task"),
+            "Delete from {menu} deletes the task it was opened on:\n{screen}"
+        );
+        for chosen in ["edit title", "new item below"] {
+            let (_dir, mut harness) = beside_its_list();
+            opening(&mut harness);
+            narrow(&mut harness);
+            harness.type_text(chosen);
+            harness.key(KeyCode::Enter);
+            assert_eq!(
+                mode(&harness),
+                "ATTACHMENTS",
+                "{chosen} from {menu} leaves no edit under the panel"
+            );
+            harness.type_text("Z");
+            harness.key(KeyCode::Esc);
+            let screen = harness.screen();
+            assert!(
+                !screen.contains('Z') && screen.matches('☐').count() == 2,
+                "nothing typed went into the list, nor was a task added:\n{screen}"
+            );
+        }
+    }
+}
+
+// FR-ATT-01, FR-EDIT-01, D-105, D-112, D-136
+#[test]
+fn a_title_edit_ends_kept_when_the_panel_comes_to_cover_its_list() {
+    let (dir, mut harness) = beside_its_list();
+    harness.type_text("j");
+    harness.key(KeyCode::Enter);
+    harness.type_text("X");
+    narrow(&mut harness);
+    assert_eq!(mode(&harness), "ATTACHMENTS", "the panel takes the keys");
+    harness.wait(1000);
+    let saved = fs::read_to_string(dir.path().join("todo.taskpaper")).expect("the file reads");
+    assert!(
+        saved.contains("\t- Beta taskX\n"),
+        "and the edit is saved:\n{saved}"
+    );
+    assert!(
+        !harness.screen().contains("Beta taskX"),
+        "and shows its own item, not the title edited:\n{}",
+        harness.screen()
+    );
+    harness.type_text("Y");
+    harness.key(KeyCode::Esc);
+    let rows = harness.rows();
+    assert!(
+        rows.iter().any(|row| row.contains("Beta taskX")),
+        "the edit is kept:\n{}",
+        harness.screen()
+    );
+    assert!(
+        !rows.iter().any(|row| row.contains("taskXY")),
+        "and what is typed after goes nowhere near it"
+    );
+}
+
+// FR-ATT-02, FR-ATT-03, D-112, D-136
+#[test]
+fn the_panel_that_comes_to_cover_its_list_edits_from_the_first_key() {
+    let (_dir, mut harness) = beside_its_list();
+    narrow(&mut harness);
+    harness.type_text("eY");
+    assert!(
+        harness.rows()[2].contains("│▌Y"),
+        "the note is edited:\n{}",
+        harness.screen()
+    );
 }
