@@ -275,7 +275,7 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
     assert!(done.modifier.contains(Modifier::DIM));
     assert!(!done.modifier.contains(Modifier::REVERSED));
     harness.ctrl('b');
-    harness.type_text("jjjjjjj.");
+    harness.type_text("jjjjjjjjj.");
     let heading = harness.rows()[0].trim_end().to_owned();
     assert!(heading.contains("│  # Work "), "{heading}");
     assert!(heading.ends_with(" 󱙭 tomorrow 󱙬 next Mon"), "{heading}");

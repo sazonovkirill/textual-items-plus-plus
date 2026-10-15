@@ -55,8 +55,8 @@ use crate::{
         self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction,
         EditDialogInput, EditDialogView, EditField, EditInput, Effect, Focus, KeyGroup, Message,
         Opened, PaneView, Part, PickerInput, Place, QuickAddInput, QuickCommentInput, Report,
-        SaveAsInput, SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol,
-        TagEntry, TagMark, TagsFor, TagsView, TextEdit, view::View,
+        SaveAsInput, SaveAsReport, SearchInput, Selected, Settings, Side, SidebarRow, State, Stop,
+        Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit, view::View,
     },
     domain::{ItemId, ItemKind, dates::DateKind},
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
@@ -515,7 +515,13 @@ impl Tui {
             }
             (Pointer::Click(_), Some(Target::Pane(pane))) => self.give_keys(pane),
             (Pointer::Click(_), Some(Target::Sidebar(Some(entry)))) => {
-                let entries = self.state.sidebar().map_or(0, |view| view.entries.len());
+                let view = self.state.sidebar();
+                let rows = view.as_ref().map_or(&[][..], |view| &view.entries[..]);
+                // A heading opens nothing, and browsing steps past it (D-144).
+                if matches!(rows.get(entry), Some(SidebarRow::Heading(_))) {
+                    return;
+                }
+                let entries = rows.len();
                 self.walk(
                     entry,
                     entries,

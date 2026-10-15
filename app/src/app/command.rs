@@ -660,7 +660,7 @@ pub const REGISTRY: &[Entry] = &[
     },
     Entry {
         command: Command::Collapse,
-        title: "Collapse or Expand Project",
+        title: "Collapse or Expand",
         context: Context::Navigate,
     },
     Entry {

@@ -643,8 +643,8 @@ mod tests {
     use super::*;
     use crate::app::{
         AttachmentsInput, Command, DateInput, Direction, EditDialogInput, EditInput, Focus, Go,
-        History, Message, Opened, PickerInput, Prefill, QuickAddInput, Selected, Side, TextEdit,
-        Whose,
+        History, Message, Opened, PickerInput, Prefill, QuickAddInput, Selected, Side, SidebarRow,
+        TextEdit, Whose,
         navigator::Stop,
         update,
         view::{Shown, View},
@@ -1263,7 +1263,7 @@ mod tests {
         let alpha = titled(&state, "Alpha").ok_or("Alpha")?;
         let focused = sidebar.focused.and_then(|at| sidebar.entries.get(at));
         assert!(
-            matches!(focused, Some(Stop::Place(place)) if place.id == alpha),
+            matches!(focused, Some(SidebarRow::Stop(Stop::Place(place))) if place.id == alpha),
             "{focused:?}"
         );
         assert_eq!(sidebar.collapsed, [alpha]);

@@ -285,7 +285,7 @@ fn tab_and_shift_tab_nest_an_item_selected_or_edited_and_leave_the_panes_be() {
     harness.key(KeyCode::Esc);
     harness.key(KeyCode::Esc);
     assert!(
-        harness.rows()[2].starts_with(" \u{f0599} Today                   │▌"),
+        harness.rows()[2].starts_with(" Views                     │▌"),
         "the pane keeps the keys: {}",
         harness.rows()[2]
     );

@@ -315,7 +315,7 @@ fn backslash_goes_round_closed_half_and_full_beside_the_sidebar() {
         "over its whole pane, beside the sidebar"
     );
     let rows = harness.rows();
-    assert!(rows[2].starts_with(" 󰖙 Today"), "the sidebar stays");
+    assert!(rows[3].starts_with(" 󰖙 Today"), "the sidebar stays");
     assert!(rows[9].contains("│ e edit · a comment · \\ hide · Esc close  "));
     harness.type_text("eA note as wide as the panel is now, past half the screen");
     assert_eq!(

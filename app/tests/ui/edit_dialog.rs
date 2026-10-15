@@ -130,7 +130,7 @@ fn m_i_opens_it_too_escape_closes_it_unchanged_and_pasting_types_into_the_field(
 fn the_sidebar_opens_a_projects_dialog_which_pins_it_and_an_areas_without_tags_or_dates() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjjjje");
+    harness.type_text("jjjjjjjjje");
     assert_eq!(
         dialog(&harness),
         [
@@ -155,7 +155,7 @@ fn the_sidebar_opens_a_projects_dialog_which_pins_it_and_an_areas_without_tags_o
     assert!(
         harness
             .rows()
-            .get(9)
+            .get(11)
             .is_some_and(|row| row.starts_with(" # Learn Rust")),
         "pinned after the views"
     );
@@ -176,7 +176,7 @@ fn the_sidebar_opens_a_projects_dialog_which_pins_it_and_an_areas_without_tags_o
 fn a_section_opens_a_dialog_of_its_title_and_description() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjjjjjjjjj");
+    harness.type_text("jjjjjjjjjjjjjj");
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
     harness.type_text("jje");

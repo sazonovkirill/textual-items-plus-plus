@@ -110,22 +110,22 @@ fn filter_today_by_a_tag() {
 fn open_today_from_the_sidebar() {
     let mut harness = Harness::new(80, 16);
     harness.ctrl('b');
-    harness.type_text("j");
+    harness.type_text("jj");
     harness.key(KeyCode::Enter);
     let rows = trimmed(&harness);
     assert!(
-        rows[1].starts_with("                         │"),
+        rows[1].starts_with("                         │") && rows[2].starts_with(" Views"),
         "{rows:#?}"
     );
     assert!(
-        rows[2].starts_with("▌󰖙 Today"),
+        rows[3].starts_with("▌󰖙 Today"),
         "the sidebar keeps the keys: {rows:#?}"
     );
     assert!(rows[0].contains("│  󰖙 Today"), "Enter shows it: {rows:#?}");
     assert!(
-        rows[5].starts_with(" 󰉹 All")
-            && rows[6].starts_with(" 󱓳 Logbook")
-            && rows[7].starts_with(" 󰩺 Trash"),
+        rows[6].starts_with(" 󰉹 All")
+            && rows[7].starts_with(" 󱓳 Logbook")
+            && rows[8].starts_with(" 󰩺 Trash"),
         "the Logbook between All and the Trash: {rows:#?}"
     );
 }

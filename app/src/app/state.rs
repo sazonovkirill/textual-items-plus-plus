@@ -1262,7 +1262,7 @@ impl State {
         let entries = self.sidebar.visible(&self.document);
         let near = std::iter::once(self.pane().shown)
             .chain(self.path().into_iter().rev().map(Shown::Container))
-            .find(|&shown| entries.iter().any(|stop| stop.shown() == shown));
+            .find(|&shown| entries.iter().any(|row| row.shown() == Some(shown)));
         self.sidebar.toggle(near);
     }
 
@@ -1287,7 +1287,6 @@ impl State {
         if sidebar_passes(command) || !self.sidebar.has_keys() {
             return false;
         }
-        let entries = self.sidebar.visible(&self.document);
         let focused = self.sidebar.focused();
         let apply = |state: &mut Self, result: Result<Transaction, moving::Refusal>| match result {
             Ok(transaction) => state.change(transaction),
@@ -1296,7 +1295,7 @@ impl State {
         match (command, focused) {
             (Command::Focus(motion), _) => self.move_sidebar_focus(motion),
             (Command::Collapse, _) => self.sidebar.toggle_collapsed(&self.document),
-            (Command::New(side), _) => self.sidebar_new(&entries, side),
+            (Command::New(side), _) => self.sidebar_new(side),
             // `a` adds an area and `p` a project at the top level (owner, D-75, D-127).
             (Command::AddArea(end), _) => {
                 self.sidebar_add(self.document.inbox(), ItemKind::Area, end);
@@ -1375,12 +1374,18 @@ impl State {
         true
     }
 
-    /// Adds an empty project among `entries` on `side` of the sidebar's focused entry, focuses it
-    /// and starts editing its title in the sidebar. The sidebar lists no tasks or sections, so
-    /// beside any entry it adds a project (D-45, D-127).
-    fn sidebar_new(&mut self, entries: &[Stop], side: Side) {
-        let place = sidebar::place(&self.document, entries, self.sidebar.focused(), side)
-            .expect("the sidebar focuses one of its entries, beside which a project goes");
+    /// Adds an empty project on `side` of the sidebar's focused entry, focuses it and starts
+    /// editing its title in the sidebar. The sidebar lists no tasks or sections, so beside any
+    /// entry it adds a project (D-45, D-127); from a group's heading it adds the first of the
+    /// projects in no area, as from a view (D-144).
+    fn sidebar_new(&mut self, side: Side) {
+        let place = if self.sidebar.on_heading() {
+            (None, 0)
+        } else {
+            let entries = self.sidebar.stops(&self.document);
+            sidebar::place(&self.document, &entries, self.sidebar.focused(), side)
+                .expect("the sidebar focuses one of its entries, beside which a project goes")
+        };
         self.sidebar_add_at(ItemKind::Project, place);
     }
 
@@ -1665,10 +1670,15 @@ impl State {
     /// Focuses the sidebar's entry in `direction`, shown or hidden, and shows it in the first
     /// pane, the keys staying where they are (FR-VIEW-10).
     pub(super) fn browse(&mut self, direction: Direction) {
-        self.move_sidebar_focus(match direction {
+        let motion = match direction {
             Direction::Down => Focus::Next,
             Direction::Up => Focus::Previous,
-        });
+        };
+        let rows = self.sidebar.visible(&self.document);
+        self.sidebar.move_past_headings(&rows, motion);
+        if let Some(shown) = self.sidebar.focused() {
+            self.show_in_first_pane(shown);
+        }
     }
 
     /// Moves the sidebar's focus as `motion` says, shown or hidden, and shows the entry it lands

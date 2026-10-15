@@ -1,5 +1,6 @@
 //! The sidebar left of the pane: the Inbox, the views, the pinned projects, the areas and projects
-//! as a tree, each after its icon with the tasks it lists counted at the right while the settings
+//! as a tree, the views, the pinned projects and the projects in no area under dimmed headings
+//! (D-144), each entry after its icon with the tasks it lists counted at the right while the settings
 //! show task counts, as the Navigator lists them, after a marker on a collapsed area, the entry of what the pane shows on
 //! the selection background, the focused one marked while the sidebar has the keys and the title
 //! being edited there as a text field in its row (FR-VIEW-10, FR-VIEW-12).
@@ -14,7 +15,7 @@ use ratatui::{
 
 use super::{FOCUS_MARKER, Icon, IconSet, Theme};
 use crate::{
-    app::{Part, SidebarView, State, Stop, TextField, view::Shown},
+    app::{Part, SidebarGroup, SidebarRow, SidebarView, State, Stop, TextField, view::Shown},
     domain::{Document, ItemKind, Node},
 };
 
@@ -58,7 +59,7 @@ impl<'a> SidebarPane<'a> {
     ) -> Self {
         let current = std::iter::once(state.shown())
             .chain(state.path().into_iter().rev().map(Shown::Container))
-            .find(|&shown| view.entries.iter().any(|stop| stop.shown() == shown));
+            .find(|&shown| view.entries.iter().any(|row| row.shown() == Some(shown)));
         view.keys &= state.attachments().is_none();
         // The sidebar edits the title of its focused entry, which tells apart the two entries of
         // a pinned project.
@@ -68,7 +69,7 @@ impl<'a> SidebarPane<'a> {
             .and_then(|(id, _, field)| {
                 let edited = |&index: &usize| {
                     (view.entries.get(index))
-                        .is_some_and(|stop| stop.shown() == Shown::Container(id))
+                        .is_some_and(|row| row.shown() == Some(Shown::Container(id)))
                 };
                 view.focused.filter(edited).map(|index| (index, field))
             });
@@ -89,7 +90,7 @@ impl<'a> SidebarPane<'a> {
         let (index, field) = self.editing?;
         let content = content(area);
         let offset = self.offset(content);
-        let stop = *self.view.entries.get(index)?;
+        let stop = self.view.entries.get(index)?.stop()?;
         let row = self.lines.get(index)?.checked_sub(offset)?;
         let y = content.y
             + u16::try_from(row)
@@ -218,16 +219,19 @@ impl Widget for SidebarPane<'_> {
         for y in rule.intersection(area).rows() {
             buf.set_string(y.x, y.y, "│", Style::new().fg(theme.rule));
         }
-        let content = content(area);
         let entries = self
             .entry_rows(area)
             .into_iter()
             .filter_map(|(index, row)| Some((index, *self.view.entries.get(index)?, row)));
-        for (index, stop, row) in entries {
+        for (index, entry, row) in entries {
             let focused = self.view.keys && Some(index) == self.view.focused;
             let editing = self.edited(index).is_some();
             // The text field marks its selection on the selection background.
-            let band = if Some(stop.shown()) == self.current && !editing {
+            let band = if entry
+                .shown()
+                .is_some_and(|shown| Some(shown) == self.current)
+                && !editing
+            {
                 Some(theme.selection)
             } else {
                 focused.then_some(theme.current_line)
@@ -238,51 +242,83 @@ impl Widget for SidebarPane<'_> {
             if focused {
                 buf.set_string(row.x, row.y, FOCUS_MARKER, Style::new().fg(theme.focus));
             }
-            let title = self.title(index, stop, content);
-            // A collapsed project's marker stands before its count, as Todoist's does (D-67).
-            let marker = match stop {
-                Stop::Place(place) => (!place.in_pinned && self.view.collapsed.contains(&place.id))
-                    .then(|| Icon::Collapsed.glyph(self.icons).to_owned()),
-                Stop::View(_) => None,
-            };
-            // A zero is left out, as Things 3 leaves it out.
-            let tasks = (self.view.counts.get(index))
-                .filter(|&&tasks| tasks > 0)
-                .map(usize::to_string);
-            let count = marker
-                .into_iter()
-                .chain(tasks)
-                .fold(String::new(), |count, part| count + " " + &part);
-            let count = Span::styled(count, Style::new().fg(theme.dim_text));
-            let count_width = u16::try_from(count.width()).unwrap_or(u16::MAX);
-            let icon_area = Rect::new(title.icon, row.y, title.x.saturating_sub(title.icon), 1);
-            Span::styled(
-                super::stop_icon(stop).glyph(self.icons),
-                Style::new().fg(super::stop_icon_color(theme, stop)),
-            )
-            .render(icon_area.intersection(row), buf);
-            let right = if editing { 0 } else { count_width };
-            let text = Rect::new(
-                title.x,
-                row.y,
-                row.right().saturating_sub(title.x).saturating_sub(right),
-                1,
-            );
-            Paragraph::new(self.title_line(index, stop))
-                .scroll((0, u16::try_from(title.shift).unwrap_or(u16::MAX)))
-                .render(text.intersection(row), buf);
-            if !editing {
-                let at = Rect::new(
-                    row.right().saturating_sub(count_width),
-                    row.y,
-                    count_width,
-                    1,
-                );
-                count.render(at.intersection(row), buf);
+            match entry {
+                SidebarRow::Heading(group) => self.render_heading(group, row, buf),
+                SidebarRow::Stop(stop) => self.render_stop(index, stop, row, buf),
             }
             if band.is_some() {
                 super::band_text(buf, row, theme.band_text);
             }
+        }
+    }
+}
+
+impl SidebarPane<'_> {
+    /// Draws the heading of `group` in `row`, dimmed where an entry's icon starts, with a marker
+    /// at the right while it is folded (D-144).
+    fn render_heading(&self, group: SidebarGroup, row: Rect, buf: &mut Buffer) {
+        let dim = Style::new().fg(self.theme.dim_text);
+        let at = Rect {
+            x: row.x.saturating_add(1),
+            width: row.width.saturating_sub(1),
+            ..row
+        };
+        Span::styled(group.title(), dim).render(at, buf);
+        if self.view.folded.contains(&group) {
+            let marker = Span::styled(format!(" {}", Icon::Collapsed.glyph(self.icons)), dim);
+            let width = u16::try_from(marker.width()).unwrap_or(u16::MAX);
+            let at = Rect::new(row.right().saturating_sub(width), row.y, width, 1);
+            marker.render(at.intersection(row), buf);
+        }
+    }
+
+    /// Draws the entry `stop`, the one at `index`, in `row`: its icon, its title or the text
+    /// field editing it, and its count.
+    fn render_stop(&self, index: usize, stop: Stop, row: Rect, buf: &mut Buffer) {
+        let theme = self.theme;
+        let editing = self.edited(index).is_some();
+        // An entry's row spans the sidebar's content left of the rule.
+        let title = self.title(index, stop, row);
+        // A collapsed project's marker stands before its count, as Todoist's does (D-67).
+        let marker = match stop {
+            Stop::Place(place) => (!place.in_pinned && self.view.collapsed.contains(&place.id))
+                .then(|| Icon::Collapsed.glyph(self.icons).to_owned()),
+            Stop::View(_) => None,
+        };
+        // A zero is left out, as Things 3 leaves it out.
+        let tasks = (self.view.counts.get(index))
+            .filter(|&&tasks| tasks > 0)
+            .map(usize::to_string);
+        let count = marker
+            .into_iter()
+            .chain(tasks)
+            .fold(String::new(), |count, part| count + " " + &part);
+        let count = Span::styled(count, Style::new().fg(theme.dim_text));
+        let count_width = u16::try_from(count.width()).unwrap_or(u16::MAX);
+        let icon_area = Rect::new(title.icon, row.y, title.x.saturating_sub(title.icon), 1);
+        Span::styled(
+            super::stop_icon(stop).glyph(self.icons),
+            Style::new().fg(super::stop_icon_color(theme, stop)),
+        )
+        .render(icon_area.intersection(row), buf);
+        let right = if editing { 0 } else { count_width };
+        let text = Rect::new(
+            title.x,
+            row.y,
+            row.right().saturating_sub(title.x).saturating_sub(right),
+            1,
+        );
+        Paragraph::new(self.title_line(index, stop))
+            .scroll((0, u16::try_from(title.shift).unwrap_or(u16::MAX)))
+            .render(text.intersection(row), buf);
+        if !editing {
+            let at = Rect::new(
+                row.right().saturating_sub(count_width),
+                row.y,
+                count_width,
+                1,
+            );
+            count.render(at.intersection(row), buf);
         }
     }
 }
@@ -296,8 +332,9 @@ fn content(area: Rect) -> Rect {
 }
 
 /// The line each of `entries` is drawn on: a blank line sets off the Inbox, the views, the
-/// pinned projects, the projects in no area and each area with what it holds (D-45, FR-VIEW-12).
-fn lines(entries: &[Stop]) -> Vec<usize> {
+/// pinned projects, the projects in no area, each from its heading, and each area with what it
+/// holds (D-45, FR-VIEW-12, D-144).
+fn lines(entries: &[SidebarRow]) -> Vec<usize> {
     #[derive(PartialEq)]
     enum Group {
         Inbox,
@@ -309,16 +346,21 @@ fn lines(entries: &[Stop]) -> Vec<usize> {
     let mut line = 0;
     let mut group = None;
     let mut lines = Vec::with_capacity(entries.len());
-    for &stop in entries {
-        if stop.depth() == 0 {
-            let this = match stop {
-                Stop::Place(place) if place.in_pinned => Group::Pinned,
-                Stop::Place(place) => match place.kind {
+    for &row in entries {
+        let depth = row.stop().map_or(0, Stop::depth);
+        if depth == 0 {
+            let this = match row {
+                SidebarRow::Heading(SidebarGroup::Pinned) => Group::Pinned,
+                SidebarRow::Heading(SidebarGroup::Projects) => Group::Projects,
+                SidebarRow::Stop(Stop::Place(place)) if place.in_pinned => Group::Pinned,
+                SidebarRow::Stop(Stop::Place(place)) => match place.kind {
                     ItemKind::Inbox => Group::Inbox,
                     ItemKind::Area => Group::Area,
                     _ => Group::Projects,
                 },
-                Stop::View(_) => Group::Views,
+                SidebarRow::Heading(SidebarGroup::Views) | SidebarRow::Stop(Stop::View(_)) => {
+                    Group::Views
+                }
             };
             if group
                 .as_ref()
@@ -386,6 +428,27 @@ mod tests {
         (rows, buf, caret)
     }
 
+    /// The demo's sidebar drawn 20 columns by 17, focused on Website while it has the keys.
+    const DRAWN: [&str; 17] = [
+        " ⊔ Inbox           │",
+        "                   │",
+        " Views             │",
+        " ☼ Today           │",
+        " » Upcoming        │",
+        " ⚑ Flagged         │",
+        " ∷ All            3│",
+        " ▤ Logbook         │",
+        " ✕ Trash           │",
+        "                   │",
+        " Projects          │",
+        " # Learn Rust      │",
+        "                   │",
+        " ◆ WORK           3│",
+        "▌# Website        3│",
+        " # Blog            │",
+        "                   │",
+    ];
+
     // FR-VIEW-10, FR-UI-04, D-78
     #[test]
     fn draws_the_groups_with_counts_and_marks_the_focus_while_it_has_the_keys()
@@ -394,27 +457,8 @@ mod tests {
         for motion in [crate::app::Focus::Last, crate::app::Focus::Previous] {
             give(&mut state, Command::Focus(motion));
         }
-        let (rows, buf, caret) = draw(&state, 20, 15);
-        assert_eq!(
-            rows,
-            [
-                " ⊔ Inbox           │",
-                "                   │",
-                " ☼ Today           │",
-                " » Upcoming        │",
-                " ⚑ Flagged         │",
-                " ∷ All            3│",
-                " ▤ Logbook         │",
-                " ✕ Trash           │",
-                "                   │",
-                " # Learn Rust      │",
-                "                   │",
-                " ◆ WORK           3│",
-                "▌# Website        3│",
-                " # Blog            │",
-                "                   │",
-            ]
-        );
+        let (rows, buf, caret) = draw(&state, 20, 17);
+        assert_eq!(rows, DRAWN);
         assert_eq!(caret, None, "nothing is edited");
         let line = |title: &str| {
             let at = rows.iter().position(|row| row.contains(title));
@@ -467,7 +511,7 @@ mod tests {
         assert_eq!(buf[(18, line("All"))].fg, theme.dim_text, "a view's count");
         assert_eq!(buf[(19, 0)].fg, theme.rule);
         give(&mut state, Command::FocusRight);
-        let (rows, buf, _) = draw(&state, 20, 14);
+        let (rows, buf, _) = draw(&state, 20, 16);
         assert!(
             rows[usize::from(website)].starts_with(" # Website"),
             "no marker: {rows:?}"
@@ -475,7 +519,7 @@ mod tests {
         assert_ne!(buf[(5, website)].bg, theme.current_line);
         give(&mut state, Command::FocusLeft);
         give(&mut state, Command::EditTitle);
-        let (_, buf, _) = draw(&state, 20, 14);
+        let (_, buf, _) = draw(&state, 20, 16);
         assert_eq!(
             (
                 buf[(1, website)].fg,
@@ -487,7 +531,7 @@ mod tests {
         );
         assert_ne!(buf[(5, 0)].bg, theme.selection);
         give(&mut state, Command::Go(crate::app::Go::View(View::Today)));
-        let (_, buf, _) = draw(&state, 20, 14);
+        let (_, buf, _) = draw(&state, 20, 16);
         assert_eq!(buf[(5, today)].bg, theme.selection, "the view shown");
         Ok(())
     }
@@ -523,6 +567,35 @@ mod tests {
         Ok(())
     }
 
+    // FR-VIEW-10, D-144
+    #[test]
+    fn a_folded_group_shows_its_heading_alone_with_a_marker() -> Result<(), PlacementError> {
+        let mut state = state()?;
+        give(&mut state, Command::Focus(crate::app::Focus::First));
+        give(&mut state, Command::Focus(crate::app::Focus::Next));
+        give(&mut state, Command::Collapse);
+        let (rows, buf, _) = draw(&state, 20, 6);
+        assert_eq!(
+            rows,
+            [
+                " ⊔ Inbox           │",
+                "                   │",
+                "▌Views            ▸│",
+                "                   │",
+                " Projects          │",
+                " # Learn Rust      │",
+            ]
+        );
+        let theme = BuiltIn::default().colors();
+        assert_eq!(
+            (buf[(1, 2)].fg, buf[(18, 2)].fg, buf[(1, 2)].bg),
+            (theme.dim_text, theme.dim_text, theme.current_line),
+            "dimmed, on the focus band"
+        );
+        assert_eq!(buf[(1, 4)].fg, theme.dim_text);
+        Ok(())
+    }
+
     // FR-VIEW-10
     #[test]
     fn scrolls_to_keep_the_focus_in_view() -> Result<(), PlacementError> {
@@ -555,8 +628,8 @@ mod tests {
         };
         let row = |y| Rect::new(0, y, 19, 1);
         assert_eq!(
-            rows(&state, 15),
-            [0, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13]
+            rows(&state, 17),
+            [0, 2, 3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15]
                 .into_iter()
                 .enumerate()
                 .map(|(entry, y)| (entry, row(y)))
@@ -566,7 +639,7 @@ mod tests {
         give(&mut state, Command::Focus(crate::app::Focus::Last));
         assert_eq!(
             rows(&state, 2),
-            [(9, row(0)), (10, row(1))],
+            [(11, row(0)), (12, row(1))],
             "scrolled to keep the focus in view"
         );
         Ok(())

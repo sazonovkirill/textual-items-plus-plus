@@ -208,11 +208,11 @@ fn c_adds_a_comment_from_a_line_at_the_bottom_without_the_panel() {
     );
     harness.key(KeyCode::Esc);
     harness.ctrl('b');
-    harness.type_text("jc");
+    harness.type_text("jjc");
     let rows = harness.rows();
     assert!(rows[15].contains("a view takes no comments"), "{rows:#?}");
     assert!(!rows.iter().any(|row| row.contains('┌')), "nothing opens");
-    harness.type_text("kc");
+    harness.type_text("kkc");
     assert!(
         harness.rows()[12].starts_with("┌ Comment on Inbox "),
         "the sidebar's entry takes one"
