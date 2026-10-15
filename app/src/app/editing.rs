@@ -14,8 +14,8 @@ use crate::domain::{
 pub enum EditInput {
     /// Changes the text being edited.
     Text(TextEdit),
-    /// Ends editing and, for a title, adds the next task below, unless the task edited was new
-    /// and is left empty, which only ends editing.
+    /// Ends editing and, for a checklist item, adds the next one below, unless the one edited
+    /// was new and is left empty, which only ends editing (D-123).
     Next,
     /// Ends editing.
     Done,

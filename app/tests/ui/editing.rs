@@ -64,11 +64,18 @@ fn add_and_rename_a_task() {
         "the cursor stands after the text typed"
     );
     harness.key(KeyCode::Enter);
-    harness.type_text("Water plants");
-    harness.key(KeyCode::Enter);
-    harness.key(KeyCode::Esc);
-    assert_eq!(mode(&harness), "NAVIGATE");
+    assert_eq!(
+        mode(&harness),
+        "NAVIGATE",
+        "Enter only ends editing (D-123)"
+    );
     assert_eq!(harness.tui.cursor(SCREEN), None);
+    harness.key(KeyCode::Char('o'));
+    harness.type_text("Water plants");
+    harness.key(KeyCode::Esc);
+    harness.key(KeyCode::Char('o'));
+    harness.key(KeyCode::Enter);
+    assert_eq!(mode(&harness), "NAVIGATE");
     assert_eq!(
         items(&harness),
         [CALL, "Pay rent", "*Water plants", COFFEE, READ].map(String::from),

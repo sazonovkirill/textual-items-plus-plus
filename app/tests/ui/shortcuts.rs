@@ -255,8 +255,8 @@ fn edit_mode_lists_the_keys_of_the_title_or_the_description_edited() {
         lines.get(1..4).unwrap_or_default(),
         [
             "│ Editing",
-            "│  Done, Then Next Task           Enter",
-            "│  Done                             Esc",
+            "│  Done                      Enter, Esc",
+            "│  Paste                         Ctrl+V",
         ]
     );
     assert!(

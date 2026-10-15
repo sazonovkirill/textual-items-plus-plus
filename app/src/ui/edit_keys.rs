@@ -1,4 +1,4 @@
-//! The keys of edit mode: `Enter` and `Esc` end it, as in taskpaper-terminal, and the standard
+//! The keys of edit mode: `Enter` and `Esc` end it (owner, D-123), and the standard
 //! text keys edit the title (FR-EDIT-01, FR-EDIT-04,
 //! [editing.md §2](../../../specs/reference/taskpaper-terminal/specs/editing.md#2-edit-mode)); a
 //! description takes the keys of taskpaper-terminal's note editor instead
@@ -14,7 +14,7 @@ use crate::app::{EditInput, Motion, TextEdit};
 
 /// The keys of edit mode besides the text keys.
 pub(super) const EDIT: &[(Key, EditInput)] = &[
-    ((KeyModifiers::NONE, KeyCode::Enter), EditInput::Next),
+    ((KeyModifiers::NONE, KeyCode::Enter), EditInput::Done),
     ((KeyModifiers::NONE, KeyCode::Esc), EditInput::Done),
 ];
 
@@ -32,9 +32,11 @@ pub(super) fn edit_input(event: &Event) -> Option<EditInput> {
         .or_else(|| text_keys::text_edit(key).map(EditInput::Text))
 }
 
-/// The keys of a checklist item's edit mode besides those of edit mode: `Tab` and `Shift+Tab`
+/// The keys of a checklist item's edit mode besides those of edit mode: `Enter` goes on to the
+/// next item, so that a list is typed one item after another (D-123), and `Tab` and `Shift+Tab`
 /// indent and outdent it, as `]` and `[` do while it is selected (FR-CHK-03).
 pub(super) const CHECKLIST: &[(Key, EditInput)] = &[
+    ((KeyModifiers::NONE, KeyCode::Enter), EditInput::Next),
     ((KeyModifiers::NONE, KeyCode::Tab), EditInput::Indent),
     ((KeyModifiers::SHIFT, KeyCode::BackTab), EditInput::Outdent),
 ];
@@ -129,10 +131,10 @@ mod tests {
 
     // FR-EDIT-01
     #[test]
-    fn enter_goes_on_to_the_next_task_and_escape_ends_editing() {
+    fn enter_and_escape_end_editing() {
         assert_eq!(
             edit_input(&press(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(EditInput::Next)
+            Some(EditInput::Done)
         );
         assert_eq!(
             edit_input(&press(KeyCode::Esc, KeyModifiers::NONE)),

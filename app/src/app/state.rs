@@ -961,8 +961,6 @@ impl State {
     /// [`EditInput::Done`] does, except in a checklist item's (D-84); only a checklist item is
     /// indented and outdented. Nothing happens outside edit mode.
     pub(super) fn edit_input(&mut self, input: EditInput) {
-        let container = self.container();
-        let in_panel = self.panel_has_keys();
         let Some(editing) = self.editing.as_mut() else {
             return;
         };
@@ -979,20 +977,10 @@ impl State {
                     self.notify(Notice::TagInTitle);
                 }
             }
-            EditInput::Next if in_panel => {
+            EditInput::Next => {
                 let checklist = editing.kind() == ItemKind::ChecklistItem;
                 if self.finish_editing() && checklist {
                     self.new_checklist_item(Side::Below);
-                }
-            }
-            EditInput::Next => {
-                let row =
-                    container.is_some_and(|id| id != editing.id()) && !self.sidebar.has_keys();
-                let next = row
-                    && editing.part() == Part::Title
-                    && matches!(editing.kind(), ItemKind::Task | ItemKind::Section);
-                if self.finish_editing() && next {
-                    self.new_task(Side::Below);
                 }
             }
             EditInput::Done => {
@@ -2094,7 +2082,7 @@ mod tests {
         );
         type_text(&mut state, "a\nb");
         state.edit_input(EditInput::Next);
-        assert!(state.editing().is_none(), "the next task is for titles");
+        assert!(state.editing().is_none(), "only a checklist item goes on");
         assert_eq!(state.rows(), rows, "no task was added");
         assert_eq!(description(&state, loose), Some("a\nb"));
         state.move_focus(Focus::Last);
@@ -2129,7 +2117,7 @@ mod tests {
 
     // FR-EDIT-05, FR-EDIT-06
     #[test]
-    fn enter_adds_tasks_one_after_another_until_one_is_left_empty() -> Result<(), PlacementError> {
+    fn going_on_from_a_task_only_ends_editing() -> Result<(), PlacementError> {
         let Fixture {
             mut state,
             inbox_task,
@@ -2139,21 +2127,16 @@ mod tests {
         state.new_task(Side::Below);
         type_text(&mut state, "second");
         state.edit_input(EditInput::Next);
-        type_text(&mut state, "third");
-        state.edit_input(EditInput::Next);
-        state.edit_input(EditInput::Next);
-        assert!(state.editing().is_none());
+        assert!(state.editing().is_none(), "only a checklist item goes on");
         let titles: Vec<_> = state
             .document()
             .children(inbox)
             .iter()
             .filter_map(|&id| title(&state, id))
             .collect();
-        assert_eq!(titles, ["i", "second", "third"]);
-        let third = state.document().children(inbox).last().copied();
-        assert_eq!(state.selection().focused(), third);
-        state.undo();
-        assert_eq!(state.document().children(inbox).len(), 2);
+        assert_eq!(titles, ["i", "second"]);
+        let second = state.document().children(inbox).last().copied();
+        assert_eq!(state.selection().focused(), second);
         state.undo();
         assert_eq!(state.document().children(inbox), [inbox_task]);
         assert_eq!(state.selection().focused(), Some(inbox_task));
@@ -2457,8 +2440,7 @@ mod tests {
 
     // FR-EDIT-05, FR-ORG-06
     #[test]
-    fn a_new_section_is_edited_in_its_row_and_enter_adds_its_first_task()
-    -> Result<(), PlacementError> {
+    fn a_new_section_is_edited_in_its_row() -> Result<(), PlacementError> {
         let Fixture {
             mut state,
             work,
@@ -2476,9 +2458,6 @@ mod tests {
             "the new section comes first among the sections"
         );
         type_text(&mut state, "Next");
-        state.edit_input(EditInput::Next);
-        let (task, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
-        assert_eq!(state.document().children(new), [task]);
         state.edit_input(EditInput::Done);
         assert_eq!(title(&state, new), Some("Next"));
         assert_eq!(

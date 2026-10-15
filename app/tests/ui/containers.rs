@@ -48,11 +48,9 @@ fn add_an_area_with_a_project_and_a_section() {
     harness.key(KeyCode::Esc);
     harness.type_text("SChores");
     harness.key(KeyCode::Enter);
-    harness.type_text("Sweep");
-    harness.key(KeyCode::Esc);
     assert_eq!(
         pane(&harness),
-        ["  󰆧 Home", "", "  / Chores", "▌ ☐ Sweep", "", "  # Garden",]
+        ["  󰆧 Home", "", "▌ / Chores", "", "  # Garden",]
     );
 }
 

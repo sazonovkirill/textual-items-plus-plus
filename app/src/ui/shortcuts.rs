@@ -108,10 +108,11 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             "Editing Checklist Item",
             named(CHECKLIST, edit_name)
                 .into_iter()
-                .chain(named(EDIT, |input| match input {
-                    EditInput::Next => "Done, Then Next Item".to_owned(),
-                    input => edit_name(input),
-                }))
+                .chain(
+                    named(EDIT, edit_name)
+                        .into_iter()
+                        .filter(|&(key, _)| CHECKLIST.iter().all(|&(bound, _)| bound != key)),
+                )
                 .collect(),
         ),
         Window::Editing(Part::Comment(_)) => ("Editing Comment", named(COMMENT, edit_name)),
@@ -253,7 +254,7 @@ fn settings_name(input: SettingsInput) -> String {
 fn edit_name(input: EditInput) -> String {
     match input {
         EditInput::Text(edit) => text_name(edit),
-        EditInput::Next => "Done, Then Next Task".to_owned(),
+        EditInput::Next => "Done, Then Next Item".to_owned(),
         EditInput::Done => "Done".to_owned(),
         EditInput::Cancel => "Cancel".to_owned(),
         EditInput::Indent => "Indent".to_owned(),
@@ -588,7 +589,7 @@ mod tests {
         );
         assert_eq!(
             headings(Window::Editing(Part::Title)),
-            [("Editing", 3), ("Text", 19)]
+            [("Editing", 2), ("Text", 19)]
         );
         assert_eq!(
             headings(Window::Editing(Part::Description)),
@@ -607,9 +608,9 @@ mod tests {
             (
                 "Editing Checklist Item",
                 [
+                    ("Done, Then Next Item", "Enter"),
                     ("Indent", "Tab"),
                     ("Outdent", "Shift+Tab"),
-                    ("Done, Then Next Item", "Enter"),
                     ("Done", "Esc"),
                     ("Paste", "Ctrl+V"),
                 ]
