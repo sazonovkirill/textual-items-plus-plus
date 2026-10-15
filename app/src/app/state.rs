@@ -26,6 +26,7 @@ use super::{
     settings::{Setting, Settings},
     sidebar::{self, Sidebar},
     tags::{Choice, TagPicker, TagsView},
+    theme_picker::ThemePicker,
     today, trash,
     view::{self, Group, Shown, View},
     visits::Visit,
@@ -93,6 +94,8 @@ pub struct State {
     pub(super) settings_window: Option<Setting>,
     /// The Save As prompt, while it is open (FR-STORE-11).
     pub(super) save_as: Option<SaveAs>,
+    /// The theme picker, while it is open (FR-UI-12).
+    pub(super) theme_picker: Option<ThemePicker>,
     /// Whether the words the pane searches for are typed (FR-SRCH-01).
     pub(super) searching: bool,
     pub(super) saving: Saving,
@@ -141,6 +144,7 @@ impl State {
             default_settings: Settings::default(),
             settings_window: None,
             save_as: None,
+            theme_picker: None,
             searching: false,
             saving,
         }
@@ -348,6 +352,7 @@ impl State {
             || self.edit_dialog.is_some()
             || self.settings_window.is_some()
             || self.save_as.is_some()
+            || self.theme_picker.is_some()
             || self.searching
     }
 
@@ -1710,6 +1715,7 @@ impl State {
         self.context_menu = None;
         self.go_to_symbol = None;
         self.settings_window = None;
+        self.dismiss_theme_picker();
         self.move_to = None;
         self.date_prompt = None;
         self.quick_add = None;
@@ -1818,6 +1824,7 @@ fn sidebar_passes(command: Command) -> bool {
             | Command::Shortcuts
             | Command::ScrollShortcuts(_)
             | Command::Settings
+            | Command::ChangeTheme
             | Command::SaveAs
             | Command::StartWeather
             | Command::Go(_)

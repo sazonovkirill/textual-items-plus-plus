@@ -111,6 +111,19 @@ impl BuiltIn {
         }
     }
 
+    /// Whether the theme is light, dark text on a light background, rather than dark.
+    #[must_use]
+    pub fn is_light(self) -> bool {
+        matches!(
+            self,
+            Self::GithubLight
+                | Self::FlexokiLight
+                | Self::GruvboxLight
+                | Self::MelangeLight
+                | Self::Dayfox
+        )
+    }
+
     /// The theme's name on screen, such as `Catppuccin Mocha`.
     #[must_use]
     pub fn name(self) -> &'static str {

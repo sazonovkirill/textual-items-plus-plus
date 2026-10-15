@@ -181,6 +181,9 @@ pub enum Command {
     ScrollShortcuts(Direction),
     /// Open the settings window (FR-SET-02).
     Settings,
+    /// Open the theme picker, which draws the app in each theme it highlights and keeps the one
+    /// chosen (FR-UI-12).
+    ChangeTheme,
     /// Write the document to another file, which saving follows from then on (FR-STORE-11).
     SaveAs,
     /// Start the weather at once, whatever the settings say (FR-UI-08).
@@ -781,6 +784,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Settings,
         title: "Open Settings",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::ChangeTheme,
+        title: "Change Theme",
         context: Context::Navigate,
     },
     Entry {

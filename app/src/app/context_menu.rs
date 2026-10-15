@@ -102,6 +102,7 @@ impl Reach {
             | Command::Shortcuts
             | Command::ScrollShortcuts(_)
             | Command::Settings
+            | Command::ChangeTheme
             | Command::SaveAs
             | Command::StartWeather
             | Command::KeepMine

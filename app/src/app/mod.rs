@@ -44,6 +44,7 @@ mod state;
 mod tags;
 mod text_field;
 mod text_path;
+mod theme_picker;
 mod today;
 mod trash;
 mod upcoming;

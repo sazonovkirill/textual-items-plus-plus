@@ -1109,7 +1109,7 @@ mod tests {
         assert_eq!(gray(Color::Indexed(75), Color::Reset), Color::Reset);
     }
 
-    // FR-UI-03, D-125
+    // FR-UI-03, FR-UI-12, D-125
     #[test]
     fn the_light_themes_are_light_and_the_others_dark() {
         let white = Color::Rgb(255, 255, 255);
@@ -1126,5 +1126,10 @@ mod tests {
                 BuiltIn::Dayfox,
             ]
         );
+        let declared: Vec<_> = BuiltIn::ALL
+            .into_iter()
+            .filter(|theme| theme.is_light())
+            .collect();
+        assert_eq!(declared, light, "the theme picker lists them as light");
     }
 }

@@ -47,6 +47,8 @@ pub enum Message {
     Settings(SettingsInput),
     /// The user did something in the open Save As prompt (FR-STORE-11).
     SaveAs(SaveAsInput),
+    /// The user did something in the open theme picker (FR-UI-12).
+    ThemePicker(PickerInput),
     /// Something went wrong with the settings file, as the frontend says it: what the file sets
     /// that the app ignored, or that a setting could not be kept (FR-SET-04).
     SettingsFailed(String),
@@ -204,6 +206,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Attachments(input) => state.attachments_input(input),
         Message::Settings(input) => return state.settings_input(input),
         Message::SaveAs(input) => return state.save_as_input(input),
+        Message::ThemePicker(input) => return state.theme_picker_input(input),
         Message::SettingsFailed(problem) => state.settings_failed(problem),
         Message::NoWeather => state.notify(Notice::NoWeather),
         Message::Command(command) => return run(state, command, today, asked.as_ref()),
@@ -297,6 +300,7 @@ fn run(state: &mut State, command: Command, today: Date, asked: Option<&Notice>)
             return vec![Effect::ScrollShortcuts(direction)];
         }
         Command::Settings => state.open_settings(),
+        Command::ChangeTheme => state.open_theme_picker(),
         Command::SaveAs => state.open_save_as(),
         Command::StartWeather => return vec![Effect::StartWeather],
     }

@@ -132,6 +132,7 @@ impl KeyGroup {
             | Command::Palette
             | Command::ContextMenu
             | Command::Settings
+            | Command::ChangeTheme
             | Command::SaveAs
             | Command::StartWeather => Self::View,
             Command::KeepMine | Command::TakeTheirs | Command::ShowDiff => Self::Conflict,

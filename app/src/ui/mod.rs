@@ -630,6 +630,7 @@ impl Tui {
             .navigator()
             .map(|view| view.focused)
             .or_else(|| state.palette().map(|view| view.focused))
+            .or_else(|| state.theme_picker().map(|view| view.focused))
             .or_else(|| state.context_menu().map(|view| view.focused))
             .or_else(|| state.go_to_symbol().map(|view| view.focused))
             .or_else(|| state.move_to().map(|view| view.focused))
@@ -851,6 +852,8 @@ impl Tui {
             Some(Message::Navigator)
         } else if self.state.palette().is_some() {
             Some(Message::Palette)
+        } else if self.state.theme_picker().is_some() {
+            Some(Message::ThemePicker)
         } else if self.state.context_menu().is_some() {
             Some(Message::ContextMenu)
         } else if self.state.go_to_symbol().is_some() {
@@ -916,6 +919,9 @@ impl Tui {
         }
         if let Some(view) = self.state.palette() {
             return palette_popup(&view, &self.theme, self.icons()).caret(panes);
+        }
+        if let Some(view) = self.state.theme_picker() {
+            return theme_picker_popup(&view, &self.theme, self.icons()).caret(panes);
         }
         if let Some(view) = self.state.context_menu() {
             return context_menu_popup(&view, self.focused_row, &self.theme, self.icons())
@@ -1349,6 +1355,11 @@ impl Tui {
             add_picker(&mut self.targets, &popup, panes);
             popup.render(panes, buf);
         }
+        if let Some(view) = self.state.theme_picker() {
+            let popup = theme_picker_popup(&view, &self.theme, icons);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
+        }
         if let Some(view) = self.state.context_menu() {
             let keys = |&command: &Command| self.keymap.labels(command);
             let popup =
@@ -1500,6 +1511,22 @@ fn palette_popup<'a>(
     icons: IconSet,
 ) -> PickerPopup<'a, Command> {
     PickerPopup::new("Command Palette", view, &|_| Icon::Command, icons, theme)
+}
+
+/// The theme picker's window, each theme after the theme icon under the heading of its kind,
+/// dark or light (FR-UI-12).
+fn theme_picker_popup<'a>(
+    view: &'a app::PickerView<'a, BuiltIn>,
+    theme: &'a Theme,
+    icons: IconSet,
+) -> PickerPopup<'a, BuiltIn> {
+    PickerPopup::new("Change Theme", view, &|_| Icon::Theme, icons, theme).headings(&|&shown| {
+        if shown.is_light() {
+            "Light Themes"
+        } else {
+            "Dark Themes"
+        }
+    })
 }
 
 /// The context menu's window, dropped down below the focused row while it is on screen, else

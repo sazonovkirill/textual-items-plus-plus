@@ -61,6 +61,8 @@ pub enum Icon {
     Tag,
     /// A command, in the command palette.
     Command,
+    /// A theme, in the theme picker.
+    Theme,
     /// Search results and the words searched for.
     Search,
     /// Duplicating, in the context menu.
@@ -133,6 +135,8 @@ impl Icon {
             Self::Tag => ("\u{f04fc}", "@"),
             // nf-md-console_line
             Self::Command => ("\u{f07b7}", "❯"),
+            // nf-md-palette
+            Self::Theme => ("\u{f03d8}", "◐"),
             // nf-md-magnify
             Self::Search => ("\u{f0349}", "⌕"),
             // nf-md-content_copy, as taskpaper-terminal marks Duplicate.
@@ -147,7 +151,7 @@ mod tests {
 
     use super::*;
 
-    const ICONS: [Icon; 29] = [
+    const ICONS: [Icon; 30] = [
         Icon::Area,
         Icon::Project,
         Icon::Section,
@@ -175,6 +179,7 @@ mod tests {
         Icon::Unsaved,
         Icon::Tag,
         Icon::Command,
+        Icon::Theme,
         Icon::Search,
         Icon::Duplicate,
     ];

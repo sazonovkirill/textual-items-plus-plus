@@ -39,6 +39,7 @@ mod sidebar;
 mod support;
 mod tagging;
 mod terminals;
+mod theme_picker;
 mod today;
 mod trash;
 mod upcoming;
