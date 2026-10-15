@@ -14,6 +14,7 @@ mod field;
 mod file;
 mod keymap;
 mod markdown;
+mod mouse;
 mod panes;
 mod picker;
 mod quick_add;
@@ -32,7 +33,7 @@ use std::{
     time::Duration,
 };
 
-use crossterm::event::{Event, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{Event, KeyModifiers};
 use jiff::civil::Date;
 use ratatui::{
     buffer::Buffer,
@@ -56,7 +57,7 @@ use crate::{
         SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol, TagEntry,
         TagMark, TagsFor, TagsView, TextEdit, view::View,
     },
-    domain::{ItemKind, dates::DateKind},
+    domain::{ItemId, ItemKind, dates::DateKind},
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
 };
 use animation::{Animator, Before, DrawnPane, Intent};
@@ -67,6 +68,7 @@ use container::{ContainerPane, Top};
 use date_prompt::DatePromptPanel;
 use edit_dialog::EditDialogPanel;
 use file::File;
+use mouse::{Pointer, Target, Targets, WHEEL};
 use quick_add::QuickAddPanel;
 use save_as::SaveAsPanel;
 use settings::SettingsWindow;
@@ -74,10 +76,6 @@ use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
 use sidebar::SidebarPane;
 use status::StatusLine;
 use weather::{Idle, Season, Weather};
-
-/// How many lines a turn of the mouse wheel scrolls the shortcuts panel, as terminals and
-/// editors commonly scroll (D-74).
-const WHEEL: usize = 3;
 
 /// The glyph marking what has the focus: the focused row, sidebar entry or attachment (D-30 of
 /// taskpaper-terminal).
@@ -143,6 +141,8 @@ pub struct Tui {
     /// has the keys, was last drawn, while it was on screen, which the context menu drops down
     /// below (FR-KEY-07).
     focused_row: Option<Rect>,
+    /// What the last frame drew where the mouse can point at it (FR-KEY-05).
+    targets: Targets,
 }
 
 impl Tui {
@@ -171,6 +171,7 @@ impl Tui {
             now: Duration::ZERO,
             weather: Weather::default(),
             focused_row: None,
+            targets: Targets::default(),
         }
     }
 
@@ -313,9 +314,9 @@ impl Tui {
     /// clipboard's text there as a terminal paste goes in (FR-EDIT-04), and so do the date
     /// prompt (FR-DATE-02), the Save As prompt (FR-STORE-11) and the settings window (FR-SET-02). The attachments panel that has
     /// the keys takes them, scrolling itself (FR-ATT-01), leaving quitting, the commands it acts
-    /// on (FR-CHK-03) and those moving the keys to another list or panel (FR-PANE-02). The mouse wheel scrolls the shortcuts panel while it shows, and the mouse
-    /// does nothing else (D-74). A key, paste, click or resize while the weather plays only ends
-    /// it (FR-UI-08).
+    /// on (FR-CHK-03) and those moving the keys to another list or panel (FR-PANE-02). A click
+    /// or a turn of the wheel does what [`mouse`](Self::mouse) says (FR-KEY-05). A key, paste,
+    /// click, move of the mouse or resize while the weather plays only ends it (FR-UI-08).
     pub fn handle(&mut self, event: &Event, today: Date) {
         self.input(Input::Terminal(event.clone()), today);
     }
@@ -323,6 +324,13 @@ impl Tui {
     /// Takes in one terminal event, as [`handle`](Self::handle) says, ending the effects running
     /// first so that what it changes shows at once (FR-UI-07).
     fn take(&mut self, event: &Event) {
+        if let Event::Mouse(mouse) = event
+            && Pointer::of(*mouse).is_none()
+        {
+            // The pointer moves all the time, so it ends the weather but no effect running.
+            self.weather.input(self.now);
+            return;
+        }
         self.animator.cut();
         if weather::is_input(event) && self.weather.input(self.now) {
             return;
@@ -332,7 +340,9 @@ impl Tui {
             return;
         }
         if let Event::Mouse(mouse) = event {
-            self.wheel(*mouse);
+            if let Some(pointer) = Pointer::of(*mouse) {
+                self.mouse(pointer);
+            }
             return;
         }
         if keymap::key_press(event)
@@ -455,17 +465,192 @@ impl Tui {
         }
     }
 
-    /// Scrolls the shortcuts panel [`WHEEL`] lines while it shows when `mouse` turns the wheel,
-    /// the only thing the mouse does (D-74).
-    fn wheel(&mut self, mouse: MouseEvent) {
-        let direction = match mouse.kind {
-            MouseEventKind::ScrollUp => Direction::Up,
-            MouseEventKind::ScrollDown => Direction::Down,
-            _ => return,
-        };
-        if self.state.shows_shortcuts() {
-            self.scroll_shortcuts(direction, WHEEL);
+    /// Does what `pointer` asks for where it points, giving the core the messages the keys give
+    /// there (FR-KEY-05, D-138). While a picker is open it takes the mouse as
+    /// [`mouse_in_picker`](Self::mouse_in_picker) says. The wheel scrolls the shortcuts panel
+    /// under the pointer, and the attachments panel under it while that has the keys, [`WHEEL`]
+    /// lines a notch. Otherwise, while a window, a prompt, the conflict prompt or an edit has the
+    /// keys, the mouse does nothing. A click on a row gives its pane the keys and focuses the
+    /// row, picking nothing, and one on a task's checkbox completes the task too, or
+    /// uncompletes it; a click elsewhere in a pane gives it the keys; a click on a sidebar entry
+    /// shows it in the first pane as browsing does, the keys staying where they are. The wheel
+    /// moves the focus of the pane under the pointer [`WHEEL`] rows a notch, giving it the keys,
+    /// and over the sidebar browses as many entries.
+    fn mouse(&mut self, pointer: Pointer) {
+        let target = self.targets.at(pointer.at());
+        if let Some(to_picker) = self.picker_message() {
+            self.mouse_in_picker(pointer, target, &*to_picker);
+            return;
         }
+        let blocked = self.window().is_some() || self.state.conflict().is_some();
+        match (pointer, target) {
+            (Pointer::Wheel(direction, _), Some(Target::Shortcuts)) => {
+                self.scroll_shortcuts(direction, WHEEL);
+            }
+            (Pointer::Wheel(direction, _), Some(Target::Panel(pane)))
+                if pane == self.state.current_pane() && self.state.attachments().is_some() =>
+            {
+                let lines = isize::try_from(WHEEL).unwrap_or(isize::MAX);
+                let lines = match direction {
+                    Direction::Up => -lines,
+                    Direction::Down => lines,
+                };
+                if let Some(motion) = self.panel_scroll(Scroll::Lines(lines)) {
+                    self.update(Message::Attachments(AttachmentsInput::Select(motion)));
+                }
+            }
+            _ if blocked => {}
+            (Pointer::Click(_), Some(Target::Row { pane, id })) => self.click_row(pane, id),
+            (Pointer::Click(_), Some(Target::Checkbox { pane, id })) => {
+                self.click_row(pane, id);
+                if self.state.pane_view().selection().focused() == Some(id) {
+                    self.update(Message::Command(Command::ToggleCompleted));
+                }
+            }
+            (Pointer::Click(_), Some(Target::Pane(pane))) => self.give_keys(pane),
+            (Pointer::Click(_), Some(Target::Sidebar(Some(entry)))) => {
+                let entries = self.state.sidebar().map_or(0, |view| view.entries.len());
+                self.walk(
+                    entry,
+                    entries,
+                    |tui| tui.state.sidebar()?.focused,
+                    |direction| Message::Command(Command::Browse(direction)),
+                );
+            }
+            (Pointer::Wheel(direction, _), Some(Target::Sidebar(_))) => {
+                for _ in 0..WHEEL {
+                    self.update(Message::Command(Command::Browse(direction)));
+                }
+            }
+            (Pointer::Wheel(direction, _), Some(target)) => {
+                if let Some(pane) = target.pane() {
+                    self.give_keys(pane);
+                    for _ in 0..WHEEL {
+                        self.update(row_step(direction));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Does what `pointer` asks of the open picker, whose inputs reach the core through
+    /// `to_picker`, pointing at `target`: a click on an entry chooses it, a click outside the
+    /// window closes it, and the wheel anywhere moves its highlight [`WHEEL`] entries a notch
+    /// (FR-KEY-05, FR-UI-09).
+    fn mouse_in_picker(
+        &mut self,
+        pointer: Pointer,
+        target: Option<Target>,
+        to_picker: &dyn Fn(PickerInput) -> Message,
+    ) {
+        match (pointer, target) {
+            (Pointer::Wheel(direction, _), _) => {
+                for _ in 0..WHEEL {
+                    self.update(to_picker(picker_step(direction)));
+                }
+            }
+            (Pointer::Click(_), Some(Target::Picker(Some(entry)))) => {
+                let limit = entry.max(self.picker_focus().unwrap_or_default());
+                self.walk(entry, limit, Self::picker_focus, |direction| {
+                    to_picker(picker_step(direction))
+                });
+                if self.picker_focus() == Some(entry) {
+                    self.update(to_picker(PickerInput::Choose));
+                }
+            }
+            (Pointer::Click(_), Some(Target::Picker(None))) => {}
+            (Pointer::Click(_), _) => self.update(to_picker(PickerInput::Dismiss)),
+        }
+    }
+
+    /// Gives the pane at position `pane` among the panes the keys, unless it has them.
+    fn give_keys(&mut self, pane: usize) {
+        if pane != self.state.current_pane() || self.state.sidebar_has_keys() {
+            self.update(Message::Command(Command::FocusPane(pane + 1)));
+        }
+    }
+
+    /// Gives the pane at position `pane` among the panes the keys, picks nothing and focuses the
+    /// row of item `id`, as the motions would (FR-KEY-05).
+    fn click_row(&mut self, pane: usize, id: ItemId) {
+        self.give_keys(pane);
+        let order = |tui: &Self| -> Vec<ItemId> {
+            let view = tui.state.pane_view();
+            view.heading()
+                .into_iter()
+                .chain(view.shared_rows().iter().map(|row| row.id()))
+                .collect()
+        };
+        let rows = order(self);
+        let at = rows.iter().position(|&row| row == id);
+        let Some(to) = at else { return };
+        self.update(Message::Command(Command::ClearSelection));
+        self.walk(
+            to,
+            rows.len(),
+            |tui| {
+                let focused = tui.state.pane_view().selection().focused()?;
+                order(tui).iter().position(|&row| row == focused)
+            },
+            row_step,
+        );
+    }
+
+    /// Gives the core `step` messages one at a time, each toward position `to` from where `at`
+    /// reads the focus, until it is there or `limit` steps have gone by, so that a click
+    /// focuses what it points at as the keys would.
+    fn walk(
+        &mut self,
+        to: usize,
+        limit: usize,
+        at: impl Fn(&Self) -> Option<usize>,
+        step: impl Fn(Direction) -> Message,
+    ) {
+        let mut from = at(self);
+        for _ in 0..=limit {
+            if from == Some(to) {
+                return;
+            }
+            let direction = if from.is_some_and(|from| from > to) {
+                Direction::Up
+            } else {
+                Direction::Down
+            };
+            self.update(step(direction));
+            from = at(self);
+        }
+    }
+
+    /// The position of the focused entry among the matches of the open picker, while one is
+    /// open.
+    fn picker_focus(&self) -> Option<usize> {
+        let state = &self.state;
+        state
+            .navigator()
+            .map(|view| view.focused)
+            .or_else(|| state.palette().map(|view| view.focused))
+            .or_else(|| state.context_menu().map(|view| view.focused))
+            .or_else(|| state.go_to_symbol().map(|view| view.focused))
+            .or_else(|| state.move_to().map(|view| view.focused))
+            .or_else(|| state.tags().map(|view| view.picker.focused))
+            .or_else(|| state.quick_add_picker().map(|view| view.focused))
+            .or_else(|| {
+                let view = state.edit_dialog()?;
+                view.picker.map(|tags| tags.picker.focused)
+            })
+    }
+
+    /// What carries an input to the open picker, the edit dialog's tag picker among them, while
+    /// one is open.
+    fn picker_message(&self) -> Option<Box<dyn Fn(PickerInput) -> Message>> {
+        if let Some((true, _)) = self.dialog_keys() {
+            return Some(Box::new(|input| {
+                Message::EditDialog(EditDialogInput::Tags(input))
+            }));
+        }
+        let to_picker = self.open_picker()?;
+        Some(Box::new(to_picker))
     }
 
     /// Scrolls the shortcuts panel `lines` in `direction`, as far as drawing lets it go.
@@ -1048,15 +1233,16 @@ impl Tui {
             };
             let mut kept = self.drawn.get(index).copied().unwrap_or_default();
             let drawn = self.pane(pane, index).draw(area, buf, &mut kept.top);
+            for (at, target) in self.row_targets(pane, index, (area, kept.top), &drawn) {
+                self.targets.add(at, target);
+            }
             if let Some(view) = pane.attachments() {
+                let panel = panel_area(area, kept.panel.full);
+                self.targets.add(panel, Target::Panel(index));
                 AttachmentsPanel::new(view, &self.theme, self.icons(), self.today)
                     .full(kept.panel.full)
                     .focused(keyed && index == current)
-                    .render(
-                        panel_area(area, kept.panel.full),
-                        buf,
-                        &mut kept.panel.scrolled,
-                    );
+                    .render(panel, buf, &mut kept.panel.scrolled);
             }
             let top = kept.top;
             if let Some(slot) = self.drawn.get_mut(index) {
@@ -1092,6 +1278,32 @@ impl Tui {
         }
     }
 
+    /// What the mouse can point at in the pane `pane`, at position `index` among the panes,
+    /// drawn over `area` from `top` with its rows `drawn`: the pane, its rows and its tasks'
+    /// checkboxes, in the order drawn (FR-KEY-05).
+    fn row_targets(
+        &self,
+        pane: PaneView,
+        index: usize,
+        (area, top): (Rect, Top),
+        drawn: &[(ItemId, Rect)],
+    ) -> Vec<(Rect, Target)> {
+        let shown = self.pane(pane, index);
+        let rows = drawn
+            .iter()
+            .map(|&(id, row)| (row, Target::Row { pane: index, id }));
+        let checkboxes = drawn.iter().filter_map(|&(id, row)| {
+            Some((
+                shown.checkbox(id, row, area, top)?,
+                Target::Checkbox { pane: index, id },
+            ))
+        });
+        std::iter::once((area, Target::Pane(index)))
+            .chain(rows)
+            .chain(checkboxes)
+            .collect()
+    }
+
     /// Draws the shortcuts panel in `area` while it shows, scrolled no further than its end and
     /// naming the keys that scroll it while they do; a panel that is hidden, or lists another
     /// window's keys, opens at the top.
@@ -1101,6 +1313,7 @@ impl Tui {
             self.shortcuts_scroll = (0, window);
             return;
         };
+        self.targets.add(area, Target::Shortcuts);
         if self.shortcuts_scroll.1 != window {
             self.shortcuts_scroll = (0, window);
         }
@@ -1120,11 +1333,39 @@ impl Tui {
         panel.scrolled(self.shortcuts_scroll.0).render(area, buf);
     }
 
-    /// Whether the terminal should report the mouse: only while the shortcuts panel shows, whose
-    /// wheel scrolls it, so that the terminal selects text with the mouse otherwise (D-74).
-    #[must_use]
-    pub fn captures_mouse(&self) -> bool {
-        self.state.shows_shortcuts()
+    /// Draws over `panes` the Navigator, the command palette, the context menu, Go to Symbol or
+    /// Move to while one is open, noting where for the mouse.
+    fn render_pickers(&mut self, panes: Rect, buf: &mut Buffer) {
+        let icons = self.icons();
+        if let Some(view) = self.state.navigator() {
+            let counts = self.state.settings().task_counts;
+            let popup = navigator_popup(&view, &self.theme, icons, counts);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
+        }
+        if let Some(view) = self.state.palette() {
+            let keys = |&command: &Command| self.keymap.labels(command);
+            let popup = palette_popup(&view, &self.theme, icons).badge(&keys);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
+        }
+        if let Some(view) = self.state.context_menu() {
+            let keys = |&command: &Command| self.keymap.labels(command);
+            let popup =
+                context_menu_popup(&view, self.focused_row, &self.theme, icons).badge(&keys);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
+        }
+        if let Some(view) = self.state.go_to_symbol() {
+            let popup = go_to_symbol_popup(&view, &self.theme, icons);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
+        }
+        if let Some(view) = self.state.move_to() {
+            let popup = move_to_popup(&view, &self.theme, icons);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
+        }
     }
 
     /// Whether the session has ended, so the event loop should stop.
@@ -1187,6 +1428,33 @@ fn panel_area(pane: Rect, full: bool) -> Rect {
         pane
     } else {
         AttachmentsPanel::area(pane)
+    }
+}
+
+/// The message of the motion that focuses the next row of the pane with the keys, or the row
+/// before when `direction` is up.
+fn row_step(direction: Direction) -> Message {
+    Message::Command(Command::Focus(match direction {
+        Direction::Up => Focus::Previous,
+        Direction::Down => Focus::Next,
+    }))
+}
+
+/// The input that highlights the next entry of an open picker, or the entry before when
+/// `direction` is up.
+fn picker_step(direction: Direction) -> PickerInput {
+    match direction {
+        Direction::Up => PickerInput::Previous,
+        Direction::Down => PickerInput::Next,
+    }
+}
+
+/// Notes where `popup`, the open picker's window, goes when drawn over `area`, and each of its
+/// entries on screen, for the mouse (FR-KEY-05).
+fn add_picker<T>(targets: &mut Targets, popup: &PickerPopup<T>, area: Rect) {
+    targets.add(popup.area(area), Target::Picker(None));
+    for (entry, row) in popup.entry_rows(area) {
+        targets.add(row, Target::Picker(Some(entry)));
     }
 }
 
@@ -1448,6 +1716,7 @@ impl Widget for &mut Tui {
     /// plays.
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.area = area;
+        self.targets.clear();
         let icons = self.icons();
         buf.set_style(
             area,
@@ -1460,6 +1729,10 @@ impl Widget for &mut Tui {
         if let Some(view) = sidebar {
             let drawn = SidebarPane::new(&self.state, view, &self.theme, icons);
             sidebar_row = drawn.focused_row(side);
+            self.targets.add(side, Target::Sidebar(None));
+            for (entry, row) in drawn.entry_rows(side) {
+                self.targets.add(row, Target::Sidebar(Some(entry)));
+            }
             drawn.render(side, buf);
         }
         self.render_panes(room, buf);
@@ -1468,32 +1741,13 @@ impl Widget for &mut Tui {
         }
         let shortcuts = self.shortcuts_area(panes);
         self.render_shortcuts(shortcuts, buf);
-        if let Some(view) = self.state.navigator() {
-            let counts = self.state.settings().task_counts;
-            navigator_popup(&view, &self.theme, icons, counts).render(panes, buf);
-        }
-        if let Some(view) = self.state.palette() {
-            let keys = |&command: &Command| self.keymap.labels(command);
-            palette_popup(&view, &self.theme, icons)
-                .badge(&keys)
-                .render(panes, buf);
-        }
-        if let Some(view) = self.state.context_menu() {
-            let keys = |&command: &Command| self.keymap.labels(command);
-            context_menu_popup(&view, self.focused_row, &self.theme, icons)
-                .badge(&keys)
-                .render(panes, buf);
-        }
-        if let Some(view) = self.state.go_to_symbol() {
-            go_to_symbol_popup(&view, &self.theme, icons).render(panes, buf);
-        }
-        if let Some(view) = self.state.move_to() {
-            move_to_popup(&view, &self.theme, icons).render(panes, buf);
-        }
+        self.render_pickers(panes, buf);
         if let Some(view) = self.state.edit_dialog() {
             self.dialog_panel(&view).render(prompt, buf);
             if let Some(picker) = &view.picker {
-                tags_popup(picker, &self.theme, icons).render(panes, buf);
+                let popup = tags_popup(picker, &self.theme, icons);
+                add_picker(&mut self.targets, &popup, panes);
+                popup.render(panes, buf);
             }
         }
         if let Some(view) = self.state.date_prompt() {
@@ -1506,10 +1760,14 @@ impl Widget for &mut Tui {
             QuickAddPanel::new(&view, &self.theme).render(prompt, buf);
         }
         if let Some(view) = self.state.quick_add_picker() {
-            destination_popup("Add to", &view, &self.theme, icons).render(panes, buf);
+            let popup = destination_popup("Add to", &view, &self.theme, icons);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
         }
         if let Some(view) = self.state.tags() {
-            tags_popup(&view, &self.theme, icons).render(panes, buf);
+            let popup = tags_popup(&view, &self.theme, icons);
+            add_picker(&mut self.targets, &popup, panes);
+            popup.render(panes, buf);
         }
         if let Some(focused) = self.state.settings_window() {
             let settings = (self.state.settings(), self.state.default_settings());

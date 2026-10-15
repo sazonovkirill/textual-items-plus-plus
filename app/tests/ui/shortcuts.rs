@@ -157,23 +157,21 @@ fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
     );
 }
 
-/// The mouse doing `kind` over the pane.
+/// The mouse doing `kind` over the panel, at the right of a screen 160 columns wide.
 fn mouse(kind: MouseEventKind) -> Event {
     Event::Mouse(MouseEvent {
         kind,
-        column: 10,
+        column: 150,
         row: 5,
         modifiers: KeyModifiers::NONE,
     })
 }
 
-// FR-KEY-03, D-74
+// FR-KEY-03, FR-KEY-05, D-74, D-138
 #[test]
-fn the_wheel_scrolls_the_panel_three_lines_and_the_mouse_is_reported_only_while_it_shows() {
+fn the_wheel_over_the_panel_scrolls_it_three_lines() {
     let mut harness = Harness::new(160, 30);
-    assert!(!harness.tui.captures_mouse());
     harness.type_text("?");
-    assert!(harness.tui.captures_mouse());
     let top = panel(&harness, 40);
     harness.send(&mouse(MouseEventKind::ScrollDown));
     assert_eq!(
@@ -193,7 +191,11 @@ fn the_wheel_scrolls_the_panel_three_lines_and_the_mouse_is_reported_only_while_
     ] {
         harness.send(&mouse(kind));
     }
-    assert_eq!(harness.screen(), scrolled, "the mouse does nothing else");
+    assert_eq!(
+        harness.screen(),
+        scrolled,
+        "the mouse does nothing else there"
+    );
     for _ in 0..30 {
         harness.send(&mouse(MouseEventKind::ScrollDown));
     }
@@ -207,14 +209,16 @@ fn the_wheel_scrolls_the_panel_three_lines_and_the_mouse_is_reported_only_while_
         harness.send(&mouse(MouseEventKind::ScrollUp));
     }
     assert_eq!(panel(&harness, 40), top, "back at the top");
-    harness.type_text("?");
-    assert!(!harness.tui.captures_mouse());
-    let hidden = harness.screen();
-    harness.send(&mouse(MouseEventKind::ScrollDown));
+    harness.send(&Event::Mouse(MouseEvent {
+        kind: MouseEventKind::ScrollDown,
+        column: 10,
+        row: 5,
+        modifiers: KeyModifiers::NONE,
+    }));
     assert_eq!(
-        harness.screen(),
-        hidden,
-        "without the panel the wheel does nothing"
+        panel(&harness, 40),
+        top,
+        "the wheel over the pane leaves the panel"
     );
 }
 

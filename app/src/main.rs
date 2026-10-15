@@ -78,6 +78,9 @@ fn main() -> anyhow::Result<()> {
     tui.use_kitty(kitty);
     // Text pasted into a terminal that does not bracket it arrives as typed keys.
     let bracketed = execute!(io::stdout(), EnableBracketedPaste).is_ok();
+    // A terminal that cannot report the mouse keeps it to itself; every action has a key
+    // (FR-KEY-05).
+    let _ = execute!(io::stdout(), EnableMouseCapture);
     forward_terminal_events(inputs);
     // The panic hook restores the terminal first; once the panic has unwound to here, or the
     // event loop has failed, as when the terminal is gone, the document is kept before anything
@@ -95,8 +98,7 @@ fn main() -> anyhow::Result<()> {
         // As for the keyboard flags above.
         let _ = execute!(io::stdout(), DisableBracketedPaste);
     }
-    // The session may end, or have panicked, while the mouse is reported (D-74); a terminal
-    // that does not report it ignores this.
+    // As for the keyboard flags above; a terminal that does not report the mouse ignores this.
     let _ = execute!(io::stdout(), DisableMouseCapture);
     let _ = ratatui::try_restore();
     let mut stderr = io::stderr();
@@ -202,18 +204,7 @@ fn run(
     received: &Receiver<Input>,
 ) -> anyhow::Result<()> {
     let start = Instant::now();
-    let mut mouse = false;
     while !tui.should_quit() {
-        if tui.captures_mouse() != mouse {
-            mouse = !mouse;
-            // A terminal that cannot report the mouse keeps the wheel to itself, and one that is
-            // gone is noticed by drawing.
-            let _ = if mouse {
-                execute!(terminal.backend_mut(), EnableMouseCapture)
-            } else {
-                execute!(terminal.backend_mut(), DisableMouseCapture)
-            };
-        }
         // The terminal shows each frame whole, as an effect changes many cells at once. One that
         // does not know synchronized output ignores it, and one that is gone is noticed by
         // drawing.

@@ -109,6 +109,20 @@ impl<'a> SidebarPane<'a> {
         content.rows().nth(line.checked_sub(self.offset(content))?)
     }
 
+    /// Where each entry on screen is drawn when the sidebar is drawn over `area`, by its index,
+    /// from the one that keeps the focused entry in view.
+    pub(super) fn entry_rows(&self, area: Rect) -> Vec<(usize, Rect)> {
+        let content = content(area);
+        let offset = self.offset(content);
+        let rows: Vec<Rect> = content.rows().collect();
+        (self.lines.iter().enumerate())
+            .filter_map(|(index, line)| {
+                let row = rows.get(line.checked_sub(offset)?)?;
+                Some((index, *row))
+            })
+            .collect()
+    }
+
     /// The first line shown in `content`, so that the focused entry is in view.
     fn offset(&self, content: Rect) -> usize {
         self.view
@@ -205,13 +219,11 @@ impl Widget for SidebarPane<'_> {
             buf.set_string(y.x, y.y, "│", Style::new().fg(theme.rule));
         }
         let content = content(area);
-        let offset = self.offset(content);
-        let rows: Vec<Rect> = content.rows().collect();
-        let entries = self.view.entries.iter().zip(&self.lines).enumerate();
-        for (index, (&stop, &line)) in entries {
-            let Some(&row) = line.checked_sub(offset).and_then(|row| rows.get(row)) else {
-                continue;
-            };
+        let entries = self
+            .entry_rows(area)
+            .into_iter()
+            .filter_map(|(index, row)| Some((index, *self.view.entries.get(index)?, row)));
+        for (index, stop, row) in entries {
             let focused = self.view.keys && Some(index) == self.view.focused;
             let editing = self.edited(index).is_some();
             // The text field marks its selection on the selection background.
@@ -527,6 +539,36 @@ mod tests {
         give(&mut new, Command::Sidebar);
         let (rows, _, _) = draw(&new, 20, 2);
         assert_eq!(rows, ["▌⊔ Inbox           │", "                   │"]);
+        Ok(())
+    }
+
+    // FR-KEY-05
+    #[test]
+    fn entry_rows_are_where_the_entries_on_screen_are_drawn_left_of_the_rule()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        let theme = BuiltIn::default().colors();
+        let rows = |state: &State, height| {
+            let view = state.sidebar().expect("the sidebar shows");
+            SidebarPane::new(state, view, &theme, IconSet::Plain)
+                .entry_rows(Rect::new(0, 0, 20, height))
+        };
+        let row = |y| Rect::new(0, y, 19, 1);
+        assert_eq!(
+            rows(&state, 15),
+            [0, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13]
+                .into_iter()
+                .enumerate()
+                .map(|(entry, y)| (entry, row(y)))
+                .collect::<Vec<_>>(),
+            "past the blank lines between the groups"
+        );
+        give(&mut state, Command::Focus(crate::app::Focus::Last));
+        assert_eq!(
+            rows(&state, 2),
+            [(9, row(0)), (10, row(1))],
+            "scrolled to keep the focus in view"
+        );
         Ok(())
     }
 

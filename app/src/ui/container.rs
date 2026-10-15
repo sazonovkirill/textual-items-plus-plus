@@ -566,6 +566,24 @@ impl<'a> ContainerPane<'a> {
         Some(Position::new(x, area.y + row))
     }
 
+    /// Where the checkbox of task `id` is drawn when the pane, drawn over `area` from `top`,
+    /// shows the row's lines over `row`: its marker, on the row's first line; nothing for a row
+    /// that is not a task's, or whose first line is scrolled away (FR-KEY-05).
+    pub(super) fn checkbox(&self, id: ItemId, row: Rect, area: Rect, top: Top) -> Option<Rect> {
+        // Only the first row on screen can start above it, when the pane shows from partway
+        // through that row's part, which every line of a row's part belongs to.
+        if row.y == area.y && top.line > 0 {
+            return None;
+        }
+        self.rows
+            .iter()
+            .find(|row| row.id() == id)
+            .filter(|row| matches!(row, Row::Task { .. }))?;
+        let width = u16::try_from(Span::raw(self.marker(self.item(id)?)).width()).ok()?;
+        let x = row.x.saturating_add(GUTTER);
+        Some(Rect::new(x, row.y, width, 1).intersection(row))
+    }
+
     /// The index of the focused row among the state's rows, or [`HEADING`] for the heading.
     fn focused_row(&self) -> Option<usize> {
         let focused = self.selection.focused()?;
@@ -1293,6 +1311,62 @@ mod tests {
         let caret = pane.caret(buf.area, top);
         pane.render(buf.area, &mut buf, &mut Top::default());
         (buf, caret)
+    }
+
+    // FR-KEY-05
+    #[test]
+    fn a_tasks_checkbox_is_its_marker_on_its_first_line() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let project = document.push(None, Node::Item(Item::new(ItemKind::Project, "P")))?;
+        let task = document.push(Some(project), Node::Item(Item::new(ItemKind::Task, "t")))?;
+        let section =
+            document.push(Some(project), Node::Item(Item::new(ItemKind::Section, "S")))?;
+        let theme = BuiltIn::default().colors();
+        let selection = Selection::default();
+        let pane = ContainerPane {
+            document: &document,
+            shown: Shown::Container(project),
+            groups: Rc::from([]),
+            rows: app::rows(&document, project, true).into(),
+            heading: Some(project),
+            selection: &selection,
+            editing: None,
+            search: None,
+            keys: true,
+            today: TODAY,
+            theme: &theme,
+            icons: IconSet::Plain,
+            wrap: true,
+            filter: &[],
+            number: None,
+        };
+        let area = Rect::new(4, 2, 30, 10);
+        let (row, top) = (Rect::new(4, 6, 30, 2), Top::default());
+        let checkbox = |id, row, top| pane.checkbox(id, row, area, top);
+        assert_eq!(checkbox(task, row, top), Some(Rect::new(6, 6, 1, 1)));
+        assert!(
+            checkbox(task, Rect::new(4, 6, 1, 1), top).is_some_and(Rect::is_empty),
+            "nothing of it in a row too narrow"
+        );
+        assert_eq!(checkbox(section, row, top), None, "a section has none");
+        assert_eq!(checkbox(project, row, top), None, "nor the heading");
+        let first = Rect::new(4, 2, 30, 1);
+        assert_eq!(
+            checkbox(task, first, top),
+            Some(Rect::new(6, 2, 1, 1)),
+            "the first row on screen from its first line"
+        );
+        assert_eq!(
+            checkbox(task, first, top.down(1)),
+            None,
+            "the first row on screen scrolled partly away"
+        );
+        assert_eq!(
+            checkbox(task, row, top.down(1)),
+            Some(Rect::new(6, 6, 1, 1)),
+            "a row below it"
+        );
+        Ok(())
     }
 
     // FR-ORG-06, FR-EDIT-02

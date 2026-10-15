@@ -19,6 +19,7 @@ mod go_to_symbol;
 mod inbox;
 mod later;
 mod logbook;
+mod mouse;
 mod moving;
 mod navigation;
 mod notes;

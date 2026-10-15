@@ -220,6 +220,29 @@ impl<'a, T> PickerPopup<'a, T> {
         (lines, at)
     }
 
+    /// The lines below the query that show in `inner`, the inside of the window's border, each
+    /// with the row it is drawn on: as many as fit from the one that keeps the focused entry in
+    /// view.
+    fn shown(&self, inner: Rect) -> impl Iterator<Item = (Listed<'a, T>, Rect)> {
+        let rows: Vec<Rect> = inner.rows().skip(1).collect();
+        let (lines, at) = self.lines();
+        let offset = (at + 1).saturating_sub(rows.len());
+        lines.into_iter().skip(offset).zip(rows)
+    }
+
+    /// Where each entry on screen is drawn when the window is drawn over `area`, by its position
+    /// among the matching ones, for the mouse to choose (FR-KEY-05).
+    #[must_use]
+    pub fn entry_rows(&self, area: Rect) -> Vec<(usize, Rect)> {
+        let inner = Block::bordered().inner(self.area(area));
+        self.shown(inner)
+            .filter_map(|(line, row)| match line {
+                Listed::Entry(index, _) => Some((index, row)),
+                Listed::Heading(_) => None,
+            })
+            .collect()
+    }
+
     /// Where the terminal's cursor goes when the window is drawn over `area`: at the query's
     /// caret, or at the window's last column when the query is wider than the window; nowhere
     /// when the window has no room inside its border (N-PORT-02).
@@ -271,23 +294,19 @@ impl<T> Widget for PickerPopup<'_, T> {
             .title(self.title);
         let inner = frame.inner(area);
         frame.render(area, buf);
-        let mut rows = inner.rows();
-        if let Some(row) = rows.next() {
+        if let Some(row) = inner.rows().next() {
             self.query().render(row, buf);
         }
-        let rows: Vec<Rect> = rows.collect();
         let dim = Style::new().fg(theme.dim_text);
         if self.view.entries.is_empty() {
-            if let Some(&row) = rows.first() {
+            if let Some(row) = inner.rows().nth(1) {
                 Line::styled(" No matches", dim).render(row, buf);
             }
             return;
         }
         let focused = self.view.focused;
-        let (lines, at) = self.lines();
-        let offset = (at + 1).saturating_sub(rows.len());
         let tree = self.depth.filter(|_| self.view.query.text().is_empty());
-        for (line, row) in lines.into_iter().skip(offset).zip(rows) {
+        for (line, row) in self.shown(inner) {
             let (index, entry) = match line {
                 Listed::Heading(heading) => {
                     let style = Style::new().fg(theme.headers).bold();
@@ -769,6 +788,38 @@ mod tests {
                 "│ # 5      │"
             ]
         );
+    }
+
+    // FR-KEY-05
+    #[test]
+    fn entry_rows_are_where_the_entries_on_screen_are_drawn_past_headings_and_the_query() {
+        let mut picker = Picker::grouped(
+            [1, 3, 2, 5]
+                .map(|n| candidate(n, &n.to_string(), ""))
+                .to_vec(),
+            vec![0, 0, 1, 2],
+        );
+        let rows = |picker: &Picker<u8>, height| {
+            let (view, theme) = (picker.view(), theme());
+            PickerPopup::new("Pick", &view, &ICON, IconSet::Plain, &theme)
+                .headings(&HEADING)
+                .entry_rows(Rect::new(0, 0, 12, height))
+        };
+        let row = |y| Rect::new(1, y, 10, 1);
+        assert_eq!(
+            rows(&picker, 10),
+            [(0, row(3)), (1, row(4)), (2, row(6)), (3, row(8))]
+        );
+        for _ in 0..3 {
+            picker.input(PickerInput::Next);
+        }
+        assert_eq!(
+            rows(&picker, 6),
+            [(2, row(2)), (3, row(4))],
+            "scrolled to the focused entry"
+        );
+        let empty = Picker::<u8>::new(Vec::new());
+        assert_eq!(rows(&empty, 6), [], "no entry where nothing matches");
     }
 
     // FR-ORG-12
