@@ -154,6 +154,12 @@ const fn why(refusal: Refusal) -> &'static str {
         Refusal::SectionHoldsTasks => "a section holds only tasks",
         Refusal::ReadsAsTask => "only a task's title can start with \"- \"",
         Refusal::KindTag => "only a task can be tagged @area or @section",
+        Refusal::TrashInProject => {
+            "something of it in the Trash can't go in a project; delete it for good first"
+        }
+        Refusal::TrashInSection => {
+            "something of it in the Trash can't go in a section; delete it for good first"
+        }
         Refusal::NotPinnedSibling => "from Pinned it moves only past a pinned sibling",
     }
 }
@@ -306,7 +312,7 @@ mod tests {
         check(&long, "g", 31, " ↕ NAVIGATE · …paper · saved g ");
     }
 
-    // FR-OPS-03, FR-OPS-07, FR-TASK-06, D-57, D-107
+    // FR-OPS-03, FR-OPS-07, FR-TASK-06, D-57, D-107, D-133
     #[test]
     fn each_refusal_says_why() {
         let reasons = [
@@ -317,6 +323,8 @@ mod tests {
             Refusal::SectionHoldsTasks,
             Refusal::ReadsAsTask,
             Refusal::KindTag,
+            Refusal::TrashInProject,
+            Refusal::TrashInSection,
             Refusal::NotPinnedSibling,
         ]
         .map(why);
@@ -330,6 +338,8 @@ mod tests {
                 "a section holds only tasks",
                 "only a task's title can start with \"- \"",
                 "only a task can be tagged @area or @section",
+                "something of it in the Trash can't go in a project; delete it for good first",
+                "something of it in the Trash can't go in a section; delete it for good first",
                 "from Pinned it moves only past a pinned sibling",
             ]
         );

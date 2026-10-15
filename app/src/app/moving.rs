@@ -32,6 +32,12 @@ pub enum Refusal {
     ReadsAsTask,
     /// A task has a bare `@area` or `@section` tag, so it would read back as another kind.
     KindTag,
+    /// What it holds in the Trash can't go in the project it would become, and keeps its place
+    /// there for Restore (D-55, D-75, D-133).
+    TrashInProject,
+    /// What it holds in the Trash can't go in the section it would become, and keeps its place
+    /// there for Restore (D-55, D-133).
+    TrashInSection,
     /// A pinned project's entry among the pinned projects moves only past a pinned sibling
     /// listed beside it, which the next one there is not (D-107).
     NotPinnedSibling,

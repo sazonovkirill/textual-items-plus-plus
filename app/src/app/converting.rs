@@ -14,7 +14,9 @@ use crate::domain::{Document, Item, ItemId, ItemKind, Node, Transaction};
 /// or a section in a project, since no project goes in a project (D-75), or whose title, as a
 /// task's can, starts with `-` and a space, which would read back as a task, or that has a bare
 /// `@area` or `@section` tag, as a task can, which would read back as another kind (FR-TASK-06,
-/// FR-ORG-06, D-47).
+/// FR-ORG-06, D-47). What an item holds in the Trash keeps its place for Restore, so it refuses
+/// the item too, and the refusal says it is in the Trash when nothing else is in the way (D-55,
+/// D-133).
 ///
 /// # Errors
 ///
@@ -41,8 +43,21 @@ pub(super) fn convert_all(document: &Document, items: &[ItemId]) -> Result<Trans
         if !fits(document, id, to) {
             return Err(no_room(to));
         }
-        if to == ItemKind::Project && holds_projects(document, id) {
-            return Err(Refusal::NoRoomForProject);
+        if holds_misfit(document, id, to, false) {
+            return Err(if to == ItemKind::Section {
+                Refusal::SectionHoldsTasks
+            } else {
+                Refusal::NoRoomForProject
+            });
+        }
+        // What is in the Trash keeps its place for Restore (D-55), unseen, so the hierarchy
+        // isn't the reason the user can read (D-133).
+        if holds_misfit(document, id, to, true) {
+            return Err(if to == ItemKind::Section {
+                Refusal::TrashInSection
+            } else {
+                Refusal::TrashInProject
+            });
         }
         document
             .convert(id, to)
@@ -106,12 +121,18 @@ fn has_kind_tag(item: &Item) -> bool {
         .any(|tag| tag.value.is_none() && matches!(tag.name.as_str(), "area" | "section"))
 }
 
-/// Whether `id` holds a project.
-fn holds_projects(document: &Document, id: ItemId) -> bool {
+/// Whether `id` holds an item, in the Trash or not as `trashed` says, that can't go in an item
+/// of `kind`; a checklist item becomes a task, which goes in any kind it is converted to.
+fn holds_misfit(document: &Document, id: ItemId, kind: ItemKind, trashed: bool) -> bool {
     document
         .children(id)
         .iter()
-        .any(|&child| kind(document, child) == Some(ItemKind::Project))
+        .filter_map(|&child| document.node(child).and_then(Node::item))
+        .any(|child| {
+            child.deleted.is_some() == trashed
+                && child.kind != ItemKind::ChecklistItem
+                && !child.kind.goes_in(Some(kind))
+        })
 }
 
 /// Whether an item of `kind` may go beside `id`, among the children of its parent.
@@ -283,6 +304,44 @@ mod tests {
         assert_eq!(
             (kind(&one, top), kind(&one, site)),
             (Some(Project), Some(Section))
+        );
+        Ok(())
+    }
+
+    // FR-ORG-06, D-55, D-75, D-133
+    #[test]
+    fn what_is_held_back_only_by_the_trash_says_so() -> Result<(), PlacementError> {
+        let Fixture {
+            mut document,
+            area,
+            paint,
+            holder,
+            ..
+        } = fixture()?;
+        let trashed = |kind, title| {
+            let mut item = Item::new(kind, title);
+            item.deleted = Some(jiff::civil::date(2026, 10, 15));
+            Node::Item(item)
+        };
+        let home = document.push(None, Node::Item(Item::new(Area, "Home")))?;
+        document.push(Some(home), Node::Item(Item::new(Task, "h1")))?;
+        document.push(Some(home), trashed(Project, "Old"))?;
+        let plan = document.push(Some(area), Node::Item(Item::new(Project, "Plan")))?;
+        document.push(Some(plan), Node::Item(Item::new(Task, "p1")))?;
+        document.push(Some(plan), trashed(Section, "Gone"))?;
+        document.push(Some(holder), trashed(Section, "Gone too"))?;
+        document.push(Some(paint), trashed(ChecklistItem, "x"))?;
+        for (items, refusal) in [
+            (vec![home], Refusal::TrashInProject),
+            (vec![plan], Refusal::TrashInSection),
+            (vec![holder], Refusal::SectionHoldsTasks),
+        ] {
+            assert_eq!(convert_all(&document, &items), Err(refusal), "{items:?}");
+        }
+        assert_eq!(
+            kind(&converted(&document, &[paint]), paint),
+            Some(Project),
+            "a checklist item in the Trash becomes a task, which a project holds"
         );
         Ok(())
     }

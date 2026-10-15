@@ -128,6 +128,34 @@ fn where_the_new_kind_cannot_go_the_status_line_says_why() {
     assert!(status(&harness).ends_with("a section goes only in an area or a project"));
 }
 
+// FR-ORG-06, FR-STORE-09, D-55, D-133
+#[test]
+fn what_only_the_trash_holds_back_the_status_line_says_is_in_the_trash() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "\
+Inbox:
+Work: @area
+\tPlan:
+\t\t- p1
+\t\tGone: @section @deleted(2026-10-15)
+";
+    fs::write(&path, text).expect("the fixture is written");
+    let mut harness = Harness::open(path.clone(), 100, 20);
+    harness.ctrl('g');
+    harness.type_text("work");
+    harness.key(KeyCode::Enter);
+    keys(&mut harness, "my");
+    assert!(
+        status(&harness).ends_with(
+            "something of it in the Trash can't go in a section; delete it for good first"
+        ),
+        "{}",
+        status(&harness)
+    );
+    assert_eq!(saved(&mut harness, &path), text);
+}
+
 // FR-OPS-08, FR-STORE-09
 #[test]
 fn tasks_and_a_section_group_into_a_new_project() {
