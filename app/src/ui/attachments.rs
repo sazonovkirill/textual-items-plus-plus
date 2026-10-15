@@ -175,8 +175,9 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
 /// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
-/// `a` adds a comment, `\\` widens or narrows the panel, and the motion keys scroll or select; `g` is left to start the keymap's sequences, as `gg` selecting the first
-/// entry and `gn` moving the keys on. Only key presses count.
+/// `a` adds a comment, `\\` widens or narrows the panel, and the motion keys scroll or select;
+/// `g` is left to start the keymap's sequences, as `gg` selecting the first entry and `gn` moving
+/// the keys on. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()

@@ -269,9 +269,8 @@ impl State {
 
     /// Gives `command` to the panel that has the keys on `today`, and returns whether it took
     /// it. With a checklist entry selected it acts on the selected item as the same command acts
-    /// on a row (FR-CHK-03): checking it, editing it, adding an item beside it, moving it among
-    /// its siblings, indenting and outdenting it, each one step to undo. The motions select as
-    /// in the panel. Quitting, pasting, the conflict prompt's commands and those that
+    /// on a row (FR-CHK-03): checking it, editing it, adding an item beside it and moving it
+    /// past the next, each one step to undo. The motions select as in the panel. Quitting, pasting, the conflict prompt's commands and those that
     /// [move the keys](moves_keys) pass to the app; every other command does nothing while the
     /// panel has the keys.
     pub(super) fn panel_command(&mut self, command: Command, today: Date) -> bool {
