@@ -284,7 +284,7 @@ impl State {
             (Command::Focus(motion), _) => {
                 self.attachments_input(AttachmentsInput::Select(motion));
             }
-            (Command::NewLike(side), _) => self.new_checklist_item(side),
+            (Command::New(side), _) => self.new_checklist_item(side),
             (Command::EditTitle, _) => self.attachments_input(AttachmentsInput::Edit),
             (Command::Delete, _) => self.attachments_input(AttachmentsInput::Delete),
             (Command::ToggleCompleted, Some(Selected::Checklist(Some(item)))) => {
@@ -428,7 +428,7 @@ pub(super) fn acts_on(command: Command) -> bool {
     matches!(
         command,
         Command::Focus(_)
-            | Command::NewLike(_)
+            | Command::New(_)
             | Command::EditTitle
             | Command::Delete
             | Command::ToggleCompleted
@@ -984,7 +984,7 @@ mod tests {
     fn items_are_added_edited_and_checked_each_one_step_to_undo() -> Result<(), PlacementError> {
         let (mut state, a, [c]) = with_checklist(["c"])?;
         give(&mut state, Command::OpenChecklist);
-        give(&mut state, Command::NewLike(Side::Above));
+        give(&mut state, Command::New(Side::Above));
         type_text(&mut state, "first");
         edit(&mut state, EditInput::Next);
         type_text(&mut state, "second");
@@ -1132,7 +1132,7 @@ mod tests {
         );
         state.redo();
         assert_eq!(checklist(&state), nested);
-        give(&mut state, Command::NewLike(Side::Below));
+        give(&mut state, Command::New(Side::Below));
         edit(&mut state, EditInput::Outdent);
         edit(&mut state, EditInput::Done);
         assert_eq!(checklist(&state), nested, "an item left empty is not added");
@@ -1210,7 +1210,7 @@ mod tests {
         let before = state.document().clone();
         for command in [
             Command::ToggleCompleted,
-            Command::NewLike(Side::Below),
+            Command::New(Side::Below),
             Command::Delete,
             Command::Sidebar,
             Command::Undo,

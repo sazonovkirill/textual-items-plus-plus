@@ -101,9 +101,18 @@ mod tests {
             .iter()
             .filter(|entry| entry.context != Context::Conflict)
             .map(|entry| entry.command)
-            .filter(|&command| command != Command::Palette && command != Command::ToggleEvening)
+            .filter(|&command| {
+                !matches!(
+                    command,
+                    Command::Palette | Command::ToggleEvening | Command::AddArea(_)
+                )
+            })
             .collect();
-        assert_eq!(listed(&state), expected, "Toggle Evening only in Today");
+        assert_eq!(
+            listed(&state),
+            expected,
+            "Toggle Evening only in Today, the area keys only in the sidebar"
+        );
         let first = state
             .palette()
             .and_then(|view| view.entries.iter().next().map(|entry| entry.text.clone()));

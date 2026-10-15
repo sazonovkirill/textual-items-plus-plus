@@ -69,27 +69,24 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::GoToSymbol, &["/"]),
     // Find, as `Ctrl+F` finds in most apps, and **g**o **s**earch (D-70).
     (Command::Search, &["ctrl+f", "g s"]),
-    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o` and `O` add
-    // the focused row's kind, and the lower and upper case of a kind's letter add one at the
-    // bottom and the top of the container shown (owner, D-40). In the sidebar `a` adds an area,
-    // `p` a top-level project and `i`, for **i**nside, a project in the focused area; in the
-    // pane `i` adds a project as `p` does (owner, D-75).
+    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o`, `O` and
+    // `Space` add a task, or in the sidebar a project, and the lower and upper case of a kind's
+    // letter add one at the bottom and the top of the container shown, or in the sidebar `a` an
+    // area and `p` a top-level project (owner, D-40, D-127).
     (Command::EditTitle, &["enter"]),
     // taskpaper-terminal's Quick Add keys: `q` alone starts the others, so plain Quick Add is
     // `qq`; `qt` starts the task today and `qi` adds it to the Inbox (owner, D-97).
     (Command::QuickAdd(Prefill::Nothing), &["q q"]),
     (Command::QuickAdd(Prefill::StartToday), &["q t"]),
     (Command::QuickAdd(Prefill::Inbox), &["q i"]),
-    (Command::NewLike(Side::Below), &["o"]),
-    (Command::NewLike(Side::Above), &["O"]),
-    (Command::AddTask(End::Bottom), &["a"]),
-    (Command::AddTask(End::Top), &["A"]),
+    (Command::New(Side::Below), &["o", "space"]),
+    (Command::New(Side::Above), &["O"]),
+    (Command::AddArea(End::Bottom), &["a"]),
+    (Command::AddArea(End::Top), &["A"]),
     (Command::AddSection(End::Bottom), &["s"]),
     (Command::AddSection(End::Top), &["S"]),
     (Command::AddProject(End::Bottom), &["p"]),
     (Command::AddProject(End::Top), &["P"]),
-    (Command::AddProjectInArea(End::Bottom), &["i"]),
-    (Command::AddProjectInArea(End::Top), &["I"]),
     (Command::Delete, &["d d", "delete"]),
     // In the Trash, `u` undeletes, as vim's undo would the deletion, and `de` empties it (D-55).
     (Command::Restore, &["u"]),
@@ -832,18 +829,20 @@ mod tests {
     fn adding_keys_act_at_once() {
         let mut keymap = Keymap::default();
         for (key, command) in [
-            ('o', Command::NewLike(Side::Below)),
-            ('O', Command::NewLike(Side::Above)),
-            ('a', Command::AddTask(End::Bottom)),
-            ('A', Command::AddTask(End::Top)),
+            ('o', Command::New(Side::Below)),
+            (' ', Command::New(Side::Below)),
+            ('O', Command::New(Side::Above)),
+            ('a', Command::AddArea(End::Bottom)),
+            ('A', Command::AddArea(End::Top)),
             ('s', Command::AddSection(End::Bottom)),
             ('S', Command::AddSection(End::Top)),
             ('p', Command::AddProject(End::Bottom)),
             ('P', Command::AddProject(End::Top)),
-            ('i', Command::AddProjectInArea(End::Bottom)),
-            ('I', Command::AddProjectInArea(End::Top)),
         ] {
-            assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
+            assert_eq!(keymap.press(&char(key)), Some(command), "{key:?}");
+        }
+        for key in ['i', 'I'] {
+            assert_eq!(keymap.press(&char(key)), None, "{key}");
         }
         assert_eq!(keymap.press(&char('R')), Some(Command::RenameContainer));
     }

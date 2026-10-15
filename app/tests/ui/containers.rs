@@ -48,9 +48,12 @@ fn add_an_area_with_a_project_and_a_section() {
     harness.key(KeyCode::Esc);
     harness.type_text("SChores");
     harness.key(KeyCode::Enter);
+    harness.type_text("oSweep");
+    harness.key(KeyCode::Esc);
     assert_eq!(
         pane(&harness),
-        ["  󰆧 Home", "", "▌ / Chores", "", "  # Garden",]
+        ["  󰆧 Home", "", "  / Chores", "▌ ☐ Sweep", "", "  # Garden",],
+        "o on a section adds a task in it (D-127)"
     );
 }
 

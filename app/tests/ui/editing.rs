@@ -159,17 +159,32 @@ fn shift_o_adds_above_and_keys_type_while_editing() {
     );
 }
 
-// FR-EDIT-01, D-40
+// FR-EDIT-01, D-40, D-127
 #[test]
-fn a_and_shift_a_add_a_task_at_the_bottom_and_top_of_the_container() {
+fn space_adds_a_task_below_as_o_does_and_a_adds_none() {
     let mut harness = Harness::new(60, 12);
-    harness.type_text("aLast");
-    harness.key(KeyCode::Esc);
-    harness.type_text("AFirst");
+    harness.type_text("aA");
+    assert_eq!(
+        mode(&harness),
+        "NAVIGATE",
+        "the pane leaves areas to the sidebar"
+    );
+    harness.key(KeyCode::Char(' '));
+    harness.type_text("Next");
     harness.key(KeyCode::Esc);
     assert_eq!(
         items(&harness),
-        ["*First", CALL, COFFEE, READ, "Last"].map(String::from)
+        [CALL, "*Next", COFFEE, READ].map(String::from)
+    );
+    harness.ctrl('p');
+    harness.type_text("new task at top");
+    harness.key(KeyCode::Enter);
+    harness.type_text("First");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        items(&harness),
+        ["*First", CALL, "Next", COFFEE, READ].map(String::from),
+        "the palette still adds a task at either end"
     );
 }
 

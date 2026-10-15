@@ -1782,7 +1782,7 @@ mod tests {
             "an edit that changed nothing"
         );
         assert_eq!(state.editing(), None);
-        for edit in [Command::EditTitle, Command::NewLike(Side::Below)] {
+        for edit in [Command::EditTitle, Command::New(Side::Below)] {
             command(&mut state, edit);
             send(
                 &mut state,

@@ -234,12 +234,10 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::Search => state.open_search(),
         Command::QuickAdd(prefill) => state.open_quick_add(prefill, today),
         Command::EditTitle => state.edit_title(),
-        Command::NewLike(side) => state.new_like(side),
+        Command::New(side) => state.add_beside(side),
         Command::AddTask(end) => state.add(ItemKind::Task, end),
         Command::AddSection(end) => state.add(ItemKind::Section, end),
-        Command::AddProject(end) | Command::AddProjectInArea(end) => {
-            state.add(ItemKind::Project, end);
-        }
+        Command::AddProject(end) => state.add(ItemKind::Project, end),
         Command::SetDate(kind) => state.open_date_prompt(kind, today),
         Command::EditItem => state.open_edit_dialog(),
         Command::StartToday => state.start_today(today),
@@ -275,9 +273,10 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::FilterTags => state.open_tag_filter(),
         Command::ClearTagFilter => state.clear_tag_filter(),
         Command::Sidebar => state.toggle_sidebar(),
-        // The pane shows a child project as one row, with nothing to fold, and only checklist
-        // items nest, in the attachments panel, which takes these first (D-75).
-        Command::Collapse | Command::Indent | Command::Outdent => {}
+        // The pane shows a child project as one row, with nothing to fold, only checklist items
+        // nest, in the attachments panel, which takes these first (D-75), and the pane leaves the
+        // areas to the sidebar (owner, D-127).
+        Command::Collapse | Command::Indent | Command::Outdent | Command::AddArea(_) => {}
         Command::FocusLeft => state.focus_left(),
         Command::FocusRight => state.focus_right(),
         Command::FocusPane(number) => state.focus_pane(number),
@@ -462,7 +461,7 @@ mod tests {
     fn editing_adding_and_deleting_change_the_state_and_a_command_ends_editing_first()
     -> Result<(), PlacementError> {
         let mut state = state()?;
-        give(&mut state, Command::NewLike(Side::Above));
+        give(&mut state, Command::New(Side::Above));
         for message in [
             Message::Edit(EditInput::Text(TextEdit::Insert('n'))),
             Message::Command(Command::Focus(Focus::Last)),
@@ -495,6 +494,13 @@ mod tests {
         assert_eq!(titles(&state), ["t", "a", "b", "u"]);
         give(&mut state, Command::AddSection(End::Bottom));
         assert!(state.editing().is_none(), "the Inbox holds no sections");
+        let before = state.document().clone();
+        give(&mut state, Command::AddArea(End::Bottom));
+        assert_eq!(state.document(), &before, "the pane adds no area");
+        assert!(!state.takes(Command::AddArea(End::Bottom)));
+        give(&mut state, Command::Sidebar);
+        assert!(state.takes(Command::AddArea(End::Bottom)));
+        give(&mut state, Command::Sidebar);
         give(&mut state, Command::AddProject(End::Top));
         assert!(state.editing().is_some());
         Ok(())
@@ -911,11 +917,11 @@ mod tests {
         assert!(state.editing().is_none(), "Enter only ends editing");
         assert_eq!(sidebar(&state).1, ["Works"]);
         assert_eq!(state.selection(), &pane, "the pane keeps its focus");
-        give(&mut state, Command::AddProjectInArea(End::Bottom));
+        give(&mut state, Command::New(Side::Below));
         assert_eq!(
             sidebar(&state),
             (Some(String::new()), vec!["Works".into(), "  ".into()]),
-            "`i` adds a project in the focused area"
+            "`o` adds a project in the focused area"
         );
         edit(&mut state, EditInput::Done);
         assert_eq!(
@@ -929,7 +935,7 @@ mod tests {
             "`p` adds one at the top level, listed before the areas"
         );
         edit(&mut state, EditInput::Done);
-        give(&mut state, Command::AddTask(End::Top));
+        give(&mut state, Command::AddArea(End::Top));
         type_into(&mut state, "Home");
         give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(
@@ -937,14 +943,14 @@ mod tests {
             (Some("Works".into()), vec!["Home".into(), "Works".into()])
         );
         assert_eq!(state.selection(), &pane);
-        give(&mut state, Command::NewLike(Side::Below));
+        give(&mut state, Command::New(Side::Above));
         assert_eq!(
             sidebar(&state),
             (
                 Some(String::new()),
-                vec!["Home".into(), "Works".into(), String::new()]
+                vec!["Home".into(), "  ".into(), "Works".into()]
             ),
-            "`o` beside an area adds an area"
+            "`O` on an area adds a project where the entry above stands"
         );
         edit(&mut state, EditInput::Done);
         give(&mut state, Command::EditTitle);
@@ -1328,7 +1334,7 @@ mod tests {
             state.sidebar_has_keys(),
             "Enter leaves the keys in the sidebar"
         );
-        give(&mut state, Command::NewLike(Side::Below));
+        give(&mut state, Command::New(Side::Below));
         type_into(&mut state, "P");
         edit(&mut state, EditInput::Done);
         assert_eq!(

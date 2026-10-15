@@ -27,7 +27,7 @@ impl Reach {
         match command {
             Command::EditTitle
             | Command::EditItem
-            | Command::NewLike(_)
+            | Command::New(_)
             | Command::EditDescription(super::Whose::Focused)
             | Command::OpenNote(super::Whose::Focused)
             | Command::OpenComments(super::Whose::Focused)
@@ -86,7 +86,7 @@ impl Reach {
             | Command::AddTask(_)
             | Command::AddSection(_)
             | Command::AddProject(_)
-            | Command::AddProjectInArea(_)
+            | Command::AddArea(_)
             | Command::FilterTags
             | Command::ClearTagFilter
             | Command::Sidebar
@@ -224,7 +224,7 @@ impl State {
         };
         match command {
             Command::Restore => false,
-            Command::NewLike(_) => self.container().is_some(),
+            Command::New(_) => self.container().is_some(),
             Command::Move(_) => {
                 self.container().is_some() || self.shown() == Shown::View(View::Today)
             }
@@ -326,7 +326,7 @@ mod tests {
         let listed = offered(&mut state);
         for command in [
             Command::EditTitle,
-            Command::NewLike(Side::Below),
+            Command::New(Side::Below),
             Command::OpenNote(Whose::Focused),
             Command::OpenChecklist,
             Command::ToggleCompleted,
@@ -382,7 +382,7 @@ mod tests {
         let listed = offered(&mut state);
         for command in [
             Command::EditTitle,
-            Command::NewLike(Side::Above),
+            Command::New(Side::Above),
             Command::EditDescription(Whose::Focused),
             Command::OpenComments(Whose::Focused),
             Command::OpenChecklist,
@@ -436,7 +436,7 @@ mod tests {
         );
         assert_eq!(titles(&state), ["t"]);
         let listed = offered(&mut state);
-        for command in [Command::NewLike(Side::Below), Command::GroupIntoSection] {
+        for command in [Command::New(Side::Below), Command::GroupIntoSection] {
             assert!(!listed.contains(&command), "{command:?} in a view");
         }
         assert!(

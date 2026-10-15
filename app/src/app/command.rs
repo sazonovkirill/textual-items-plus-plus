@@ -52,9 +52,10 @@ pub enum Command {
     QuickAdd(Prefill),
     /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
     EditTitle,
-    /// Add an item of the focused row's kind on this side of it, a task in a pane without rows,
-    /// and edit its title (FR-EDIT-05, FR-ORG-06, D-40).
-    NewLike(Side),
+    /// Add a task on this side of the focused row, the first of a section below its heading, a
+    /// project beside the sidebar's focused entry, the first of an area below it, or a checklist
+    /// item beside the focused one, and edit its title (FR-EDIT-05, FR-ORG-06, D-40, D-127).
+    New(Side),
     /// Add a task at this end of the container shown and edit its title (FR-EDIT-05, D-40).
     AddTask(End),
     /// Add a section at this end of the container shown and edit its title (FR-EDIT-05,
@@ -63,10 +64,9 @@ pub enum Command {
     /// Add a project at this end of the container shown, or of the top level from the sidebar,
     /// and edit its title (FR-EDIT-05, FR-ORG-06, D-40, D-45).
     AddProject(End),
-    /// Add a project at this end of the area the sidebar focuses or holding the project it
-    /// focuses, or of the container shown in the pane, and edit its title (FR-EDIT-05,
-    /// FR-ORG-06, D-75).
-    AddProjectInArea(End),
+    /// Add an area at this end of the areas from the sidebar and edit its title (FR-EDIT-05,
+    /// FR-ORG-06, D-127).
+    AddArea(End),
     /// Edit an item's description in place (FR-EDIT-03, FR-ORG-10).
     EditDescription(Whose),
     /// Open the edit dialog on the focused item, which changes all its properties but its
@@ -394,12 +394,12 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewLike(Side::Below),
+        command: Command::New(Side::Below),
         title: "New Item Below",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::NewLike(Side::Above),
+        command: Command::New(Side::Above),
         title: "New Item Above",
         context: Context::Navigate,
     },
@@ -434,13 +434,13 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::AddProjectInArea(End::Bottom),
-        title: "New Project in Area at Bottom",
+        command: Command::AddArea(End::Bottom),
+        title: "New Area at Bottom",
         context: Context::Navigate,
     },
     Entry {
-        command: Command::AddProjectInArea(End::Top),
-        title: "New Project in Area at Top",
+        command: Command::AddArea(End::Top),
+        title: "New Area at Top",
         context: Context::Navigate,
     },
     Entry {
@@ -948,14 +948,14 @@ mod tests {
     // FR-OPS-08, FR-ORG-06, FR-TASK-06
     #[test]
     fn editing_adding_deleting_and_the_clipboard_are_navigate_commands() {
-        let beside = [Command::NewLike, Command::Paste]
+        let beside = [Command::New, Command::Paste]
             .into_iter()
             .flat_map(|new| [new(Side::Below), new(Side::Above)]);
         let at_ends = [
             Command::AddTask,
             Command::AddSection,
             Command::AddProject,
-            Command::AddProjectInArea,
+            Command::AddArea,
         ]
         .into_iter()
         .flat_map(|add| [add(End::Bottom), add(End::Top)]);

@@ -142,6 +142,16 @@ fn add_rename_and_open_entries_in_the_sidebar() {
     harness.key(KeyCode::Enter);
     let title: String = harness.rows()[0].chars().skip(28).collect();
     assert!(title.contains("Errands"), "Enter opens it: {title:?}");
+    harness.type_text("OShed");
+    harness.key(KeyCode::Enter);
+    harness.type_text("joTools");
+    harness.key(KeyCode::Enter);
+    let added = entries(&harness);
+    assert_eq!(
+        added.get(9..12),
+        Some(&[" # Shed", " 󰆧 ERRANDS", "*# Tools"].map(String::from)[..]),
+        "O on an area adds a project above it, o one in it (D-127): {added:?}"
+    );
 }
 
 // FR-VIEW-10, FR-OPS-03, FR-OPS-04, D-75
@@ -267,7 +277,7 @@ fn collapse_an_area_and_expand_it_again() {
         Some(" # Website              4")
     );
     harness.type_text("G");
-    harness.type_text("iBoxes");
+    harness.type_text("oBoxes");
     harness.key(KeyCode::Enter);
     let added = entries(&harness);
     assert_eq!(

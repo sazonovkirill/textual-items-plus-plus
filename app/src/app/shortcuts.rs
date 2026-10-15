@@ -74,11 +74,11 @@ impl KeyGroup {
             | Command::Search => Self::Going,
             Command::EditTitle
             | Command::QuickAdd(_)
-            | Command::NewLike(_)
+            | Command::New(_)
             | Command::AddTask(_)
             | Command::AddSection(_)
             | Command::AddProject(_)
-            | Command::AddProjectInArea(_)
+            | Command::AddArea(_)
             | Command::EditDescription(_)
             | Command::EditItem
             | Command::OpenNote(_)
@@ -146,7 +146,7 @@ impl State {
     /// picker, the command palette, the context menu, Go to Symbol, the date prompt, Quick Add or
     /// the settings window is open, in edit mode or while the words to search for are typed only
     /// global ones, while the sidebar has the keys those it takes, and otherwise any but Toggle
-    /// Evening outside Today (FR-VIEW-13).
+    /// Evening outside Today (FR-VIEW-13) and the area keys, which only the sidebar takes (D-127).
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -178,6 +178,7 @@ impl State {
             context != Some(Context::Conflict)
                 && (!self.sidebar_has_keys() || state::sidebar_takes(command))
                 && (command != Command::ToggleEvening || self.shown() == Shown::View(View::Today))
+                && (!matches!(command, Command::AddArea(_)) || self.sidebar_has_keys())
         }
     }
 
@@ -272,12 +273,13 @@ mod tests {
         let navigate = REGISTRY
             .iter()
             .filter(|entry| entry.context != Context::Conflict)
-            .filter(|entry| entry.command != Command::ToggleEvening)
+            .filter(|entry| !matches!(entry.command, Command::ToggleEvening | Command::AddArea(_)))
             .count();
         assert_eq!(
             listed.len(),
             navigate,
-            "every command but the conflict's and, outside Today, Toggle Evening"
+            "every command but the conflict's, outside Today Toggle Evening and outside the \
+             sidebar the area keys"
         );
         assert_eq!(
             groups
@@ -327,7 +329,7 @@ mod tests {
         }
         let groups = listed(&state).unwrap_or_default();
         assert!(groups.iter().all(|&(name, _)| name != "Conflict"));
-        give(&mut state, Command::NewLike(super::super::Side::Below));
+        give(&mut state, Command::New(super::super::Side::Below));
         assert_eq!(
             listed(&state),
             Some(vec![("View and Panels", 1)]),

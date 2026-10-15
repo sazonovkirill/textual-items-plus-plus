@@ -363,68 +363,59 @@ fn alike(document: &Document, id: ItemId, other: ItemId) -> bool {
         && later(other) == later(id)
 }
 
-/// Where a new item of `kind` goes from the entry `focused` among `entries`, on `side` of it, as
-/// its parent, `None` for the top level, and its index there. An area goes beside the area
-/// holding the focus, or first among the areas from the Inbox, a view or a project in no area. A
-/// project goes above or below the focused project, or the outermost project holding it, or first
-/// in the focused area on either side, as a new task below a section heading is its first, and
-/// from the Inbox or a view first among the projects in no area. With nothing focused either goes
-/// last at the top level, and any other kind goes nowhere.
+/// Where a new project goes from the entry `focused` among `entries`, on `side` of it, as its
+/// parent, `None` for the top level, and its index there (D-127). It goes above or below the
+/// focused project, or the outermost project holding it. Below an area it is the area's first,
+/// as a new task below a section heading is the section's first; above one it goes where the
+/// entry above stands: last in an area listing none of its projects, below a project, and else
+/// last among the projects in no area. From the Inbox or a view it goes first among the projects
+/// in no area, and with nothing focused last at the top level.
 pub(super) fn place(
     document: &Document,
     entries: &[Stop],
     focused: Option<Shown>,
-    kind: ItemKind,
     side: Side,
 ) -> Option<(Option<ItemId>, usize)> {
     let end = (None, document.top_level().len());
     let Some(focused) = focused else {
-        return matches!(kind, ItemKind::Area | ItemKind::Project).then_some(end);
+        return Some(end);
     };
     // The top level lists projects apart from areas, each kind in the order of the file, so the
-    // first place there is the first of either kind. The views are listed with the Inbox.
+    // first place there is the first project's. The views are listed with the Inbox.
     let focused = match focused {
         Shown::Container(id) if id != document.inbox() => id,
-        _ => return matches!(kind, ItemKind::Area | ItemKind::Project).then_some((None, 0)),
+        Shown::Container(_) | Shown::View(_) => return Some((None, 0)),
     };
-    let below = usize::from(side == Side::Below);
-    match kind {
-        ItemKind::Area => {
-            let top = container::path(document, focused).first().copied()?;
-            if self::kind(document, top) != Some(ItemKind::Area) {
-                return Some((None, 0));
-            }
-            let (_, index) = document.position(top)?;
-            Some((None, index + below))
-        }
-        // Above an area the sidebar lists another area's projects or those in no area, so a
-        // project added there goes into it as from below.
-        ItemKind::Project if self::kind(document, focused) == Some(ItemKind::Area) => {
-            let at = entries
-                .iter()
-                .position(|stop| stop.shown() == Shown::Container(focused))?;
-            match entries.get(at + 1).filter(|next| next.depth() > 0) {
-                Some(&Stop::Place(first)) => document.position(first.id),
-                // The views are listed at the top level, so no entry holds one.
-                None | Some(Stop::View(_)) => {
-                    Some((Some(focused), document.children(focused).len()))
-                }
-            }
-        }
-        // Beside the outermost project holding the focus, since v1 nests no project in another
-        // (D-57), though a file may hold one.
-        ItemKind::Project => {
-            entries
-                .iter()
-                .find(|stop| stop.shown() == Shown::Container(focused))?;
-            let outermost = container::path(document, focused)
-                .into_iter()
-                .find(|&id| self::kind(document, id) == Some(ItemKind::Project))?;
-            let (parent, index) = document.position(outermost)?;
-            Some((parent, index + below))
-        }
-        _ => None,
+    let at = entries
+        .iter()
+        .position(|stop| stop.shown() == Shown::Container(focused))?;
+    if kind(document, focused) != Some(ItemKind::Area) {
+        return beside_project(document, focused, side);
     }
+    match side {
+        Side::Below => match entries.get(at + 1).filter(|next| next.depth() > 0) {
+            Some(&Stop::Place(first)) => document.position(first.id),
+            // The views are listed at the top level, so no entry holds one.
+            None | Some(Stop::View(_)) => Some((Some(focused), document.children(focused).len())),
+        },
+        Side::Above => match at.checked_sub(1).and_then(|before| entries.get(before)) {
+            Some(&Stop::Place(before)) if kind(document, before.id) == Some(ItemKind::Area) => {
+                Some((Some(before.id), document.children(before.id).len()))
+            }
+            Some(&Stop::Place(before)) => beside_project(document, before.id, Side::Below),
+            None | Some(Stop::View(_)) => Some(end),
+        },
+    }
+}
+
+/// The parent and index of a new project on `side` of the outermost project holding `id`, or
+/// `id` itself, since v1 nests no project in another (D-57), though a file may hold one.
+fn beside_project(document: &Document, id: ItemId, side: Side) -> Option<(Option<ItemId>, usize)> {
+    let outermost = container::path(document, id)
+        .into_iter()
+        .find(|&id| kind(document, id) == Some(ItemKind::Project))?;
+    let (parent, index) = document.position(outermost)?;
+    Some((parent, index + usize::from(side == Side::Below)))
 }
 
 /// The siblings of `id`, the top-level nodes for one at the top level, and its index among them.
@@ -451,13 +442,6 @@ fn listed(document: &Document, id: ItemId) -> bool {
 /// The kind of the item `id`, if it is one.
 fn kind(document: &Document, id: ItemId) -> Option<ItemKind> {
     document.node(id).and_then(Node::item).map(|item| item.kind)
-}
-
-/// The area that is `id` or holds it, if any.
-pub(super) fn area(document: &Document, id: ItemId) -> Option<ItemId> {
-    container::path(document, id)
-        .into_iter()
-        .find(|&above| kind(document, above) == Some(ItemKind::Area))
 }
 
 #[cfg(test)]
@@ -696,16 +680,11 @@ mod tests {
         Ok(())
     }
 
-    /// Where a new `kind` goes from the entry titled `focused`, as the titles of the parent and
+    /// Where a new project goes from the entry titled `focused`, as the titles of the parent and
     /// of the sibling it goes before, if any.
-    fn placed(
-        document: &Document,
-        focused: Option<&str>,
-        kind: ItemKind,
-        side: Side,
-    ) -> Option<(String, String)> {
+    fn placed(document: &Document, focused: Option<&str>, side: Side) -> Option<(String, String)> {
         let focused = focused.map(|title| Shown::Container(find(document, title)));
-        let (parent, index) = place(document, &entries(document), focused, kind, side)?;
+        let (parent, index) = place(document, &entries(document), focused, side)?;
         let title = |id: Option<&ItemId>| {
             id.and_then(|&id| document.node(id).and_then(Node::item))
                 .map_or(String::new(), |it| it.title.clone())
@@ -718,11 +697,11 @@ mod tests {
         (parent.to_owned(), before.to_owned())
     }
 
-    // FR-VIEW-10, FR-EDIT-05, FR-ORG-06
+    // FR-VIEW-10, FR-EDIT-05, FR-ORG-06, D-127
     #[test]
     fn a_new_project_goes_beside_the_focused_project_or_first_in_the_focused_area() {
         let document = document();
-        let new = |focused, side| placed(&document, Some(focused), Project, side);
+        let new = |focused, side| placed(&document, Some(focused), side);
         assert_eq!(new("Docs", Side::Above), Some(at("Work", "Docs")));
         assert_eq!(
             new("Docs", Side::Below),
@@ -749,14 +728,9 @@ mod tests {
             Some(at("Home", "")),
             "into the empty area"
         );
-        assert_eq!(
-            new("Home", Side::Above),
-            Some(at("Home", "")),
-            "into the area from above too"
-        );
         assert_eq!(new("Solo", Side::Below), Some(at("", "Home")));
         assert_eq!(
-            placed(&document, None, Project, Side::Above),
+            placed(&document, None, Side::Above),
             Some(at("", "")),
             "with nothing focused, last at the top level"
         );
@@ -767,7 +741,6 @@ mod tests {
                 &document,
                 &entries,
                 Some(Shown::Container(gone)),
-                Project,
                 Side::Below
             ),
             None,
@@ -775,39 +748,41 @@ mod tests {
         );
     }
 
-    // FR-VIEW-10, FR-EDIT-05, FR-ORG-06
+    // FR-VIEW-10, FR-EDIT-05, FR-ORG-06, D-127
     #[test]
-    fn a_new_area_goes_beside_the_top_level_item_holding_the_focus() {
-        let document = document();
-        let new = |focused, side| placed(&document, focused, Area, side);
-        assert_eq!(new(Some("Blog"), Side::Below), Some(at("", "Gone")));
-        assert_eq!(new(Some("Blog"), Side::Above), Some(at("", "Work")));
-        assert_eq!(new(Some("Home"), Side::Below), Some(at("", "")));
-        assert_eq!(new(None, Side::Below), Some(at("", "")));
+    fn above_an_area_a_new_project_goes_where_the_entry_above_stands() {
+        let mut document = document();
+        let new = |document: &Document, focused| placed(document, Some(focused), Side::Above);
         assert_eq!(
-            new(Some("Solo"), Side::Above),
-            Some(at("", "Work")),
-            "first among the areas from a project in no area"
+            new(&document, "Home"),
+            Some(at("Work", "")),
+            "below Docs, last in Work"
+        );
+        assert_eq!(
+            new(&document, "Work"),
+            Some(at("", "Home")),
+            "below Solo, last among the projects in no area"
+        );
+        add(&mut document, None, Area, "Garden");
+        assert_eq!(
+            new(&document, "Garden"),
+            Some(at("Home", "")),
+            "last in the empty area above"
+        );
+        let mut alone = Document::new();
+        add(&mut alone, None, Area, "Work");
+        assert_eq!(
+            new(&alone, "Work"),
+            Some(at("", "")),
+            "below the views, at the top level"
         );
         let entries = entries(&document);
-        let inbox = Some(Shown::Container(document.inbox()));
-        let today = Some(Shown::View(View::Today));
-        for (kind, side) in [(Area, Side::Above), (Project, Side::Below)] {
-            for from in [inbox, today] {
-                assert_eq!(
-                    place(&document, &entries, from, kind, side),
-                    Some((None, 0)),
-                    "first of its kind from the Inbox and the views listed with it"
-                );
-            }
-        }
-        assert_eq!(
-            place(&document, &entries, inbox, Section, Side::Below),
-            None
-        );
-        for kind in [Section, Task] {
-            assert_eq!(placed(&document, Some("Work"), kind, Side::Below), None);
-            assert_eq!(placed(&document, None, kind, Side::Below), None);
+        for from in [Shown::Container(document.inbox()), Shown::View(View::Today)] {
+            assert_eq!(
+                place(&document, &entries, Some(from), Side::Below),
+                Some((None, 0)),
+                "first of the projects from the Inbox and the views listed with it"
+            );
         }
     }
 
