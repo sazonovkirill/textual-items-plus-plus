@@ -167,16 +167,10 @@ fn a_click_in_a_pane_gives_it_the_keys_from_the_sidebar_or_another_pane() {
 #[test]
 fn a_click_on_a_sidebar_entry_shows_it_and_the_wheel_browses() {
     let mut harness = Harness::launched(100, 20);
-    click(&mut harness, 5, 14);
+    click(&mut harness, 5, 12);
     let rows = harness.rows();
     assert!(rows[0].contains("Website"), "{}", harness.screen());
-    assert!(!rows[14].starts_with('▌'), "the keys stay in the pane");
-    click(&mut harness, 5, 10);
-    assert!(
-        harness.rows()[0].contains("Website"),
-        "a click on a heading does nothing: {}",
-        harness.screen()
-    );
+    assert!(!rows[12].starts_with('▌'), "the keys stay in the pane");
     click(&mut harness, 5, 0);
     assert!(
         harness.rows()[0].contains("󰚇 Inbox"),

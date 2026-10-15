@@ -190,9 +190,9 @@ fn a_reload_keeps_the_sidebar_on_its_entry_and_its_areas_collapsed() {
     fs::write(&path, "Inbox:\nAlpha: @area\n\tA1:\nBeta: @area\n\tB1:\n").expect("written");
     harness.check();
     let rows = harness.rows();
-    assert!(rows[10].starts_with("▌󰆧 ALPHA             ▸│"), "{rows:#?}");
+    assert!(rows[9].starts_with("▌󰆧 ALPHA             ▸│"), "{rows:#?}");
     assert!(
-        rows[13].starts_with(" # B1 "),
+        rows[12].starts_with(" # B1 "),
         "Beta stays expanded: {rows:#?}"
     );
 }

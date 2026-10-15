@@ -243,10 +243,9 @@ fn turning_task_counts_off_hides_the_sidebars_and_the_navigators_counts_and_keep
     harness.ctrl('b');
     let counted = sidebar(&harness);
     assert_eq!(
-        counted.get(..8).unwrap_or_default(),
+        counted.get(..7).unwrap_or_default(),
         [
             "󰚇 Inbox                3",
-            "Views",
             "󰖙 Today                4",
             "󱄵 Upcoming             6",
             "󰈻 Flagged",
@@ -266,10 +265,9 @@ fn turning_task_counts_off_hides_the_sidebars_and_the_navigators_counts_and_keep
     );
     let uncounted = sidebar(&harness);
     assert_eq!(
-        uncounted.get(..8).unwrap_or_default(),
+        uncounted.get(..7).unwrap_or_default(),
         [
             "󰚇 Inbox",
-            "Views",
             "󰖙 Today",
             "󱄵 Upcoming",
             "󰈻 Flagged",
@@ -295,8 +293,5 @@ fn the_app_starts_without_task_counts_when_the_file_turns_them_off() {
     let mut harness = Harness::launched_in(folders, None, 80, 24).expect("the demo opens");
     harness.ctrl('b');
     let rows = sidebar(&harness);
-    assert_eq!(
-        rows.get(..3).unwrap_or_default(),
-        ["󰚇 Inbox", "Views", "󰖙 Today"]
-    );
+    assert_eq!(rows.get(..2).unwrap_or_default(), ["󰚇 Inbox", "󰖙 Today"]);
 }

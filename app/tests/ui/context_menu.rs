@@ -137,7 +137,7 @@ fn on_the_sidebar_the_menu_drops_down_below_a_project_but_opens_on_no_view() {
     harness.ctrl('b');
     open(&mut harness);
     assert_eq!(menu(&harness), None, "nothing on the Inbox");
-    harness.type_text("jjjjjjjjj");
+    harness.type_text("jjjjjjj");
     let focused = row_of(&harness, "▌# Learn Rust").expect("the project is focused");
     open(&mut harness);
     let (top, inside) = menu(&harness).expect("the menu opens on a project");

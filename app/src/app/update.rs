@@ -316,8 +316,8 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Direction, End, Focus, Go, Notice, Opened, Part, Refusal, Settings, Side, SidebarRow, Stop,
-        TextEdit, Whose,
+        Direction, End, Focus, Go, Notice, Opened, Part, Refusal, Settings, Side, Stop, TextEdit,
+        Whose,
         view::{Shown, View},
     };
     use crate::domain::{
@@ -399,7 +399,7 @@ mod tests {
         let at = sidebar
             .entries
             .iter()
-            .position(|&row| row == SidebarRow::Stop(Stop::View(view)))?;
+            .position(|&stop| stop == Stop::View(view))?;
         sidebar.counts.get(at).copied()
     }
 
@@ -638,14 +638,13 @@ mod tests {
     /// which every sidebar lists first, indented by depth.
     fn sidebar(state: &State) -> (Option<String>, Vec<String>) {
         let view = state.sidebar().expect("the sidebar shows");
-        let title = |row: &SidebarRow| match *row {
-            SidebarRow::Stop(Stop::Place(place)) => state
+        let title = |stop: &Stop| match *stop {
+            Stop::Place(place) => state
                 .document()
                 .node(place.id)
                 .and_then(Node::item)
                 .map_or(String::new(), |item| item.title.clone()),
-            SidebarRow::Stop(Stop::View(view)) => view.title().to_owned(),
-            SidebarRow::Heading(group) => group.title().to_owned(),
+            Stop::View(view) => view.title().to_owned(),
         };
         let focused = view
             .focused
@@ -655,28 +654,17 @@ mod tests {
             .entries
             .iter()
             .skip(1)
-            .filter_map(|&row| match row {
-                SidebarRow::Stop(stop @ Stop::Place(_)) => Some(stop),
-                _ => None,
-            })
-            .map(|stop| {
-                format!(
-                    "{}{}",
-                    "  ".repeat(stop.depth()),
-                    title(&SidebarRow::Stop(stop))
-                )
-            })
+            .filter(|stop| matches!(stop, Stop::Place(_)))
+            .map(|stop| format!("{}{}", "  ".repeat(stop.depth()), title(stop)))
             .collect();
         (focused, entries)
     }
 
-    /// Moves the sidebar's focus from the Inbox past the views, and the headings, listed after
-    /// it, to the first container's entry.
+    /// Moves the sidebar's focus from the Inbox past the views listed after it.
     fn past_the_views(state: &mut State) {
         let views = state.sidebar().map_or(0, |view| {
-            let rows = view.entries.iter().skip(1);
-            rows.take_while(|row| !matches!(row, SidebarRow::Stop(Stop::Place(_))))
-                .count()
+            let views = view.entries.iter();
+            views.filter(|stop| matches!(stop, Stop::View(_))).count()
         });
         for _ in 0..=views {
             give(state, Command::Focus(Focus::Next));
@@ -846,12 +834,9 @@ mod tests {
         assert!(!pinned(&state), "one step to undo");
         give(&mut state, Command::Redo);
         give(&mut state, Command::Focus(Focus::First));
-        // The Inbox, the views' heading and the views, then the pinned projects' heading.
-        for at in 0..=crate::app::view::REGISTRY.len() + 2 {
-            if !matches!(sidebar(&state).0.as_deref(), Some("Views" | "Pinned")) {
-                give(&mut state, Command::TogglePinned);
-                assert_eq!(state.notice(), Some(&Notice::NotAProject), "{at}");
-            }
+        for _ in 0..=crate::app::view::REGISTRY.len() {
+            give(&mut state, Command::TogglePinned);
+            assert_eq!(state.notice(), Some(&Notice::NotAProject));
             give(&mut state, Command::Focus(Focus::Next));
         }
         assert_eq!(sidebar(&state).0.as_deref(), Some("Site"));
@@ -859,11 +844,9 @@ mod tests {
         assert!(!pinned(&state), "unpinned from its entry among the pinned");
         assert_eq!(
             sidebar(&state).0.as_deref(),
-            Some("Site"),
-            "now where the entry was, the pinned projects' heading gone with it"
+            Some("Work"),
+            "now where the entry was"
         );
-        give(&mut state, Command::Focus(Focus::Previous));
-        assert_eq!(sidebar(&state).0.as_deref(), Some("Work"));
         give(&mut state, Command::EditTitle);
         give(&mut state, Command::NextPane);
         give(&mut state, Command::Focus(Focus::First));
@@ -892,8 +875,7 @@ mod tests {
         let mut state = State::new(document, Opened::Demo, TODAY);
         give(&mut state, Command::Sidebar);
         give(&mut state, Command::Focus(Focus::First));
-        // Past the views and the headings of the views and the pinned projects.
-        for _ in 0..crate::app::view::REGISTRY.len() + 3 {
+        for _ in 0..=crate::app::view::REGISTRY.len() {
             give(&mut state, Command::Focus(Focus::Next));
         }
         let before = state.document().clone();
@@ -946,9 +928,7 @@ mod tests {
         give(&mut state, Command::Undo);
         assert!(!flagged(&state), "one step to undo");
         give(&mut state, Command::Focus(Focus::First));
-        for _ in 0..2 {
-            give(&mut state, Command::Focus(Focus::Next));
-        }
+        give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(sidebar(&state).0.as_deref(), Some("Today"));
         give(&mut state, Command::ToggleFlagged);
         assert_eq!(state.notice(), Some(&Notice::NotFlaggable), "a view");
@@ -1377,70 +1357,6 @@ mod tests {
         Ok(())
     }
 
-    // FR-VIEW-10, D-144
-    #[test]
-    fn a_sidebar_heading_folds_its_group_opens_nothing_and_browsing_passes_it()
-    -> Result<(), PlacementError> {
-        let mut document = Document::new();
-        document.push(None, Node::Item(Item::new(ItemKind::Project, "Solo")))?;
-        let mut state = State::new(document, Opened::Demo, TODAY);
-        give(&mut state, Command::Browse(Direction::Down));
-        assert_eq!(state.shown(), Shown::View(View::Today), "past the heading");
-        give(&mut state, Command::Sidebar);
-        give(&mut state, Command::Focus(Focus::First));
-        give(&mut state, Command::Focus(Focus::Next));
-        assert_eq!(sidebar(&state).0.as_deref(), Some("Views"));
-        let inbox = Shown::Container(state.document().inbox());
-        assert_eq!(state.shown(), inbox, "a heading opens nothing");
-        let before = state.clone();
-        for command in [
-            Command::EditTitle,
-            Command::RenameContainer,
-            Command::Delete,
-            Command::Move(Direction::Down),
-            Command::TogglePinned,
-        ] {
-            give(&mut state, command);
-        }
-        assert_eq!(state, before, "nor acts on anything");
-        give(&mut state, Command::Collapse);
-        give(&mut state, Command::Focus(Focus::Next));
-        assert_eq!(
-            sidebar(&state).0.as_deref(),
-            Some("Projects"),
-            "the views folded under their heading"
-        );
-        give(&mut state, Command::Collapse);
-        let rows = state.sidebar().map(|view| view.entries.len());
-        assert_eq!(rows, Some(3), "the Inbox and the two headings");
-        give(&mut state, Command::Focus(Focus::First));
-        give(&mut state, Command::Browse(Direction::Down));
-        assert_eq!(
-            sidebar(&state).0.as_deref(),
-            Some("Projects"),
-            "past the folded views' heading, the next one ends the list"
-        );
-        give(&mut state, Command::Collapse);
-        give(&mut state, Command::Focus(Focus::First));
-        give(&mut state, Command::Browse(Direction::Down));
-        assert_eq!(
-            sidebar(&state).0.as_deref(),
-            Some("Solo"),
-            "past both headings"
-        );
-        give(&mut state, Command::Focus(Focus::Previous));
-        give(&mut state, Command::Collapse);
-        give(&mut state, Command::New(Side::Below));
-        type_into(&mut state, "P");
-        edit(&mut state, EditInput::Done);
-        assert_eq!(
-            sidebar(&state),
-            (Some("P".into()), vec!["P".into(), "Solo".into()]),
-            "from a heading a project goes first in no area, its group unfolding to show it"
-        );
-        Ok(())
-    }
-
     // FR-VIEW-10, FR-VIEW-06
     #[test]
     fn the_sidebar_lists_the_views_after_the_inbox_and_only_opens_them()
@@ -1452,9 +1368,7 @@ mod tests {
         document.push(Some(work), Node::Item(task))?;
         let mut state = State::new(document, Opened::Demo, TODAY);
         give(&mut state, Command::Sidebar);
-        for _ in 0..2 {
-            give(&mut state, Command::Focus(Focus::Next));
-        }
+        give(&mut state, Command::Focus(Focus::Next));
         assert_eq!(sidebar(&state).0.as_deref(), Some("Today"));
         let before = state.clone();
         for command in [

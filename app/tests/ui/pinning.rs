@@ -8,13 +8,13 @@ use ratatui::layout::{Position, Rect};
 
 use crate::support::Harness;
 
-/// The sidebar's rows below the views on an 80-column screen, from the pinned projects' heading,
-/// trimmed at the right, the focus marker written `*`.
+/// The sidebar's rows below the views on an 80-column screen, trimmed at the right, the focus
+/// marker written `*`.
 fn below_the_views(harness: &Harness) -> Vec<String> {
     let rows = harness.rows();
     rows.iter()
         .take(rows.len() - 1)
-        .skip(10)
+        .skip(9)
         .map(|row| {
             let sidebar: String = row.chars().take(25).collect();
             match sidebar.strip_prefix('▌') {
@@ -30,17 +30,15 @@ fn below_the_views(harness: &Harness) -> Vec<String> {
 fn pin_projects_from_the_sidebar_and_rename_and_unpin_one_from_its_pinned_entry() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjjjjjjmp");
+    harness.type_text("jjjjjjjmp");
     harness.type_text("jjmp");
     assert_eq!(
-        below_the_views(&harness).get(..9),
+        below_the_views(&harness).get(..7),
         Some(
             &[
-                " Pinned",
                 " # Website              4",
                 " # Learn Rust           2",
                 "",
-                " Projects",
                 " # Learn Rust           2",
                 "",
                 " 󰆧 WORK                 7",
@@ -50,31 +48,29 @@ fn pin_projects_from_the_sidebar_and_rename_and_unpin_one_from_its_pinned_entry(
         ),
         "after the views, in the order of the file, set off by a blank line"
     );
-    harness.type_text("kkkk");
+    harness.type_text("kkk");
     harness.type_text("R");
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 80, 24)),
-        Some(Position::new(13, 12)),
+        Some(Position::new(13, 10)),
         "the title edited in the entry focused"
     );
     harness.type_text("!");
     harness.key(KeyCode::Enter);
     harness.type_text("mp");
     assert_eq!(
-        below_the_views(&harness).get(..7),
+        below_the_views(&harness).get(..5),
         Some(
             &[
-                " Pinned",
                 " # Website              4",
                 "",
-                "*Projects",
-                " # Learn Rust!          2",
+                "*# Learn Rust!          2",
                 "",
                 " 󰆧 WORK                 7",
             ]
             .map(String::from)[..]
         ),
-        "unpinned, the focus goes to the row now where it was"
+        "unpinned, the focus goes to the entry now where it was"
     );
 }
 
@@ -94,7 +90,7 @@ fn navigator(harness: &Harness) -> Vec<String> {
 fn only_a_project_is_pinned_and_the_navigator_lists_it_again_until_a_query_is_typed() {
     let mut harness = Harness::new(80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjjjjjjjjmp");
+    harness.type_text("jjjjjjjjjmp");
     harness.ctrl('b');
     harness.type_text("gamp");
     let status = harness.rows().last().cloned().unwrap_or_default();
@@ -132,16 +128,16 @@ fn a_pinned_entry_moves_past_the_pinned_project_beside_it_only_when_it_is_a_sibl
     fs::write(&path, file).expect("the file is written");
     let mut harness = Harness::open(path.clone(), 80, 24);
     harness.ctrl('b');
-    harness.type_text("jjjjjjjjj");
+    harness.type_text("jjjjjjj");
     harness.press(KeyCode::Char('j'), KeyModifiers::ALT);
     assert_eq!(
-        below_the_views(&harness).get(1..4).unwrap_or_default(),
+        below_the_views(&harness).get(..3).unwrap_or_default(),
         [" # C", "*# A", " # D"],
         "past C, not the unpinned B between them"
     );
     harness.press(KeyCode::Char('j'), KeyModifiers::ALT);
     assert_eq!(
-        below_the_views(&harness).get(1..4).unwrap_or_default(),
+        below_the_views(&harness).get(..3).unwrap_or_default(),
         [" # C", "*# A", " # D"]
     );
     let status = harness.rows().last().cloned().unwrap_or_default();
@@ -151,7 +147,7 @@ fn a_pinned_entry_moves_past_the_pinned_project_beside_it_only_when_it_is_a_sibl
     );
     harness.press(KeyCode::Char('k'), KeyModifiers::ALT);
     assert_eq!(
-        below_the_views(&harness).get(1..4).unwrap_or_default(),
+        below_the_views(&harness).get(..3).unwrap_or_default(),
         ["*# A", " # C", " # D"]
     );
     harness.press(KeyCode::Char('j'), KeyModifiers::ALT);

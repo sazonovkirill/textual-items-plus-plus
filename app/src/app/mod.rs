@@ -78,7 +78,7 @@ pub use search::{Excerpt, Query, SearchInput, Source};
 pub use selection::Selection;
 pub use settings::{Animations, BuiltIn, IconSet, Setting, Settings, SettingsInput};
 pub use shortcuts::KeyGroup;
-pub use sidebar::{SidebarGroup, SidebarRow, SidebarView};
+pub use sidebar::SidebarView;
 pub use state::{Opened, State};
 pub use tags::{TagEntry, TagMark, TagsFor, TagsView};
 pub use text_field::{Motion, TextEdit, TextField, grapheme_columns, screen_lines};
