@@ -24,11 +24,11 @@ fn open_today() {
         "",
         "▌ ☐ Answer the recruiter's email                \u{f0a31} yesterday",
         "▌   Work",
-        "  ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+        "  ☐ Write the announcement @writing             \u{f0756} 1/5 \u{f11d7} \u{f0189} 1",
         "    Work › Website › Launch",
         "  ☐ Review two portfolios                           \u{f166c} today",
         "    Work › Hiring",
-        "  ☐ Water the plants                            \u{f166d} yesterday",
+        "  ☐ Water the plants",
         "    Home",
         "",
         "",
@@ -55,12 +55,7 @@ fn an_inbox_task_in_today_says_nothing_of_where_it_is() {
     harness.type_text("gt");
     assert_eq!(
         trimmed(&harness)[2..6],
-        [
-            "▌ ☐ Call mom                                        \u{f166d} today",
-            "  ☐ Water the plants                                \u{f166d} today",
-            "    Home",
-            "",
-        ],
+        ["▌ ☐ Call mom", "  ☐ Water the plants", "    Home", "",],
         "giving an Inbox task a date takes it out of the Inbox, so its row names no place"
     );
 }
@@ -98,7 +93,7 @@ fn filter_today_by_a_tag() {
     let mut filtered = vec![
         "  \u{f0599} Today                                        \u{f04fc} @writing",
         "",
-        "▌ ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+        "▌ ☐ Write the announcement @writing             \u{f0756} 1/5 \u{f11d7} \u{f0189} 1",
         "▌   Work › Website › Launch",
     ];
     filtered.resize(15, "");
@@ -147,11 +142,11 @@ fn me_puts_a_task_in_the_evening_at_the_bottom_of_today_and_takes_it_out() {
             "    Work",
             "  ☐ Review two portfolios                           \u{f166c} today",
             "    Work › Hiring",
-            "  ☐ Water the plants                            \u{f166d} yesterday",
+            "  ☐ Water the plants",
             "    Home",
             "",
             "  \u{f0594} Evening",
-            "▌ ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+            "▌ ☐ Write the announcement @writing             \u{f0756} 1/5 \u{f11d7} \u{f0189} 1",
             "▌   Work › Website › Launch",
         ],
         "under the Evening heading after the rest, still focused"
@@ -162,9 +157,9 @@ fn me_puts_a_task_in_the_evening_at_the_bottom_of_today_and_takes_it_out() {
         [
             "",
             "  \u{f0594} Evening",
-            "  ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+            "  ☐ Write the announcement @writing             \u{f0756} 1/5 \u{f11d7} \u{f0189} 1",
             "    Work › Website › Launch",
-            "▌ ☐ Water the plants                            \u{f166d} yesterday",
+            "▌ ☐ Water the plants",
             "▌   Home",
         ],
         "in file order within the Evening"
@@ -175,11 +170,11 @@ fn me_puts_a_task_in_the_evening_at_the_bottom_of_today_and_takes_it_out() {
         [
             "  ☐ Answer the recruiter's email                \u{f0a31} yesterday",
             "    Work",
-            "▌ ☐ Write the announcement @writing     \u{f0756} 1/5 \u{f11d7} \u{f0189} 1 \u{f166d} today",
+            "▌ ☐ Write the announcement @writing             \u{f0756} 1/5 \u{f11d7} \u{f0189} 1",
             "▌   Work › Website › Launch",
             "  ☐ Review two portfolios                           \u{f166c} today",
             "    Work › Hiring",
-            "▌ ☐ Water the plants                            \u{f166d} yesterday",
+            "▌ ☐ Water the plants",
             "▌   Home",
         ],
         "once all selected are in the Evening, the same key takes them out"
@@ -335,10 +330,7 @@ fn a_completed_item_given_a_place_shows_after_the_open_ones() {
     let listed = |harness: &Harness| -> Vec<String> {
         trimmed(harness)
             .into_iter()
-            .filter_map(|row| {
-                let row = row.strip_suffix(" today")?.trim_end_matches('\u{f166d}');
-                Some(row.trim_end().to_owned())
-            })
+            .filter(|row| row.contains(['☐', '✔']))
             .collect()
     };
     assert_eq!(
@@ -366,20 +358,14 @@ fn a_task_added_in_an_empty_today_starts_today() {
     harness.key(KeyCode::Esc);
     assert_eq!(
         trimmed(&harness)[2..4],
-        [
-            "▌ ☐ Buy milk                                        \u{f166d} today",
-            "",
-        ],
+        ["▌ ☐ Buy milk", "",],
         "a row of its own, with no location, since it is in the Inbox (D-126)"
     );
     harness.type_text(" Bread");
     harness.key(KeyCode::Esc);
     assert_eq!(
         trimmed(&harness)[2..4],
-        [
-            "  ☐ Buy milk                                        \u{f166d} today",
-            "▌ ☐ Bread                                           \u{f166d} today",
-        ],
+        ["  ☐ Buy milk", "▌ ☐ Bread",],
         "Space adds below the focused row"
     );
 }

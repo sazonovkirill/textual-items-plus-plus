@@ -1062,6 +1062,7 @@ impl<'a> ContainerPane<'a> {
     /// each its icon and the date named relative to today, a space after each: start in the start
     /// color and due in the due color, or, when it is overdue, with the overdue icon, bold and
     /// reversed in the overdue color; all dimmed once it is completed (FR-DATE-02, FR-DATE-04).
+    /// Today, its Evening included, shows only the due chip (D-139).
     fn chips(&self, item: &Item) -> Vec<Span<'a>> {
         if !item.kind.takes_tags_and_dates() {
             return Vec::new();
@@ -1081,6 +1082,7 @@ impl<'a> ContainerPane<'a> {
         };
         let start = item
             .start
+            .filter(|_| self.shown != Shown::View(View::Today))
             .map(|date| chip(Icon::Start, date, Style::new().fg(theme.start)));
         let due = item.due.map(|date| {
             if item.overdue(self.today) {
@@ -1507,7 +1509,7 @@ mod tests {
         assert_eq!(caret, Some(Position::new(3, 2)));
     }
 
-    // FR-VIEW-06, D-51
+    // FR-VIEW-06, D-51, D-139
     #[test]
     fn today_lists_its_rows_without_headings_each_saying_where_it_is_under_its_title() {
         let mut state = app::State::new(demo(), app::Opened::Demo, TODAY);
@@ -1535,11 +1537,12 @@ mod tests {
                 "▌ ☐ Answer the recruiter's  ! yesterday",
                 "▌   email",
                 "▌   Work",
-                "  ☐ Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
-                "    announcement",
+                "  ☐ Write the announcement  ☑ 1/5 ≡ ❞ 1",
                 "    @writing",
                 "    Work › Website › Launch",
-            ]
+                "  ☐ Review two portfolios       ⇥ today",
+            ],
+            "only due dates show (D-139)"
         );
         assert_eq!(buf[(4, 4)].fg, theme.dim_text, "where it is, dimmed");
     }
@@ -1586,7 +1589,7 @@ mod tests {
                 "▌ ☐ Answer the recruiter's  ! yesterday",
                 "▌   email",
                 "▌   Work",
-                "  ☐ Write the       ☑ 1/5 ≡ ❞ 1 ↦ today",
+                "  ☐ Write the announcement  ☑ 1/5 ≡ ❞ 1",
             ],
             "the row says where it is instead"
         );
