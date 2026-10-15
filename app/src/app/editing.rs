@@ -72,8 +72,8 @@ enum Origin {
     /// It was there, as this item.
     Existing(Item),
     /// It was added for editing as this item, without its title, at this index among this
-    /// parent's children, or the top-level nodes for `None`, and then had the items this
-    /// transaction moves moved into it.
+    /// parent's children, or the top-level nodes for `None`, and then this transaction, which
+    /// adding it brings along, was applied.
     New {
         item: Item,
         parent: Option<ItemId>,
@@ -261,6 +261,19 @@ impl Editing {
             moves: Vec::new(),
             revision,
         }
+    }
+
+    /// Applies `change`, which adding the new item edited brings along, to `document`, so that
+    /// it is part of that one change, and left out with the item when it is left empty. Nothing
+    /// happens when the item edited was there before.
+    pub(super) fn bringing(mut self, document: &mut Document, change: &Transaction) -> Self {
+        if let Origin::New { contents, .. } = &mut self.origin {
+            document
+                .apply(change)
+                .expect("the caller makes the change from the document as it is");
+            *contents = Transaction::new([contents.ops(), change.ops()].concat());
+        }
+        self
     }
 
     /// The item edited.

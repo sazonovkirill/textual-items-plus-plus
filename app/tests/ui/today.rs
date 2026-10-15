@@ -383,3 +383,33 @@ fn a_task_added_in_an_empty_today_starts_today() {
         "Space adds below the focused row"
     );
 }
+
+// FR-VIEW-06, FR-VIEW-13, FR-EDIT-05, D-108, D-131
+#[test]
+fn a_task_added_in_today_shows_beside_the_focused_row() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text =
+        "Inbox:\n\t- A @start(2026-10-05)\n\t- B @start(2026-10-05)\n\t- C @start(2026-10-05)\n";
+    std::fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path.clone(), 60, 16);
+    harness.type_text("gtjmeoX");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        titles(&harness),
+        ["A", "C", "B", "X"],
+        "in the Evening below B, not between A and C"
+    );
+    drop(harness);
+    std::fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path, 60, 16);
+    harness.type_text("gtG");
+    harness.press(KeyCode::Up, KeyModifiers::ALT);
+    harness.press(KeyCode::Up, KeyModifiers::ALT);
+    harness.type_text("oX");
+    harness.key(KeyCode::Esc);
+    assert_eq!(titles(&harness), ["C", "X", "A", "B"], "just below C");
+    harness.type_text("jOY");
+    harness.key(KeyCode::Esc);
+    assert_eq!(titles(&harness), ["C", "X", "Y", "A", "B"], "just above A");
+}

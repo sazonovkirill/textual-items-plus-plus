@@ -121,6 +121,28 @@ pub(super) fn reorder(
     Transaction::new(ops)
 }
 
+/// The transaction that makes room at `at` in the order the user gave Today, for an item to
+/// take that place, by moving each item at it or after it one place on (D-108).
+#[must_use]
+pub(super) fn make_room(document: &Document, at: usize) -> Transaction {
+    let ops = placed(document)
+        .into_iter()
+        .filter_map(|id| {
+            let before = document.node(id).and_then(Node::item)?;
+            let place = before.today_place.filter(|&place| place >= at)?;
+            Some(Op::Set {
+                id,
+                before: before.clone(),
+                after: Item {
+                    today_place: Some(place + 1),
+                    ..before.clone()
+                },
+            })
+        })
+        .collect();
+    Transaction::new(ops)
+}
+
 /// `ids` with each of `items` moved one step `direction` past the next of `ids` that is not one
 /// of them, if any.
 fn stepped(ids: &[ItemId], items: &HashSet<ItemId>, direction: Direction) -> Vec<ItemId> {

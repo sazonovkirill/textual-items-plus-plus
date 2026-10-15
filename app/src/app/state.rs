@@ -872,37 +872,51 @@ impl State {
 
     /// Adds an empty task that starts today to the Inbox, which Today then lists, focuses it and
     /// starts editing its title (D-128). It goes on `side` of the focused row when that is an
-    /// Inbox task, so that Today shows it beside that row, and else at that end of the Inbox.
+    /// Inbox task, so that Today shows it beside that row, and else at that end of the Inbox. It
+    /// joins the focused row's part of Today, the Evening when that row is in it, and the place
+    /// on `side` of that row in the order the user gave Today, if that row has one (D-131).
     fn new_task_today(&mut self, side: Side) {
         let inbox = self.document.inbox();
         let below = usize::from(side == Side::Below);
-        let index = match self
-            .pane()
-            .selection
-            .focused()
-            .and_then(|id| self.document.position(id))
-        {
+        let focused = self.pane().selection.focused();
+        let index = match focused.and_then(|id| self.document.position(id)) {
             Some((parent, index)) if parent == Some(inbox) => index + below,
             _ => below * self.document.children(inbox).len(),
         };
+        let beside = focused
+            .and_then(|id| self.document.node(id))
+            .and_then(Node::item);
+        let today_place = beside
+            .and_then(|item| item.today_place)
+            .map(|place| place + below);
         let item = Item {
             start: Some(self.today),
+            evening: beside
+                .filter(|item| item.in_evening(self.today))
+                .map(|_| self.today),
+            today_place,
             ..self.new_item(ItemKind::Task)
         };
-        self.add_task(item, (inbox, index));
+        let room = today_place.map(|place| today::make_room(&self.document, place));
+        self.add_task(item, (inbox, index), &room.unwrap_or_default());
     }
 
     /// Adds an empty task at `place`, as its parent and its index there, focuses it and starts
     /// editing its title.
     fn new_task_at(&mut self, place: (ItemId, usize)) {
-        self.add_task(self.new_item(ItemKind::Task), place);
+        self.add_task(
+            self.new_item(ItemKind::Task),
+            place,
+            &Transaction::default(),
+        );
     }
 
     /// Adds `item`, a task without a title, at `place`, as its parent and its index there,
-    /// focuses it and starts editing its title.
-    fn add_task(&mut self, item: Item, (parent, index): (ItemId, usize)) {
+    /// bringing `change` along, focuses it and starts editing its title.
+    fn add_task(&mut self, item: Item, (parent, index): (ItemId, usize), change: &Transaction) {
         let selection = self.pane().selection.clone();
-        let editing = Editing::new_item(&mut self.document, item, (Some(parent), index), selection);
+        let editing = Editing::new_item(&mut self.document, item, (Some(parent), index), selection)
+            .bringing(&mut self.document, change);
         self.pane_mut().selection.focus(Some(editing.id()));
         self.start_editing(Some(editing));
     }
@@ -3072,6 +3086,87 @@ mod tests {
             state.rows().iter().map(|row| row.id()).collect::<Vec<_>>(),
             children.get(1..).unwrap_or_default()
         );
+    }
+
+    /// A state showing Today, which lists three tasks of the Inbox that start today.
+    fn today_of_three() -> Result<(State, [ItemId; 3]), PlacementError> {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let mut add = |title| {
+            let item = Item {
+                start: Some(TODAY),
+                ..Item::new(ItemKind::Task, title)
+            };
+            document.push(inbox, Node::Item(item))
+        };
+        let tasks = [add("A")?, add("B")?, add("C")?];
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        state.go(Go::View(View::Today));
+        Ok((state, tasks))
+    }
+
+    /// Adds a task titled `title` on `side` of `beside` in the pane, returning it.
+    fn add_titled(state: &mut State, beside: ItemId, side: Side, title: &str) -> Option<ItemId> {
+        state.pane_mut().selection.focus(Some(beside));
+        state.new_task(side);
+        let id = state.editing().map(|(id, ..)| id);
+        type_text(state, title);
+        state.edit_input(EditInput::Done);
+        id
+    }
+
+    fn row_ids(state: &State) -> Vec<ItemId> {
+        state.rows().iter().map(|row| row.id()).collect()
+    }
+
+    // FR-VIEW-06, FR-VIEW-13, D-128, D-131
+    #[test]
+    fn a_task_added_in_the_evening_joins_it() -> Result<(), PlacementError> {
+        let (mut state, [a, b, c]) = today_of_three()?;
+        state.pane_mut().selection.focus(Some(b));
+        state.toggle_evening();
+        let x = add_titled(&mut state, b, Side::Below, "X").ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(row_ids(&state), [a, c, b, x]);
+        let inbox = state.document().inbox();
+        assert_eq!(state.document().children(inbox), [a, b, x, c]);
+        Ok(())
+    }
+
+    // FR-VIEW-06, D-108, D-128, D-131
+    #[test]
+    fn a_task_added_in_a_reordered_today_takes_the_place_beside_the_focused_row()
+    -> Result<(), PlacementError> {
+        let (mut state, [first, second, third]) = today_of_three()?;
+        state.pane_mut().selection.focus(Some(third));
+        state.move_item(Direction::Up);
+        state.move_item(Direction::Up);
+        assert_eq!(row_ids(&state), [third, first, second]);
+        let below =
+            add_titled(&mut state, third, Side::Below, "X").ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(row_ids(&state), [third, below, first, second]);
+        let inbox = state.document().inbox();
+        let places = |state: &State| {
+            let document = state.document();
+            let place = |id| document.node(id).and_then(Node::item)?.today_place;
+            (
+                document.children(inbox).to_vec(),
+                [first, second, third, below].map(place),
+            )
+        };
+        let before = places(&state);
+        assert_eq!(before.0, [first, second, third, below]);
+        let above =
+            add_titled(&mut state, first, Side::Above, "Y").ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(row_ids(&state), [third, below, above, first, second]);
+        state.undo();
+        assert_eq!(places(&state), before, "one step to undo, places and all");
+        add_titled(&mut state, first, Side::Above, "");
+        assert_eq!(
+            places(&state),
+            before,
+            "left empty, it makes no room either"
+        );
+        Ok(())
     }
 
     // FR-VIEW-06, FR-EDIT-01
