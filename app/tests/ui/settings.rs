@@ -154,7 +154,8 @@ fn the_app_starts_with_what_the_file_sets_and_says_what_it_ignored() {
     let folders = tempfile::tempdir().expect("a temporary folder");
     let text = "# mine\nicons = \"plain\"\ntheme = \"nord\"\nfont = 1\n";
     fs::write(folders.path().join("config.toml"), text).expect("the file is written");
-    let mut harness = Harness::launched_in(folders, None, 300, 24).expect("the demo opens");
+    // Wide enough for the whole status line, which lists every theme's key.
+    let mut harness = Harness::launched_in(folders, None, 600, 24).expect("the demo opens");
     let screen = harness.screen();
     assert!(screen.contains("⊔ Inbox"), "{screen}");
     let status = harness.rows().last().cloned().unwrap_or_default();

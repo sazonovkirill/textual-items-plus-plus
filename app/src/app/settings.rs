@@ -26,16 +26,62 @@ pub enum BuiltIn {
     GithubLight,
     /// Flexoki Light, light.
     FlexokiLight,
+    /// Rosé Pine, dark.
+    RosePine,
+    /// Kanagawa Wave, dark.
+    KanagawaWave,
+    /// Kanagawa Dragon, dark.
+    KanagawaDragon,
+    /// Gruvbox Dark, dark.
+    GruvboxDark,
+    /// Everforest Dark, dark.
+    EverforestDark,
+    /// GitHub Dark Default, dark.
+    GithubDark,
+    /// Flexoki Dark, dark.
+    FlexokiDark,
+    /// Melange Dark, dark.
+    MelangeDark,
+    /// Moonfly, dark.
+    Moonfly,
+    /// Nightfly, dark.
+    Nightfly,
+    /// Cyberdream, dark.
+    Cyberdream,
+    /// Synthwave '84, dark.
+    #[serde(rename = "synthwave-84")]
+    Synthwave84,
+    /// Gruvbox Light, light.
+    GruvboxLight,
+    /// Melange Light, light.
+    MelangeLight,
+    /// Dayfox, light.
+    Dayfox,
 }
 
 impl BuiltIn {
     /// Every built-in theme, in the order themes.md lists them, Terminal Dark first.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 20] = [
         Self::TerminalDark,
         Self::CatppuccinMocha,
         Self::TokyoNight,
         Self::GithubLight,
         Self::FlexokiLight,
+        Self::RosePine,
+        Self::KanagawaWave,
+        Self::KanagawaDragon,
+        Self::GruvboxDark,
+        Self::EverforestDark,
+        Self::GithubDark,
+        Self::FlexokiDark,
+        Self::MelangeDark,
+        Self::Moonfly,
+        Self::Nightfly,
+        Self::Cyberdream,
+        Self::Synthwave84,
+        Self::GruvboxLight,
+        Self::MelangeLight,
+        Self::Dayfox,
     ];
 
     /// The theme's key, such as `catppuccin-mocha`, as themes.md gives it.
@@ -47,6 +93,21 @@ impl BuiltIn {
             Self::TokyoNight => "tokyo-night",
             Self::GithubLight => "github-light",
             Self::FlexokiLight => "flexoki-light",
+            Self::RosePine => "rose-pine",
+            Self::KanagawaWave => "kanagawa-wave",
+            Self::KanagawaDragon => "kanagawa-dragon",
+            Self::GruvboxDark => "gruvbox-dark",
+            Self::EverforestDark => "everforest-dark",
+            Self::GithubDark => "github-dark",
+            Self::FlexokiDark => "flexoki-dark",
+            Self::MelangeDark => "melange-dark",
+            Self::Moonfly => "moonfly",
+            Self::Nightfly => "nightfly",
+            Self::Cyberdream => "cyberdream",
+            Self::Synthwave84 => "synthwave-84",
+            Self::GruvboxLight => "gruvbox-light",
+            Self::MelangeLight => "melange-light",
+            Self::Dayfox => "dayfox",
         }
     }
 
@@ -59,6 +120,21 @@ impl BuiltIn {
             Self::TokyoNight => "Tokyo Night",
             Self::GithubLight => "GitHub Light Default",
             Self::FlexokiLight => "Flexoki Light",
+            Self::RosePine => "Rosé Pine",
+            Self::KanagawaWave => "Kanagawa Wave",
+            Self::KanagawaDragon => "Kanagawa Dragon",
+            Self::GruvboxDark => "Gruvbox Dark",
+            Self::EverforestDark => "Everforest Dark",
+            Self::GithubDark => "GitHub Dark Default",
+            Self::FlexokiDark => "Flexoki Dark",
+            Self::MelangeDark => "Melange Dark",
+            Self::Moonfly => "Moonfly",
+            Self::Nightfly => "Nightfly",
+            Self::Cyberdream => "Cyberdream",
+            Self::Synthwave84 => "Synthwave '84",
+            Self::GruvboxLight => "Gruvbox Light",
+            Self::MelangeLight => "Melange Light",
+            Self::Dayfox => "Dayfox",
         }
     }
 }
@@ -426,7 +502,8 @@ mod tests {
         assert_eq!(state.settings(), Settings::default());
         give(&mut state, Message::Command(Command::Settings));
         assert_eq!(state.settings_window(), Some(Setting::Theme));
-        let themes: Vec<_> = (0..5)
+        let themes: Vec<_> = BuiltIn::ALL
+            .iter()
             .map(|_| {
                 let effects = input(&mut state, SettingsInput::Turn(Direction::Down));
                 assert_eq!(effects, [Effect::KeepSetting(Setting::Theme)]);
@@ -435,17 +512,11 @@ mod tests {
             .collect();
         assert_eq!(
             themes,
-            [
-                BuiltIn::CatppuccinMocha,
-                BuiltIn::TokyoNight,
-                BuiltIn::GithubLight,
-                BuiltIn::FlexokiLight,
-                BuiltIn::TerminalDark,
-            ],
+            [&BuiltIn::ALL[1..], &BuiltIn::ALL[..1]].concat(),
             "going round"
         );
         input(&mut state, SettingsInput::Turn(Direction::Up));
-        assert_eq!(state.settings().theme, BuiltIn::FlexokiLight);
+        assert_eq!(state.settings().theme, BuiltIn::Dayfox);
         assert!(
             !state
                 .settings()
@@ -739,9 +810,9 @@ mod tests {
         assert!(!state.settings().grayscale);
     }
 
-    // FR-UI-03
+    // FR-UI-03, D-125
     #[test]
-    fn the_four_themes_of_themes_md_and_terminal_dark_are_built_in() {
+    fn the_themes_of_themes_md_and_terminal_dark_are_built_in() {
         let themes: Vec<_> = BuiltIn::ALL
             .into_iter()
             .map(|theme| (theme.id(), theme.name()))
@@ -754,6 +825,21 @@ mod tests {
                 ("tokyo-night", "Tokyo Night"),
                 ("github-light", "GitHub Light Default"),
                 ("flexoki-light", "Flexoki Light"),
+                ("rose-pine", "Rosé Pine"),
+                ("kanagawa-wave", "Kanagawa Wave"),
+                ("kanagawa-dragon", "Kanagawa Dragon"),
+                ("gruvbox-dark", "Gruvbox Dark"),
+                ("everforest-dark", "Everforest Dark"),
+                ("github-dark", "GitHub Dark Default"),
+                ("flexoki-dark", "Flexoki Dark"),
+                ("melange-dark", "Melange Dark"),
+                ("moonfly", "Moonfly"),
+                ("nightfly", "Nightfly"),
+                ("cyberdream", "Cyberdream"),
+                ("synthwave-84", "Synthwave '84"),
+                ("gruvbox-light", "Gruvbox Light"),
+                ("melange-light", "Melange Light"),
+                ("dayfox", "Dayfox"),
             ]
         );
     }
