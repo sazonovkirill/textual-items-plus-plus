@@ -63,7 +63,7 @@ pub enum ItemKind {
     Section,
     /// One thing to do.
     Task,
-    /// One line of a task's checklist, nested to any depth (FR-CHK-01).
+    /// One line of a task's checklist, which is flat (FR-CHK-01).
     ChecklistItem,
 }
 
@@ -109,7 +109,7 @@ impl ItemKind {
             Project => matches!(parent, None | Some(Area | Project)),
             Section => matches!(parent, Some(Area | Project)),
             Task => matches!(parent, Some(Inbox | Area | Project | Section)),
-            ChecklistItem => matches!(parent, Some(Task | ChecklistItem)),
+            ChecklistItem => parent == Some(Task),
         }
     }
 }
@@ -374,7 +374,7 @@ mod tests {
             allowed(Task),
             [Some(Inbox), Some(Area), Some(Project), Some(Section)]
         );
-        assert_eq!(allowed(ChecklistItem), [Some(Task), Some(ChecklistItem)]);
+        assert_eq!(allowed(ChecklistItem), [Some(Task)]);
     }
 
     // FR-ORG-01, FR-ORG-02, D-57

@@ -33,13 +33,9 @@ pub(super) fn edit_input(event: &Event) -> Option<EditInput> {
 }
 
 /// The keys of a checklist item's edit mode besides those of edit mode: `Enter` goes on to the
-/// next item, so that a list is typed one item after another (D-123), and `Tab` and `Shift+Tab`
-/// indent and outdent it, as `]` and `[` do while it is selected (FR-CHK-03).
-pub(super) const CHECKLIST: &[(Key, EditInput)] = &[
-    ((KeyModifiers::NONE, KeyCode::Enter), EditInput::Next),
-    ((KeyModifiers::NONE, KeyCode::Tab), EditInput::Indent),
-    ((KeyModifiers::SHIFT, KeyCode::BackTab), EditInput::Outdent),
-];
+/// next item, so that a list is typed one item after another (D-123).
+pub(super) const CHECKLIST: &[(Key, EditInput)] =
+    &[((KeyModifiers::NONE, KeyCode::Enter), EditInput::Next)];
 
 /// What `event` does while a checklist item is edited: its checklist key, else what it does in
 /// edit mode. Only key presses count.
@@ -171,16 +167,9 @@ mod tests {
 
     // FR-CHK-03
     #[test]
-    fn in_a_checklist_item_tab_and_shift_tab_nest_it_and_other_keys_are_edit_modes() {
+    fn in_a_checklist_item_enter_goes_on_to_the_next_and_other_keys_are_edit_modes() {
         let input = |code, modifiers| checklist_input(&press(code, modifiers));
-        assert_eq!(
-            input(KeyCode::Tab, KeyModifiers::NONE),
-            Some(EditInput::Indent)
-        );
-        assert_eq!(
-            input(KeyCode::BackTab, KeyModifiers::SHIFT),
-            Some(EditInput::Outdent)
-        );
+        assert_eq!(input(KeyCode::Tab, KeyModifiers::NONE), None);
         assert_eq!(
             input(KeyCode::Enter, KeyModifiers::NONE),
             Some(EditInput::Next)
@@ -189,7 +178,6 @@ mod tests {
             input(KeyCode::Char('x'), KeyModifiers::NONE),
             Some(EditInput::Text(TextEdit::Insert('x')))
         );
-        assert_eq!(edit_input(&press(KeyCode::Tab, KeyModifiers::NONE)), None);
     }
 
     // FR-ATT-04

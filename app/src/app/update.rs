@@ -285,10 +285,9 @@ fn run(state: &mut State, command: Command, today: Date, asked: Option<&Notice>)
         Command::FilterTags => state.open_tag_filter(),
         Command::ClearTagFilter => state.clear_tag_filter(),
         Command::Sidebar => state.toggle_sidebar(),
-        // The pane shows a child project as one row, with nothing to fold, only checklist items
-        // nest, in the attachments panel, which takes these first (D-75), and the pane leaves the
+        // The pane shows a child project as one row, with nothing to fold (D-75), and leaves the
         // areas to the sidebar (owner, D-127).
-        Command::Collapse | Command::Indent | Command::Outdent | Command::AddArea(_) => {}
+        Command::Collapse | Command::AddArea(_) => {}
         Command::FocusLeft => state.focus_left(),
         Command::FocusRight => state.focus_right(),
         Command::FocusPane(number) => state.focus_pane(number),
@@ -623,35 +622,15 @@ mod tests {
         Ok(())
     }
 
-    // FR-OPS-02, FR-OPS-03
+    // FR-OPS-02
     #[test]
-    fn moving_changes_the_state_with_no_effect_and_indenting_does_nothing_in_the_pane()
-    -> Result<(), PlacementError> {
+    fn moving_changes_the_state_with_no_effect() -> Result<(), PlacementError> {
         let mut state = state()?;
         give(&mut state, Command::Move(Direction::Down));
         assert_eq!(titles(&state), ["b", "a"]);
         assert_eq!(focused(&state), Some("a"));
         give(&mut state, Command::Move(Direction::Up));
         assert_eq!(titles(&state), ["a", "b"]);
-        let mut document = Document::new();
-        let area = document.push(None, Node::Item(Item::new(ItemKind::Area, "Work")))?;
-        for title in ["A", "B"] {
-            document.push(Some(area), Node::Item(Item::new(ItemKind::Project, title)))?;
-        }
-        let mut state = State::new(document, Opened::Demo, TODAY);
-        for message in [
-            Message::Command(Command::Navigator),
-            Message::Navigator(PickerInput::Edit(TextEdit::Insert('W'))),
-            Message::Navigator(PickerInput::Choose),
-            Message::Command(Command::Focus(Focus::Last)),
-        ] {
-            assert_eq!(update(&mut state, message, TODAY), []);
-        }
-        let before = state.clone();
-        for command in [Command::Indent, Command::Outdent] {
-            assert_eq!(update(&mut state, Message::Command(command), TODAY), []);
-        }
-        assert_eq!(state, before, "only checklist items nest (D-75)");
         Ok(())
     }
 
@@ -759,8 +738,6 @@ mod tests {
         past_the_views(&mut state);
         let before = state.document().clone();
         for command in [
-            Command::Indent,
-            Command::Outdent,
             Command::AddSection(End::Bottom),
             Command::ShowCompleted,
             Command::ToggleCompleted,
@@ -1106,8 +1083,6 @@ mod tests {
             Command::RenameContainer,
             Command::Delete,
             Command::Move(Direction::Up),
-            Command::Indent,
-            Command::Outdent,
             Command::Convert,
             Command::MoveTo,
             Command::StartToday,
@@ -1486,8 +1461,6 @@ mod tests {
             Command::RenameContainer,
             Command::Delete,
             Command::Move(Direction::Down),
-            Command::Indent,
-            Command::Outdent,
             Command::Convert,
             Command::MoveTo,
             Command::SetDate(DateKind::Due),

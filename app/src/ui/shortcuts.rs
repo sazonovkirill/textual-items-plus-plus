@@ -26,7 +26,7 @@ use super::{
 };
 use crate::app::{
     AttachmentsInput, DateInput, Direction, EditDialogInput, EditInput, Motion, Part, PickerInput,
-    QuickAddInput, REGISTRY, SaveAsInput, SearchInput, SettingsInput, TextEdit,
+    QuickAddInput, SaveAsInput, SearchInput, SettingsInput, TextEdit,
 };
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
@@ -96,15 +96,6 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
                     PanelKey::Input(AttachmentsInput::Delete) => "Delete",
                     // Edit is the only other input a key gives as it is.
                     PanelKey::Input(_) => "Edit",
-                    PanelKey::Command(command) => {
-                        REGISTRY
-                            .iter()
-                            .find(|entry| entry.command == command)
-                            .expect("the panel's commands are registered")
-                            .title
-                    }
-                    PanelKey::Nest(Direction::Down) => "Indent or Next Pane",
-                    PanelKey::Nest(Direction::Up) => "Outdent or Previous Pane",
                     PanelKey::AddComment => "Add Comment",
                     PanelKey::Cycle => "Full Width, Then Hide",
                     PanelKey::Scroll(Scroll::Lines(lines)) if lines < 0 => "Scroll Up",
@@ -271,8 +262,6 @@ fn edit_name(input: EditInput) -> String {
         EditInput::Next => "Done, Then Next Item".to_owned(),
         EditInput::Done => "Done".to_owned(),
         EditInput::Cancel => "Cancel".to_owned(),
-        EditInput::Indent => "Indent".to_owned(),
-        EditInput::Outdent => "Outdent".to_owned(),
     }
 }
 
@@ -636,8 +625,6 @@ mod tests {
                 "Editing Checklist Item",
                 [
                     ("Done, Then Next Item", "Enter"),
-                    ("Indent", "Tab"),
-                    ("Outdent", "Shift+Tab"),
                     ("Done", "Esc"),
                     ("Paste", "Ctrl+V"),
                 ]
@@ -647,7 +634,7 @@ mod tests {
         );
         let (_, editing) = &window_keys(Window::Editing(Part::Title))[0];
         assert!(editing.contains(&("Paste".to_owned(), "Ctrl+V".to_owned())));
-        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 15)]);
+        assert_eq!(headings(Window::Attachments), [("Attachments Panel", 11)]);
         assert_eq!(headings(Window::Settings), [("Settings", 6)]);
         assert_eq!(headings(Window::Search), [("Search", 1), ("Text", 19)]);
         assert_eq!(

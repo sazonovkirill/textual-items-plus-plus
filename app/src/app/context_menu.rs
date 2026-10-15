@@ -54,12 +54,10 @@ impl Reach {
             | Command::Convert
             | Command::GroupIntoSection
             | Command::GroupIntoProject => Some(Self::Rows),
-            // The pane shows no nesting to indent into or fold (D-75), pasting puts in what the
-            // clipboard holds rather than acting on the selection, and the rest act on the
-            // container shown or on no item.
-            Command::Indent
-            | Command::Outdent
-            | Command::Collapse
+            // The pane shows no nesting to fold (D-75), pasting puts in what the clipboard holds
+            // rather than acting on the selection, and the rest act on the container shown or on
+            // no item.
+            Command::Collapse
             | Command::Paste(_)
             | Command::EditDescription(super::Whose::Shown)
             | Command::OpenNote(super::Whose::Shown)
@@ -345,7 +343,6 @@ mod tests {
             Command::TogglePinned,
             Command::OpenInNewPane,
             Command::Paste(Side::Below),
-            Command::Indent,
             Command::OpenNote(Whose::Shown),
             Command::Undo,
             Command::Focus(crate::app::Focus::Next),

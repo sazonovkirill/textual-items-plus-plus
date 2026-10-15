@@ -176,45 +176,43 @@ pub fn read_branches(text: &str) -> Vec<Branch> {
 }
 
 /// The items `text` holds, as pasted into a checklist (FR-CHK-03): one item for each line that
-/// is not blank, its indentation nesting it under the line above it that is indented less, every
-/// line read as a task's, so that a line ending in `:` or with no `- ` is an item too. An item's
-/// description lines are items under it, and its note and comments, as a copied task brings
-/// them, are left out. The items are tasks at the top and checklist items below; the app makes
-/// them all checklist items.
+/// is not blank, in order and none nested, every line read as a task's, so that a line ending in
+/// `:` or with no `- ` is an item too. An item's description lines are items after it, and its
+/// note and comments, as a copied task brings them, are left out. The items are tasks; the app
+/// makes them checklist items.
 #[must_use]
 pub fn read_checklist(text: &str) -> Vec<Branch> {
     let outline = parse(text);
     let mut tasks = Vec::new();
     for &line_id in children(&outline, outline.root()) {
-        push_checklist_lines(&outline, line_id, 0, &mut tasks);
+        push_checklist_lines(&outline, line_id, &mut tasks);
     }
     read_branches(&tasks.join("\n"))
 }
 
-/// Pushes the line `line_id` at `depth` and what is under it to `tasks` as task lines: its
-/// description lines unguarded one level deeper, its note and comments left out.
-fn push_checklist_lines(outline: &Outline, line_id: LineId, depth: usize, tasks: &mut Vec<String>) {
-    push_task_line(line(outline, line_id).text(), depth, tasks);
+/// Pushes the line `line_id` and what is under it to `tasks` as task lines: its description
+/// lines unguarded, its note and comments left out.
+fn push_checklist_lines(outline: &Outline, line_id: LineId, tasks: &mut Vec<String>) {
+    push_task_line(line(outline, line_id).text(), tasks);
     let parts = Parts::of(outline, line_id);
     for &child in parts.description {
-        push_task_line(&unguard(line(outline, child).text()), depth + 1, tasks);
+        push_task_line(&unguard(line(outline, child).text()), tasks);
     }
     for &child in parts.rest {
-        push_checklist_lines(outline, child, depth + 1, tasks);
+        push_checklist_lines(outline, child, tasks);
     }
 }
 
-/// Pushes `body` to `tasks` as a task line indented `depth` levels, unless it is blank.
-fn push_task_line(body: &str, depth: usize, tasks: &mut Vec<String>) {
+/// Pushes `body` to `tasks` as a task line, unless it is blank.
+fn push_task_line(body: &str, tasks: &mut Vec<String>) {
     let body = body.trim();
     if body.is_empty() {
         return;
     }
-    let indentation = "\t".repeat(depth);
     tasks.push(if kind_of_line(body) == LineKind::Task {
-        format!("{indentation}{body}")
+        body.to_owned()
     } else {
-        format!("{indentation}- {body}")
+        format!("- {body}")
     });
 }
 
@@ -245,8 +243,17 @@ impl<'a> Reader<'a> {
 
     /// Adds the line `line_id` and everything under it to `parent`, as an item where its kind
     /// fits `place` and as kept content otherwise.
+    /// A checklist item nested in another goes in the task instead, after the one it is in and
+    /// what that one held before it, so a checklist reads flat, in the order of its lines
+    /// (FR-CHK-01).
     fn read_node(&mut self, parent: Option<ItemId>, place: Place, line_id: LineId) -> ItemId {
         let kind = classify(line(self.outline, line_id), place);
+        let parent = match (kind, place) {
+            (Some(ItemKind::ChecklistItem), Place::In(ItemKind::ChecklistItem)) => {
+                parent.and_then(|id| self.document.parent(id))
+            }
+            _ => parent,
+        };
         self.read_as(parent, kind, line_id)
     }
 
@@ -557,7 +564,8 @@ fn attachment<'a>(
 
 /// The kind of item `read` is in `place`, or `None` when it is content the model keeps as read:
 /// a text line, a line tagged `@hidden`, a project tagged both `@area` and `@section`, or an
-/// item where its kind does not fit (OQ-17, OQ-18).
+/// item where its kind does not fit (OQ-17, OQ-18). A task's line in a checklist item is a
+/// checklist item too, which [`Reader::read_node`] puts in the task.
 fn classify(read: &Line, place: Place) -> Option<ItemKind> {
     let parent = match place {
         Place::Top => None,
@@ -569,7 +577,7 @@ fn classify(read: &Line, place: Place) -> Option<ItemKind> {
     }
     let kind = match read.kind() {
         LineKind::Task if matches!(parent, Some(ItemKind::Task | ItemKind::ChecklistItem)) => {
-            ItemKind::ChecklistItem
+            return Some(ItemKind::ChecklistItem);
         }
         LineKind::Task => ItemKind::Task,
         LineKind::Project => match (has_bare_tag(read, "area"), has_bare_tag(read, "section")) {
@@ -797,7 +805,7 @@ Work: @area
 \t\t\t\tCOMMENTS @hidden
 \t\t\t\t\t[2026-10-13 21:30] Ask design for screenshots
 \t\t\t\t- Outline
-\t\t\t\t\t- Intro
+\t\t\t\t- Intro
 \t\t\t\t- First draft @done(2026-10-13)
 ";
 
@@ -926,7 +934,7 @@ Secret @hidden
 
     // FR-CHK-03
     #[test]
-    fn pasted_lines_are_read_as_one_item_each_nested_by_indentation() {
+    fn pasted_lines_are_read_as_one_item_each_none_nested() {
         let text = "Pack:\n  Books @done\n\n    - Novels\n  Plates\n- Labels @home\n";
         let branches = read_checklist(text);
         let read = |branch: &Branch| {
@@ -937,19 +945,14 @@ Secret @hidden
             branches.iter().map(read).collect::<Vec<_>>(),
             [
                 (ItemKind::Task, "Pack:".to_owned(), false),
+                (ItemKind::Task, "Books".to_owned(), true),
+                (ItemKind::Task, "Novels".to_owned(), false),
+                (ItemKind::Task, "Plates".to_owned(), false),
                 (ItemKind::Task, "Labels".to_owned(), false),
             ]
         );
-        assert_eq!(branches[1].node.item().unwrap().tags, [tag("home", None)]);
-        let pack = &branches[0];
-        assert_eq!(
-            pack.children.iter().map(read).collect::<Vec<_>>(),
-            [
-                (ItemKind::ChecklistItem, "Books".to_owned(), true),
-                (ItemKind::ChecklistItem, "Plates".to_owned(), false),
-            ]
-        );
-        assert_eq!(read(&pack.children[0].children[0]).1, "Novels");
+        assert_eq!(branches[4].node.item().unwrap().tags, [tag("home", None)]);
+        assert!(branches.iter().all(|branch| branch.children.is_empty()));
         assert_eq!(read_checklist(" \n"), []);
     }
 
@@ -970,7 +973,7 @@ Secret @hidden
         let lines = |pairs: &[(usize, &str)]| -> Vec<(usize, String)> {
             pairs.iter().map(|&(d, t)| (d, t.to_owned())).collect()
         };
-        let fruit = lines(&[(0, "Fruit"), (1, "Apples"), (1, "Pears"), (0, "Bread")]);
+        let fruit = lines(&[(0, "Fruit"), (0, "Apples"), (0, "Pears"), (0, "Bread")]);
         for text in [
             "Fruit\n\tApples\n\tPears\nBread",
             "Fruit\r\tApples\r\tPears\rBread\r",
@@ -980,7 +983,7 @@ Secret @hidden
         }
         assert_eq!(
             outline(&read_checklist("Cheese\r\tGouda\r\t\tAged")),
-            lines(&[(0, "Cheese"), (1, "Gouda"), (2, "Aged")])
+            lines(&[(0, "Cheese"), (0, "Gouda"), (0, "Aged")])
         );
         let copied = "\
 - Write @due(2026-10-20) @writing
@@ -997,9 +1000,9 @@ Secret @hidden
             outline(&branches),
             lines(&[
                 (0, "Write"),
-                (1, "First line"),
-                (1, "second"),
-                (1, "Outline")
+                (0, "First line"),
+                (0, "second"),
+                (0, "Outline")
             ])
         );
         assert_eq!(
@@ -1048,9 +1051,9 @@ Secret @hidden
             announce.comments,
             ["[2026-10-13 21:30] Ask design for screenshots"]
         );
-        let [outline, draft] = children(&document, Some(announce_id));
+        let [outline, intro, draft] = children(&document, Some(announce_id));
         assert_eq!(item(&document, outline).kind, ItemKind::ChecklistItem);
-        let intro = item(&document, only_child(&document, outline));
+        let intro = item(&document, intro);
         assert_eq!(
             (intro.kind, intro.title.as_str()),
             (ItemKind::ChecklistItem, "Intro")
@@ -1059,6 +1062,93 @@ Secret @hidden
             item(&document, draft).completed,
             Some(Completion::On(date(2026, 10, 13)))
         );
+    }
+
+    // FR-CHK-01, F-FILE-03
+    #[test]
+    fn a_checklist_item_nested_in_another_is_read_after_it_and_written_flat() {
+        let text = "\
+Inbox:
+\t- Pack
+\t\t- Books @done
+\t\t\tSorted by shelf.
+\t\t\t- Novels @home
+\t\t\t\t- Signed
+\t\t\tkept after Novels
+\t\t\t- Poems @done(2026-10-01)
+\t\t- Plates
+";
+        let (document, source) = load(text);
+        let pack = only_child(&document, document.inbox());
+        let lines: Vec<_> = document
+            .children(pack)
+            .iter()
+            .filter_map(|&id| document.node(id).and_then(Node::item))
+            .map(|it| (it.kind, it.title.as_str(), it.completed.is_some()))
+            .collect();
+        let checklist = |title, done| (ItemKind::ChecklistItem, title, done);
+        assert_eq!(
+            lines,
+            [
+                checklist("Books", true),
+                checklist("Novels", false),
+                checklist("Signed", false),
+                checklist("Poems", true),
+                checklist("Plates", false),
+            ],
+            "in the order of their lines, each keeping its state"
+        );
+        let books = document.children(pack)[0];
+        assert_eq!(item(&document, books).description, "Sorted by shelf.");
+        let [kept] = children(&document, Some(books));
+        assert!(is_kept(&document, kept, "kept after Novels"));
+        let novels = item(&document, document.children(pack)[1]);
+        assert_eq!(novels.tags, [tag("home", None)]);
+        let flat = "\
+Inbox:
+\t- Pack
+\t\t- Books @done
+\t\t\tSorted by shelf.
+\t\t\tkept after Novels
+\t\t- Novels @home
+\t\t- Signed
+\t\t- Poems @done(2026-10-01)
+\t\t- Plates
+";
+        assert_eq!(save(&document, &source), flat);
+        let (reloaded, source) = load(flat);
+        assert_eq!(shape(&reloaded), shape(&document));
+        assert_eq!(
+            item(&reloaded, books).description,
+            "Sorted by shelf.\nkept after Novels",
+            "as kept lines with no item left before them do"
+        );
+        assert_eq!(save(&reloaded, &source), flat);
+    }
+
+    /// The kind, title, state and tags of every item of `document`, in file order.
+    fn shape(document: &Document) -> Vec<(ItemKind, &str, Option<Completion>, &[domain::Tag])> {
+        items(document)
+            .into_iter()
+            .map(|(_, it)| (it.kind, it.title.as_str(), it.completed, it.tags.as_slice()))
+            .collect()
+    }
+
+    /// Whether `source` holds a checklist item of `document` on a line not under its task's, as
+    /// one nested in another is read.
+    fn flattened(document: &Document, source: &Source) -> bool {
+        source.lines.iter().any(|(&id, &line_id)| {
+            let checklist_item = document
+                .node(id)
+                .and_then(Node::item)
+                .is_some_and(|it| it.kind == ItemKind::ChecklistItem);
+            document.parent(id).is_some_and(|parent| {
+                checklist_item
+                    && !line(&source.outline, source.lines[&parent])
+                        .children()
+                        .contains(&line_id)
+            })
+        })
     }
 
     // F-FILE-03, FR-STORE-09, N-REL-02
@@ -1106,7 +1196,14 @@ Secret @hidden
                 text.push_str(line_break);
             }
             let (document, source) = load(&text);
-            prop_assert_eq!(save(&document, &source), text);
+            let saved = save(&document, &source);
+            if flattened(&document, &source) {
+                let (reloaded, source) = load(&saved);
+                prop_assert_eq!(shape(&reloaded), shape(&document));
+                prop_assert_eq!(save(&reloaded, &source), saved);
+            } else {
+                prop_assert_eq!(saved, text);
+            }
         }
 
         // FR-STORE-04, FR-STORE-09, N-REL-02

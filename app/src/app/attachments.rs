@@ -11,7 +11,7 @@ use std::mem;
 use jiff::civil::{Date, DateTime};
 
 use super::{
-    Command, Focus, Notice, Refusal, Side, State, TextField, Whose,
+    Command, Focus, Notice, Side, State, TextField, Whose,
     checklist::{self, ChecklistLine},
     container,
     editing::Editing,
@@ -300,18 +300,6 @@ impl State {
             (Command::Move(direction), Some(Selected::Checklist(Some(item)))) => {
                 self.change(checklist::shift(&self.document, item, direction));
             }
-            (Command::Indent, Some(Selected::Checklist(Some(item)))) => {
-                match checklist::indent(&self.document, item) {
-                    Some(transaction) => self.change(transaction),
-                    None => self.notify(Notice::Refused(Refusal::NothingAbove)),
-                }
-            }
-            (Command::Outdent, Some(Selected::Checklist(Some(item)))) => {
-                match checklist::outdent(&self.document, item) {
-                    Some(transaction) => self.change(transaction),
-                    None => self.notify(Notice::Refused(Refusal::NotNested)),
-                }
-            }
             _ => {}
         }
         true
@@ -440,8 +428,6 @@ pub(super) fn acts_on(command: Command) -> bool {
             | Command::Delete
             | Command::ToggleCompleted
             | Command::Move(_)
-            | Command::Indent
-            | Command::Outdent
             | Command::Paste(_)
     )
 }
@@ -558,7 +544,7 @@ mod tests {
     use super::*;
     use crate::app::{
         Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, Prefill,
-        QuickAddInput, Refusal, TextEdit, autosave, update, view::View,
+        QuickAddInput, TextEdit, autosave, update, view::View,
     };
     use crate::domain::{Completion, PlacementError};
 
@@ -841,14 +827,14 @@ mod tests {
         Selected::Checklist(Some(id))
     }
 
-    /// The open panel's checklist: each item's title and depth.
-    fn checklist(state: &State) -> Vec<(String, usize)> {
+    /// The open panel's checklist: each item's title.
+    fn checklist(state: &State) -> Vec<String> {
         state
             .attachments()
             .and_then(|view| view.checklist)
             .unwrap_or_default()
             .into_iter()
-            .map(|line| (line.item.title.clone(), line.depth))
+            .map(|line| line.item.title.clone())
             .collect()
     }
 
@@ -948,11 +934,7 @@ mod tests {
     // FR-ATT-01, FR-CHK-02
     #[test]
     fn the_motions_select_the_entries_in_turn() -> Result<(), PlacementError> {
-        let (mut state, _, [b, c]) = with_checklist(["b", "c"])?;
-        let mut document = state.document().clone();
-        let nested = Item::new(ItemKind::ChecklistItem, "d");
-        let d = document.push(Some(b), Node::Item(nested))?;
-        state = State::new(document, Opened::Demo, TODAY);
+        let (mut state, _, [b, d, c]) = with_checklist(["b", "d", "c"])?;
         state.open_attachments(Whose::Focused, Selected::Note);
         let steps = [
             (Focus::Next, Some(entry(b))),
@@ -1045,28 +1027,14 @@ mod tests {
 
     // FR-CHK-03
     #[test]
-    fn items_are_deleted_moved_indented_and_outdented() -> Result<(), PlacementError> {
+    fn items_are_deleted_and_moved() -> Result<(), PlacementError> {
         let (mut state, _, [c, d, e]) = with_checklist(["c", "d", "e"])?;
         give(&mut state, Command::OpenChecklist);
-        give(&mut state, Command::Indent);
-        assert_eq!(
-            state.notice(),
-            Some(&Notice::Refused(Refusal::NothingAbove))
-        );
-        give(&mut state, Command::Outdent);
-        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::NotNested)));
         give(&mut state, Command::Move(Direction::Down));
         give(&mut state, Command::Focus(Focus::Previous));
         give(&mut state, Command::ToggleCompleted);
         give(&mut state, Command::Focus(Focus::Next));
-        give(&mut state, Command::Indent);
-        let nested = [
-            ("d".to_owned(), 0),
-            ("c".to_owned(), 1),
-            ("e".to_owned(), 0),
-        ];
-        assert_eq!(checklist(&state), nested);
-        give(&mut state, Command::Outdent);
+        assert_eq!(checklist(&state), ["d", "c", "e"]);
         give(&mut state, Command::Focus(Focus::Last));
         give(&mut state, Command::Focus(Focus::Previous));
         give(&mut state, Command::Delete);
@@ -1086,128 +1054,6 @@ mod tests {
         assert_eq!(selected(&state), Some(Selected::Checklist(None)));
         give(&mut state, Command::Delete);
         assert!(item(&state, d).is_none() && item(&state, e).is_none());
-        Ok(())
-    }
-
-    /// The text being edited and where its caret is.
-    fn edited(state: &State) -> Option<(&str, usize)> {
-        state
-            .editing()
-            .map(|(.., field)| (field.text(), field.caret()))
-    }
-
-    // FR-CHK-03
-    #[test]
-    fn an_item_added_nests_while_edited_as_one_step_to_undo() -> Result<(), PlacementError> {
-        let (mut state, a, [c]) = with_checklist(["c"])?;
-        give(&mut state, Command::OpenChecklist);
-        input(&mut state, AttachmentsInput::Edit);
-        edit(&mut state, EditInput::Indent);
-        assert_eq!(
-            state.notice(),
-            Some(&Notice::Refused(Refusal::NothingAbove))
-        );
-        assert_eq!(edited(&state), Some(("c", 1)), "editing goes on");
-        edit(&mut state, EditInput::Next);
-        type_text(&mut state, "dx");
-        let left = TextEdit::Move {
-            motion: Motion::Left,
-            select: false,
-        };
-        edit(&mut state, EditInput::Text(left));
-        edit(&mut state, EditInput::Indent);
-        type_text(&mut state, "!");
-        assert_eq!(edited(&state), Some(("d!x", 2)), "the caret stays");
-        assert_eq!(
-            checklist(&state),
-            [("c".to_owned(), 0), ("d!x".to_owned(), 1)]
-        );
-        edit(&mut state, EditInput::Outdent);
-        assert_eq!(
-            checklist(&state),
-            [("c".to_owned(), 0), ("d!x".to_owned(), 0)]
-        );
-        edit(&mut state, EditInput::Outdent);
-        assert_eq!(state.notice(), Some(&Notice::Refused(Refusal::NotNested)));
-        edit(&mut state, EditInput::Indent);
-        edit(&mut state, EditInput::Done);
-        let nested = [("c".to_owned(), 0), ("d!x".to_owned(), 1)];
-        assert_eq!(checklist(&state), nested);
-        state.undo();
-        assert_eq!(state.document().children(a), [c]);
-        assert!(
-            state.document().children(c).is_empty(),
-            "adding it where it nests is one step"
-        );
-        state.redo();
-        assert_eq!(checklist(&state), nested);
-        give(&mut state, Command::New(Side::Below));
-        edit(&mut state, EditInput::Outdent);
-        edit(&mut state, EditInput::Done);
-        assert_eq!(checklist(&state), nested, "an item left empty is not added");
-        assert_eq!(
-            selected(&state),
-            state.document().children(c).first().copied().map(entry)
-        );
-        Ok(())
-    }
-
-    // FR-CHK-03
-    #[test]
-    fn an_item_edited_moves_with_its_text_as_one_step_to_undo() -> Result<(), PlacementError> {
-        let (mut state, a, [c, d]) = with_checklist(["c", "d"])?;
-        give(&mut state, Command::OpenChecklist);
-        give(&mut state, Command::Focus(Focus::Next));
-        give(&mut state, Command::EditTitle);
-        type_text(&mut state, "!");
-        edit(&mut state, EditInput::Indent);
-        type_text(&mut state, "?");
-        edit(&mut state, EditInput::Outdent);
-        edit(&mut state, EditInput::Indent);
-        edit(&mut state, EditInput::Done);
-        assert_eq!(state.document().children(c), [d]);
-        assert_eq!(item(&state, d).map(|it| it.title.as_str()), Some("d!?"));
-        state.undo();
-        assert_eq!(state.document().children(a), [c, d]);
-        assert_eq!(item(&state, d).map(|it| it.title.as_str()), Some("d"));
-        give(&mut state, Command::EditTitle);
-        edit(&mut state, EditInput::Text(TextEdit::DeleteBackward));
-        edit(&mut state, EditInput::Indent);
-        edit(&mut state, EditInput::Done);
-        assert_eq!(
-            (
-                state.document().children(c),
-                item(&state, d).map(|it| it.title.as_str())
-            ),
-            ([d].as_slice(), Some("d")),
-            "an item emptied keeps its text and still moves"
-        );
-        Ok(())
-    }
-
-    // FR-CHK-03
-    #[test]
-    fn only_a_checklist_item_nests_while_edited() -> Result<(), PlacementError> {
-        let (mut state, a, _) = with_checklist(["c"])?;
-        let mut document = state.document().clone();
-        let inbox = Some(document.inbox());
-        document.push(inbox, Node::Item(Item::new(ItemKind::Task, "b")))?;
-        state = State::new(document, Opened::Demo, TODAY);
-        give(&mut state, Command::Focus(Focus::Last));
-        let before = state.document().clone();
-        give(&mut state, Command::EditTitle);
-        edit(&mut state, EditInput::Indent);
-        assert_eq!(state.document(), &before, "a task does not move");
-        edit(&mut state, EditInput::Done);
-        give(&mut state, Command::Focus(Focus::First));
-        state.open_attachments(Whose::Focused, Selected::Note);
-        input(&mut state, AttachmentsInput::Edit);
-        edit(&mut state, EditInput::Outdent);
-        assert_eq!(
-            state.editing().map(|(id, part, _)| (id, part)),
-            Some((a, Part::Note))
-        );
-        assert_eq!((state.document(), state.notice()), (&before, None));
         Ok(())
     }
 
@@ -1249,11 +1095,7 @@ mod tests {
         assert_eq!(effects, [Effect::ReadClipboard(Side::Above)]);
         let pasted = vec![branch("p"), branch("q")];
         update(&mut state, Message::Paste(Side::Above, pasted), TODAY);
-        let titles: Vec<_> = checklist(&state)
-            .into_iter()
-            .map(|(title, _)| title)
-            .collect();
-        assert_eq!(titles, ["p", "q", "c"]);
+        assert_eq!(checklist(&state), ["p", "q", "c"]);
         let last = state.document().children(a).get(1).copied();
         assert_eq!(
             selected(&state),

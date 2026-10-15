@@ -9,8 +9,8 @@ use crate::domain::{
 
 impl Document {
     /// The transaction that makes `id` an item of kind `kind` where it is, with everything it
-    /// holds; a task's checklist items become tasks, theirs staying checklist items (FR-TASK-06).
-    /// An empty one when it is of that kind already.
+    /// holds; a task's checklist items become tasks (FR-TASK-06). An empty one when it is of that
+    /// kind already.
     ///
     /// # Errors
     ///
@@ -99,7 +99,6 @@ mod tests {
         original.comments = vec!["call them".to_owned()];
         let task = document.push(Some(area), Node::Item(original.clone()))?;
         let check = document.push(Some(task), item(ChecklistItem, "Pack"))?;
-        let nested = document.push(Some(check), item(ChecklistItem, "Books"))?;
         let line = document.push(Some(task), Node::Kept("kept".to_owned()))?;
         converted(&mut document, task, Project)?;
         assert_eq!(document.children(area), [first, task], "in its place");
@@ -113,7 +112,6 @@ mod tests {
         );
         assert_eq!(document.children(task), [check, line]);
         assert_eq!(kind(&document, check), Some(Task));
-        assert_eq!(kind(&document, nested), Some(ChecklistItem));
         assert_eq!(document.node(line), Some(&Node::Kept("kept".to_owned())));
         Ok(())
     }

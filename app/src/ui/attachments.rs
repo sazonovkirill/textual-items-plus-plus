@@ -29,9 +29,7 @@ use super::{
     markdown::{self, Format, NoteLine},
 };
 use crate::{
-    app::{
-        self, AttachmentsInput, AttachmentsView, ChecklistLine, Command, Direction, Focus, Selected,
-    },
+    app::{self, AttachmentsInput, AttachmentsView, ChecklistLine, Focus, Selected},
     domain::comments,
 };
 
@@ -45,13 +43,6 @@ const WIDTH: (u16, u16) = (40, 72);
 pub(super) enum PanelKey {
     /// Gives the core this input.
     Input(AttachmentsInput),
-    /// Gives the core this command, which the panel takes before the main keymap's: `]`/`[`
-    /// nest checklist items there, while elsewhere they nudge the start date (D-82).
-    Command(Command),
-    /// With a checklist item selected, indents it, or outdents it `Up`, as `Tab` and
-    /// `Shift+Tab` do; else gives the keys to where they go next that way, as they do elsewhere
-    /// (D-79).
-    Nest(Direction),
     /// Adds a comment stamped now.
     AddComment,
     /// Widens the panel over the whole of its pane, or closes it once it is, so that `\\` goes
@@ -137,22 +128,6 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
     ),
     ((KeyModifiers::NONE, KeyCode::Char('\\')), PanelKey::Cycle),
     (
-        (KeyModifiers::NONE, KeyCode::Char(']')),
-        PanelKey::Command(Command::Indent),
-    ),
-    (
-        (KeyModifiers::NONE, KeyCode::Char('[')),
-        PanelKey::Command(Command::Outdent),
-    ),
-    (
-        (KeyModifiers::NONE, KeyCode::Tab),
-        PanelKey::Nest(Direction::Down),
-    ),
-    (
-        (KeyModifiers::SHIFT, KeyCode::BackTab),
-        PanelKey::Nest(Direction::Up),
-    ),
-    (
         (KeyModifiers::NONE, KeyCode::Char('j')),
         PanelKey::Scroll(Scroll::Lines(1)),
     ),
@@ -200,9 +175,7 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
 /// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
-/// `a` adds a comment, `\\` widens or narrows the panel, `]` and `[` indent and outdent the
-/// selected checklist item, `Tab` and `Shift+Tab` [nest](PanelKey::Nest) it, and the motion keys
-/// scroll or select; `g` is left to start the keymap's sequences, as `gg` selecting the first
+/// `a` adds a comment, `\\` widens or narrows the panel, and the motion keys scroll or select; `g` is left to start the keymap's sequences, as `gg` selecting the first
 /// entry and `gn` moving the keys on. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
@@ -473,18 +446,17 @@ impl<'a> AttachmentsPanel<'a> {
         )
     }
 
-    /// The lines of a checklist item in content `width`: indented by its depth, its marker,
-    /// checked or not, then its text and tags, wrapping after the marker, a checked item's struck
-    /// through, all dimmed while it or an item above it is checked (FR-CHK-04); while its text is
-    /// edited, the text as typed, wrapping after the marker, and the caret's line and column
-    /// among them.
+    /// The lines of a checklist item in content `width`: its marker, checked or not, then its
+    /// text and tags, wrapping after the marker, a checked item's struck through and all dimmed
+    /// (FR-CHK-04); while its text is edited, the text as typed, wrapping after the marker, and
+    /// the caret's line and column among them.
     fn checklist_line(
         &self,
         line: &ChecklistLine<'a>,
         width: usize,
     ) -> (Vec<Line<'a>>, Option<(usize, usize)>) {
         let item = line.item;
-        let dim = if line.dimmed {
+        let dim = if item.completed.is_some() {
             Style::new().add_modifier(Modifier::DIM)
         } else {
             Style::new()
@@ -495,11 +467,7 @@ impl<'a> AttachmentsPanel<'a> {
         } else {
             (Icon::Task, dim)
         };
-        let marker = format!("{} ", marker.glyph(self.icons));
-        // An item too deep for the panel goes no further in than leaves a column for its text
-        // and one for the caret after it (FR-UI-06).
-        let depth = (2 * line.depth).min(width.saturating_sub(Span::raw(&marker).width() + 2));
-        let prefix = format!("{}{marker}", " ".repeat(depth));
+        let prefix = format!("{} ", marker.glyph(self.icons));
         let indent = Span::raw(&prefix).width();
         let marker_style = title.remove_modifier(Modifier::CROSSED_OUT);
         if let Some(field) = self.view.editing
@@ -785,8 +753,7 @@ mod tests {
 
     // FR-ATT-02, FR-ATT-03, FR-ATT-04, FR-CHK-03
     #[test]
-    fn escape_closes_e_and_enter_edit_d_deletes_a_adds_brackets_and_tab_nest_and_the_motion_keys_scroll()
-     {
+    fn escape_closes_e_and_enter_edit_d_deletes_a_adds_and_the_motion_keys_scroll() {
         let none = KeyModifiers::NONE;
         for (code, modifiers, key) in [
             (KeyCode::Esc, none, PanelKey::Input(AttachmentsInput::Close)),
@@ -811,18 +778,6 @@ mod tests {
                 PanelKey::Input(AttachmentsInput::Delete),
             ),
             (KeyCode::Char('a'), none, PanelKey::AddComment),
-            (KeyCode::Char(']'), none, PanelKey::Command(Command::Indent)),
-            (
-                KeyCode::Char('['),
-                none,
-                PanelKey::Command(Command::Outdent),
-            ),
-            (KeyCode::Tab, none, PanelKey::Nest(Direction::Down)),
-            (
-                KeyCode::BackTab,
-                KeyModifiers::SHIFT,
-                PanelKey::Nest(Direction::Up),
-            ),
             (KeyCode::Char('j'), none, PanelKey::Scroll(Scroll::Lines(1))),
             (KeyCode::Up, none, PanelKey::Scroll(Scroll::Lines(-1))),
             (
@@ -844,7 +799,19 @@ mod tests {
                 "{code:?} {modifiers:?}"
             );
         }
-        assert_eq!(panel_input(&press(KeyCode::Char('x'), none)), None);
+        for (code, modifiers) in [
+            (KeyCode::Char('x'), none),
+            (KeyCode::Char(']'), none),
+            (KeyCode::Char('['), none),
+            (KeyCode::Tab, none),
+            (KeyCode::BackTab, KeyModifiers::SHIFT),
+        ] {
+            assert_eq!(
+                panel_input(&press(code, modifiers)),
+                None,
+                "{code:?} is the keymap's"
+            );
+        }
         assert_eq!(
             panel_input(&press(KeyCode::Char('g'), none)),
             None,
@@ -1149,7 +1116,7 @@ mod tests {
             id: ItemId::new(1),
             item: &task,
             selected: Selected::Note,
-            checklist: Some(vec![line(&long, 2, 1, false)]),
+            checklist: Some(vec![line(&long, 2)]),
             editing: None,
         };
         let area = Rect::new(0, 0, 40, 12);
@@ -1162,11 +1129,11 @@ mod tests {
         assert_eq!(
             rows(&buf)[5..7],
             [
-                "│   ☐ Plates and bowls and cups and    │",
-                "│     glasses @home                    │",
+                "│ ☐ Plates and bowls and cups and      │",
+                "│   glasses @home                      │",
             ]
         );
-        assert_eq!(buf[(13, 6)].fg, theme.tag);
+        assert_eq!(buf[(11, 6)].fg, theme.tag);
     }
 
     // FR-ATT-02
@@ -1179,7 +1146,7 @@ mod tests {
             id: ItemId::new(1),
             item: &task,
             selected: Selected::Checklist(Some(ItemId::new(2))),
-            checklist: Some(vec![line(&item, 2, 0, false)]),
+            checklist: Some(vec![line(&item, 2)]),
             editing: None,
         };
         let panel = AttachmentsPanel::new(view, &theme, IconSet::Plain, TODAY);
@@ -1346,17 +1313,15 @@ mod tests {
         assert_eq!(panel.selected_lines(area), (12, 14));
     }
 
-    /// A checklist line of `item` at `depth`, dimmed or not.
-    fn line(item: &Item, id: u64, depth: usize, dimmed: bool) -> ChecklistLine<'_> {
+    /// A checklist line of `item`.
+    fn line(item: &Item, id: u64) -> ChecklistLine<'_> {
         ChecklistLine {
             id: ItemId::new(id),
             item,
-            depth,
-            dimmed,
         }
     }
 
-    /// The panel on a task `Pack` with checklist items `Books`, checked, holding `Novels`, and
+    /// The panel on a task `Pack` with checklist items `Books`, checked, `Novels` and
     /// `Plates @home(kitchen)`, `selected` selected and edited in `editing` if given, drawn over
     /// 40 × `height` cells from line `top`; the buffer, the line drawn from and the caret.
     fn draw_checklist(
@@ -1379,11 +1344,7 @@ mod tests {
             id: ItemId::new(1),
             item: &task,
             selected,
-            checklist: Some(vec![
-                line(&books, 2, 0, true),
-                line(&novels, 3, 1, true),
-                line(&plates, 4, 0, false),
-            ]),
+            checklist: Some(vec![line(&books, 2), line(&novels, 3), line(&plates, 4)]),
             editing,
         };
         let area = Rect::new(0, 0, 40, height);
@@ -1417,7 +1378,7 @@ mod tests {
                 "│                                      │",
                 "│ ☑ Checklist                          │",
                 "│ ✔ Books                              │",
-                "│▌  ☐ Novels                           │",
+                "│▌☐ Novels                             │",
                 "│ ☐ Plates @home(kitchen)              │",
                 "│                                      │",
                 "│ ❞ Comments                           │",
@@ -1437,12 +1398,13 @@ mod tests {
                 .modifier
                 .contains(Modifier::DIM | Modifier::CROSSED_OUT)
         );
-        let novels = &buf[(6, 6)];
+        let novels = &buf[(4, 6)];
         assert!(
-            novels.modifier.contains(Modifier::DIM),
-            "under a checked item"
+            !novels
+                .modifier
+                .intersects(Modifier::DIM | Modifier::CROSSED_OUT),
+            "after a checked item"
         );
-        assert!(!novels.modifier.contains(Modifier::CROSSED_OUT));
         assert_eq!(
             novels.bg, theme.current_line,
             "the item selected is on the band"
@@ -1493,44 +1455,6 @@ mod tests {
             "wrapping after the marker"
         );
         assert_eq!(caret, Some(Position::new(11, 8)));
-    }
-
-    // FR-CHK-01, FR-CHK-03, FR-UI-06
-    #[test]
-    fn an_item_too_deep_for_the_panel_is_edited_with_the_caret_inside_it() {
-        let task = Item::new(ItemKind::Task, "Pack");
-        let cups = Item::new(ItemKind::ChecklistItem, "Cups");
-        let field = TextField::new("Cups".to_owned());
-        let theme = BuiltIn::default().colors();
-        let selected = Selected::Checklist(Some(ItemId::new(2)));
-        let view = AttachmentsView {
-            id: ItemId::new(1),
-            item: &task,
-            selected,
-            checklist: Some(vec![line(&cups, 2, 18, false)]),
-            editing: Some(&field),
-        };
-        let area = Rect::new(0, 0, 40, 16);
-        let mut buf = Buffer::empty(area);
-        let mut scrolled = Scrolled {
-            top: 0,
-            drawn: Some(selected),
-        };
-        let panel = AttachmentsPanel::new(view, &theme, IconSet::Plain, TODAY);
-        let (caret, narrow) = (panel.caret(area, 0), panel.caret(Rect::new(0, 0, 5, 60), 0));
-        panel.render(AttachmentsPanel::area(area), &mut buf, &mut scrolled);
-        assert_eq!(
-            rows(&buf)[5..9],
-            [
-                "│▌                                ☐ C  │",
-                "│▌                                  u  │",
-                "│▌                                  p  │",
-                "│▌                                  s  │",
-            ],
-            "indented as far as leaves its text a column"
-        );
-        assert_eq!(caret, Some(Position::new(37, 8)));
-        assert_eq!(narrow, None, "no room for the marker leaves no caret");
     }
 
     // FR-CHK-02

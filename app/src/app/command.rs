@@ -121,10 +121,6 @@ pub enum Command {
     /// Move the selected items up or down among the items they are shown with (FR-OPS-02,
     /// FR-OPS-10).
     Move(Direction),
-    /// Indent the selected items into the item of their kind above them (FR-OPS-03).
-    Indent,
-    /// Outdent the selected items out of the item of their kind they are in (FR-OPS-03).
-    Outdent,
     /// Convert the selected items to projects, or to sections when all are projects (FR-TASK-06,
     /// FR-ORG-06).
     Convert,
@@ -511,16 +507,6 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::Move(Direction::Down),
         title: "Move Down",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::Indent,
-        title: "Indent",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::Outdent,
-        title: "Outdent",
         context: Context::Navigate,
     },
     Entry {
@@ -996,8 +982,6 @@ mod tests {
             Command::DeleteContainer,
             Command::Move(Direction::Up),
             Command::Move(Direction::Down),
-            Command::Indent,
-            Command::Outdent,
             Command::Duplicate,
             Command::Copy,
             Command::Cut,

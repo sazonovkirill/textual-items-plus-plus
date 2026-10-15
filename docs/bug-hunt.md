@@ -21,7 +21,7 @@ The coordinator is the session the owner asked for the hunt, and each role is a 
 
 The app's areas are split into three sets, one for each Finder:
 
-- **Set X:** tasks, editing and undo, selection and rearranging (moving, indenting, multi-selection, converting, the clipboard), notes, comments and checklists, the shortcuts panel and the mouse.
+- **Set X:** tasks, editing and undo, selection and rearranging (moving, multi-selection, converting, the clipboard), notes, comments and checklists, the shortcuts panel and the mouse.
 - **Set Y:** the sidebar and projects, views (Inbox, Today, Upcoming, All, Logbook, Trash), dates and tags.
 - **Set Z:** storage (saving, reload and external-change conflicts, backups, layout restore), panes, the Navigator, Go to Symbol, the command palette, search, settings, themes, weather, animations and small terminals.
 

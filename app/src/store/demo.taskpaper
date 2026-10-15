@@ -27,8 +27,8 @@ Work: @area
 				COMMENTS @hidden
 					[{today-1} 21:30] Ask design for screenshots
 				- Outline
-					- Intro
-					- Pricing
+				- Intro
+				- Pricing
 				- First draft @done({today-1})
 				- Proofread
 			- Book the launch call @due({today+5}) @meeting

@@ -83,7 +83,7 @@ Things 3 has a setting: immediately, daily or manually ([reference](reference/th
 - **B. Cascading:** checking an item checks everything under it, and checking the last open child checks its parent.
 
 **Proposed default:** A.
-**Decision (2026-10-13):** A with a display rule: checking an item does not check its children or parent, but a checked item and everything under it are drawn dimmed, recursively. Recorded in FR-CHK-04.
+**Decision (2026-10-13):** A with a display rule: checking an item does not check its children or parent, but a checked item and everything under it are drawn dimmed, recursively. Recorded in FR-CHK-04. D-145 makes checklists flat, so a checked item dims only itself.
 **Affects:** FR-CHK-04.
 
 ### OQ-8 · What Upcoming shows and how it groups — decided
@@ -213,7 +213,7 @@ Work: @area
 - **B. A hidden node** `CHECKLIST @hidden` holding the items, invisible as a checklist to other apps.
 
 **Proposed default:** A.
-**Decision (2026-10-13):** A, nested tasks.
+**Decision (2026-10-13):** A, nested tasks. D-145 keeps them one level deep.
 **Affects:** FR-STORE-06, FR-CHK.
 
 ### OQ-19 · How the Trash is stored — decided

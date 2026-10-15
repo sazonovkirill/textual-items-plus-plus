@@ -21,7 +21,7 @@ Priorities use the same scale as the functional requirements: **Must** (v1), **S
 |---|---|---|
 | F-FILE-01 | Open the `.taskpaper` file the app is given, creating it when missing (OQ-16). | Must |
 | F-FILE-02 | Parse files exactly as TaskPaper 3 does: item types, tags, indentation, blank lines ([taskpaper-terminal's file-format spec](reference/taskpaper-terminal/specs/file-format.md)). | Must |
-| F-FILE-03 | Write files that TaskPaper 3 parses to the same outline. Opening and saving an unchanged file reproduces it byte for byte. | Must |
+| F-FILE-03 | Write files that TaskPaper 3 parses to the same outline. Opening and saving an unchanged file reproduces it byte for byte, except a file whose checklist items nest, which is written flat (D-145). | Must |
 | F-FILE-04 | Saves are atomic (temporary file and rename) and keep the file's permissions. | Must |
 | F-FILE-05 | Save automatically shortly after every change and on exit (FR-STORE-09). | Must |
 | F-FILE-06 | Detect when another program changes the open file, and reload it without losing local edits ([taskpaper-terminal's file-io spec](reference/taskpaper-terminal/specs/file-io.md)). | Must |

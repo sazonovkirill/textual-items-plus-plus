@@ -6,8 +6,8 @@ use jiff::civil::Date;
 
 use super::{
     Command, DateInput, DatePromptView, Direction, EditInput, Effect, End, Go, History, Notice,
-    Part, Picked, Picker, PickerInput, PickerView, Refusal, Selected, Selection, Side, SidebarView,
-    TextEdit, TextField, Whose, adding, checklist, clipboard, completion,
+    Part, Picked, Picker, PickerInput, PickerView, Selected, Selection, Side, SidebarView,
+    TextEdit, TextField, Whose, adding, clipboard, completion,
     container::{self, Row},
     converting,
     date_prompt::{self, DatePrompt},
@@ -1123,8 +1123,8 @@ impl State {
     }
 
     /// Applies `input` to the edited title. Deleting back in an empty title ends editing, as
-    /// [`EditInput::Done`] does, except in a checklist item's (D-84); only a checklist item is
-    /// indented and outdented. Nothing happens outside edit mode.
+    /// [`EditInput::Done`] does, except in a checklist item's (D-84). Nothing happens outside edit
+    /// mode.
     pub(super) fn edit_input(&mut self, input: EditInput) {
         let Some(editing) = self.editing.as_mut() else {
             return;
@@ -1155,37 +1155,6 @@ impl State {
                 editing.revert(&mut self.document);
                 self.finish_editing();
             }
-            EditInput::Indent => self.nest_edited(true),
-            EditInput::Outdent => self.nest_edited(false),
-        }
-    }
-
-    /// Indents the checklist item edited, or outdents it, as `indent` says, as `]` and `[` do
-    /// while it is selected; editing goes on with its text and caret as they are, and the move is
-    /// part of the edit's one step to undo (FR-CHK-03). Nothing happens unless a checklist item is
-    /// edited.
-    pub(super) fn nest_edited(&mut self, indent: bool) {
-        let Some(editing) = self
-            .editing
-            .as_mut()
-            .filter(|editing| editing.kind() == ItemKind::ChecklistItem)
-        else {
-            return;
-        };
-        let id = editing.id();
-        let moved = editing.relocate(&mut self.document, |document| {
-            if indent {
-                checklist::indent(document, id)
-            } else {
-                checklist::outdent(document, id)
-            }
-        });
-        if !moved {
-            self.notify(Notice::Refused(if indent {
-                Refusal::NothingAbove
-            } else {
-                Refusal::NotNested
-            }));
         }
     }
 

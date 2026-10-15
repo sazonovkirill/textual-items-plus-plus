@@ -120,15 +120,13 @@ impl Query {
     /// within the title, one tag, the description, the note, one comment or one checklist item,
     /// each looked through as it is (N-PERF-02).
     fn finds(&self, document: &Document, id: ItemId, item: &Item) -> bool {
-        let mut checklist = Vec::new();
-        checklist_titles(document, id, &mut checklist);
         self.words.iter().all(|word| {
             holds(&item.title, word)
                 || (item.shown_tags().iter()).any(|tag| holds(&named_tag(tag), word))
                 || holds(&item.description, word)
                 || holds(&item.note, word)
                 || (item.comments.iter()).any(|comment| holds(comments::split(comment).1, word))
-                || checklist.iter().any(|title| holds(title, word))
+                || checklist_titles(document, id).any(|title| holds(title, word))
         })
     }
 }
@@ -296,7 +294,7 @@ fn holds(text: &str, word: &str) -> bool {
 
 /// The lines of item `id` outside its title and tags, in the order an excerpt takes them: its
 /// description's, its note's, its comments without their timestamps, then the titles of its
-/// checklist's items, nested ones after the item they are in.
+/// checklist's items.
 fn lines<'a>(
     document: &'a Document,
     id: ItemId,
@@ -311,26 +309,18 @@ fn lines<'a>(
         .comments
         .iter()
         .map(|comment| (Source::Comment, comments::split(comment).1));
-    let mut checklist = Vec::new();
-    checklist_titles(document, id, &mut checklist);
-    described.chain(noted).chain(commented).chain(
-        checklist
-            .into_iter()
-            .map(|title| (Source::Checklist, title)),
-    )
+    let checklist = checklist_titles(document, id).map(|title| (Source::Checklist, title));
+    described.chain(noted).chain(commented).chain(checklist)
 }
 
-/// Adds the titles of the checklist items inside `id` to `titles`, in file order.
-fn checklist_titles<'a>(document: &'a Document, id: ItemId, titles: &mut Vec<&'a str>) {
-    for &child in document.children(id) {
-        if let Some(item) = document.node(child).and_then(Node::item)
-            && item.kind == ItemKind::ChecklistItem
-            && item.deleted.is_none()
-        {
-            titles.push(&item.title);
-            checklist_titles(document, child, titles);
-        }
-    }
+/// The titles of the checklist items of `id`, in file order.
+fn checklist_titles(document: &Document, id: ItemId) -> impl Iterator<Item = &str> {
+    document
+        .children(id)
+        .iter()
+        .filter_map(|&child| document.node(child).and_then(Node::item))
+        .filter(|item| item.kind == ItemKind::ChecklistItem && item.deleted.is_none())
+        .map(|item| item.title.as_str())
 }
 
 /// `text` in lowercase, character by character, as [`Query::ranges`] matches it.
@@ -401,15 +391,21 @@ mod tests {
             }];
         });
         let listed = add(&mut document, inbox, Task, "e", |_| {});
-        let line = add(&mut document, Some(listed), ChecklistItem, "x", |_| {});
-        add(&mut document, Some(line), ChecklistItem, "the bank", |_| {});
+        add(&mut document, Some(listed), ChecklistItem, "x", |_| {});
+        add(
+            &mut document,
+            Some(listed),
+            ChecklistItem,
+            "the bank",
+            |_| {},
+        );
         add(&mut document, inbox, Task, "f", |item| {
             item.comments = vec!["[2026-10-04 07:05] other".to_owned()];
         });
         assert_eq!(
             found(&document, "bank"),
             [titled, described, noted, commented, tagged, listed].map(task),
-            "a checklist item, nested or not, is found as part of its task"
+            "a checklist item is found as part of its task"
         );
         assert_eq!(found(&document, "  BaNk   nine "), [task(noted)]);
         assert_eq!(
@@ -530,10 +526,10 @@ mod tests {
                 "they said yes".to_owned(),
             ];
         });
-        let line = add(&mut document, Some(id), ChecklistItem, "x", |_| {});
+        add(&mut document, Some(id), ChecklistItem, "x", |_| {});
         add(
             &mut document,
-            Some(line),
+            Some(id),
             ChecklistItem,
             "bring the passport",
             |_| {},

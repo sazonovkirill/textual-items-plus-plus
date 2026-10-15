@@ -21,10 +21,6 @@ pub enum EditInput {
     Done,
     /// Ends editing without what was typed, as a comment's input does on `Esc` (FR-ATT-04).
     Cancel,
-    /// Indents the checklist item edited, editing on (FR-CHK-03).
-    Indent,
-    /// Outdents the checklist item edited, editing on (FR-CHK-03).
-    Outdent,
 }
 
 /// Which text of an item is edited.
@@ -43,8 +39,7 @@ pub enum Part {
 
 /// An item whose title, description, note or comment is being edited, its kind, which text is
 /// edited, the text edited, how a comment edited is written, the selection before editing started
-/// and how the item was before it, the moves made to it while edited, and the document's revision
-/// then.
+/// and how the item was before it, and the document's revision then.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Editing {
     id: ItemId,
@@ -54,7 +49,6 @@ pub(super) struct Editing {
     comment: Option<Comment>,
     before: Selection,
     origin: Origin,
-    moves: Vec<Op>,
     revision: u64,
 }
 
@@ -114,7 +108,6 @@ impl Editing {
             comment: None,
             before,
             origin: Origin::Existing(item.clone()),
-            moves: Vec::new(),
             revision: document.revision(),
         })
     }
@@ -147,7 +140,6 @@ impl Editing {
             comment: None,
             before,
             origin: Origin::Existing(item.clone()),
-            moves: Vec::new(),
             revision: document.revision(),
         })
     }
@@ -174,7 +166,6 @@ impl Editing {
             }),
             before,
             origin: Origin::Existing(item.clone()),
-            moves: Vec::new(),
             revision: document.revision(),
         })
     }
@@ -200,7 +191,6 @@ impl Editing {
             comment: Some(Comment { stamp, added: true }),
             before,
             origin: Origin::Existing(item.clone()),
-            moves: Vec::new(),
             revision: document.revision(),
         };
         editing.show(document);
@@ -258,7 +248,6 @@ impl Editing {
                 index,
                 contents: Transaction::new(ops),
             },
-            moves: Vec::new(),
             revision,
         }
     }
@@ -334,38 +323,6 @@ impl Editing {
         self.show(document);
     }
 
-    /// Moves the item edited, with its subtree, by the transaction `moving` makes from the
-    /// document while the item shows as it was before editing, and returns whether it made one.
-    /// Editing goes on with the text and caret as they are, and finishing makes the move part of
-    /// the session's one change: an item added for editing is added where it was moved, or not at
-    /// all when left empty.
-    pub(super) fn relocate(
-        &mut self,
-        document: &mut Document,
-        moving: impl FnOnce(&Document) -> Option<Transaction>,
-    ) -> bool {
-        let (Origin::Existing(item) | Origin::New { item, .. }) = &self.origin;
-        document
-            .set(self.id, item.clone())
-            .expect("an item keeps its kind when its text changes");
-        let moved = moving(document);
-        if let Some(transaction) = &moved {
-            document
-                .apply(transaction)
-                .expect("a transaction made from the document as it is fits it");
-            match &mut self.origin {
-                Origin::Existing(_) => self.moves.extend_from_slice(transaction.ops()),
-                Origin::New { parent, index, .. } => {
-                    (*parent, *index) = document
-                        .position(self.id)
-                        .expect("an item moved stays in the document");
-                }
-            }
-        }
-        self.show(document);
-        moved.is_some()
-    }
-
     /// Shows the text edited as the item's part edited.
     fn show(&self, document: &mut Document) {
         let (Origin::Existing(item) | Origin::New { item, .. }) = &self.origin;
@@ -411,8 +368,7 @@ impl Editing {
     }
 
     /// Ends editing: puts the document back as it was before and returns the change the session
-    /// made, its moves and then its text, to apply as one step, with the selection from before
-    /// it. A title or a comment is
+    /// made, to apply as one step, with the selection from before it. A title or a comment is
     /// trimmed: a new item or comment left empty is not added, and an existing one emptied keeps
     /// its text, so either makes no change. A description or a note loses the space and empty
     /// lines at its end, which the file does not keep, so emptying it removes it. Text left as it
@@ -430,19 +386,15 @@ impl Editing {
                 document
                     .set(self.id, item.clone())
                     .expect("an item keeps its kind when its text changes");
-                let moves = Transaction::new(self.moves.clone());
-                document
-                    .apply(&moves.clone().inverse())
-                    .expect("nothing but the session changes the document while it edits");
-                let mut ops = moves.ops().to_vec();
-                if !(one_line && text.is_empty()) && after != *item {
-                    ops.push(Op::Set {
+                if (one_line && text.is_empty()) || after == *item {
+                    Transaction::default()
+                } else {
+                    Transaction::new(vec![Op::Set {
                         id: self.id,
                         before: item.clone(),
                         after,
-                    });
+                    }])
                 }
-                Transaction::new(ops)
             }
             Origin::New {
                 item,

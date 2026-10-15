@@ -36,7 +36,7 @@ fn status(harness: &Harness) -> String {
 
 // FR-CHK-01, FR-CHK-02, FR-CHK-03, FR-ATT-02, FR-ATT-05, FR-TASK-03
 #[test]
-fn build_a_nested_checklist() {
+fn build_a_checklist() {
     let mut harness = Harness::new(80, 20);
     harness.type_text("C");
     assert_eq!(
@@ -64,11 +64,11 @@ fn build_a_nested_checklist() {
         panel(&harness)[4..8],
         [
             "│ ☐ Documents                          │",
-            "│▌  ✔ ID card                          │",
-            "│   ☐ Proof of address                 │",
+            "│▌✔ ID card                            │",
+            "│ ☐ Proof of address                   │",
             "│                                      │",
         ],
-        "Enter adds the next item, ] nests it, Esc on an empty one adds none, x checks"
+        "Enter adds the next item, ] nests nothing, Esc on an empty one adds none, x checks"
     );
     harness.send(&Event::Paste(
         "Call\n\tAsk about fees\nThank them\n".to_owned(),
@@ -78,18 +78,18 @@ fn build_a_nested_checklist() {
         panel(&harness)[4..10],
         [
             "│ ☐ Documents                          │",
-            "│   ✔ ID card                          │",
-            "│   ☐ Call                             │",
-            "│     ☐ Ask about fees                 │",
-            "│   ☐ Proof of address                 │",
-            "│▌  ☐ Thank them                       │",
+            "│ ✔ ID card                            │",
+            "│ ☐ Call                               │",
+            "│ ☐ Ask about fees                     │",
+            "│ ☐ Proof of address                   │",
+            "│▌☐ Thank them                         │",
         ],
-        "a paste adds an item for each line, nested by its indentation, and Alt+j moves one down"
+        "a paste adds an item for each line, none nested, and Alt+j moves one down"
     );
     harness.type_text("d");
     assert_eq!(
         panel(&harness)[8],
-        "│▌  ☐ Proof of address                 │"
+        "│▌☐ Proof of address                   │"
     );
     harness.key(KeyCode::Esc);
     assert!(
@@ -149,10 +149,10 @@ fn items_copied_paste_into_a_checklist_one_for_each_line() {
     assert_eq!(
         panel(&harness)[4..6],
         [
-            "│▌☐ Buy tape                           │",
-            "│   ☐ for the boxes                    │",
+            "│ ☐ Buy tape                           │",
+            "│▌☐ for the boxes                      │",
         ],
-        "the copied task and its note line arrive as checklist items"
+        "the copied task and its note line arrive as checklist items, the last selected"
     );
 }
 
@@ -176,11 +176,11 @@ fn a_list_pasted_with_carriage_returns_or_a_copied_task_shows_every_line_as_an_i
         panel(&harness)[4..8],
         [
             "│ ☐ Fruit                              │",
-            "│   ☐ Apples                           │",
-            "│   ☐ Pears                            │",
+            "│ ☐ Apples                             │",
+            "│ ☐ Pears                              │",
             "│▌☐ Bread                              │",
         ],
-        "each line a terminal sends is an item, nested by its indentation"
+        "each line a terminal sends is an item, none nested"
     );
     harness.key(KeyCode::Esc);
     harness.type_text("jyk");
@@ -191,7 +191,7 @@ fn a_list_pasted_with_carriage_returns_or_a_copied_task_shows_every_line_as_an_i
     let saved = fs::read_to_string(&path).expect("the file is read");
     assert!(
         saved.starts_with(
-            "Inbox:\n\t- Groceries\n\t\t- Fruit\n\t\t\t- Apples\n\t\t\t- Pears\n\t\t- Write\n\t\t- Bread\n\t- Write @due"
+            "Inbox:\n\t- Groceries\n\t\t- Fruit\n\t\t- Write\n\t\t- Apples\n\t\t- Pears\n\t\t- Bread\n\t- Write @due"
         ),
         "the copied task arrives below the first item without its note, comments and date: {saved}"
     );
@@ -243,12 +243,16 @@ fn only_the_panel_marks_what_is_selected_while_it_has_the_keys() {
     assert_eq!(row(&harness), "▌ ☐ Call the bank about the card");
 }
 
-// FR-CHK-03, D-104
+// FR-CHK-01, FR-CHK-03, FR-OPS-03, F-FILE-03
 #[test]
-fn tab_and_shift_tab_nest_an_item_selected_or_edited_and_leave_the_panes_be() {
+fn a_nested_checklist_in_the_file_shows_flat_and_nothing_nests_it_again() {
     let folders = tempfile::tempdir().expect("a temporary folder");
     let path = folders.path().join("todo.taskpaper");
-    fs::write(&path, "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t- Cups\n").expect("the file is written");
+    fs::write(
+        &path,
+        "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t\t- Cups @done\n\t\t- Bowls\n",
+    )
+    .expect("the file is written");
     let mut harness =
         Harness::launched_in(folders, Some(path.clone()), 100, 16).expect("the file opens");
     let checklist = |harness: &Harness| -> Vec<String> {
@@ -264,36 +268,39 @@ fn tab_and_shift_tab_nest_an_item_selected_or_edited_and_leave_the_panes_be() {
             .collect()
     };
     harness.type_text("Cj");
-    harness.key(KeyCode::Tab);
     assert_eq!(
         checklist(&harness),
-        [" ☐ Plates", "▌  ☐ Cups", ""],
-        "Tab nests the item selected"
+        [" ☐ Plates", "▌✔ Cups", " ☐ Bowls"],
+        "the nested item follows the one it was in, keeping its state"
+    );
+    harness.type_text("]");
+    harness.key(KeyCode::Tab);
+    assert_eq!(
+        checklist(&harness)[1],
+        " ✔ Cups",
+        "Tab moves the keys on, as it does everywhere"
     );
     harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
-    assert_eq!(checklist(&harness), [" ☐ Plates", "▌☐ Cups", ""]);
-    harness.type_text("o");
-    harness.type_text("Bowls");
-    harness.key(KeyCode::Left);
+    harness.type_text("e");
     harness.key(KeyCode::Tab);
-    harness.type_text("!");
+    harness.key(KeyCode::Esc);
     assert_eq!(
         checklist(&harness),
-        [" ☐ Plates", " ☐ Cups", "▌  ☐ Bowl!s"],
-        "Tab nests the item edited, the caret where it was"
+        [" ☐ Plates", "▌✔ Cups", " ☐ Bowls"],
+        "], Tab and Shift+Tab nest nothing, selected or edited"
     );
-    harness.key(KeyCode::Esc);
-    harness.key(KeyCode::Esc);
-    assert!(
-        harness.rows()[2].starts_with(" Views                     │▌"),
-        "the pane keeps the keys: {}",
-        harness.rows()[2]
+    assert_eq!(
+        fs::read_to_string(&path).expect("the file is read"),
+        "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t\t- Cups @done\n\t\t- Bowls\n",
+        "nothing is written before a change"
     );
+    harness.type_text("x");
+    harness.key(KeyCode::Esc);
     harness.terminate();
     let saved = fs::read_to_string(&path).expect("the file is read");
     assert_eq!(
-        saved,
-        "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t- Cups\n\t\t\t- Bowl!s\n"
+        saved, "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t- Cups\n\t\t- Bowls\n",
+        "a change writes the checklist flat"
     );
 }
 

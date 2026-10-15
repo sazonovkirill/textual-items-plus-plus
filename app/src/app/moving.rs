@@ -14,14 +14,10 @@ pub enum Direction {
     Down,
 }
 
-/// Why the hierarchy refused to indent, outdent, convert, group or move items, for the status
-/// line to say (FR-OPS-03, FR-TASK-06, FR-ORG-06, FR-OPS-07, FR-OPS-08, D-107).
+/// Why the hierarchy refused to convert, group or move items, for the status line to say
+/// (FR-TASK-06, FR-ORG-06, FR-OPS-07, FR-OPS-08, D-107).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
-    /// No item of its kind is above it to go into.
-    NothingAbove,
-    /// It is not inside an item of its own kind to come out of.
-    NotNested,
     /// A section would be where only an area or a project holds one.
     NoRoomForSection,
     /// A project would be in a section or the Inbox, which hold none.

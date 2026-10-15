@@ -161,8 +161,6 @@ fn kept(state: &State) -> String {
 /// Why the hierarchy refused a move or a change of kind.
 const fn why(refusal: Refusal) -> &'static str {
     match refusal {
-        Refusal::NothingAbove => "nothing above to indent into",
-        Refusal::NotNested => "nothing to outdent from",
         Refusal::NoRoomForSection => "a section goes only in an area or a project",
         Refusal::NoRoomForProject => "a project goes only in an area or at the top level",
         Refusal::SectionHoldsTasks => "a section holds only tasks",
@@ -330,8 +328,6 @@ mod tests {
     #[test]
     fn each_refusal_says_why() {
         let reasons = [
-            Refusal::NothingAbove,
-            Refusal::NotNested,
             Refusal::NoRoomForSection,
             Refusal::NoRoomForProject,
             Refusal::SectionHoldsTasks,
@@ -345,8 +341,6 @@ mod tests {
         assert_eq!(
             reasons,
             [
-                "nothing above to indent into",
-                "nothing to outdent from",
                 "a section goes only in an area or a project",
                 "a project goes only in an area or at the top level",
                 "a section holds only tasks",

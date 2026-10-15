@@ -354,13 +354,13 @@ mod tests {
         let section = document.push(Some(area), item(Section))?;
         let task = document.push(Some(section), item(Task))?;
         let check = document.push(Some(task), item(ChecklistItem))?;
-        document.push(Some(check), item(ChecklistItem))?;
         let refused = [
             (None, Section),
             (None, Task),
             (Some(area), Area),
             (Some(section), Project),
             (Some(task), Task),
+            (Some(check), ChecklistItem),
             (Some(document.inbox()), Section),
             (None, Inbox),
         ];

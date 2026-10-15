@@ -388,17 +388,11 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
         lines.contains(&"│  Page Down               Ctrl+D, PgDn".to_owned()),
         "{lines:#?}"
     );
-    for line in [
-        "│  Indent                             ]",
-        "│  Outdent                            [",
-        "│  Indent or Next Pane              Tab",
-        "│  Outdent or Previous Pane   Shift+Tab",
-    ] {
-        assert!(lines.contains(&line.to_owned()), "{line}: {lines:#?}");
-    }
     assert!(
-        !lines.iter().any(|line| line.contains("a Day")),
-        "the brackets nest checklist items here: {lines:#?}"
+        !lines
+            .iter()
+            .any(|line| line.contains("dent") || line.contains("a Day")),
+        "nothing nests, and the brackets do nothing here: {lines:#?}"
     );
     assert!(!lines.contains(&"│ Text".to_owned()), "{lines:#?}");
     let rows = harness.rows();

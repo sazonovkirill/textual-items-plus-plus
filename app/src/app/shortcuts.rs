@@ -104,8 +104,6 @@ impl KeyGroup {
             | Command::DeleteContainer
             | Command::MoveTo
             | Command::Move(_)
-            | Command::Indent
-            | Command::Outdent
             | Command::Convert
             | Command::GroupIntoSection
             | Command::GroupIntoProject
@@ -310,7 +308,6 @@ mod tests {
         for (command, taken) in [
             (Command::Quit, true),
             (Command::ToggleCompleted, true),
-            (Command::Indent, true),
             (Command::Undo, false),
             (Command::Sidebar, false),
             (Command::KeepMine, false),

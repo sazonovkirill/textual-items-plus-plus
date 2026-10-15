@@ -94,8 +94,8 @@ pub enum Notice {
     /// Completing asks to be given again to complete projects that hold these many open tasks
     /// (FR-ORG-09, D-140).
     OpenTasks(usize),
-    /// Indenting, outdenting, converting, grouping or moving was refused, for this reason
-    /// (FR-OPS-03, FR-TASK-06, FR-OPS-07, FR-OPS-08, D-107).
+    /// Converting, grouping or moving was refused, for this reason (FR-TASK-06, FR-OPS-07,
+    /// FR-OPS-08, D-107).
     Refused(Refusal),
     /// The checklist was asked for on an item that has none: only tasks have one (FR-ATT-02).
     NoChecklist,
