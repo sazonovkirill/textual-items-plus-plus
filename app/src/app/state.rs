@@ -820,9 +820,13 @@ impl State {
 
     /// Adds an empty task on `side` of the focused row, focuses it and starts editing its title.
     /// Nothing is added inside an item whose contents are hidden for being completed
-    /// (FR-ORG-09), where it would not show, nor in a view, which has no place for it.
+    /// (FR-ORG-09), where it would not show, nor in a view other than Today, which has no place
+    /// for it.
     pub(super) fn new_task(&mut self, side: Side) {
         let Some(container) = self.container() else {
+            if self.shown() == Shown::View(View::Today) {
+                self.new_task_today(side);
+            }
             return;
         };
         let place = adding::place(
@@ -837,10 +841,37 @@ impl State {
         }
     }
 
+    /// Adds an empty task that starts today to the Inbox, which Today then lists, focuses it and
+    /// starts editing its title (D-128). It goes on `side` of the focused row when that is an
+    /// Inbox task, so that Today shows it beside that row, and else at that end of the Inbox.
+    fn new_task_today(&mut self, side: Side) {
+        let inbox = self.document.inbox();
+        let below = usize::from(side == Side::Below);
+        let index = match self
+            .pane()
+            .selection
+            .focused()
+            .and_then(|id| self.document.position(id))
+        {
+            Some((parent, index)) if parent == Some(inbox) => index + below,
+            _ => below * self.document.children(inbox).len(),
+        };
+        let item = Item {
+            start: Some(self.today),
+            ..self.new_item(ItemKind::Task)
+        };
+        self.add_task(item, (inbox, index));
+    }
+
     /// Adds an empty task at `place`, as its parent and its index there, focuses it and starts
     /// editing its title.
-    fn new_task_at(&mut self, (parent, index): (ItemId, usize)) {
-        let item = self.new_item(ItemKind::Task);
+    fn new_task_at(&mut self, place: (ItemId, usize)) {
+        self.add_task(self.new_item(ItemKind::Task), place);
+    }
+
+    /// Adds `item`, a task without a title, at `place`, as its parent and its index there,
+    /// focuses it and starts editing its title.
+    fn add_task(&mut self, item: Item, (parent, index): (ItemId, usize)) {
         let selection = self.pane().selection.clone();
         let editing = Editing::new_item(&mut self.document, item, (Some(parent), index), selection);
         self.pane_mut().selection.focus(Some(editing.id()));
@@ -2957,6 +2988,63 @@ mod tests {
         Ok(())
     }
 
+    // FR-VIEW-06, FR-EDIT-05, D-128
+    #[test]
+    fn a_task_added_in_today_starts_today_in_the_inbox() -> Result<(), PlacementError> {
+        let Dated {
+            mut state,
+            inbox_task,
+            overdue,
+            ..
+        } = dated()?;
+        let inbox = state.document().inbox();
+        state.go(Go::View(View::Today));
+        state.pane_mut().selection.focus(Some(inbox_task));
+        state.add_beside(Side::Above);
+        let (above, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(state.document().children(inbox), [above, inbox_task]);
+        assert_eq!(state.selection().focused(), Some(above));
+        type_text(&mut state, "first");
+        state.edit_input(EditInput::Done);
+        let item = state.document().node(above).and_then(Node::item);
+        assert_eq!(item.and_then(|item| item.start), Some(TODAY));
+        assert!(state.rows().iter().any(|row| row.id() == above));
+        state.pane_mut().selection.focus(Some(overdue));
+        state.new_task(Side::Above);
+        let (top, ..) = state.editing().ok_or(PlacementError::DoesNotFit)?;
+        assert_eq!(
+            state.document().children(inbox).first(),
+            Some(&top),
+            "beside a task in a project, first in the Inbox"
+        );
+        state.edit_input(EditInput::Done);
+        assert_eq!(state.document().children(inbox), [above, inbox_task]);
+        state.go(Go::Inbox);
+        assert_eq!(state.rows(), [], "dated, so out of the Inbox view");
+        Ok(())
+    }
+
+    // FR-VIEW-06, FR-EDIT-05, D-128
+    #[test]
+    fn an_empty_today_takes_a_task_at_the_end_of_the_inbox() {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let old = document.push(Some(inbox), Node::Item(Item::new(ItemKind::Task, "old")));
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        state.go(Go::View(View::Today));
+        assert_eq!(state.rows(), []);
+        state.new_task(Side::Below);
+        type_text(&mut state, "new");
+        state.edit_input(EditInput::Done);
+        let children = state.document().children(inbox);
+        assert_eq!(children.len(), 2);
+        assert_eq!(children.first().copied(), old.ok());
+        assert_eq!(
+            state.rows().iter().map(|row| row.id()).collect::<Vec<_>>(),
+            children.get(1..).unwrap_or_default()
+        );
+    }
+
     // FR-VIEW-06, FR-EDIT-01
     #[test]
     fn commands_that_need_a_container_do_nothing_in_today() -> Result<(), PlacementError> {
@@ -2968,7 +3056,6 @@ mod tests {
         state.go(Go::View(View::Today));
         state.pane_mut().selection.focus(Some(inbox_task));
         let before = state.document().clone();
-        state.new_task(Side::Below);
         for kind in [ItemKind::Section, ItemKind::Project, ItemKind::Area] {
             state.add(kind, End::Bottom);
         }

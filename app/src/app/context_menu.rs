@@ -208,8 +208,8 @@ impl State {
     }
 
     /// Whether `command` would change something for the selected items, `focused` the focused
-    /// one: in the Trash only restoring and deleting for good do, a view has no place to add or
-    /// move items in, and the rest by what the items are.
+    /// one: in the Trash only restoring and deleting for good do, a view but Today has no place to
+    /// add or move items in, and the rest by what the items are.
     fn applies(&self, command: Command, focused: Option<ItemId>) -> bool {
         if self.shown() == Shown::View(View::Trash) {
             return matches!(command, Command::Restore | Command::Delete);
@@ -224,8 +224,7 @@ impl State {
         };
         match command {
             Command::Restore => false,
-            Command::New(_) => self.container().is_some(),
-            Command::Move(_) => {
+            Command::New(_) | Command::Move(_) => {
                 self.container().is_some() || self.shown() == Shown::View(View::Today)
             }
             Command::GroupIntoSection => group(ItemKind::Section),
@@ -423,7 +422,7 @@ mod tests {
 
     // FR-KEY-07, FR-VIEW-04, FR-VIEW-06
     #[test]
-    fn a_view_offers_no_adding_only_today_moving_and_the_trash_only_restoring_and_deleting()
+    fn a_view_offers_no_grouping_only_today_adding_and_moving_and_the_trash_only_restoring_and_deleting()
     -> Result<(), PlacementError> {
         let Fixture {
             mut state, site, t, ..
@@ -436,12 +435,14 @@ mod tests {
         );
         assert_eq!(titles(&state), ["t"]);
         let listed = offered(&mut state);
-        for command in [Command::New(Side::Below), Command::GroupIntoSection] {
-            assert!(!listed.contains(&command), "{command:?} in a view");
-        }
+        assert!(!listed.contains(&Command::GroupIntoSection), "in a view");
         assert!(
             listed.contains(&Command::Move(Direction::Up)),
             "Today has an order of its own (D-108)"
+        );
+        assert!(
+            listed.contains(&Command::New(Side::Below)),
+            "Today takes a new task (D-128)"
         );
         assert!(
             listed.contains(&Command::OpenInNewPane),

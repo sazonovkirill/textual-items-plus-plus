@@ -353,3 +353,33 @@ fn a_completed_item_given_a_place_shows_after_the_open_ones() {
         "an open item does not pass a completed one"
     );
 }
+
+// FR-VIEW-06, FR-EDIT-05, D-128
+#[test]
+fn a_task_added_in_an_empty_today_starts_today() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    std::fs::write(&path, "Inbox:\n\t- Call mom\n").expect("written");
+    let mut harness = Harness::open(path, 60, 12);
+    harness.type_text("gt");
+    harness.type_text("oBuy milk");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        trimmed(&harness)[2..4],
+        [
+            "▌ ☐ Buy milk                                        \u{f166d} today",
+            "",
+        ],
+        "a row of its own, with no location, since it is in the Inbox (D-126)"
+    );
+    harness.type_text(" Bread");
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        trimmed(&harness)[2..4],
+        [
+            "  ☐ Buy milk                                        \u{f166d} today",
+            "▌ ☐ Bread                                           \u{f166d} today",
+        ],
+        "Space adds below the focused row"
+    );
+}
