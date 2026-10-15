@@ -46,15 +46,19 @@ pub enum Refusal {
 /// The transaction that moves `id` one step `direction` among `rows`, the rows of the container
 /// shown; an empty one when it has nowhere to go. An item changes places with the next item
 /// shown in its own group, a task among the tasks listed under the same heading, a section among
-/// the sections and a child project among the child projects, open, Later and completed ones
-/// apart (FR-VIEW-11, D-89). Only a task crosses the edge of its group: past the heading below
-/// it, it is the first task of that section, and up from the top of a section it is the last
-/// task of the section above, or of those outside sections (FR-OPS-10).
+/// the sections and a child project among the child projects, open and Later ones apart (D-89).
+/// A completed item does not move, the Completed Items going by the day they were completed
+/// (D-141). Only a task crosses the edge of its group: past the heading below it, it is the first
+/// task of that section, and up from the top of a section it is the last task of the section
+/// above, or of those outside sections (FR-OPS-10).
 fn shift(document: &Document, rows: &[Row], id: ItemId, direction: Direction) -> Transaction {
     let Some((at, &row)) = rows.iter().enumerate().find(|(_, row)| row.id() == id) else {
         return Transaction::default();
     };
     let stage = |row: &Row| item(document, row.id()).map(Stage::of);
+    if stage(&row) == Some(Stage::Completed) {
+        return Transaction::default();
+    }
     let peer = |other: &&Row| {
         let same_group = match (row, **other) {
             (
@@ -361,7 +365,7 @@ mod tests {
         );
         assert_eq!(
             shifted(&mut document, area, "c", Direction::Up, true)?,
-            ["a", "c", "b", "x", "#S", "d", "e", "#T", "#U", "P", "Q"]
+            ["a", "c", "b", "#S", "d", "e", "#T", "#U", "P", "Q", "x"]
         );
         assert_eq!(
             shifted(&mut document, area, "a", Direction::Up, false)?,
@@ -387,10 +391,9 @@ mod tests {
         Ok(())
     }
 
-    // FR-OPS-10, FR-VIEW-11
+    // FR-OPS-10, FR-VIEW-11, D-141
     #[test]
-    fn completed_and_open_tasks_move_apart_and_hidden_sections_are_passed()
-    -> Result<(), PlacementError> {
+    fn completed_items_stay_put_and_hidden_sections_are_passed() -> Result<(), PlacementError> {
         let (mut document, area) = area();
         let t = find(&document, "T");
         let section = item(&document, t).cloned().map(|it| Item {
@@ -400,19 +403,26 @@ mod tests {
         document.set(t, section.ok_or(PlacementError::NoSuchNode(t))?)?;
         assert_eq!(
             shifted(&mut document, area, "b", Direction::Down, true)?,
-            ["a", "x", "#S", "b", "c", "d", "#U", "e", "#T", "P", "Q"],
-            "the open task passes the completed one"
+            ["a", "#S", "b", "c", "d", "#U", "e", "P", "Q", "x", "#T"],
+            "the open task goes into the section, not among the Completed Items"
         );
         assert_eq!(
             shifted(&mut document, area, "d", Direction::Down, true)?,
-            ["a", "x", "#S", "b", "c", "#U", "d", "e", "#T", "P", "Q"],
+            ["a", "#S", "b", "c", "#U", "d", "e", "P", "Q", "x", "#T"],
             "the completed section is passed"
         );
-        assert_eq!(
-            shifted(&mut document, area, "x", Direction::Up, true)?,
-            ["a", "x", "#S", "b", "c", "#U", "d", "e", "#T", "P", "Q"],
-            "the completed task stays below the open ones"
-        );
+        let before = document.clone();
+        for (title, direction) in [
+            ("x", Direction::Up),
+            ("x", Direction::Down),
+            ("T", Direction::Up),
+        ] {
+            assert_eq!(
+                shifted(&mut document, area, title, direction, true)?,
+                ["a", "#S", "b", "c", "#U", "d", "e", "P", "Q", "x", "#T"],
+            );
+        }
+        assert_eq!(document, before, "a completed item does not move");
         Ok(())
     }
 

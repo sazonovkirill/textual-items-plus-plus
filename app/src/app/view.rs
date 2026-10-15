@@ -138,6 +138,8 @@ pub enum Heading {
     Completed(Option<Date>),
     /// Today's Evening, which they were put in (FR-VIEW-13).
     Evening,
+    /// The completed items of a container, listed after its other rows (D-141).
+    CompletedItems,
 }
 
 /// The groups `view` shows of `document` on `today`, completed items among them only when

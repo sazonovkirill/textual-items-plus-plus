@@ -47,7 +47,11 @@ fn shift_and_a_motion_pick_three_tasks_that_x_completes_at_once() {
     harness.key(KeyCode::Char('x'));
     assert_eq!(items(&harness), Vec::<String>::new());
     harness.ctrl('o');
-    assert_eq!(items(&harness), [star(CALL), COFFEE.into(), READ.into()]);
+    assert_eq!(
+        items(&harness),
+        ["Items".into(), star(CALL), COFFEE.into(), READ.into()],
+        "under the Completed Items heading, in file order, completed the same day"
+    );
     harness.ctrl('o');
     harness.key(KeyCode::Char('z'));
     assert_eq!(

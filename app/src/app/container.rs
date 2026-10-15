@@ -1,7 +1,11 @@
 //! The container view: which rows an opened area, project, section or the Inbox shows, and in
 //! what arrangement (FR-VIEW-05, D-26). Hides how the arrangement follows from the document.
 
-use crate::domain::{Document, Item, ItemId, ItemKind, Node};
+use std::cmp::Reverse;
+
+use jiff::civil::Date;
+
+use crate::domain::{Completion, Document, Item, ItemId, ItemKind, Node};
 
 /// One row of a container view, the items the focus moves through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,8 +36,9 @@ impl Row {
 /// The rows `container` shows, in order: its tasks outside any section, then each of its
 /// sections as a heading with the section's tasks below it, then its child projects, each group
 /// in file order whatever order the file mixes them in (FR-VIEW-05, FR-ORG-08). Within each group
-/// Later items come after the open ones, and completed items after both, left out unless
-/// `show_completed` (FR-VIEW-11, D-89).
+/// Later items come after the open ones (D-89). Completed items are left out unless
+/// `show_completed`, and then follow all of these as one run, the Completed Items, newest first
+/// (FR-VIEW-11, D-141).
 /// The Inbox and a section hold only tasks, and the Inbox leaves out its scheduled ones
 /// (FR-VIEW-01). Content kept as read, items in the Trash and the
 /// contents of a completed item are not shown (FR-ORG-09); an item that is not a container, or
@@ -50,25 +55,35 @@ pub fn rows(document: &Document, container: ItemId, show_completed: bool) -> Vec
     if document.conceals(container) {
         return Vec::new();
     }
-    let group = Group {
-        document,
-        show_completed,
-    };
-    match kind {
+    let group = Group { document };
+    let mut rows: Vec<Row> = match kind {
         ItemKind::Inbox | ItemKind::Section => group.tasks(container, None).collect(),
         ItemKind::Area | ItemKind::Project => {
             let mut rows: Vec<Row> = group.tasks(container, None).collect();
             for section in group.shown(container, ItemKind::Section) {
                 rows.push(Row::Section(section));
-                if !document.conceals(section) {
-                    rows.extend(group.tasks(section, Some(section)));
-                }
+                rows.extend(group.tasks(section, Some(section)));
             }
             rows.extend(group.shown(container, ItemKind::Project).map(Row::Project));
             rows
         }
-        ItemKind::Task | ItemKind::ChecklistItem => Vec::new(),
+        ItemKind::Task | ItemKind::ChecklistItem => return Vec::new(),
+    };
+    if show_completed {
+        rows.extend(group.completed(container));
     }
+    rows
+}
+
+/// Where the Completed Items start among `rows`, the rows of a container: at the first completed
+/// one, since [`rows`] lists them all after the others (D-141); none when it lists none.
+pub(super) fn completed_from(document: &Document, rows: &[Row]) -> Option<usize> {
+    rows.iter().position(|row| {
+        document
+            .node(row.id())
+            .and_then(Node::item)
+            .is_some_and(|item| item.completion().is_some())
+    })
 }
 
 /// The containers from the top level down to `container`, itself last. The Inbox's is itself
@@ -194,7 +209,6 @@ pub(super) fn later_last(
 #[derive(Clone, Copy)]
 struct Group<'a> {
     document: &'a Document,
-    show_completed: bool,
 }
 
 impl<'a> Group<'a> {
@@ -204,32 +218,64 @@ impl<'a> Group<'a> {
             .map(move |id| Row::Task { id, section })
     }
 
-    /// The children of `parent` of kind `kind` that are not in the Trash or scheduled out of the
-    /// Inbox: the open ones, then the Later ones, then, if shown, the completed ones, each in file
-    /// order (D-89).
+    /// The children of `parent` of kind `kind` that are not completed, in the Trash or scheduled
+    /// out of the Inbox: the open ones, then the Later ones, each in file order (D-89).
     fn shown(self, parent: ItemId, kind: ItemKind) -> impl Iterator<Item = ItemId> + 'a {
         let children = move |stage: Stage| {
-            self.document
-                .children(parent)
-                .iter()
-                .copied()
-                .filter(move |&id| {
-                    self.document
-                        .node(id)
-                        .and_then(Node::item)
-                        .is_some_and(|item| {
-                            item.kind == kind
-                                && item.deleted.is_none()
-                                && Stage::of(item) == stage
-                                && !scheduled_out_of_inbox(self.document, parent, item)
-                        })
-                })
+            self.listed(parent)
+                .filter(move |&(_, item)| item.kind == kind && Stage::of(item) == stage)
+                .map(|(id, _)| id)
         };
-        let completed = self.show_completed.then(|| children(Stage::Completed));
-        children(Stage::Open)
-            .chain(children(Stage::Later))
-            .chain(completed.into_iter().flatten())
+        children(Stage::Open).chain(children(Stage::Later))
     }
+
+    /// The Completed Items of `container`: its completed tasks, sections and child projects and
+    /// the completed tasks of its open sections, each as one row, none of them listed under a
+    /// section, by the day they were completed, newest first, then those with none, each day in
+    /// file order (D-141).
+    fn completed(self, container: ItemId) -> Vec<Row> {
+        let mut completed = Vec::new();
+        for (id, item) in self.listed(container) {
+            let Some(completion) = item.completion() else {
+                if item.kind == ItemKind::Section {
+                    completed.extend(self.listed(id).filter_map(|(id, task)| {
+                        Some((task.completion()?, Row::Task { id, section: None }))
+                    }));
+                }
+                continue;
+            };
+            let row = match item.kind {
+                ItemKind::Section => Row::Section(id),
+                ItemKind::Project => Row::Project(id),
+                _ => Row::Task { id, section: None },
+            };
+            completed.push((completion, row));
+        }
+        completed.sort_by_key(|&(completion, _)| newest_first(completion));
+        completed.into_iter().map(|(_, row)| row).collect()
+    }
+
+    /// The items among the children of `parent` that are not in the Trash or scheduled out of the
+    /// Inbox, in file order.
+    fn listed(self, parent: ItemId) -> impl Iterator<Item = (ItemId, &'a Item)> + 'a {
+        self.document
+            .children(parent)
+            .iter()
+            .filter_map(move |&id| {
+                let item = self.document.node(id).and_then(Node::item)?;
+                (item.deleted.is_none() && !scheduled_out_of_inbox(self.document, parent, item))
+                    .then_some((id, item))
+            })
+    }
+}
+
+/// The key that sorts completed items by the day they were completed, newest first, then those
+/// with none (D-141).
+pub(super) fn newest_first(completion: Completion) -> Reverse<Option<Date>> {
+    Reverse(match completion {
+        Completion::On(day) => Some(day),
+        Completion::Undated => None,
+    })
 }
 
 /// Where an item comes among its siblings in a group: open, Later, or completed, in this order
@@ -426,18 +472,23 @@ mod tests {
     }
 
     fn complete(document: &mut Document, id: ItemId) {
+        complete_on(document, id, Completion::On(date(2026, 10, 14)));
+    }
+
+    fn complete_on(document: &mut Document, id: ItemId, completion: Completion) {
         let mut item = document
             .node(id)
             .and_then(Node::item)
             .cloned()
             .expect("the test completes an item");
-        item.completed = Some(Completion::On(date(2026, 10, 14)));
+        item.completed = Some(completion);
         document.set(id, item).expect("the kind stays");
     }
 
-    // FR-VIEW-11, FR-TASK-02
+    // FR-VIEW-11, FR-TASK-02, D-141
     #[test]
-    fn completed_items_come_last_in_each_group_and_only_when_shown() -> Result<(), PlacementError> {
+    fn completed_items_follow_every_group_newest_first_and_only_when_shown()
+    -> Result<(), PlacementError> {
         let mut document = Document::new();
         let project = document.push(None, Node::Item(Item::new(Project, "p")))?;
         let done_task = add(&mut document, project, Task);
@@ -448,36 +499,46 @@ mod tests {
         let in_section = add(&mut document, section, Task);
         let done_project = add(&mut document, project, Project);
         let child = add(&mut document, project, Project);
-        for id in [done_task, done_section, done_in_section, done_project] {
-            complete(&mut document, id);
-        }
+        let in_child = add(&mut document, child, Task);
+        complete_on(&mut document, done_task, Completion::On(date(2026, 10, 12)));
+        complete_on(&mut document, done_section, Completion::Undated);
+        complete_on(
+            &mut document,
+            done_in_section,
+            Completion::On(date(2026, 10, 14)),
+        );
+        complete_on(
+            &mut document,
+            done_project,
+            Completion::On(date(2026, 10, 12)),
+        );
+        complete_on(&mut document, in_child, Completion::On(date(2026, 10, 15)));
         let loose = |id| Row::Task { id, section: None };
-        let under = |id| Row::Task {
-            id,
-            section: Some(section),
-        };
+        let open = [
+            loose(task),
+            Row::Section(section),
+            Row::Task {
+                id: in_section,
+                section: Some(section),
+            },
+            Row::Project(child),
+        ];
+        assert_eq!(rows(&document, project, false), open);
+        let shown = rows(&document, project, true);
+        assert_eq!(shown[..open.len()], open);
         assert_eq!(
-            rows(&document, project, false),
+            shown[open.len()..],
             [
-                loose(task),
-                Row::Section(section),
-                under(in_section),
-                Row::Project(child)
-            ]
-        );
-        assert_eq!(
-            rows(&document, project, true),
-            [
-                loose(task),
+                loose(done_in_section),
                 loose(done_task),
-                Row::Section(section),
-                under(in_section),
-                under(done_in_section),
-                Row::Section(done_section),
-                Row::Project(child),
                 Row::Project(done_project),
-            ]
+                Row::Section(done_section),
+            ],
+            "newest first, a tie in file order, undated last, none under a heading, \
+             nothing from inside a child project"
         );
+        assert_eq!(completed_from(&document, &shown), Some(open.len()));
+        assert_eq!(completed_from(&document, &open), None);
         Ok(())
     }
 
@@ -519,11 +580,11 @@ mod tests {
             [
                 loose(task),
                 loose(later_task),
-                loose(done_later),
                 Row::Section(later_section),
                 Row::Section(section),
                 Row::Project(project),
                 Row::Project(later_project),
+                loose(done_later),
             ],
             "a section is never Later, so it keeps its place"
         );
@@ -546,7 +607,7 @@ mod tests {
         complete(&mut document, section);
         assert_eq!(
             rows(&document, area, true),
-            [Row::Section(section), Row::Project(project)]
+            [Row::Project(project), Row::Section(section)]
         );
         assert_eq!(rows(&document, section, true), []);
         complete(&mut document, project);

@@ -42,6 +42,8 @@ pub(super) struct ContainerPane<'a> {
     /// The container shown when its title is a row the focus takes.
     heading: Option<ItemId>,
     groups: Rc<[Group]>,
+    /// Where the Completed Items start among a container's rows, if it lists any (D-141).
+    completed: Option<usize>,
     selection: &'a Selection,
     editing: Option<(ItemId, Part, &'a TextField)>,
     /// The words searched for, while the pane shows search results, and whether they are typed.
@@ -79,6 +81,7 @@ impl<'a> ContainerPane<'a> {
             rows: pane.shared_rows(),
             heading: pane.heading(),
             groups: pane.groups(),
+            completed: pane.completed_items(),
             selection: pane.selection(),
             editing: state.editing().filter(|_| keys),
             search: pane
@@ -609,8 +612,8 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// The parts of the pane's content: the heading, then a part for each row, after a gap
-    /// opening each group of a container's rows; or, for a view, its name, then each of its groups
-    /// after a gap with its heading.
+    /// opening each group of a container's rows, the Completed Items one group under their
+    /// heading; or, for a view, its name, then each of its groups after a gap with its heading.
     fn parts(&self) -> Vec<Block> {
         let mut parts = vec![Block::Heading];
         match self.shown {
@@ -625,8 +628,13 @@ impl<'a> ContainerPane<'a> {
                             Row::Project(_) => !matches!(before, Some(Row::Project(_))),
                             Row::Task { .. } => false,
                         };
-                    if opens_group {
-                        parts.push(Block::Gap(None));
+                    match self.completed {
+                        Some(start) if index == start => {
+                            parts.push(Block::Gap(Some(Heading::CompletedItems)));
+                        }
+                        Some(start) if index > start => {}
+                        _ if opens_group => parts.push(Block::Gap(None)),
+                        _ => {}
                     }
                     parts.push(Block::Row(index));
                 }
@@ -873,6 +881,11 @@ impl<'a> ContainerPane<'a> {
                     ),
                     Modifier::BOLD,
                 ),
+                fit: self.fit(),
+                ..Piece::blank()
+            }),
+            Heading::CompletedItems => Some(Piece {
+                text: Text::styled("Completed Items", Modifier::BOLD),
                 fit: self.fit(),
                 ..Piece::blank()
             }),
@@ -1256,6 +1269,7 @@ mod tests {
             document,
             shown: Shown::Container(container),
             groups: Rc::from([]),
+            completed: None,
             rows: app::rows(document, container, true).into(),
             heading: (container != document.inbox()).then_some(container),
             selection: &selection,
@@ -1296,6 +1310,7 @@ mod tests {
             document: &document,
             shown: Shown::Container(document.inbox()),
             groups: Rc::from([]),
+            completed: None,
             rows: app::rows(&document, document.inbox(), false).into(),
             heading: None,
             selection: &selection,
@@ -1329,6 +1344,7 @@ mod tests {
             document: &document,
             shown: Shown::Container(project),
             groups: Rc::from([]),
+            completed: None,
             rows: app::rows(&document, project, true).into(),
             heading: Some(project),
             selection: &selection,
@@ -1383,6 +1399,7 @@ mod tests {
             document: &document,
             shown: Shown::Container(document.inbox()),
             groups: Rc::from([]),
+            completed: None,
             rows: app::rows(&document, document.inbox(), false).into(),
             heading: None,
             selection: &selection,
@@ -1421,6 +1438,7 @@ mod tests {
             document: &document,
             shown: Shown::Container(document.inbox()),
             groups: Rc::from([]),
+            completed: None,
             rows: app::rows(&document, document.inbox(), false).into(),
             heading: None,
             selection: &selection,
@@ -2194,6 +2212,7 @@ mod tests {
             document: &document,
             shown: Shown::Container(document.inbox()),
             groups: Rc::from([]),
+            completed: None,
             rows: app::rows(&document, document.inbox(), false).into(),
             heading: None,
             selection: &selection,

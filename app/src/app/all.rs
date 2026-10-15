@@ -6,13 +6,14 @@ use super::{
     Row,
     container::{self, Stage},
 };
-use crate::domain::{Document, ItemId, ItemKind, Node};
+use crate::domain::{Document, Item, ItemId, ItemKind, Node};
 
 /// All's groups, as Things 3's Anytime groups them: the Inbox's tasks first under no heading,
 /// scheduled ones included (FR-VIEW-01), then one group for each area and project with tasks of
 /// its own, in the order of the outline, its tasks listed as its view lists them (FR-VIEW-05), so
-/// its sections' tasks follow its other tasks, under no section heading. Completed tasks come after the open ones of their
-/// list and are left out unless `show_completed` (FR-VIEW-11); tasks in the Trash and inside a
+/// its sections' tasks follow its other tasks, under no section heading. Completed tasks come last
+/// in each group, newest first, as in the container (D-141), and are left out unless
+/// `show_completed` (FR-VIEW-11); tasks in the Trash and inside a
 /// completed item are not shown (FR-ORG-09), and a group with no tasks is left out. Later tasks
 /// come after the open ones of their list, and Later projects' groups after the others among
 /// their siblings (D-92).
@@ -32,8 +33,8 @@ pub(super) fn groups(document: &Document, show_completed: bool) -> Vec<Group> {
     groups
 }
 
-/// The Inbox's tasks not in the Trash, the open ones, then the Later ones (D-92), then, if shown,
-/// the completed ones, each in file order.
+/// The Inbox's tasks not in the Trash, the open ones, then the Later ones (D-92), each in file
+/// order, then, if shown, the completed ones, newest first (D-141).
 fn inbox_tasks(document: &Document, show_completed: bool) -> Vec<Row> {
     let inbox = document.inbox();
     let tasks = |stage: Stage| {
@@ -43,10 +44,21 @@ fn inbox_tasks(document: &Document, show_completed: bool) -> Vec<Row> {
             })
         })
     };
-    let completed = show_completed.then(|| tasks(Stage::Completed));
+    let mut completed: Vec<ItemId> = if show_completed {
+        tasks(Stage::Completed).collect()
+    } else {
+        Vec::new()
+    };
+    completed.sort_by_key(|&id| {
+        document
+            .node(id)
+            .and_then(Node::item)
+            .and_then(Item::completion)
+            .map(container::newest_first)
+    });
     tasks(Stage::Open)
         .chain(tasks(Stage::Later))
-        .chain(completed.into_iter().flatten())
+        .chain(completed)
         .map(|id| Row::Task { id, section: None })
         .collect()
 }
@@ -269,6 +281,53 @@ mod tests {
                 Group {
                     heading: Some(Heading::Item(project)),
                     rows: vec![task(open, None), task(done, None)]
+                }
+            ]
+        );
+        Ok(())
+    }
+
+    // FR-VIEW-08, FR-VIEW-11, D-141
+    #[test]
+    fn completed_tasks_come_last_in_each_group_newest_first() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = document.inbox();
+        let done_on = |day| {
+            let mut item = Item::new(Task, "done");
+            item.completed = Some(match day {
+                Some(day) => Completion::On(date(2026, 10, day)),
+                None => Completion::Undated,
+            });
+            Node::Item(item)
+        };
+        let undated_in_inbox = document.push(Some(inbox), done_on(None))?;
+        let older_in_inbox = document.push(Some(inbox), done_on(Some(1)))?;
+        let newer_in_inbox = document.push(Some(inbox), done_on(Some(5)))?;
+        let project = add(&mut document, None, Project)?;
+        let open = add(&mut document, Some(project), Task)?;
+        let older = document.push(Some(project), done_on(Some(1)))?;
+        let section = add(&mut document, Some(project), Section)?;
+        let in_section = add(&mut document, Some(section), Task)?;
+        let newer_in_section = document.push(Some(section), done_on(Some(5)))?;
+        assert_eq!(
+            groups(&document, true),
+            [
+                Group {
+                    heading: None,
+                    rows: vec![
+                        task(newer_in_inbox, None),
+                        task(older_in_inbox, None),
+                        task(undated_in_inbox, None)
+                    ]
+                },
+                Group {
+                    heading: Some(Heading::Item(project)),
+                    rows: vec![
+                        task(open, None),
+                        task(in_section, None),
+                        task(newer_in_section, None),
+                        task(older, None)
+                    ]
                 }
             ]
         );

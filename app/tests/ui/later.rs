@@ -67,8 +67,14 @@ fn ml_marks_a_task_later_which_goes_dimmed_after_the_open_ones() {
         "Inbox:\nTrip:\n\t- Renew the passport @later\n\t- Book flights\n\t- Pack @done(2026-10-01)\n"
     );
     assert_eq!(
-        rows(&harness, 2..5),
-        ["  ☐ Book flights", "▌ ☐ Renew the passport", "  ✔ Pack"],
+        rows(&harness, 2..7),
+        [
+            "  ☐ Book flights",
+            "▌ ☐ Renew the passport",
+            "",
+            "  Completed Items",
+            "  ✔ Pack"
+        ],
         "after the open task, before the completed one, and still focused"
     );
     assert_eq!(color(&harness, 4, 3), Color::Indexed(248), "dimmed");

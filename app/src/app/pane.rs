@@ -443,6 +443,14 @@ impl<'a> PaneView<'a> {
         self.pane.heading(self.document)
     }
 
+    /// Where the Completed Items start among the rows of the container shown, listed last under
+    /// a heading of their own (D-141); none while it lists none, and for a view.
+    #[must_use]
+    pub fn completed_items(&self) -> Option<usize> {
+        self.pane.container()?;
+        container::completed_from(self.document, &self.shared_rows())
+    }
+
     /// The items the next command in the pane acts on.
     #[must_use]
     pub fn selection(&self) -> &'a Selection {

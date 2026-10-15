@@ -252,9 +252,11 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
     let (_dir, _path, mut harness) = on_file(text);
     harness.ctrl('o');
     assert_eq!(
-        rows(&harness, 2..4),
+        rows(&harness, 2..6),
         [
             row("▌ ☐ Late", "󰨱 yesterday"),
+            String::new(),
+            "  Completed Items".to_owned(),
             row("  ✔ Done late", "󱙬 4 days ago"),
         ]
     );
@@ -267,7 +269,7 @@ fn overdue_dates_stand_out_until_completed_and_containers_show_their_chips() {
             .modifier
             .contains(Modifier::BOLD | Modifier::REVERSED)
     );
-    let done = &buffer[(67, 3)];
+    let done = &buffer[(67, 5)];
     assert_eq!(done.symbol(), "󱙬");
     assert_eq!(done.fg, Color::Red);
     assert!(done.modifier.contains(Modifier::DIM));

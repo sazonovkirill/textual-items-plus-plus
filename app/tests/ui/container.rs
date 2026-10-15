@@ -222,3 +222,52 @@ fn a_small_terminal_shows_what_fits_and_keeps_working() {
     harness.draw();
     assert_eq!(harness.rows()[0], "▌ ☐ Read  ");
 }
+
+// FR-VIEW-11, D-141
+#[test]
+fn show_completed_lists_a_projects_completed_items_last_under_their_heading_newest_first() {
+    let text = "Inbox:\n\
+                Trip:\n\
+                \t- Pack @done(2026-10-01)\n\
+                \t- Book flights\n\
+                \tPapers: @section\n\
+                \t\t- Renew the passport @done(2026-10-03)\n\
+                \t\t- Get a visa\n\
+                \t\t- Print the tickets @done\n\
+                \tCamping: @section @done(2026-10-02)\n\
+                \t\t- Buy a tent\n\
+                \tSide trip:\n\
+                \t\t- Plan it\n";
+    let (_dir, mut harness) = on_file(text, 50, 20);
+    harness.ctrl('g');
+    harness.type_text("trip");
+    harness.key(KeyCode::Enter);
+    harness.ctrl('o');
+    harness.type_text("G");
+    let shown: Vec<String> = harness.rows()[..15]
+        .iter()
+        .map(|row| row.trim_end().to_owned())
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            "  # Trip",
+            "",
+            "  ☐ Book flights",
+            "",
+            "  / Papers",
+            "  ☐ Get a visa",
+            "",
+            "  # Side trip",
+            "",
+            "  Completed Items",
+            "  ✔ Renew the passport",
+            "  / Camping",
+            "  ✔ Pack",
+            "▌ ✔ Print the tickets",
+            "",
+        ],
+        "{}",
+        harness.screen()
+    );
+}

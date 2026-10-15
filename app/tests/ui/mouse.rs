@@ -74,7 +74,7 @@ fn a_click_on_a_row_focuses_it_picking_nothing() {
     );
 }
 
-// FR-KEY-05, FR-TASK-02, D-138
+// FR-KEY-05, FR-TASK-02, D-138, D-141
 #[test]
 fn a_click_on_a_tasks_checkbox_completes_it_and_another_uncompletes_it() {
     let (_dir, path, mut harness) = three_tasks();
@@ -82,11 +82,14 @@ fn a_click_on_a_tasks_checkbox_completes_it_and_another_uncompletes_it() {
     assert_eq!(tasks(&harness), ["  ☐ Call", "▌ ☐ Read", ""]);
     harness.ctrl('o');
     assert_eq!(
-        tasks(&harness),
-        ["  ☐ Call", "▌ ☐ Read", "  ✔ Buy"],
-        "completed, shown last"
+        harness.rows()[4..7]
+            .iter()
+            .map(|row| row.trim_end())
+            .collect::<Vec<_>>(),
+        ["", "  Completed Items", "  ✔ Buy"],
+        "completed, shown last under its heading (D-141)"
     );
-    click(&mut harness, 2, 4);
+    click(&mut harness, 2, 6);
     assert_eq!(tasks(&harness), ["  ☐ Call", "▌ ☐ Buy", "  ☐ Read"]);
     click(&mut harness, 3, 2);
     assert_eq!(
