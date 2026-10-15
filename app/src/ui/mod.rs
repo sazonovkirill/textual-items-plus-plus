@@ -152,7 +152,7 @@ impl Tui {
     pub fn new(state: State, today: Date, edge: &Edge) -> Self {
         Self {
             drawn: vec![PaneDrawn::default(); state.panes().count()],
-            theme: state.settings().theme.colors(),
+            theme: colors(state.settings()),
             animator: Animator::new(state.settings().animations),
             state,
             keymap: Keymap::default(),
@@ -612,7 +612,7 @@ impl Tui {
         {
             drawn.panel = PanelDrawn::default();
         }
-        self.theme = self.state.settings().theme.colors();
+        self.theme = colors(self.state.settings());
     }
 
     /// The icons the settings choose (FR-UI-04).
@@ -1301,6 +1301,16 @@ fn stop_icon(stop: Stop) -> Icon {
     }
 }
 
+/// The colors `settings` draw in: their theme's, in its grays alone in grayscale (FR-UI-11).
+fn colors(settings: Settings) -> Theme {
+    let theme = settings.theme.colors();
+    if settings.grayscale {
+        theme.grayscale()
+    } else {
+        theme
+    }
+}
+
 /// The color of the icon of `stop` in the Navigator and the sidebar: the Inbox's and each view's
 /// own, or a place's kind's, dimmed for a Later project (D-78, D-89).
 fn stop_icon_color(theme: &Theme, stop: Stop) -> Color {
@@ -1509,6 +1519,7 @@ impl Widget for &mut Tui {
         }
         StatusLine::new(&self.state, self.keymap.pending(), &self.theme, icons).render(status, buf);
         self.animator.process(buf, &self.theme);
-        self.weather.draw(buf, area, icons);
+        self.weather
+            .draw(buf, area, icons, self.state.settings().grayscale);
     }
 }

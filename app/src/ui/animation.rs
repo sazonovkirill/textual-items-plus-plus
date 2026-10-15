@@ -494,7 +494,9 @@ fn or_default(color: Color, default: Color) -> Color {
 /// A flash over `lines` in `color` for `duration`: a faint tint of each cell's background, in
 /// `theme`'s background where the cell has the terminal's own, that fades out with an ease-out
 /// curve when `fades`, else `color` itself, or the tint when both are RGB, for the whole
-/// duration, reverting in one step.
+/// duration, reverting in one step. A flash in the terminal's own text color, as grayscale
+/// gives Terminal Dark (FR-UI-11), reverses its lines instead, since that color cannot be
+/// named as a background.
 fn flash(lines: Vec<Rect>, color: Color, theme: &Theme, duration: Duration, fades: bool) -> Effect {
     let background = theme.background;
     let timer = EffectTimer::new(duration, Interpolation::QuadOut);
@@ -506,6 +508,10 @@ fn flash(lines: Vec<Rect>, color: Color, theme: &Theme, duration: Duration, fade
         };
         for (position, cell) in cells {
             if !lines.iter().any(|line| line.contains(position)) {
+                continue;
+            }
+            if color == Color::Reset {
+                cell.modifier.insert(Modifier::REVERSED);
                 continue;
             }
             let base = or_default(cell.bg, background);
@@ -744,6 +750,23 @@ mod tests {
             grey(100),
             "and so is any color over the terminal's own background"
         );
+        let area = Rect::new(0, 0, 2, 2);
+        let mut buf = Buffer::empty(area);
+        let theme = theme(Color::Reset, Color::Reset);
+        let mut effect = flash(
+            vec![Rect::new(0, 0, 2, 1)],
+            Color::Reset,
+            &theme,
+            FLASH,
+            true,
+        );
+        effect.process(Duration::ZERO, &mut buf, area);
+        assert_eq!(
+            [(0, 0), (1, 0), (0, 1)].map(|at| buf[at].modifier),
+            [Modifier::REVERSED, Modifier::REVERSED, Modifier::empty()],
+            "the terminal's own text color reverses its lines"
+        );
+        assert_eq!(buf[(0, 0)].bg, Color::Reset);
     }
 
     // FR-UI-07

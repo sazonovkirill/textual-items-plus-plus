@@ -195,7 +195,7 @@ fn reduced_animations_flash_in_one_step_without_fades_and_off_shows_nothing() {
 #[test]
 fn turning_animations_off_in_the_settings_window_ends_them_at_once() {
     let mut harness = Harness::animated(folders(RGB), 80, 30);
-    harness.type_text("g,jjjl");
+    harness.type_text("g,jjjjl");
     harness.type_text("l");
     assert_eq!(harness.tui.deadline(), None, "off, nothing runs");
     let config = fs::read_to_string(harness.config()).expect("the setting is kept");

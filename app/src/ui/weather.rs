@@ -128,13 +128,13 @@ impl Weather {
         }
     }
 
-    /// Draws the weather over everything else in `area` of `buf`, in `icons`' glyphs, and keeps
-    /// the screen's size for the weather to fill.
-    pub(super) fn draw(&mut self, buf: &mut Buffer, area: Rect, icons: IconSet) {
+    /// Draws the weather over everything else in `area` of `buf`, in `icons`' glyphs, in grays
+    /// when `grayscale` (FR-UI-11), and keeps the screen's size for the weather to fill.
+    pub(super) fn draw(&mut self, buf: &mut Buffer, area: Rect, icons: IconSet, grayscale: bool) {
         self.area = area;
         if let Some(sky) = &mut self.sky {
             sky.fit(area);
-            sky.paint(buf, icons);
+            sky.paint(buf, icons, grayscale);
         }
     }
 }
@@ -413,8 +413,8 @@ impl Sky {
         }
     }
 
-    /// Draws the piles, splashes and particles over `buf`.
-    fn paint(&self, buf: &mut Buffer, icons: IconSet) {
+    /// Draws the piles, splashes and particles over `buf`, in grays when `grayscale`.
+    fn paint(&self, buf: &mut Buffer, icons: IconSet, grayscale: bool) {
         let area = self.area;
         let bottom = area.bottom().saturating_sub(1);
         let looks = glyphs(self.season, icons);
@@ -426,13 +426,13 @@ impl Sky {
                     column,
                     bottom.saturating_sub(row),
                     glyph,
-                    color(self.season, tint),
+                    color(self.season, tint, grayscale),
                 );
             }
         }
         let fill = DRIFT;
         for (column, &depth) in (area.left()..area.right()).zip(&self.snow) {
-            let white = color(Season::Winter, 0);
+            let white = color(Season::Winter, 0, grayscale);
             for row in 0..depth / 8 {
                 put(
                     buf,
@@ -453,7 +453,7 @@ impl Sky {
                 area.left() + column,
                 bottom,
                 "˙",
-                color(Season::Spring, 0),
+                color(Season::Spring, 0, grayscale),
             );
         }
         for particle in &self.particles {
@@ -471,7 +471,7 @@ impl Sky {
                 area.left() + column,
                 area.top() + row,
                 pick(looks, particle.look),
-                color(self.season, particle.tint),
+                color(self.season, particle.tint, grayscale),
             );
         }
     }
@@ -500,12 +500,18 @@ fn glyphs(season: Season, icons: IconSet) -> &'static [&'static str] {
 const DRIFT: &[&str] = &["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
 /// The color `tint` picks of `season`'s, in 256-color shades, which truecolor terminals show
-/// too: the app tells neither truecolor nor `NO_COLOR` yet (D-30).
-fn color(season: Season, tint: usize) -> Color {
-    const LEAVES: [u8; 5] = [166, 208, 214, 130, 124];
+/// too: the app tells neither truecolor nor `NO_COLOR` yet (D-30). In `grayscale`, each is the
+/// grey of about its lightness, the leaves keeping their order from dark to light.
+fn color(season: Season, tint: usize, grayscale: bool) -> Color {
+    let leaves: [u8; 5] = if grayscale {
+        [245, 249, 252, 242, 239]
+    } else {
+        [166, 208, 214, 130, 124]
+    };
     Color::Indexed(match season {
-        Season::Autumn => LEAVES.get(tint % LEAVES.len()).copied().unwrap_or_default(),
+        Season::Autumn => leaves.get(tint % leaves.len()).copied().unwrap_or_default(),
         Season::Winter => 255,
+        Season::Spring if grayscale => 250,
         Season::Spring => 75,
     })
 }
@@ -553,7 +559,7 @@ mod tests {
     fn drawn(weather: &mut Weather, width: u16, height: u16) -> Buffer {
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        weather.draw(&mut buf, area, IconSet::Plain);
+        weather.draw(&mut buf, area, IconSet::Plain, false);
         buf
     }
 
@@ -930,13 +936,13 @@ mod tests {
     fn the_weather_draws_where_its_screen_is() {
         let area = Rect::new(3, 2, 4, 6);
         let mut weather = Weather::default();
-        weather.draw(&mut Buffer::empty(area), area, IconSet::Plain);
+        weather.draw(&mut Buffer::empty(area), area, IconSet::Plain, false);
         weather.start(Duration::ZERO, Season::Spring);
         let sky = weather.sky.as_mut().expect("it plays");
         sky.particles = vec![particle(1.5, 0.5, 24.0, 0.0, 0.0)];
         sky.splashes = vec![(2, SPLASH)];
         let mut buf = Buffer::empty(area);
-        weather.draw(&mut buf, area, IconSet::Plain);
+        weather.draw(&mut buf, area, IconSet::Plain, false);
         assert_eq!(buf[(4, 2)].symbol(), "╱");
         assert_eq!(buf[(5, 7)].symbol(), "˙");
     }
@@ -985,7 +991,7 @@ mod tests {
         }];
         let mut buf = Buffer::with_lines(["abc", "def", "ghi"]);
         buf.set_style(buf.area, ratatui::style::Style::new().bg(Color::Blue).dim());
-        weather.draw(&mut buf, Rect::new(0, 0, 3, 3), IconSet::Plain);
+        weather.draw(&mut buf, Rect::new(0, 0, 3, 3), IconSet::Plain, false);
         let cell = &buf[(1, 0)];
         assert_eq!(
             (cell.symbol(), cell.fg, cell.bg, cell.modifier),
@@ -997,15 +1003,36 @@ mod tests {
     // ui.md §10.2
     #[test]
     fn leaves_take_several_warm_colors_snow_white_and_rain_blue() {
-        let leaves: Vec<_> = (0..5).map(|tint| color(Season::Autumn, tint)).collect();
+        let leaves: Vec<_> = (0..5)
+            .map(|tint| color(Season::Autumn, tint, false))
+            .collect();
         assert_eq!(
             leaves,
             [166, 208, 214, 130, 124].map(Color::Indexed),
             "red, orange, yellow, brown, dark red"
         );
-        assert_eq!(color(Season::Autumn, 6), Color::Indexed(208), "going round");
-        assert_eq!(color(Season::Winter, 3), Color::Indexed(255));
-        assert_eq!(color(Season::Spring, 0), Color::Indexed(75));
+        assert_eq!(
+            color(Season::Autumn, 6, false),
+            Color::Indexed(208),
+            "going round"
+        );
+        assert_eq!(color(Season::Winter, 3, false), Color::Indexed(255));
+        assert_eq!(color(Season::Spring, 0, false), Color::Indexed(75));
+    }
+
+    // FR-UI-11
+    #[test]
+    fn in_grayscale_leaves_snow_and_rain_are_greys() {
+        let grey = |color| matches!(color, Color::Indexed(232..=255));
+        for season in [Season::Autumn, Season::Winter, Season::Spring] {
+            for tint in 0..5 {
+                assert!(grey(color(season, tint, true)), "{season:?} {tint}");
+            }
+        }
+        let leaves: Vec<_> = (0..5)
+            .map(|tint| color(Season::Autumn, tint, true))
+            .collect();
+        assert_eq!(leaves, [245, 249, 252, 242, 239].map(Color::Indexed));
     }
 
     // ui.md §10.2

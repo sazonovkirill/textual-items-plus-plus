@@ -1,8 +1,8 @@
-//! The settings and the settings window: which built-in theme the app draws in, which icons it
-//! draws, whether long text wraps and whether and when the weather plays, each changed in the
-//! window and kept at once, as taskpaper-terminal does ([ui.md §8](../../../specs/reference/taskpaper-terminal/specs/ui.md#8-settings-window-fr-set-02-fr-set-03),
-//! FR-SET-02, FR-SET-03, FR-UI-03, FR-UI-04, FR-UI-05, FR-UI-08). Names each choice; how it
-//! looks, and the file the settings are kept in, are the frontend's.
+//! The settings and the settings window: which built-in theme the app draws in, whether in its
+//! grays alone, which icons it draws, whether long text wraps and whether and when the weather
+//! plays, each changed in the window and kept at once, as taskpaper-terminal does ([ui.md §8](../../../specs/reference/taskpaper-terminal/specs/ui.md#8-settings-window-fr-set-02-fr-set-03),
+//! FR-SET-02, FR-SET-03, FR-UI-03, FR-UI-04, FR-UI-05, FR-UI-08, FR-UI-11). Names each choice;
+//! how it looks, and the file the settings are kept in, are the frontend's.
 
 use std::num::NonZeroU32;
 
@@ -99,6 +99,8 @@ impl Animations {
 pub struct Settings {
     /// The theme the app draws in (FR-UI-03).
     pub theme: BuiltIn,
+    /// Whether the theme is drawn in its grays alone, without a hue (FR-UI-11).
+    pub grayscale: bool,
     /// The icons it draws (FR-UI-04).
     pub icons: IconSet,
     /// Whether long text wraps; without wrapping, a row's title takes one line and its
@@ -119,6 +121,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: BuiltIn::default(),
+            grayscale: false,
             icons: IconSet::default(),
             word_wrap: true,
             animations: Animations::default(),
@@ -133,6 +136,8 @@ impl Default for Settings {
 pub enum Setting {
     /// The theme.
     Theme,
+    /// Grayscale.
+    Grayscale,
     /// The icons.
     Icons,
     /// Word wrap.
@@ -147,8 +152,9 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, in the order the window lists them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Theme,
+        Self::Grayscale,
         Self::Icons,
         Self::WordWrap,
         Self::Animations,
@@ -161,6 +167,7 @@ impl Setting {
     pub fn key(self) -> &'static str {
         match self {
             Self::Theme => "theme",
+            Self::Grayscale => "grayscale",
             Self::Icons => "icons",
             Self::WordWrap => "word_wrap",
             Self::Animations => "animations",
@@ -174,6 +181,7 @@ impl Setting {
     pub fn name(self) -> &'static str {
         match self {
             Self::Theme => "Theme",
+            Self::Grayscale => "Grayscale",
             Self::Icons => "Icons",
             Self::WordWrap => "Word wrap",
             Self::Animations => "Animations",
@@ -186,7 +194,9 @@ impl Setting {
     #[must_use]
     pub fn group(self) -> &'static str {
         match self {
-            Self::Theme | Self::Icons | Self::WordWrap | Self::Animations => "Appearance",
+            Self::Theme | Self::Grayscale | Self::Icons | Self::WordWrap | Self::Animations => {
+                "Appearance"
+            }
             Self::Weather | Self::WeatherIdle => "Weather",
         }
     }
@@ -196,6 +206,7 @@ impl Setting {
     pub fn description(self) -> &'static str {
         match self {
             Self::Theme => "The colors the app draws in",
+            Self::Grayscale => "The theme in its grays alone: no color in text or icons",
             Self::Icons => "Nerd Font icons, or plain markers without the font",
             Self::WordWrap => "Long titles wrap; off, each takes one line, cut short",
             Self::Animations => "Full, reduced to flashes without fades, or off",
@@ -212,6 +223,7 @@ impl Settings {
         let switch = |on| if on { "On" } else { "Off" };
         match setting {
             Setting::Theme => self.theme.name().to_owned(),
+            Setting::Grayscale => switch(self.grayscale).to_owned(),
             Setting::Icons => match self.icons {
                 IconSet::Nerd => "Nerd Font".to_owned(),
                 IconSet::Plain => "Plain".to_owned(),
@@ -237,6 +249,7 @@ impl Settings {
     pub fn is_default(&self, setting: Setting, default: &Self) -> bool {
         match setting {
             Setting::Theme => self.theme == default.theme,
+            Setting::Grayscale => self.grayscale == default.grayscale,
             Setting::Icons => self.icons == default.icons,
             Setting::WordWrap => self.word_wrap == default.word_wrap,
             Setting::Animations => self.animations == default.animations,
@@ -246,11 +259,13 @@ impl Settings {
     }
 
     /// Gives `setting` its next value, toward `Down`, or its previous one: going round, the next
-    /// theme of [`BuiltIn::ALL`], the other icons, wrapping or the weather turned over, the next
-    /// of full, reduced and no animations; a minute more or less of idle time, no less than one.
+    /// theme of [`BuiltIn::ALL`], grayscale, the other icons, wrapping or the weather turned
+    /// over, the next of full, reduced and no animations; a minute more or less of idle time, no
+    /// less than one.
     fn turn(&mut self, setting: Setting, direction: Direction) {
         match setting {
             Setting::Theme => self.theme = turned(&BuiltIn::ALL, self.theme, direction),
+            Setting::Grayscale => self.grayscale = !self.grayscale,
             Setting::Icons => {
                 self.icons = match self.icons {
                     IconSet::Nerd => IconSet::Plain,
@@ -276,6 +291,7 @@ impl Settings {
     fn reset(&mut self, setting: Setting, default: &Self) {
         match setting {
             Setting::Theme => self.theme = default.theme,
+            Setting::Grayscale => self.grayscale = default.grayscale,
             Setting::Icons => self.icons = default.icons,
             Setting::WordWrap => self.word_wrap = default.word_wrap,
             Setting::Animations => self.animations = default.animations,
@@ -455,6 +471,8 @@ mod tests {
         input(&mut state, SettingsInput::Focus(Direction::Up));
         assert_eq!(state.settings_window(), Some(Setting::Theme));
         input(&mut state, SettingsInput::Focus(Direction::Down));
+        assert_eq!(state.settings_window(), Some(Setting::Grayscale));
+        input(&mut state, SettingsInput::Focus(Direction::Down));
         assert_eq!(state.settings_window(), Some(Setting::Icons));
         input(&mut state, SettingsInput::Turn(Direction::Up));
         assert_eq!(state.settings().icons, IconSet::Plain);
@@ -491,7 +509,7 @@ mod tests {
     fn animations_turn_from_full_to_reduced_to_off_and_round() -> Result<(), serde_json::Error> {
         let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut state, Message::Command(Command::Settings));
-        for _ in 0..3 {
+        for _ in 0..4 {
             input(&mut state, SettingsInput::Focus(Direction::Down));
         }
         assert_eq!(state.settings_window(), Some(Setting::Animations));
@@ -531,7 +549,7 @@ mod tests {
             State::new(Document::new(), Opened::Demo, TODAY).with_settings(defaults, defaults);
         assert_eq!(state.default_settings(), defaults);
         give(&mut state, Message::Command(Command::Settings));
-        for _ in 0..3 {
+        for _ in 0..4 {
             input(&mut state, SettingsInput::Focus(Direction::Down));
         }
         assert!(state.settings().is_default(Setting::Animations, &defaults));
@@ -606,6 +624,7 @@ mod tests {
                 "Appearance",
                 "Appearance",
                 "Appearance",
+                "Appearance",
                 "Weather",
                 "Weather"
             ]
@@ -615,6 +634,7 @@ mod tests {
             keys,
             [
                 "theme",
+                "grayscale",
                 "icons",
                 "word_wrap",
                 "animations",
@@ -627,6 +647,7 @@ mod tests {
             names,
             [
                 "Theme",
+                "Grayscale",
                 "Icons",
                 "Word wrap",
                 "Animations",
@@ -648,7 +669,7 @@ mod tests {
     fn the_weather_turns_over_and_its_idle_time_goes_by_minutes_no_less_than_one() {
         let mut state = State::new(Document::new(), Opened::Demo, TODAY);
         give(&mut state, Message::Command(Command::Settings));
-        for _ in 0..4 {
+        for _ in 0..5 {
             input(&mut state, SettingsInput::Focus(Direction::Down));
         }
         assert_eq!(state.settings_window(), Some(Setting::Weather));
@@ -694,6 +715,28 @@ mod tests {
                 .settings()
                 .is_default(Setting::WeatherIdle, &Settings::default())
         );
+    }
+
+    // FR-UI-11, FR-SET-02
+    #[test]
+    fn grayscale_is_off_until_turned_on_and_resets_to_off() {
+        let mut state = State::new(Document::new(), Opened::Demo, TODAY);
+        assert!(!state.settings().grayscale);
+        give(&mut state, Message::Command(Command::Settings));
+        input(&mut state, SettingsInput::Focus(Direction::Down));
+        assert_eq!(state.settings().value(Setting::Grayscale), "Off");
+        assert_eq!(
+            input(&mut state, SettingsInput::Turn(Direction::Down)),
+            [Effect::KeepSetting(Setting::Grayscale)]
+        );
+        assert_eq!(state.settings().value(Setting::Grayscale), "On");
+        assert!(
+            !state
+                .settings()
+                .is_default(Setting::Grayscale, &Settings::default())
+        );
+        input(&mut state, SettingsInput::Reset);
+        assert!(!state.settings().grayscale);
     }
 
     // FR-UI-03

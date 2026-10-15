@@ -240,6 +240,20 @@ It draws in the terminal's 16 ANSI colors, so it follows the user's palette and 
 | Logbook icon | magenta |
 | Trash icon | grey 244 |
 
+## Grayscale
+
+- Setting: `grayscale = true`, off by default (FR-UI-11, D-122)
+
+Grayscale draws any theme above, Terminal Dark included, without a hue, so that text and icons all read in the default text color. The theme stays dark or light. Each role takes a gray:
+
+| Roles | Gray |
+|---|---|
+| Background, dim text, selection, current-line band, text on the band, rule lines, checklist done, Trash icon | the gray of the same WCAG luminance as the theme's own, so every contrast above holds within rounding; Terminal Dark's own text and greys stay as they are |
+| Text | the same, from the theme's text |
+| Every other role: primary, accent, focus marker, headers, sections, links, date chips, overdue, error, tags, the view icons and the flag | the text's gray |
+
+Weight, italics, underlines and dimming still set roles apart: area titles stay bold capitals, overdue chips bold and reversed, links underlined. The weather draws in 256-color greys of about each color's lightness.
+
 ## Contrast summary
 
 - Text and dim text clear 4.5:1 in all four themes. The lowest is dim text in Flexoki Light at 4.97:1.

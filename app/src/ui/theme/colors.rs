@@ -79,6 +79,84 @@ impl Theme {
     }
 }
 
+impl Theme {
+    /// The theme in its grays alone, for grayscale mode (FR-UI-11): the roles that are shades of
+    /// the theme, its background, text, dim text, bands, rules and completed items, keep their
+    /// lightness without a hue, and every role with a hue of its own takes the text's gray, so
+    /// titles, icons, chips and tags read as text and only weight and dimming set them apart.
+    #[must_use]
+    pub fn grayscale(self) -> Self {
+        let text = gray(self.text, self.text);
+        let shade = |color| gray(color, text);
+        Self {
+            background: shade(self.background),
+            text,
+            dim_text: shade(self.dim_text),
+            primary: text,
+            accent: text,
+            selection: shade(self.selection),
+            focus: text,
+            current_line: shade(self.current_line),
+            band_text: shade(self.band_text),
+            headers: text,
+            sections: text,
+            rule: shade(self.rule),
+            link: text,
+            start: text,
+            due: text,
+            overdue: text,
+            error: text,
+            tag: text,
+            done: shade(self.done),
+            inbox_icon: text,
+            today_icon: text,
+            upcoming_icon: text,
+            flag: text,
+            all_icon: text,
+            logbook_icon: text,
+            trash_icon: shade(self.trash_icon),
+        }
+    }
+}
+
+/// `color` without its hue: an RGB color becomes the gray of the same WCAG luminance, so its
+/// contrast with every other color keeps, and the terminal's own colors and its greys stay;
+/// a color with a hue the terminal picks, whose lightness the app cannot know, becomes `text`.
+fn gray(color: Color, text: Color) -> Color {
+    match color {
+        Color::Rgb(red, green, blue) => {
+            let linear = |channel: u8| {
+                let value = f64::from(channel) / 255.0;
+                if value <= 0.040_45 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            let luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+            let encoded = if luminance <= 0.003_130_8 {
+                luminance * 12.92
+            } else {
+                1.055 * luminance.powf(1.0 / 2.4) - 0.055
+            };
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a luminance between 0 and 1 encodes to between 0 and 255"
+            )]
+            let level = (encoded * 255.0).round() as u8;
+            Color::Rgb(level, level, level)
+        }
+        Color::Reset
+        | Color::Black
+        | Color::DarkGray
+        | Color::Gray
+        | Color::White
+        | Color::Indexed(0 | 7 | 8 | 15 | 232..=255) => color,
+        _ => text,
+    }
+}
+
 impl BuiltIn {
     /// The theme's colors.
     #[must_use]
@@ -430,6 +508,96 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Whether `color` has no hue: a grey of RGB or of the 256 colors, or one of the terminal's
+    /// own colors that is not a hue.
+    fn achromatic(color: Color) -> bool {
+        match color {
+            Color::Rgb(red, green, blue) => red == green && green == blue,
+            Color::Reset | Color::Black | Color::DarkGray | Color::Gray | Color::White => true,
+            Color::Indexed(index) => matches!(index, 0 | 7 | 8 | 15 | 232..=255),
+            _ => false,
+        }
+    }
+
+    // FR-UI-11
+    #[test]
+    fn in_grayscale_every_theme_draws_in_greys_with_its_hues_as_text() {
+        assert!(!achromatic(Color::Blue) && !achromatic(Color::Indexed(75)));
+        for theme in BuiltIn::ALL {
+            let (colors, id) = (theme.colors().grayscale(), theme.id());
+            for (role, color) in roles(&colors) {
+                assert!(achromatic(color), "{id} {role}: {color:?}");
+            }
+            for color in [colors.primary, colors.headers, colors.tag, colors.flag] {
+                assert_eq!(color, colors.text, "{id}");
+            }
+            assert_eq!(colors.kind(ItemKind::Area), colors.text, "{id}");
+            assert_ne!(colors.dim_text, colors.text, "{id}");
+            assert_ne!(colors.selection, colors.current_line, "{id}");
+        }
+        let dark = BuiltIn::TerminalDark.colors();
+        assert_eq!(
+            dark.grayscale(),
+            Theme {
+                primary: Color::Reset,
+                accent: Color::Reset,
+                focus: Color::Reset,
+                headers: Color::Reset,
+                sections: Color::Reset,
+                link: Color::Reset,
+                start: Color::Reset,
+                due: Color::Reset,
+                overdue: Color::Reset,
+                error: Color::Reset,
+                tag: Color::Reset,
+                inbox_icon: Color::Reset,
+                today_icon: Color::Reset,
+                upcoming_icon: Color::Reset,
+                flag: Color::Reset,
+                all_icon: Color::Reset,
+                logbook_icon: Color::Reset,
+                ..dark
+            },
+            "the terminal's own text and its greys"
+        );
+    }
+
+    // FR-UI-11
+    #[test]
+    fn in_grayscale_a_shade_keeps_its_contrast() {
+        for theme in truecolor() {
+            let (colors, grey, id) = (theme.colors(), theme.colors().grayscale(), theme.id());
+            for (role, color, shade) in [
+                ("text", colors.text, grey.text),
+                ("dim_text", colors.dim_text, grey.dim_text),
+                ("done", colors.done, grey.done),
+                ("selection", colors.selection, grey.selection),
+            ] {
+                let (was, now) = (
+                    contrast(color, colors.background),
+                    contrast(shade, grey.background),
+                );
+                let off = (was - now).abs() / was;
+                assert!(
+                    off < 0.03,
+                    "{id} {role}: {was:.2} {now:.2}, off by rounding alone"
+                );
+            }
+        }
+        assert_eq!(gray(Color::Rgb(0, 0, 0), Color::Reset), Color::Rgb(0, 0, 0));
+        assert_eq!(
+            gray(Color::Rgb(255, 0, 0), Color::Reset),
+            Color::Rgb(127, 127, 127)
+        );
+        assert_eq!(gray(Color::Indexed(244), Color::Reset), Color::Indexed(244));
+        assert_eq!(
+            gray(Color::Red, Color::Reset),
+            Color::Reset,
+            "a hue the terminal picks"
+        );
+        assert_eq!(gray(Color::Indexed(75), Color::Reset), Color::Reset);
     }
 
     // FR-UI-03

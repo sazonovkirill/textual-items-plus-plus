@@ -136,7 +136,7 @@ fn summer_has_no_weather_and_the_palette_says_so() {
 #[test]
 fn turning_the_weather_off_in_the_settings_window_stops_the_idle_timer() {
     let mut harness = animated(80, 30);
-    harness.type_text("g,jjjjl");
+    harness.type_text("g,jjjjjl");
     harness.key(KeyCode::Esc);
     harness.wait(200);
     assert_eq!(harness.tui.deadline(), None, "once the window has closed");

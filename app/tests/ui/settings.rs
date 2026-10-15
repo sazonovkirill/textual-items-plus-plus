@@ -33,10 +33,10 @@ fn g_comma_opens_the_settings_window_and_esc_closes_it() {
             " Appearance",
             "   Theme                                        Terminal Dark",
             "   The colors the app draws in",
+            "   Grayscale                                              Off",
+            "   The theme in its grays alone: no color in text or icons",
             "   Icons                                            Nerd Font",
             "   Nerd Font icons, or plain markers without the font",
-            "   Word wrap                                               On",
-            "   Long titles wrap; off, each takes one line, cut short",
         ]
     );
     let foot = lines.last().map(|line| line.trim()).unwrap_or_default();
@@ -95,13 +95,46 @@ fn switching_to_flexoki_light_repaints_the_app_at_once_and_keeps_it() {
     assert_eq!(corner.bg, Color::Reset);
 }
 
+// FR-UI-11, FR-SET-02
+#[test]
+fn grayscale_repaints_the_app_in_the_themes_greys_and_keeps_it() {
+    let hued = |harness: &Harness| {
+        let buffer = harness.terminal.backend().buffer();
+        buffer.content.iter().any(|cell| {
+            [cell.fg, cell.bg].into_iter().any(|color| match color {
+                Color::Rgb(red, green, blue) => red != green || green != blue,
+                Color::Indexed(index) => !matches!(index, 0 | 7 | 8 | 15 | 232..=255),
+                Color::Reset | Color::Black | Color::DarkGray | Color::Gray | Color::White => false,
+                _ => true,
+            })
+        })
+    };
+    for theme in ["terminal-dark", "tokyo-night"] {
+        let folders = tempfile::tempdir().expect("a temporary folder");
+        let text = format!("theme = \"{theme}\"\n");
+        fs::write(folders.path().join("config.toml"), &text).expect("the file is written");
+        let mut harness = Harness::launched_in(folders, None, 100, 30).expect("the demo opens");
+        harness.type_text("gt");
+        assert!(hued(&harness), "{theme}: colors before");
+        harness.type_text("g,jl");
+        harness.key(KeyCode::Esc);
+        assert!(!hued(&harness), "{theme}: {}", harness.screen());
+        harness.type_text("gi");
+        assert!(!hued(&harness), "{theme}: the Inbox too");
+        assert_eq!(
+            fs::read_to_string(harness.config()).ok(),
+            Some(format!("{text}grayscale = true\n"))
+        );
+    }
+}
+
 // FR-SET-02, FR-UI-04, FR-UI-05
 #[test]
 fn icons_and_word_wrap_change_what_the_panes_draw() {
     let mut harness = Harness::new(30, 24);
     let wrapped = harness.screen();
     assert!(wrapped.contains("▌   the card"), "{wrapped}");
-    harness.type_text("g,j");
+    harness.type_text("g,jj");
     harness.key(KeyCode::Enter);
     harness.type_text("j ");
     harness.key(KeyCode::Esc);
@@ -133,7 +166,7 @@ fn the_app_starts_with_what_the_file_sets_and_says_what_it_ignored() {
     harness.type_text("j");
     let status = harness.rows().last().cloned().unwrap_or_default();
     assert!(!status.contains("config.toml"), "{status}");
-    harness.type_text("g,jl");
+    harness.type_text("g,jjl");
     assert_eq!(
         fs::read_to_string(harness.config()).ok().as_deref(),
         Some("# mine\nicons = \"nerd\"\ntheme = \"nord\"\nfont = 1\n"),
