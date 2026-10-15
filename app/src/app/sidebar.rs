@@ -479,11 +479,15 @@ pub(super) fn place(
         return beside_project(document, focused, side);
     }
     match side {
-        Side::Below => match entries.get(at + 1).filter(|next| next.depth() > 0) {
-            Some(&Stop::Place(first)) => document.position(first.id),
-            // The views are listed at the top level, so no entry holds one.
-            None | Some(Stop::View(_)) => Some((Some(focused), document.children(focused).len())),
-        },
+        // From the document, since a collapsed area lists none of its projects (D-67).
+        Side::Below => {
+            let children = document.children(focused);
+            let first = children
+                .iter()
+                .position(|&child| listed(document, child))
+                .unwrap_or(children.len());
+            Some((Some(focused), first))
+        }
         Side::Above => match at.checked_sub(1).and_then(|before| entries.get(before)) {
             Some(&Stop::Place(before)) if kind(document, before.id) == Some(ItemKind::Area) => {
                 Some((Some(before.id), document.children(before.id).len()))
@@ -831,6 +835,27 @@ mod tests {
             ),
             None,
             "from no entry"
+        );
+    }
+
+    // FR-VIEW-10, FR-EDIT-05, FR-ORG-06, D-67, D-127
+    #[test]
+    fn below_a_collapsed_area_a_new_project_still_goes_first_in_it() {
+        let document = document();
+        let work = find(&document, "Work");
+        let mut sidebar = Sidebar::open(Shown::Container(work));
+        sidebar.toggle_collapsed(&document);
+        let (parent, index) = place(
+            &document,
+            &sidebar.visible(&document),
+            Some(Shown::Container(work)),
+            Side::Below,
+        )
+        .expect("Work is listed");
+        assert_eq!(parent, Some(work));
+        assert_eq!(
+            document.children(work).get(index),
+            Some(&find(&document, "Site"))
         );
     }
 

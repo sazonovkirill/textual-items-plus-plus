@@ -250,7 +250,7 @@ fn up_and_down_in_a_description_follow_its_lines_beside_the_sidebar() {
     );
 }
 
-// FR-VIEW-10, D-67, D-75
+// FR-VIEW-10, D-67, D-75, D-127
 #[test]
 fn collapse_an_area_and_expand_it_again() {
     let mut harness = sidebar();
@@ -285,11 +285,11 @@ fn collapse_an_area_and_expand_it_again() {
         Some(
             &[
                 " 󰆧 HOME                 5".to_owned(),
-                " # Move to the new flat 4".to_owned(),
                 "*# Boxes".to_owned(),
+                " # Move to the new flat 4".to_owned(),
             ][..]
         ),
-        "a project added in a collapsed area shows it again: {added:?}"
+        "a project added first in a collapsed area shows it again (D-127): {added:?}"
     );
     harness.ctrl('w');
     harness.type_text("l");
