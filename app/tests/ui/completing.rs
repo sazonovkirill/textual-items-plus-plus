@@ -73,6 +73,13 @@ fn dot_completes_a_task_a_section_and_a_project_as_x_does() {
     harness.type_text("work");
     harness.key(KeyCode::Enter);
     harness.type_text("G.");
+    let screen = harness.screen();
+    assert!(
+        screen.contains("# Blog")
+            && screen.contains("1 open task; press x again to complete anyway"),
+        "a project with open tasks asks first (D-140):\n{screen}"
+    );
+    harness.key(KeyCode::Char('.'));
     assert!(!harness.screen().contains("# Blog"), "{}", harness.screen());
     harness.type_text("ggjj.");
     assert!(

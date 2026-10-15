@@ -112,6 +112,11 @@ fn kept(state: &State) -> String {
             keymap::written(Command::EmptyTrash).unwrap_or_default(),
             if *count == 1 { "item" } else { "items" }
         ),
+        Notice::OpenTasks(count) => format!(
+            "{count} open {}; press {} again to complete anyway",
+            if *count == 1 { "task" } else { "tasks" },
+            keymap::written(Command::ToggleCompleted).unwrap_or_default()
+        ),
         Notice::Refused(refusal) => why(*refusal).to_owned(),
         Notice::NoChecklist => "only a task has a checklist".to_owned(),
         Notice::AreaUndated => "an area has no start or due date".to_owned(),

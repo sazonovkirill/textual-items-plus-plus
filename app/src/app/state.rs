@@ -415,10 +415,16 @@ impl State {
 
     /// Completes the selected items on `today`, or uncompletes them when all are completed, as
     /// one step to undo, moving the focus on when its row hides; on areas alone the status line
-    /// says they are not completed (D-81).
-    pub(super) fn toggle_completed(&mut self, today: Date) {
+    /// says they are not completed (D-81). Completing projects that hold open tasks waits until
+    /// `asked`, when the status line has just asked to confirm, and otherwise asks (D-140).
+    pub(super) fn toggle_completed(&mut self, today: Date, asked: bool) {
         let items = self.pane().selection.items(&self.listed());
         if self.refuses_areas(&items, Notice::AreaUncompleted) {
+            return;
+        }
+        let open = completion::left_open(&self.document, &items);
+        if open > 0 && !asked {
+            self.notify(Notice::OpenTasks(open));
             return;
         }
         let transaction = completion::toggle(&self.document, items, today);
@@ -2157,7 +2163,7 @@ mod tests {
         state.move_focus(Focus::First);
         assert_eq!(state.selection().focused(), Some(work));
         state.toggle_picked();
-        state.toggle_completed(TODAY);
+        state.toggle_completed(TODAY, false);
         let done = state
             .document()
             .node(work)
@@ -2534,7 +2540,7 @@ mod tests {
         let ids = |state: &State| state.rows().into_iter().map(Row::id).collect::<Vec<_>>();
         assert_eq!(ids(&state), [newer, older]);
         assert_eq!(state.selection().focused(), Some(newer));
-        state.toggle_completed(TODAY);
+        state.toggle_completed(TODAY, false);
         assert_eq!(ids(&state), [older]);
         assert_eq!(state.selection().focused(), Some(older));
         assert_eq!(
@@ -2825,7 +2831,7 @@ mod tests {
         state.extend_selection(Direction::Down);
         state.extend_selection(Direction::Down);
         assert_eq!(picked(&state), [a, b, c]);
-        state.toggle_completed(TODAY);
+        state.toggle_completed(TODAY, false);
         assert!([a, b, c].iter().all(|&id| {
             state
                 .document()
@@ -3110,7 +3116,7 @@ mod tests {
         } = dated()?;
         state.go(Go::View(View::Today));
         state.pane_mut().selection.focus(Some(inbox_task));
-        state.toggle_completed(TODAY);
+        state.toggle_completed(TODAY, false);
         assert_eq!(state.selection().focused(), Some(site));
         assert!(!state.rows().iter().any(|row| row.id() == inbox_task));
         state.toggle_show_completed();
@@ -3420,6 +3426,51 @@ mod tests {
             ],
             "the picker lists the tags of every row Today lists, filtered or not"
         );
+        Ok(())
+    }
+
+    // FR-ORG-09, D-140
+    #[test]
+    fn completing_a_project_with_open_tasks_waits_for_the_key_again() -> Result<(), PlacementError>
+    {
+        let Fixture {
+            mut state, site, ..
+        } = fixture()?;
+        let give = |state: &mut State, command| {
+            crate::app::update(state, crate::app::Message::Command(command), TODAY);
+        };
+        let completed = |state: &State| {
+            state
+                .document()
+                .node(site)
+                .and_then(Node::item)
+                .and_then(|item| item.completed)
+        };
+        navigate(&mut state, "Work");
+        give(&mut state, Command::ShowCompleted);
+        while state.selection().focused() != Some(site) {
+            give(&mut state, Command::Focus(Focus::Next));
+        }
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(state.notice(), Some(&Notice::OpenTasks(1)));
+        assert_eq!(
+            completed(&state),
+            None,
+            "nothing changes before it is confirmed"
+        );
+        give(&mut state, Command::ShowCompleted);
+        give(&mut state, Command::ShowCompleted);
+        assert_eq!(state.notice(), None, "another command cancels");
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(completed(&state), None, "asked again");
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(
+            completed(&state),
+            Some(crate::domain::Completion::On(TODAY))
+        );
+        assert_eq!(state.notice(), None);
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(completed(&state), None, "uncompleting does not ask");
         Ok(())
     }
 

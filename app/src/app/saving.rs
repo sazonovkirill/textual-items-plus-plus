@@ -91,6 +91,9 @@ pub enum Notice {
     BackupFailed(String),
     /// Empty Trash asks to be given again to delete these many items for good (FR-VIEW-04).
     EmptyTrash(usize),
+    /// Completing asks to be given again to complete projects that hold these many open tasks
+    /// (FR-ORG-09, D-140).
+    OpenTasks(usize),
     /// Indenting, outdenting, converting, grouping or moving was refused, for this reason
     /// (FR-OPS-03, FR-TASK-06, FR-OPS-07, FR-OPS-08, D-107).
     Refused(Refusal),

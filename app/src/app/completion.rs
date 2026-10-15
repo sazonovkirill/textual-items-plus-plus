@@ -3,6 +3,7 @@
 
 use jiff::civil::Date;
 
+use super::{container, navigator};
 use crate::domain::{Completion, Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 
 /// The transaction that uncompletes `items` when every one of them is completed, and otherwise
@@ -37,6 +38,28 @@ pub(super) fn toggle(
         })
         .collect();
     Transaction::new(ops)
+}
+
+/// How many open tasks the projects among `items` that `toggle` would complete hold, at any
+/// depth, which completing hides with them (FR-ORG-09, D-140).
+pub(super) fn left_open(document: &Document, items: &[ItemId]) -> usize {
+    let item = |id: ItemId| document.node(id).and_then(Node::item);
+    let completing = items.iter().filter_map(|&id| item(id)).any(|item| {
+        matches!(
+            item.kind,
+            ItemKind::Project | ItemKind::Section | ItemKind::Task
+        ) && item.completed.is_none()
+    });
+    if !completing {
+        return 0;
+    }
+    container::outermost_rows(document, items.iter().copied())
+        .into_iter()
+        .filter(|&id| {
+            item(id).is_some_and(|item| item.kind == ItemKind::Project && item.completed.is_none())
+        })
+        .map(|id| navigator::held_open_tasks(document, id))
+        .sum()
 }
 
 #[cfg(test)]
@@ -86,6 +109,40 @@ mod tests {
         changed.apply(&transaction)?;
         assert_eq!(completed(&changed, a), Some(Completion::On(TODAY)));
         assert_eq!(completed(&changed, b), Some(Completion::Undated));
+        Ok(())
+    }
+
+    // FR-ORG-09, D-140
+    #[test]
+    fn counts_the_open_tasks_left_in_the_projects_completing_would_complete()
+    -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let add = |document: &mut Document, parent, kind, title| {
+            document.push(parent, Node::Item(Item::new(kind, title)))
+        };
+        let project = add(&mut document, None, ItemKind::Project, "p")?;
+        let section = add(&mut document, Some(project), ItemKind::Section, "s")?;
+        let open = add(&mut document, Some(section), ItemKind::Task, "open")?;
+        let mut done = Item::new(ItemKind::Task, "done");
+        done.completed = Some(Completion::Undated);
+        document.push(Some(section), Node::Item(done))?;
+        let mut deleted = Item::new(ItemKind::Task, "deleted");
+        deleted.deleted = Some(TODAY);
+        document.push(Some(project), Node::Item(deleted))?;
+        let inner = add(&mut document, Some(project), ItemKind::Project, "inner")?;
+        add(&mut document, Some(inner), ItemKind::Task, "deep")?;
+        let empty = add(&mut document, None, ItemKind::Project, "empty")?;
+        assert_eq!(left_open(&document, &[project]), 2, "at any depth");
+        assert_eq!(
+            left_open(&document, &[project, open, inner]),
+            2,
+            "counted once"
+        );
+        assert_eq!(left_open(&document, &[inner, empty]), 1);
+        assert_eq!(left_open(&document, &[empty, open, section]), 0);
+        document.apply(&toggle(&document, [project], TODAY))?;
+        assert_eq!(left_open(&document, &[project]), 0, "uncompleting");
+        assert_eq!(left_open(&document, &[project, inner]), 0, "already hidden");
         Ok(())
     }
 

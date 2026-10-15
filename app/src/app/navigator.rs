@@ -209,6 +209,15 @@ fn list<'a>(
     open
 }
 
+/// How many tasks not completed `id` holds, at any depth, as its entry counts them.
+pub(super) fn held_open_tasks(document: &Document, id: ItemId) -> usize {
+    document
+        .children(id)
+        .iter()
+        .map(|&child| open_tasks(document, id, child))
+        .sum()
+}
+
 /// How many tasks not completed `child` of `parent` is or holds, at any depth, leaving out the
 /// Trash, what completed items hold (FR-ORG-09) and, as its view does, the Inbox's scheduled
 /// tasks (FR-VIEW-01).

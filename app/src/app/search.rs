@@ -649,7 +649,7 @@ mod tests {
             "taking a letter away widens"
         );
         state.search_input(SearchInput::Done);
-        state.toggle_completed(TODAY);
+        state.toggle_completed(TODAY, false);
         assert_eq!(
             state.rows(),
             [second, first, done].map(task),

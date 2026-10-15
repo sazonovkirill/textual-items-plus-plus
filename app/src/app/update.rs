@@ -147,7 +147,7 @@ pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
 /// line mode, as in vim, unless it moves the focus, extends or toggles the mode, or shows or
 /// scrolls the shortcuts panel (D-82).
 fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
-    let emptying = matches!(state.notice(), Some(Notice::EmptyTrash(_)));
+    let asked = state.notice().cloned();
     if let Message::Command(_) | Message::Paste(..) = message {
         state.finish_editing();
         state.finish_searching();
@@ -206,14 +206,14 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::SaveAs(input) => return state.save_as_input(input),
         Message::SettingsFailed(problem) => state.settings_failed(problem),
         Message::NoWeather => state.notify(Notice::NoWeather),
-        Message::Command(command) => return run(state, command, today, emptying),
+        Message::Command(command) => return run(state, command, today, asked.as_ref()),
     }
     Vec::new()
 }
 
-/// Carries out `command` on `today` by the module that owns it; `emptying` says whether the Trash
-/// was asked to be emptied by the command before.
-fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<Effect> {
+/// Carries out `command` on `today` by the module that owns it; `asked` is what the status line
+/// said after the command before, which a command it asked to confirm reads.
+fn run(state: &mut State, command: Command, today: Date, asked: Option<&Notice>) -> Vec<Effect> {
     match command {
         Command::Quit => return state.end(Ending::Quit),
         Command::KeepMine => return state.keep_mine(),
@@ -225,7 +225,9 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::VisualLines => state.toggle_visual(),
         Command::SelectAll => state.select_all(),
         Command::ClearSelection => state.clear_selection(),
-        Command::ToggleCompleted => state.toggle_completed(today),
+        Command::ToggleCompleted => {
+            state.toggle_completed(today, matches!(asked, Some(Notice::OpenTasks(_))));
+        }
         Command::ShowCompleted => state.toggle_show_completed(),
         Command::Undo => state.undo(),
         Command::Redo => state.redo(),
@@ -250,7 +252,7 @@ fn run(state: &mut State, command: Command, today: Date, emptying: bool) -> Vec<
         Command::DayLater(kind) => state.nudge_date(kind, 1, today),
         Command::Delete => state.delete(today),
         Command::Restore => state.restore_selected(),
-        Command::EmptyTrash => state.empty_trash(emptying),
+        Command::EmptyTrash => state.empty_trash(matches!(asked, Some(Notice::EmptyTrash(_)))),
         Command::MoveTo => state.open_move_to(),
         Command::Duplicate => state.duplicate(),
         Command::Copy => return state.copy(),
