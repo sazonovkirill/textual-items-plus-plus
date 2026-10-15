@@ -410,9 +410,10 @@ impl Tui {
 
     /// The message of what `event` does in the attachments panel that has the keys, while nothing
     /// in it is edited (FR-ATT-01): its own keys, `Tab` and `Shift+Tab` nesting a checklist item
-    /// selected and otherwise moving the keys on, and the global commands it takes.
+    /// selected and otherwise moving the keys on, and the global commands it takes. A key pressed
+    /// while a sequence is pending goes on with the sequence, so `mj` moves an item (D-124).
     fn panel_message(&mut self, event: &Event) -> Option<Message> {
-        match attachments::panel_input(event) {
+        match attachments::panel_input(event).filter(|_| self.keymap.pending().is_empty()) {
             Some(PanelKey::Input(input)) => Some(Message::Attachments(input)),
             Some(PanelKey::Command(command)) => Some(Message::Command(command)),
             Some(PanelKey::Nest(direction)) => {

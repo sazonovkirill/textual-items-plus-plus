@@ -296,3 +296,49 @@ fn tab_and_shift_tab_nest_an_item_selected_or_edited_and_leave_the_panes_be() {
         "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t- Cups\n\t\t\t- Bowl!s\n"
     );
 }
+
+// FR-CHK-03, D-124
+#[test]
+fn mj_and_mk_move_the_item_selected_and_leave_nothing_pending() {
+    let folders = tempfile::tempdir().expect("a temporary folder");
+    let path = folders.path().join("todo.taskpaper");
+    fs::write(
+        &path,
+        "Inbox:\n\t- Pack\n\t\t- Plates\n\t\t- Cups\n\t\t- Bowls\n",
+    )
+    .expect("the file is written");
+    let mut harness =
+        Harness::launched_in(folders, Some(path.clone()), 100, 16).expect("the file opens");
+    let checklist = |harness: &Harness| -> Vec<String> {
+        harness.rows()[5..8]
+            .iter()
+            .map(|row| {
+                row.chars()
+                    .skip(61)
+                    .collect::<String>()
+                    .trim_end_matches(['│', ' '])
+                    .to_owned()
+            })
+            .collect()
+    };
+    harness.type_text("cmjmj");
+    assert_eq!(
+        checklist(&harness),
+        [" ☐ Cups", " ☐ Bowls", "▌☐ Plates"],
+        "mj moves the item selected down"
+    );
+    harness.type_text("mk");
+    assert_eq!(checklist(&harness), [" ☐ Cups", "▌☐ Plates", " ☐ Bowls"]);
+    harness.type_text("x");
+    assert_eq!(
+        checklist(&harness),
+        [" ☐ Cups", "▌✔ Plates", " ☐ Bowls"],
+        "the next key is the panel's own, no m left pending"
+    );
+    harness.terminate();
+    let saved = fs::read_to_string(&path).expect("the file is read");
+    assert!(
+        saved.starts_with("Inbox:\n\t- Pack\n\t\t- Cups\n\t\t- Plates @done("),
+        "{saved}"
+    );
+}
