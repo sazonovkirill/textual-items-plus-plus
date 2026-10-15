@@ -377,7 +377,7 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
         "{lines:#?}"
     );
     assert!(
-        lines.contains(&"│  Full or Half Width                 \\".to_owned()),
+        lines.contains(&"│  Full Width, Then Hide              \\".to_owned()),
         "{lines:#?}"
     );
     assert!(

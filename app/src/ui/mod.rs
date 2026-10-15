@@ -432,10 +432,12 @@ impl Tui {
                     .clock)(
                 ))))
             }
-            Some(PanelKey::Widen) => {
-                if let Some(drawn) = self.drawn.get_mut(self.state.current_pane()) {
-                    drawn.panel.full = !drawn.panel.full;
+            Some(PanelKey::Cycle) => {
+                let drawn = self.drawn.get_mut(self.state.current_pane())?;
+                if drawn.panel.full {
+                    return Some(Message::Attachments(AttachmentsInput::Close));
                 }
+                drawn.panel.full = true;
                 None
             }
             Some(PanelKey::Scroll(scroll)) => self

@@ -298,7 +298,7 @@ fn a_note_is_saved_as_guarded_lines_and_reads_back() {
 
 // FR-ATT-01, FR-ATT-02
 #[test]
-fn backslash_widens_the_panel_over_its_pane_beside_the_sidebar_and_back() {
+fn backslash_goes_round_closed_half_and_full_beside_the_sidebar() {
     let mut harness = Harness::new(100, 12);
     let corner = |harness: &Harness| harness.rows()[0].chars().position(|c| c == '┌');
     harness.ctrl('b');
@@ -316,7 +316,7 @@ fn backslash_widens_the_panel_over_its_pane_beside_the_sidebar_and_back() {
     );
     let rows = harness.rows();
     assert!(rows[2].starts_with(" 󰖙 Today"), "the sidebar stays");
-    assert!(rows[9].contains("│ e edit · a comment · \\ half · Esc close  "));
+    assert!(rows[9].contains("│ e edit · a comment · \\ hide · Esc close  "));
     harness.type_text("eA note as wide as the panel is now, past half the screen");
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 100, 12)),
@@ -325,11 +325,14 @@ fn backslash_widens_the_panel_over_its_pane_beside_the_sidebar_and_back() {
     );
     harness.key(KeyCode::Esc);
     harness.type_text("\\");
-    assert_eq!(corner(&harness), Some(60), "and back to half");
+    assert_eq!(corner(&harness), None, "full, then hidden (D-129)");
+    assert_eq!(mode(&harness), "NAVIGATE", "the keys back in the list");
+    harness.type_text("\\");
+    assert_eq!(corner(&harness), Some(60), "it opens at half again");
     harness.type_text("\\");
     harness.key(KeyCode::Esc);
     harness.type_text("\\");
-    assert_eq!(corner(&harness), Some(60), "it opens at half again");
+    assert_eq!(corner(&harness), Some(60), "and after Esc from full too");
 }
 
 // FR-ATT-01, FR-PANE-02
@@ -364,6 +367,7 @@ fn the_keys_never_go_to_a_list_its_panel_covers() {
     harness.type_text("h");
     harness.type_text("g1");
     assert_eq!(mode(&harness), "ATTACHMENTS", "the list is out of sight");
+    harness.key(KeyCode::Esc);
     harness.type_text("\\");
     harness.ctrl('w');
     harness.type_text("h");

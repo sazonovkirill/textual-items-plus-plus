@@ -54,8 +54,9 @@ pub(super) enum PanelKey {
     Nest(Direction),
     /// Adds a comment stamped now.
     AddComment,
-    /// Widens the panel over the whole of its pane, or narrows it back to half of it.
-    Widen,
+    /// Widens the panel over the whole of its pane, or closes it once it is, so that `\\` goes
+    /// round closed, half and full (D-129).
+    Cycle,
     /// Scrolls through what is selected, or selects another.
     Scroll(Scroll),
 }
@@ -134,7 +135,7 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
         (KeyModifiers::NONE, KeyCode::Char('a')),
         PanelKey::AddComment,
     ),
-    ((KeyModifiers::NONE, KeyCode::Char('\\')), PanelKey::Widen),
+    ((KeyModifiers::NONE, KeyCode::Char('\\')), PanelKey::Cycle),
     (
         (KeyModifiers::NONE, KeyCode::Char(']')),
         PanelKey::Command(Command::Indent),
@@ -640,7 +641,7 @@ impl<'a> AttachmentsPanel<'a> {
             (None, Selected::Comment(Some(_))) => &["e edit", "d del", "a comment"],
             (None, Selected::Comment(None)) => &["a comment"],
         };
-        let width_key = if self.full { "\\ half" } else { "\\ full" };
+        let width_key = if self.full { "\\ hide" } else { "\\ full" };
         let rest: &[&str] = if self.view.editing.is_some() {
             &[]
         } else {
@@ -1203,7 +1204,7 @@ mod tests {
         );
         assert_eq!(
             panel.full(true).hint(68)[0].to_string(),
-            "e edit · o add · x check · d del · a comment · \\ half · Esc close",
+            "e edit · o add · x check · d del · a comment · \\ hide · Esc close",
             "over the whole of the panes it narrows"
         );
     }

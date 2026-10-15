@@ -92,7 +92,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
                     PanelKey::Nest(Direction::Down) => "Indent or Next Pane",
                     PanelKey::Nest(Direction::Up) => "Outdent or Previous Pane",
                     PanelKey::AddComment => "Add Comment",
-                    PanelKey::Widen => "Full or Half Width",
+                    PanelKey::Cycle => "Full Width, Then Hide",
                     PanelKey::Scroll(Scroll::Lines(lines)) if lines < 0 => "Scroll Up",
                     PanelKey::Scroll(Scroll::Lines(_)) => "Scroll Down",
                     PanelKey::Scroll(Scroll::Pages(pages)) if pages < 0 => "Page Up",
