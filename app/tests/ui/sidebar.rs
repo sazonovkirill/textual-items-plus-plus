@@ -334,6 +334,30 @@ fn the_app_starts_with_the_sidebar_shown_and_the_keys_in_the_first_pane() {
     );
 }
 
+// FR-VIEW-10, D-45, D-121
+#[test]
+fn a_bar_gives_the_sidebar_the_keys_hides_it_and_shows_it_again() {
+    let mut harness = Harness::launched(120, 24);
+    harness.type_text("|");
+    assert!(
+        entries(&harness)[0].starts_with("*󰚇 Inbox"),
+        "the sidebar has the keys: {}",
+        harness.screen()
+    );
+    harness.type_text("|");
+    assert_eq!(
+        marker_columns(&harness),
+        [0],
+        "hidden, the pane takes the screen"
+    );
+    harness.type_text("|");
+    assert!(
+        entries(&harness)[0].starts_with("*󰚇 Inbox"),
+        "shown again with the keys: {}",
+        harness.screen()
+    );
+}
+
 // FR-PANE-02, FR-VIEW-10, D-79
 #[test]
 fn tab_gn_gp_and_g_digits_go_round_the_panes_the_sidebar_first() {

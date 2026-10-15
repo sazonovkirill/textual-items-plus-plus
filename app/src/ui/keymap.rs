@@ -154,12 +154,13 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::ToggleFlagged, &["m f"]),
     // The owner's key to fold a project in the sidebar (D-67).
     (Command::Collapse, &["'"]),
-    // The owner's sidebar key (D-45), and taskpaper-terminal's pane keys but `Ctrl+\`, which opens
-    // the context menu: the pickers' keys to open their choice in a new pane open the focused row
-    // in one instead (D-60, D-106). The owner's keys cycle through the panes, the sidebar first,
-    // `g` with a digit reaches one, `g0` the sidebar, and `gj`/`gk`, taskpaper-terminal's next and
-    // previous sibling, browse the sidebar's entries in the first pane (D-79).
-    (Command::Sidebar, &["ctrl+b"]),
+    // The owner's sidebar keys, `|` beside `Ctrl+B`, which tmux takes as its prefix (D-45, D-121),
+    // and taskpaper-terminal's pane keys but `Ctrl+\`, which opens the context menu: the pickers'
+    // keys to open their choice in a new pane open the focused row in one instead (D-60, D-106).
+    // The owner's keys cycle through the panes, the sidebar first, `g` with a digit reaches one,
+    // `g0` the sidebar, and `gj`/`gk`, taskpaper-terminal's next and previous sibling, browse the
+    // sidebar's entries in the first pane (D-79).
+    (Command::Sidebar, &["ctrl+b", "|"]),
     (Command::NextPane, &["tab", "g n"]),
     (Command::PreviousPane, &["shift+tab", "g p"]),
     (Command::Browse(Direction::Down), &["g j", "ctrl+down"]),
@@ -566,6 +567,19 @@ mod tests {
             (press(KeyCode::Down, alt), moved(Direction::Down)),
         ] {
             assert_eq!(keymap.press(&event), command, "{event:?}");
+        }
+    }
+
+    // FR-VIEW-10
+    #[test]
+    fn ctrl_b_and_a_bar_toggle_the_sidebar_from_either_key_reporting() {
+        let mut keymap = Keymap::default();
+        for event in [
+            press(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            press(KeyCode::Char('|'), KeyModifiers::NONE),
+            press(KeyCode::Char('|'), KeyModifiers::SHIFT),
+        ] {
+            assert_eq!(keymap.press(&event), Some(Command::Sidebar), "{event:?}");
         }
     }
 
