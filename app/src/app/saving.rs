@@ -127,6 +127,12 @@ pub enum Notice {
     QuickAdded(String),
     /// Pasting in Today was refused: the clipboard holds something other than tasks (D-134).
     OnlyTasksInToday,
+    /// Restoring put an item back inside the completed item with this title, so that no view
+    /// shows it (FR-VIEW-04, FR-ORG-09, D-135).
+    RestoredIntoCompleted(String),
+    /// Restoring put these many items back inside completed items, so that no view shows them
+    /// (FR-VIEW-04, FR-ORG-09, D-135).
+    RestoredIntoCompletedItems(usize),
 }
 
 impl Notice {

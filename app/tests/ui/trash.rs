@@ -1,5 +1,7 @@
 //! The Trash view: deleted items, latest first, restored, deleted for good and emptied.
 
+use std::fs;
+
 use crate::support::Harness;
 
 /// The rows of the screen, without trailing spaces.
@@ -149,5 +151,43 @@ fn a_copy_from_the_trash_pastes_live_and_nothing_else_acts_there() {
         trimmed(&harness),
         trash(&listed, SAVED),
         "and not in the Trash"
+    );
+}
+
+// FR-VIEW-04, FR-ORG-09, D-135
+#[test]
+fn restoring_into_a_completed_project_says_where_it_went() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "\
+Inbox:
+\t- Call the bank @deleted(2026-10-14)
+Site: @done(2026-10-14)
+\t- Draft the copy @deleted(2026-10-13)
+\t- Pick the colors @deleted(2026-10-13)
+";
+    fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path, 90, 12);
+    harness.type_text("gdu");
+    assert!(
+        !harness.screen().contains("restored"),
+        "a restore to a shown place says nothing:\n{}",
+        harness.screen()
+    );
+    harness.type_text("ju");
+    assert!(
+        harness
+            .screen()
+            .contains("restored into Site, which is completed; uncomplete it to see it"),
+        "{}",
+        harness.screen()
+    );
+    harness.type_text("zkJu");
+    assert!(
+        harness
+            .screen()
+            .contains("restored 2 items into completed items; uncomplete them to see them"),
+        "{}",
+        harness.screen()
     );
 }

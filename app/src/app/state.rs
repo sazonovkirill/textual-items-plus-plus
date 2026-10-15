@@ -544,10 +544,26 @@ impl State {
     }
 
     /// Puts the selected items in the Trash back where they were, as one step to undo, moving the
-    /// focus on from the rows that leave; nothing selected elsewhere is in the Trash (FR-VIEW-04).
+    /// focus on from the rows that leave, and says so of those it puts inside a completed item,
+    /// which no view shows; nothing selected elsewhere is in the Trash (FR-VIEW-04, D-135).
     pub(super) fn restore_selected(&mut self) {
         let items = self.pane().selection.items(&self.listed());
+        let hidden = trash::completed_above(&self.document, items.iter().copied());
         self.change(trash::restore(&self.document, items));
+        match hidden[..] {
+            [] => {}
+            [above] => {
+                let title = self
+                    .document
+                    .node(above)
+                    .and_then(Node::item)
+                    .expect("the completed item above is in the document")
+                    .title
+                    .clone();
+                self.notify(Notice::RestoredIntoCompleted(title));
+            }
+            _ => self.notify(Notice::RestoredIntoCompletedItems(hidden.len())),
+        }
     }
 
     /// In the Trash, when `asked` the status line has just asked to confirm, deletes everything

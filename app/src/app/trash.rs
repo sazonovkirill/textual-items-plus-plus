@@ -6,7 +6,10 @@ use std::cmp::Reverse;
 
 use jiff::civil::Date;
 
-use super::{container::Row, view::Group};
+use super::{
+    container::{Row, path},
+    view::Group,
+};
 use crate::domain::{Branch, Document, Item, ItemId, ItemKind, Node, Op, Transaction};
 
 /// Whether `item` is of a kind that is deleted to the Trash and listed there.
@@ -101,6 +104,26 @@ pub(super) fn restore(document: &Document, items: impl IntoIterator<Item = ItemI
     Transaction::new(ops)
 }
 
+/// For each of `items` in the Trash that sits inside a completed item, so that restoring it
+/// puts it where no view shows it (FR-ORG-09), the completed item nearest above it (D-135).
+pub(super) fn completed_above(
+    document: &Document,
+    items: impl IntoIterator<Item = ItemId>,
+) -> Vec<ItemId> {
+    let item = |id| document.node(id).and_then(Node::item);
+    items
+        .into_iter()
+        .filter(|&id| item(id).is_some_and(|item| item.deleted.is_some()))
+        .filter_map(|id| {
+            path(document, id)
+                .into_iter()
+                .rev()
+                .skip(1)
+                .find(|&above| item(above).is_some_and(|item| item.completion().is_some()))
+        })
+        .collect()
+}
+
 /// `branch` with nothing in it in the Trash, as pasting puts items in (D-113).
 pub(super) fn live(branch: &Branch) -> Branch {
     let node = match &branch.node {
@@ -121,7 +144,7 @@ mod tests {
     use jiff::civil::date;
 
     use super::*;
-    use crate::domain::PlacementError;
+    use crate::domain::{Completion, PlacementError};
 
     const TODAY: Date = date(2026, 10, 14);
 
@@ -215,6 +238,32 @@ mod tests {
         assert_eq!(deleted(&document, task), None);
         assert_eq!(document.position(task), before.position(task));
         assert_eq!(items(&document), []);
+        Ok(())
+    }
+
+    // FR-VIEW-04, FR-ORG-09, D-135
+    #[test]
+    fn restoring_into_a_completed_item_names_the_nearest_one() -> Result<(), PlacementError> {
+        let mut document = Document::new();
+        let inbox = Some(document.inbox());
+        let completed = Some(Completion::On(TODAY));
+        let outer = Node::Item(Item {
+            completed,
+            ..Item::new(ItemKind::Project, "p")
+        });
+        let outer = document.push(None, outer)?;
+        let inner = Node::Item(Item {
+            completed,
+            ..Item::new(ItemKind::Section, "s")
+        });
+        let inner = document.push(Some(outer), inner)?;
+        let hidden = put(&mut document, Some(inner), ItemKind::Task, "h", Some(TODAY))?;
+        let shown = put(&mut document, inbox, ItemKind::Task, "shown", Some(TODAY))?;
+        let open = put(&mut document, Some(inner), ItemKind::Task, "open", None)?;
+        assert_eq!(
+            completed_above(&document, [hidden, shown, open, ItemId::new(99)]),
+            [inner]
+        );
         Ok(())
     }
 }

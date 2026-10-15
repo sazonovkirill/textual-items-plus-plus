@@ -126,6 +126,12 @@ fn kept(state: &State) -> String {
         Notice::SavedAs(path) => format!("saved as {}", path.display()),
         Notice::QuickAdded(place) => format!("added to {place}"),
         Notice::OnlyTasksInToday => "only tasks paste in Today".to_owned(),
+        Notice::RestoredIntoCompleted(title) => {
+            format!("restored into {title}, which is completed; uncomplete it to see it")
+        }
+        Notice::RestoredIntoCompletedItems(count) => {
+            format!("restored {count} items into completed items; uncomplete them to see them")
+        }
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()
