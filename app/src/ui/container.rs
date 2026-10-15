@@ -928,10 +928,7 @@ impl<'a> ContainerPane<'a> {
             x: self.title_column(item),
             text: Text::from(Line::from(spans)),
             fit: self.fit(),
-            left: Line::styled(
-                self.marker(item),
-                style.remove_modifier(Modifier::CROSSED_OUT),
-            ),
+            left: Line::styled(self.marker(item), style),
             right: Line::from([self.attachments(item).spans, self.chips(item)].concat()),
             row,
             caret: None,
@@ -1121,10 +1118,9 @@ impl<'a> ContainerPane<'a> {
         icon.glyph(self.icons)
     }
 
-    /// How `item`'s title is drawn: a task in the text color, struck through and faded once
-    /// completed; containers bold, each kind in its color (D-82); dimmed while it is Later, or
-    /// `deferred` inside a Later project (D-89, D-92). Its marker takes the same style, not struck
-    /// through.
+    /// How `item`'s title is drawn: a task in the text color, faded once completed, never struck
+    /// through (D-146); containers bold, each kind in its color (D-82); dimmed while it is Later, or
+    /// `deferred` inside a Later project (D-89, D-92). Its marker takes the same style.
     fn title_style(&self, item: &Item, deferred: bool) -> Style {
         let theme = self.theme;
         let style = match item.kind {
@@ -1134,7 +1130,7 @@ impl<'a> ContainerPane<'a> {
             ItemKind::Task | ItemKind::ChecklistItem => Style::new(),
         };
         if item.completion().is_some() {
-            style.fg(theme.done).add_modifier(Modifier::CROSSED_OUT)
+            style.fg(theme.done)
         } else if deferred {
             style.fg(theme.dim_text)
         } else {
@@ -2060,9 +2056,11 @@ mod tests {
         );
         let done = at(4, 15);
         assert_eq!(done.fg, Some(theme.done));
-        assert!(done.add_modifier.contains(Modifier::CROSSED_OUT));
+        assert!(
+            !done.add_modifier.contains(Modifier::CROSSED_OUT),
+            "not struck through (D-146)"
+        );
         assert_eq!(at(2, 15).fg, Some(theme.done), "a done task's marker");
-        assert!(!at(2, 15).add_modifier.contains(Modifier::CROSSED_OUT));
     }
 
     // FR-UI-05

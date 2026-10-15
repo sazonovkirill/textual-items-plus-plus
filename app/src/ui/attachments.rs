@@ -448,8 +448,8 @@ impl<'a> AttachmentsPanel<'a> {
     }
 
     /// The lines of a checklist item in content `width`: its marker, checked or not, then its
-    /// text and tags, wrapping after the marker, a checked item's struck through and all dimmed
-    /// (FR-CHK-04); while its text is edited, the text as typed, wrapping after the marker, and
+    /// text and tags, wrapping after the marker, a checked item's all dimmed, not struck through
+    /// (FR-CHK-04, D-146); while its text is edited, the text as typed, wrapping after the marker, and
     /// the caret's line and column among them.
     fn checklist_line(
         &self,
@@ -463,14 +463,12 @@ impl<'a> AttachmentsPanel<'a> {
             Style::new()
         };
         let (marker, title) = if item.completed.is_some() {
-            let done = dim.fg(self.theme.done);
-            (Icon::DoneTask, done.add_modifier(Modifier::CROSSED_OUT))
+            (Icon::DoneTask, dim.fg(self.theme.done))
         } else {
             (Icon::Task, dim)
         };
         let prefix = format!("{} ", marker.glyph(self.icons));
         let indent = Span::raw(&prefix).width();
-        let marker_style = title.remove_modifier(Modifier::CROSSED_OUT);
         if let Some(field) = self.view.editing
             && self.view.selected == Selected::Checklist(Some(line.id))
         {
@@ -485,7 +483,7 @@ impl<'a> AttachmentsPanel<'a> {
                     } else {
                         " ".repeat(indent)
                     };
-                    text.spans.insert(0, Span::styled(lead, marker_style));
+                    text.spans.insert(0, Span::styled(lead, title));
                     text
                 })
                 .collect();
@@ -503,10 +501,7 @@ impl<'a> AttachmentsPanel<'a> {
                 dim.fg(tag_color).add_modifier(Modifier::DIM),
             ));
         }
-        (
-            hanging(Span::styled(prefix, marker_style), &spans, width),
-            None,
-        )
+        (hanging(Span::styled(prefix, title), &spans, width), None)
     }
 
     /// A line of the note as Markdown shows it in content `width`: a heading bold, the first
@@ -1394,10 +1389,10 @@ mod tests {
         let theme = BuiltIn::default().colors();
         let books = &buf[(4, 5)];
         assert_eq!(books.fg, theme.done);
+        assert!(books.modifier.contains(Modifier::DIM));
         assert!(
-            books
-                .modifier
-                .contains(Modifier::DIM | Modifier::CROSSED_OUT)
+            !books.modifier.contains(Modifier::CROSSED_OUT),
+            "not struck through (D-146)"
         );
         let novels = &buf[(4, 6)];
         assert!(
