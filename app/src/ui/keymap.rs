@@ -129,8 +129,10 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::OpenNote(Whose::Shown), &["alt+\\"]),
     (Command::OpenComments(Whose::Focused), &["N"]),
     (Command::OpenComments(Whose::Shown), &["alt+N"]),
-    // `c` for the checklist, which only a task has, so it has no key for the container shown.
-    (Command::OpenChecklist, &["c"]),
+    // `C` for the checklist, beside `N` for the comments, which only a task has, so it has no key
+    // for the container shown; the owner's `c` adds a comment without opening the panel (D-143).
+    (Command::OpenChecklist, &["C"]),
+    (Command::QuickComment, &["c"]),
     // taskpaper-terminal's date prompt keys, and `t` to start today (D-23).
     (Command::SetDate(DateKind::Start), &["m s"]),
     (Command::SetDate(DateKind::Due), &["m d"]),
@@ -791,11 +793,12 @@ mod tests {
         );
     }
 
-    // FR-ATT-02
+    // FR-ATT-02, FR-ATT-06
     #[test]
-    fn c_opens_the_checklist() {
+    fn shift_c_opens_the_checklist_and_c_adds_a_comment() {
         let mut keymap = Keymap::default();
-        assert_eq!(keymap.press(&char('c')), Some(Command::OpenChecklist));
+        assert_eq!(keymap.press(&char('C')), Some(Command::OpenChecklist));
+        assert_eq!(keymap.press(&char('c')), Some(Command::QuickComment));
     }
 
     // FR-NAV-01, FR-KEY-02

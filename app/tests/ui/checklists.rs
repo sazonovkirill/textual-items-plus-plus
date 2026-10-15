@@ -38,7 +38,7 @@ fn status(harness: &Harness) -> String {
 #[test]
 fn build_a_nested_checklist() {
     let mut harness = Harness::new(80, 20);
-    harness.type_text("c");
+    harness.type_text("C");
     assert_eq!(
         panel(&harness)[..5],
         [
@@ -111,7 +111,7 @@ fn only_a_task_has_a_checklist() {
     harness.ctrl('g');
     harness.type_text("Website");
     harness.key(KeyCode::Enter);
-    harness.type_text("jc");
+    harness.type_text("jC");
     assert!(status(&harness).ends_with("only a task has a checklist"));
     assert!(!harness.rows()[0].contains('┌'), "no panel opens");
 }
@@ -123,7 +123,7 @@ fn a_checked_item_is_saved_done_under_its_task() {
     let path = dir.path().join("todo.taskpaper");
     fs::write(&path, "Inbox:\n\t- Pack\n").expect("the file is written");
     let mut harness = Harness::open(path.clone(), 80, 16);
-    harness.type_text("co");
+    harness.type_text("Co");
     harness.type_text("Books");
     harness.key(KeyCode::Esc);
     harness.type_text("x");
@@ -144,7 +144,7 @@ fn items_copied_paste_into_a_checklist_one_for_each_line() {
     fs::write(&path, "Inbox:\n\t- Pack\n\t- Buy tape\n\t\tfor the boxes\n")
         .expect("the file is written");
     let mut harness = Harness::open(path, 80, 16);
-    harness.type_text("jykc");
+    harness.type_text("jykC");
     harness.ctrl('v');
     assert_eq!(
         panel(&harness)[4..6],
@@ -168,7 +168,7 @@ fn a_list_pasted_with_carriage_returns_or_a_copied_task_shows_every_line_as_an_i
     .expect("the file is written");
     // The panel's hint takes two lines at this width.
     let mut harness = Harness::open(path.clone(), 80, 17);
-    harness.type_text("c");
+    harness.type_text("C");
     harness.send(&Event::Paste(
         "Fruit\r\tApples\r\tPears\rBread\r".to_owned(),
     ));
@@ -184,7 +184,7 @@ fn a_list_pasted_with_carriage_returns_or_a_copied_task_shows_every_line_as_an_i
     );
     harness.key(KeyCode::Esc);
     harness.type_text("jyk");
-    harness.type_text("c");
+    harness.type_text("C");
     harness.ctrl('v');
     harness.key(KeyCode::Esc);
     harness.terminate();
@@ -204,7 +204,7 @@ fn only_the_panel_marks_what_is_selected_while_it_has_the_keys() {
     let row = |harness: &Harness| harness.rows()[3].chars().take(32).collect::<String>();
     assert_eq!(row(&harness), "▌ ☐ Call the bank about the card");
     let focused_bg = harness.terminal.backend().buffer()[(4, 3)].bg;
-    harness.type_text("co");
+    harness.type_text("Co");
     harness.type_text("Fiction");
     harness.key(KeyCode::Enter);
     harness.type_text("Cookbooks");
@@ -263,7 +263,7 @@ fn tab_and_shift_tab_nest_an_item_selected_or_edited_and_leave_the_panes_be() {
             })
             .collect()
     };
-    harness.type_text("cj");
+    harness.type_text("Cj");
     harness.key(KeyCode::Tab);
     assert_eq!(
         checklist(&harness),
@@ -321,7 +321,7 @@ fn mj_and_mk_move_the_item_selected_and_leave_nothing_pending() {
             })
             .collect()
     };
-    harness.type_text("cmjmj");
+    harness.type_text("Cmjmj");
     assert_eq!(
         checklist(&harness),
         [" ☐ Cups", " ☐ Bowls", "▌☐ Plates"],

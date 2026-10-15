@@ -93,7 +93,7 @@ pub(super) struct Before {
     panes: Vec<Shown>,
     /// The rows of the pane with the keys, under its heading when the heading takes the focus.
     rows: (Option<ItemId>, Rc<[Row]>),
-    windows: [bool; 16],
+    windows: [bool; 17],
     theme: BuiltIn,
 }
 
@@ -121,6 +121,7 @@ impl Before {
                 state.edit_dialog().is_some(),
                 state.save_as().is_some(),
                 state.quick_add().is_some(),
+                state.quick_comment().is_some(),
                 state.attachments().is_some(),
                 state.conflict().is_some(),
                 state.sidebar().is_some(),
@@ -895,7 +896,7 @@ mod tests {
             focus: focus.and_then(|index| ids.get(index).copied()),
             panes: vec![Shown::View(View::Today)],
             rows: (None, Rc::clone(&rows)),
-            windows: [false; 16],
+            windows: [false; 17],
             theme: BuiltIn::default(),
         };
         assert!(!at(Some(0)).jumped_to(&at(None)), "nothing to land on");

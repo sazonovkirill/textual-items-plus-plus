@@ -392,7 +392,7 @@ fn beside_its_list() -> (tempfile::TempDir, Harness) {
     let text = "Inbox:\n\t- Alpha task\n\t\t- one\n\t\t- two\n\t- Beta task\n";
     fs::write(&path, text).expect("the fixture is written");
     let mut harness = Harness::open(path, 100, 14);
-    harness.type_text("ckk");
+    harness.type_text("Ckk");
     harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
     (dir, harness)
 }

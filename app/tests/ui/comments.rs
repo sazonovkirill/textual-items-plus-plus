@@ -155,3 +155,66 @@ fn the_container_shown_and_a_sidebar_entry_open_their_comments() {
     let title = panel(&harness)[0].clone();
     assert!(title.starts_with("┌ Home ─"), "{title}");
 }
+
+// FR-ATT-06, FR-ATT-05, FR-VIEW-10
+#[test]
+fn c_adds_a_comment_from_a_line_at_the_bottom_without_the_panel() {
+    let (_dir, path) = file("Inbox:\n\t- Renew the passport\n");
+    let mut harness = Harness::open(path.clone(), 80, 16);
+    harness.type_text("cPhotos: done");
+    let rows = harness.rows();
+    assert_eq!(
+        rows[12..15],
+        [
+            format!("┌ Comment on Renew the passport {}┐", "─".repeat(47)),
+            format!("│ Photos: done{}│", " ".repeat(65)),
+            format!("└{}┘", "─".repeat(78)),
+        ],
+        "one line above the status line, titled with the task"
+    );
+    harness.send(&Event::Paste(" and\nsigned\n".to_owned()));
+    harness.key(KeyCode::Enter);
+    let rows = harness.rows();
+    assert!(rows[2].ends_with("\u{f0189} 1 "), "{rows:#?}");
+    assert!(rows[15].contains("comment added"), "{rows:#?}");
+    assert!(
+        !rows.iter().any(|row| row.contains('┌')),
+        "no panel is open"
+    );
+    harness.wait(1000);
+    assert_eq!(
+        read(&path),
+        "Inbox:\n\t- Renew the passport\n\t\tCOMMENTS @hidden\n\t\t\t[2026-10-05 09:30] Photos: done and signed\n"
+    );
+    harness.type_text("c");
+    harness.key(KeyCode::Esc);
+    harness.type_text("c");
+    harness.key(KeyCode::Enter);
+    harness.type_text("cdraft");
+    harness.ctrl('k');
+    harness.key(KeyCode::Esc);
+    assert!(
+        !harness.rows().iter().any(|row| row.contains('┌')),
+        "the Navigator closed it, adding nothing"
+    );
+    harness.type_text("N");
+    assert_eq!(
+        panel(&harness)[8..10],
+        [
+            "│▌Oct 5 09:30 Photos: done and signed  │",
+            "│                                      │",
+        ],
+        "Esc and an empty line add nothing"
+    );
+    harness.key(KeyCode::Esc);
+    harness.ctrl('b');
+    harness.type_text("jc");
+    let rows = harness.rows();
+    assert!(rows[15].contains("a view takes no comments"), "{rows:#?}");
+    assert!(!rows.iter().any(|row| row.contains('┌')), "nothing opens");
+    harness.type_text("kc");
+    assert!(
+        harness.rows()[12].starts_with("┌ Comment on Inbox "),
+        "the sidebar's entry takes one"
+    );
+}

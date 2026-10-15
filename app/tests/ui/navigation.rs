@@ -304,7 +304,7 @@ fn the_navigator_opened_while_editing_ends_the_edit_kept_and_takes_the_keys() {
         "which ends, kept:\n{screen}"
     );
     let mut harness = Harness::new(80, 16);
-    harness.type_text("ckkeA");
+    harness.type_text("CkkeA");
     harness.ctrl('g');
     harness.type_text("in");
     let screen = harness.screen();

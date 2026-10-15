@@ -128,6 +128,10 @@ pub enum Notice {
     InTrash,
     /// Quick Add added a task to the place with this path (FR-EDIT-07).
     QuickAdded(String),
+    /// Quick Comment added a comment (FR-ATT-06).
+    Commented,
+    /// Quick Comment was asked for on a view, which takes no comments (FR-ATT-06).
+    NoComments,
     /// Pasting in Today was refused: the clipboard holds something other than tasks (D-134).
     OnlyTasksInToday,
     /// Restoring put an item back inside the completed item with this title, so that no view
@@ -535,6 +539,10 @@ impl State {
         if let Some(quick_add) = &mut self.quick_add {
             quick_add.rematch(exact);
         }
+        self.quick_comment = self
+            .quick_comment
+            .take()
+            .and_then(|quick_comment| quick_comment.rematched(exact));
         self.edit_dialog =
             (self.edit_dialog.take()).and_then(|dialog| dialog.rematched(new, exact));
         self.context_menu = None;
@@ -1289,6 +1297,25 @@ mod tests {
             Some(state.document().inbox()),
             "back where it was"
         );
+        Ok(())
+    }
+
+    // F-FILE-06, FR-ATT-06
+    #[test]
+    fn a_reload_keeps_quick_comment_on_its_item_found_again_and_closes_it_once_gone() -> TestResult
+    {
+        let mut state = opened(&["a", "b"])?;
+        command(&mut state, Command::QuickComment);
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["z", "a"])?)),
+        );
+        assert_eq!(state.quick_comment().map(|view| view.title), Some("a"));
+        send(
+            &mut state,
+            Message::OnDisk(OnDisk::Changed(document(&["x"])?)),
+        );
+        assert!(state.quick_comment().is_none());
         Ok(())
     }
 

@@ -84,6 +84,7 @@ impl KeyGroup {
             | Command::OpenNote(_)
             | Command::OpenComments(_)
             | Command::OpenChecklist
+            | Command::QuickComment
             | Command::RenameContainer => Self::Creating,
             Command::ToggleCompleted
             | Command::SetDate(_)
@@ -144,10 +145,11 @@ impl State {
     /// Whether the app takes `command` now: while the conflict prompt is open only its own
     /// commands and quitting, while an attachments panel has the keys quitting and, while nothing
     /// in it is edited, the commands it acts on (FR-CHK-03) and those that move the keys, while a
-    /// picker, the command palette, the context menu, Go to Symbol, the date prompt, Quick Add or
-    /// the settings window is open, in edit mode or while the words to search for are typed only
-    /// global ones, while the sidebar has the keys those it takes, and otherwise any but Toggle
-    /// Evening outside Today (FR-VIEW-13) and the area keys, which only the sidebar takes (D-127).
+    /// picker, the command palette, the context menu, Go to Symbol, the date prompt, Quick Add,
+    /// Quick Comment or the settings window is open, in edit mode or while the words to search
+    /// for are typed only global ones, while the sidebar has the keys those it takes, and
+    /// otherwise any but Toggle Evening outside Today (FR-VIEW-13) and the area keys, which only
+    /// the sidebar takes (D-127).
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY

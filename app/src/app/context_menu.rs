@@ -32,6 +32,7 @@ impl Reach {
             | Command::OpenNote(super::Whose::Focused)
             | Command::OpenComments(super::Whose::Focused)
             | Command::OpenChecklist
+            | Command::QuickComment
             | Command::OpenInNewPane => Some(Self::Focused),
             Command::SetDate(_)
             | Command::StartToday

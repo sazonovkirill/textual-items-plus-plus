@@ -18,6 +18,7 @@ mod mouse;
 mod panes;
 mod picker;
 mod quick_add;
+mod quick_comment;
 mod save_as;
 mod search;
 mod settings;
@@ -53,9 +54,9 @@ use crate::{
     app::{
         self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction,
         EditDialogInput, EditDialogView, EditField, EditInput, Effect, Focus, KeyGroup, Message,
-        Opened, PaneView, Part, PickerInput, Place, QuickAddInput, Report, SaveAsInput,
-        SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol, TagEntry,
-        TagMark, TagsFor, TagsView, TextEdit, view::View,
+        Opened, PaneView, Part, PickerInput, Place, QuickAddInput, QuickCommentInput, Report,
+        SaveAsInput, SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol,
+        TagEntry, TagMark, TagsFor, TagsView, TextEdit, view::View,
     },
     domain::{ItemId, ItemKind, dates::DateKind},
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
@@ -70,6 +71,7 @@ use edit_dialog::EditDialogPanel;
 use file::File;
 use mouse::{Pointer, Target, Targets, WHEEL};
 use quick_add::QuickAddPanel;
+use quick_comment::QuickCommentPanel;
 use save_as::SaveAsPanel;
 use settings::SettingsWindow;
 use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
@@ -409,6 +411,10 @@ impl Tui {
         } else if self.state.quick_add().is_some() {
             quick_add::quick_add_input(event)
                 .map(Message::QuickAdd)
+                .or_else(|| self.global(event))
+        } else if self.state.quick_comment().is_some() {
+            quick_comment::quick_comment_input(event, self.edge.clock)
+                .map(Message::QuickComment)
                 .or_else(|| self.global(event))
         } else {
             self.keymap.press(event).map(Message::Command)
@@ -760,6 +766,10 @@ impl Tui {
             Some(Box::new(|edit| {
                 Message::QuickAdd(QuickAddInput::Edit(edit))
             }))
+        } else if self.state.quick_comment().is_some() {
+            Some(Box::new(|edit| {
+                Message::QuickComment(QuickCommentInput::Edit(edit))
+            }))
         } else if self.state.date_prompt().is_some() {
             Some(Box::new(|edit| Message::DatePrompt(DateInput::Edit(edit))))
         } else if self.state.save_as().is_some() {
@@ -942,6 +952,9 @@ impl Tui {
         if let Some(view) = self.state.quick_add() {
             return QuickAddPanel::new(&view, &self.theme).caret(prompt);
         }
+        if let Some(view) = self.state.quick_comment() {
+            return QuickCommentPanel::new(&view, &self.theme).caret(prompt);
+        }
         let sidebar = self.state.sidebar();
         let [side, room] = split(self.strip(panes), sidebar.is_some());
         if let Some(view) = sidebar.filter(|view| view.keys) {
@@ -1121,6 +1134,8 @@ impl Tui {
             SaveAsPanel::HEIGHT
         } else if self.state.quick_add().is_some() {
             QuickAddPanel::HEIGHT
+        } else if self.state.quick_comment().is_some() {
+            QuickCommentPanel::HEIGHT
         } else {
             0
         };
@@ -1189,6 +1204,8 @@ impl Tui {
             Some(Window::Picker)
         } else if self.state.quick_add().is_some() {
             Some(Window::QuickAdd)
+        } else if self.state.quick_comment().is_some() {
+            Some(Window::QuickComment)
         } else {
             None
         }
@@ -1557,7 +1574,7 @@ fn command_icon(command: Command) -> Icon {
         Command::ToggleFlagged => Icon::Flag,
         Command::ToggleEvening => Icon::Evening,
         Command::EditDescription(_) | Command::OpenNote(_) => Icon::Notes,
-        Command::OpenComments(_) => Icon::Comments,
+        Command::OpenComments(_) | Command::QuickComment => Icon::Comments,
         Command::OpenChecklist => Icon::Checklist,
         Command::ToggleCompleted => Icon::DoneTask,
         Command::SetDate(DateKind::Start)
@@ -1785,6 +1802,9 @@ impl Widget for &mut Tui {
         }
         if let Some(view) = self.state.quick_add() {
             QuickAddPanel::new(&view, &self.theme).render(prompt, buf);
+        }
+        if let Some(view) = self.state.quick_comment() {
+            QuickCommentPanel::new(&view, &self.theme).render(prompt, buf);
         }
         if let Some(view) = self.state.quick_add_picker() {
             let popup = destination_popup("Add to", &view, &self.theme, icons);

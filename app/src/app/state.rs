@@ -21,6 +21,7 @@ use super::{
     navigator::{self, Stop},
     pane::{self, Pane, PaneView, listed},
     quick_add::QuickAdd,
+    quick_comment::QuickComment,
     save_as::SaveAs,
     saving::Saving,
     settings::{Setting, Settings},
@@ -71,6 +72,8 @@ pub struct State {
     pub(super) date_prompt: Option<DatePrompt>,
     /// Quick Add, while it is open (FR-EDIT-07).
     pub(super) quick_add: Option<QuickAdd>,
+    /// Quick Comment, while it is open (FR-ATT-06).
+    pub(super) quick_comment: Option<QuickComment>,
     /// The tag picker, while it is open (FR-TAG-02, FR-TAG-04).
     pub(super) tags: Option<TagPicker>,
     /// The edit dialog, while it is open (FR-EDIT-08).
@@ -133,6 +136,7 @@ impl State {
             move_to: None,
             date_prompt: None,
             quick_add: None,
+            quick_comment: None,
             tags: None,
             edit_dialog: None,
             editing: None,
@@ -338,8 +342,8 @@ impl State {
     }
 
     /// Whether a window takes the keys: a picker, the command palette, the context menu, Go to
-    /// Symbol, the date prompt, Quick Add, the edit dialog, the settings window or the Save As
-    /// prompt is open, or the words to search for are typed.
+    /// Symbol, the date prompt, Quick Add, Quick Comment, the edit dialog, the settings window or
+    /// the Save As prompt is open, or the words to search for are typed.
     pub(super) fn window_open(&self) -> bool {
         self.navigator.is_some()
             || self.palette.is_some()
@@ -349,6 +353,7 @@ impl State {
             || self.tags.is_some()
             || self.date_prompt.is_some()
             || self.quick_add.is_some()
+            || self.quick_comment.is_some()
             || self.edit_dialog.is_some()
             || self.settings_window.is_some()
             || self.save_as.is_some()
@@ -1364,6 +1369,7 @@ impl State {
                 self.open_panel(id, Selected::Comment(Some(0)));
             }
             (Command::OpenChecklist, Some(_)) => self.notify(Notice::NoChecklist),
+            (Command::QuickComment, Some(entry)) => self.quick_comment_in_sidebar(entry),
             _ => {}
         }
         true
@@ -1704,9 +1710,9 @@ impl State {
     }
 
     /// Opens the Navigator on where the pane is, closing the command palette, the context menu, Go
-    /// to Symbol, Move to, the date prompt, Quick Add, the tag picker, the settings window and the
-    /// Save As prompt unless it is writing the file, and the edit dialog, keeping its draft as
-    /// quitting does (D-117), or closes it when it is open.
+    /// to Symbol, Move to, the date prompt, Quick Add, Quick Comment, the tag picker, the settings
+    /// window and the Save As prompt unless it is writing the file, and the edit dialog, keeping
+    /// its draft as quitting does (D-117), or closes it when it is open.
     pub(super) fn toggle_navigator(&mut self) {
         if !self.saving_as() {
             self.save_as = None;
@@ -1719,6 +1725,7 @@ impl State {
         self.move_to = None;
         self.date_prompt = None;
         self.quick_add = None;
+        self.quick_comment = None;
         self.tags = None;
         self.keep_edit_dialog();
         self.navigator = match self.navigator {
@@ -1864,6 +1871,7 @@ pub(super) fn sidebar_takes(command: Command) -> bool {
             | Command::OpenNote(_)
             | Command::OpenComments(_)
             | Command::OpenChecklist
+            | Command::QuickComment
     ) || sidebar_passes(command)
 }
 

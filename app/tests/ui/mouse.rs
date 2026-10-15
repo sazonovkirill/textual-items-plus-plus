@@ -265,7 +265,7 @@ fn a_click_on_an_entry_of_the_edit_dialogs_tag_picker_chooses_it() {
 #[test]
 fn the_wheel_over_the_attachments_panel_with_the_keys_scrolls_it() {
     let mut harness = Harness::new(80, 16);
-    harness.key(KeyCode::Char('c'));
+    harness.key(KeyCode::Char('C'));
     let selected = |harness: &Harness| -> String {
         let rows = harness.rows();
         rows.iter()

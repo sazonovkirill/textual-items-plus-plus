@@ -20,7 +20,9 @@ use super::{
     date_prompt, edit_dialog,
     edit_keys::{CHECKLIST, COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
     keymap::{Key, key_label},
-    picker, quick_add, save_as, search, settings, text_keys,
+    picker, quick_add,
+    quick_comment::{self, CommentKey},
+    save_as, search, settings, text_keys,
 };
 use crate::app::{
     AttachmentsInput, DateInput, Direction, EditDialogInput, EditInput, Motion, Part, PickerInput,
@@ -52,6 +54,8 @@ pub(super) enum Window {
     SaveAs,
     /// The Quick Add panel, while its picker is closed.
     QuickAdd,
+    /// The Quick Comment panel.
+    QuickComment,
     /// The settings window.
     Settings,
     /// Typing the words to search for.
@@ -72,6 +76,16 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
         Window::EditDialog => ("Edit Dialog", named(edit_dialog::KEYS, dialog_name)),
         Window::SaveAs => ("Save As", named(save_as::KEYS, save_as_name)),
         Window::QuickAdd => ("Quick Add", named(quick_add::KEYS, quick_add_name)),
+        Window::QuickComment => (
+            "Quick Comment",
+            named(quick_comment::KEYS, |key| {
+                match key {
+                    CommentKey::Add => "Add Comment",
+                    CommentKey::Cancel => "Cancel",
+                }
+                .to_owned()
+            }),
+        ),
         Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
         Window::Search => ("Search", named(search::KEYS, search_name)),
         Window::Attachments => (
@@ -547,7 +561,7 @@ mod tests {
         assert_eq!(save_as_name(SaveAsInput::Edit(edit)), "Select All");
     }
 
-    // FR-KEY-03, FR-ATT-04, FR-EDIT-08
+    // FR-KEY-03, FR-ATT-04, FR-EDIT-08, FR-ATT-06
     #[test]
     fn each_window_lists_its_own_keys_then_the_text_keys_it_leaves() {
         let headings = |window| -> Vec<_> {
@@ -581,6 +595,19 @@ mod tests {
                     "Quick Add",
                     vec![
                         ("Add Task".to_owned(), "Enter".to_owned()),
+                        ("Cancel".to_owned(), "Esc".to_owned())
+                    ]
+                ),
+                window_keys(Window::DatePrompt)[1].clone(),
+            ]
+        );
+        assert_eq!(
+            window_keys(Window::QuickComment),
+            [
+                (
+                    "Quick Comment",
+                    vec![
+                        ("Add Comment".to_owned(), "Enter".to_owned()),
                         ("Cancel".to_owned(), "Esc".to_owned())
                     ]
                 ),

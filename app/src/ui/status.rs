@@ -130,6 +130,8 @@ fn kept(state: &State) -> String {
         Notice::NoWeather => "no weather in summer".to_owned(),
         Notice::SavedAs(path) => format!("saved as {}", path.display()),
         Notice::QuickAdded(place) => format!("added to {place}"),
+        Notice::Commented => "comment added".to_owned(),
+        Notice::NoComments => "a view takes no comments".to_owned(),
         Notice::OnlyTasksInToday => "only tasks paste in Today".to_owned(),
         Notice::RestoredIntoCompleted(title) => {
             format!("restored into {title}, which is completed; uncomplete it to see it")

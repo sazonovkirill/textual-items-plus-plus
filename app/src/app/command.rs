@@ -78,6 +78,8 @@ pub enum Command {
     OpenComments(Whose),
     /// Open the attachments panel on the focused task's checklist (FR-ATT-02, FR-CHK-02).
     OpenChecklist,
+    /// Open Quick Comment, which adds the comment typed in it to the focused item (FR-ATT-06).
+    QuickComment,
     /// Open the date prompt for the selected items' start or due date (FR-DATE-02, FR-OPS-06).
     SetDate(DateKind),
     /// Set the selected items' start date to today (FR-KEY-06, FR-OPS-06).
@@ -577,6 +579,11 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
+        command: Command::QuickComment,
+        title: "Quick Comment",
+        context: Context::Navigate,
+    },
+    Entry {
         command: Command::SetDate(DateKind::Start),
         title: "Set Start Date",
         context: Context::Navigate,
@@ -980,6 +987,7 @@ mod tests {
             Command::OpenComments(Whose::Focused),
             Command::OpenComments(Whose::Shown),
             Command::OpenChecklist,
+            Command::QuickComment,
             Command::Delete,
             Command::Restore,
             Command::EmptyTrash,
