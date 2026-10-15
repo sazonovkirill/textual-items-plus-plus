@@ -121,22 +121,23 @@ pub(super) fn reorder(
     Transaction::new(ops)
 }
 
-/// The place in Today's order for a new item to take on `side` of the row of `beside`, which a
-/// pane shows in the groups `shown`, and the transaction that makes room for it there (D-108,
-/// D-131, D-132). When `beside` has no place, it and the rows before it in its group that have
-/// none take places first, in the order shown, after every place given, so that no row moves;
-/// `None` when it has none and is not shown.
+/// The first of the `count` places in Today's order for new items to take, in order, on `side`
+/// of the row of `beside`, which a pane shows in the groups `shown`, and the transaction that
+/// makes room for them there (D-108, D-131, D-132). When `beside` has no place, it and the rows
+/// before it in its group that have none take places first, in the order shown, after every place
+/// given, so that no row moves; `None` when it has none and is not shown.
 #[must_use]
 pub(super) fn place_beside(
     document: &Document,
     shown: &[Group],
     beside: ItemId,
     side: Side,
+    count: usize,
 ) -> Option<(usize, Transaction)> {
     let below = usize::from(side == Side::Below);
     if let Some(place) = place(document, beside) {
         let at = place + below;
-        return Some((at, make_room(document, at)));
+        return Some((at, make_room(document, at, count)));
     }
     let group = shown
         .iter()
@@ -157,19 +158,21 @@ pub(super) fn place_beside(
     let ops = before
         .into_iter()
         .zip(next..)
-        .filter_map(|(id, place)| placing(document, id, if place < at { place } else { place + 1 }))
+        .filter_map(|(id, place)| {
+            placing(document, id, if place < at { place } else { place + count })
+        })
         .collect();
     Some((at, Transaction::new(ops)))
 }
 
-/// The transaction that makes room at `at` in the order the user gave Today, for an item to
-/// take that place, by moving each item at it or after it one place on (D-108).
-fn make_room(document: &Document, at: usize) -> Transaction {
+/// The transaction that makes room at `at` in the order the user gave Today, for `count` items to
+/// take the places from it on, by moving each item at it or after it `count` places on (D-108).
+fn make_room(document: &Document, at: usize, count: usize) -> Transaction {
     let ops = placed(document)
         .into_iter()
         .filter_map(|id| {
             let place = place(document, id).filter(|&place| place >= at)?;
-            placing(document, id, place + 1)
+            placing(document, id, place + count)
         })
         .collect();
     Transaction::new(ops)

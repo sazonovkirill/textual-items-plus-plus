@@ -443,3 +443,50 @@ fn a_task_added_beside_a_row_without_a_place_in_today_shows_beside_it() {
         "one step to undo"
     );
 }
+
+// FR-VIEW-06, FR-OPS-05, D-44, D-134
+#[test]
+fn tasks_pasted_in_today_show_where_a_new_task_does() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let path = dir.path().join("todo.taskpaper");
+    let text = "Inbox:\n\t- I @start(2026-10-05)\nWork:\n\t- w1 @start(2026-10-05)\n\t- w2 @start(2026-10-05)\n\t\t- sub\n";
+    std::fs::write(&path, text).expect("written");
+    let mut harness = Harness::open(path.clone(), 60, 20);
+    harness.type_text("gtj");
+    harness.send(&crossterm::event::Event::Paste(
+        "Buy bread\nOld @due(2026-10-01)\n".to_owned(),
+    ));
+    assert_eq!(
+        titles(&harness),
+        ["I", "w1", "Buy bread", "Old", "w2"],
+        "below w1, in order"
+    );
+    harness.type_text("jygg");
+    harness.press(KeyCode::Char('v'), KeyModifiers::ALT);
+    assert_eq!(
+        titles(&harness),
+        ["w2", "I", "w1", "Buy bread", "Old", "w2"],
+        "Alt+V pastes above"
+    );
+    harness.wait(1000);
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("saved"),
+        "Inbox:\n\t- w2 @start(2026-10-05)\n\t\t- sub\n\t- I @start(2026-10-05)\n\t- Buy bread @start(2026-10-05)\n\t- Old @due(2026-10-01)\nWork:\n\t- w1 @start(2026-10-05)\n\t- w2 @start(2026-10-05)\n\t\t- sub\n",
+        "in the Inbox with what they hold, starting today unless Today lists them by their dates"
+    );
+    harness.type_text("z");
+    assert_eq!(
+        titles(&harness),
+        ["I", "w1", "Buy bread", "Old", "w2"],
+        "one step to undo"
+    );
+    harness.send(&crossterm::event::Event::Paste(
+        "Errands:\n\t- milk\n".to_owned(),
+    ));
+    assert_eq!(titles(&harness), ["I", "w1", "Buy bread", "Old", "w2"]);
+    assert!(
+        harness.screen().contains("only tasks paste in Today"),
+        "says why nothing was pasted:\n{}",
+        harness.screen()
+    );
+}

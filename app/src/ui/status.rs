@@ -125,6 +125,7 @@ fn kept(state: &State) -> String {
         Notice::NoWeather => "no weather in summer".to_owned(),
         Notice::SavedAs(path) => format!("saved as {}", path.display()),
         Notice::QuickAdded(place) => format!("added to {place}"),
+        Notice::OnlyTasksInToday => "only tasks paste in Today".to_owned(),
         Notice::TagInTitle => format!(
             "a title has no word starting with @; add tags with {}",
             keymap::written(Command::Tags).unwrap_or_default()

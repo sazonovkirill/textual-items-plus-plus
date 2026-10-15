@@ -144,6 +144,31 @@ pub(super) fn paste(
     (!pasted.is_empty()).then(|| (Transaction::new(ops), shown))
 }
 
+/// The items `branches` put in at `place`, as its parent and the index of the first of them
+/// there, in order, and the transaction that puts them there. Nothing pasted goes in the Trash
+/// (D-113).
+pub(super) fn insert(
+    document: &mut Document,
+    (parent, index): (ItemId, usize),
+    branches: &[Branch],
+) -> (Vec<ItemId>, Transaction) {
+    let (pasted, ops) = branches
+        .iter()
+        .zip(index..)
+        .map(|(branch, index)| {
+            let subtree = document.graft(&trash::live(branch));
+            let id = subtree.id();
+            let insert = Op::Insert {
+                parent: Some(parent),
+                index,
+                subtree,
+            };
+            (id, insert)
+        })
+        .unzip();
+    (pasted, Transaction::new(ops))
+}
+
 /// What the top node of `branch` is: `None` for text kept as read.
 fn kind(branch: &Branch) -> Option<ItemKind> {
     branch.node.item().map(|item| item.kind)

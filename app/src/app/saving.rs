@@ -125,6 +125,8 @@ pub enum Notice {
     InTrash,
     /// Quick Add added a task to the place with this path (FR-EDIT-07).
     QuickAdded(String),
+    /// Pasting in Today was refused: the clipboard holds something other than tasks (D-134).
+    OnlyTasksInToday,
 }
 
 impl Notice {
@@ -142,6 +144,7 @@ impl Notice {
                 | Self::NotLater
                 | Self::NotAProject
                 | Self::InTrash
+                | Self::OnlyTasksInToday
         )
     }
 }

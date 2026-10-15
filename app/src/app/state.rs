@@ -601,13 +601,19 @@ impl State {
 
     /// Pastes `branches` on `side` of the focused row, as one step to undo, focusing the last
     /// one pasted the pane shows. Nothing is pasted when one of them can go nowhere near, while
-    /// the sidebar has the keys, or in a view, which has no place to paste into.
+    /// the sidebar has the keys, or in a view other than Today, which has no place to paste into.
     pub(super) fn paste(&mut self, side: Side, branches: &[Branch]) {
         if self.panel_has_keys() {
             self.paste_checklist(side, branches);
             return;
         }
-        let Some(container) = self.container().filter(|_| !self.sidebar.has_keys()) else {
+        if self.sidebar.has_keys() {
+            return;
+        }
+        let Some(container) = self.container() else {
+            if self.shown() == Shown::View(View::Today) {
+                self.paste_today(side, branches);
+            }
             return;
         };
         let target = clipboard::Target {
@@ -618,6 +624,59 @@ impl State {
         };
         if let Some((transaction, shown)) = clipboard::paste(&mut self.document, target, branches) {
             self.change_focusing(transaction, shown.or(self.pane().selection.focused()));
+        }
+    }
+
+    /// Pastes `branches`, which must all be tasks, where a task added on `side` of the focused row
+    /// of Today goes, in order, as one step to undo, focusing the last one Today shows; each that
+    /// Today would not list by its own dates starts today (D-134).
+    fn paste_today(&mut self, side: Side, branches: &[Branch]) {
+        let tasks: Option<Vec<&Item>> = branches
+            .iter()
+            .map(|branch| {
+                branch
+                    .node
+                    .item()
+                    .filter(|item| item.kind == ItemKind::Task)
+            })
+            .collect();
+        let Some(tasks) = tasks else {
+            self.notify(Notice::OnlyTasksInToday);
+            return;
+        };
+        if tasks.is_empty() {
+            return;
+        }
+        let beside = self.beside_in_today(side, tasks.len());
+        let come = |date: Option<Date>| date.is_some_and(|date| date <= self.today);
+        let branches: Vec<Branch> = branches
+            .iter()
+            .zip(tasks)
+            .zip(0..)
+            .map(|((branch, task), offset)| Branch {
+                node: Node::Item(Item {
+                    start: if come(task.start) || come(task.due) {
+                        task.start
+                    } else {
+                        Some(self.today)
+                    },
+                    evening: beside.evening,
+                    today_place: beside.place.map(|place| place + offset),
+                    ..task.clone()
+                }),
+                children: branch.children.clone(),
+            })
+            .collect();
+        let (pasted, inserts) = clipboard::insert(&mut self.document, beside.at, &branches);
+        let transaction = Transaction::new([beside.room.ops(), inserts.ops()].concat());
+        self.change(transaction);
+        let rows = self.listed();
+        if let Some(&shown) = pasted
+            .iter()
+            .rev()
+            .find(|&&id| rows.iter().any(|row| row.id() == id))
+        {
+            self.pane_mut().selection.focus(Some(shown));
         }
     }
 
@@ -871,11 +930,23 @@ impl State {
     }
 
     /// Adds an empty task that starts today to the Inbox, which Today then lists, focuses it and
-    /// starts editing its title (D-128). It goes on `side` of the focused row when that is an
-    /// Inbox task, and else at that end of the Inbox. Today shows it on `side` of the focused
-    /// row, in that row's part, the Evening when that row is in it, and at the place beside it in
-    /// the order the user gave Today (D-131, D-132).
+    /// starts editing its title, on `side` of the focused row (D-128, D-131, D-132).
     fn new_task_today(&mut self, side: Side) {
+        let beside = self.beside_in_today(side, 1);
+        let item = Item {
+            start: Some(self.today),
+            evening: beside.evening,
+            today_place: beside.place,
+            ..self.new_item(ItemKind::Task)
+        };
+        self.add_task(item, beside.at, &beside.room);
+    }
+
+    /// Where `count` tasks added or pasted in Today on `side` of the focused row go. In the
+    /// Inbox, on `side` of that row when it is an Inbox task, and else at that end (D-128); in
+    /// Today, on `side` of that row in its part, the Evening when that row is in it, at the places
+    /// beside it in the order the user gave Today (D-131, D-132).
+    fn beside_in_today(&self, side: Side, count: usize) -> BesideInToday {
         let inbox = self.document.inbox();
         let below = usize::from(side == Side::Below);
         let focused = self.pane().selection.focused();
@@ -883,21 +954,20 @@ impl State {
             Some((parent, index)) if parent == Some(inbox) => index + below,
             _ => below * self.document.children(inbox).len(),
         };
-        let beside = focused
+        let evening = focused
             .and_then(|id| self.document.node(id))
-            .and_then(Node::item);
-        let place =
-            focused.and_then(|id| today::place_beside(&self.document, &self.groups(), id, side));
-        let (today_place, room) = place.unzip();
-        let item = Item {
-            start: Some(self.today),
-            evening: beside
-                .filter(|item| item.in_evening(self.today))
-                .map(|_| self.today),
-            today_place,
-            ..self.new_item(ItemKind::Task)
-        };
-        self.add_task(item, (inbox, index), &room.unwrap_or_default());
+            .and_then(Node::item)
+            .filter(|item| item.in_evening(self.today))
+            .map(|_| self.today);
+        let (place, room) = focused
+            .and_then(|id| today::place_beside(&self.document, &self.groups(), id, side, count))
+            .unzip();
+        BesideInToday {
+            at: (inbox, index),
+            evening,
+            place,
+            room: room.unwrap_or_default(),
+        }
     }
 
     /// Adds an empty task at `place`, as its parent and its index there, focuses it and starts
@@ -1646,6 +1716,18 @@ impl State {
         let (document, today) = (&self.document, self.today);
         self.pane.show(document, today, shown, focused);
     }
+}
+
+/// Where tasks added or pasted in Today go (D-128, D-131, D-132).
+struct BesideInToday {
+    /// Their parent, the Inbox, and the index of the first of them there.
+    at: (ItemId, usize),
+    /// The Evening they join, if any.
+    evening: Option<Date>,
+    /// The first of their places in the order the user gave Today, if any.
+    place: Option<usize>,
+    /// The change that makes room for them in that order.
+    room: Transaction,
 }
 
 /// Where the keys can be: the sidebar, or the list or the attachments panel of the pane at a
@@ -3131,6 +3213,43 @@ mod tests {
         Ok(())
     }
 
+    // FR-VIEW-06, FR-VIEW-13, FR-OPS-05, D-134
+    #[test]
+    fn tasks_pasted_in_today_join_the_focused_rows_part_and_nothing_else_pastes_there()
+    -> Result<(), PlacementError> {
+        let (mut state, [a, b, c]) = today_of_three()?;
+        state.pane_mut().selection.focus(Some(b));
+        state.toggle_evening();
+        let branch = |kind, title| Branch {
+            node: Node::Item(Item::new(kind, title)),
+            children: Vec::new(),
+        };
+        state.paste(
+            Side::Above,
+            &[branch(ItemKind::Task, "X"), branch(ItemKind::Task, "Y")],
+        );
+        let rows = row_ids(&state);
+        assert_eq!(rows[..2], [a, c]);
+        let titles: Vec<_> = rows[2..]
+            .iter()
+            .filter_map(|&id| title(&state, id))
+            .collect();
+        assert_eq!(titles, ["X", "Y", "B"], "in the Evening, above B");
+        assert_eq!(state.selection().focused(), rows.get(3).copied());
+        let before = state.document().clone();
+        state.paste(
+            Side::Below,
+            &[branch(ItemKind::Task, "Z"), branch(ItemKind::Section, "S")],
+        );
+        assert_eq!(state.document(), &before);
+        assert_eq!(state.notice(), Some(&Notice::OnlyTasksInToday));
+        state.paste(Side::Below, &[]);
+        state.go(Go::View(View::Upcoming));
+        state.paste(Side::Below, &[branch(ItemKind::Task, "Z")]);
+        assert_eq!(state.document(), &before, "nor in another view");
+        Ok(())
+    }
+
     // FR-VIEW-06, D-108, D-128, D-131
     #[test]
     fn a_task_added_in_a_reordered_today_takes_the_place_beside_the_focused_row()
@@ -3183,7 +3302,7 @@ mod tests {
             state.add(kind, End::Bottom);
         }
         let branch = Branch {
-            node: Node::Item(Item::new(ItemKind::Task, "pasted")),
+            node: Node::Item(Item::new(ItemKind::Section, "pasted")),
             children: Vec::new(),
         };
         state.paste(Side::Below, &[branch]);
