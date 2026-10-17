@@ -73,7 +73,7 @@ impl KeyGroup {
             | Command::GoToSymbol
             | Command::Search => Self::Going,
             Command::EditTitle
-            | Command::QuickAdd(_)
+            | Command::QuickAdd
             | Command::New(_)
             | Command::AddTask(_)
             | Command::AddSection(_)

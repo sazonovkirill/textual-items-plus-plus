@@ -2,7 +2,7 @@
 //! given in. A frontend binds its own keys to these commands and lists them in its palette and
 //! shortcuts panel.
 
-use super::{Direction, End, Focus, Prefill, Side, view::View};
+use super::{Direction, End, Focus, Side, view::View};
 use crate::domain::dates::DateKind;
 
 /// A command: one user intent, whatever key, menu or palette gives it.
@@ -48,8 +48,8 @@ pub enum Command {
     /// Show the pane's search results and type the words to search for (FR-SRCH-01).
     Search,
     /// Open Quick Add, which adds a task to the Inbox or a place chosen in it, with the dates its
-    /// words name, with what this prefills (FR-EDIT-07).
-    QuickAdd(Prefill),
+    /// words name (FR-EDIT-07).
+    QuickAdd,
     /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
     EditTitle,
     /// Add a task on this side of the focused row, the first of a section below its heading, a
@@ -375,18 +375,8 @@ pub const REGISTRY: &[Entry] = &[
         context: Context::Navigate,
     },
     Entry {
-        command: Command::QuickAdd(Prefill::Nothing),
+        command: Command::QuickAdd,
         title: "Quick Add",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::QuickAdd(Prefill::StartToday),
-        title: "Quick Add Starting Today",
-        context: Context::Navigate,
-    },
-    Entry {
-        command: Command::QuickAdd(Prefill::Inbox),
-        title: "Quick Add to Inbox",
         context: Context::Navigate,
     },
     Entry {
@@ -962,9 +952,7 @@ mod tests {
         .flat_map(|add| [add(End::Bottom), add(End::Top)]);
         let added = beside.chain(at_ends);
         let others = [
-            Command::QuickAdd(Prefill::Nothing),
-            Command::QuickAdd(Prefill::StartToday),
-            Command::QuickAdd(Prefill::Inbox),
+            Command::QuickAdd,
             Command::EditTitle,
             Command::EditDescription(Whose::Focused),
             Command::EditDescription(Whose::Shown),

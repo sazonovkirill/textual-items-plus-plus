@@ -15,17 +15,6 @@ use crate::domain::{
     dates::{self, DateKind, Found},
 };
 
-/// What Quick Add opens with besides an empty text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Prefill {
-    /// Nothing: the task goes to the Inbox unless another place is chosen with `/`.
-    Nothing,
-    /// A start date of today, which a start date typed replaces.
-    StartToday,
-    /// The Inbox, chosen as if with `/`.
-    Inbox,
-}
-
 /// What the user does in the open panel; its picker takes [`PickerInput`]s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuickAddInput {
@@ -55,13 +44,11 @@ pub struct QuickAddView<'a> {
     pub place: Vec<String>,
 }
 
-/// The open panel: the text, the place chosen, the start date it opened with and the picker of
-/// places while `/` has it open.
+/// The open panel: the text, the place chosen and the picker of places while `/` has it open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct QuickAdd {
     field: TextField,
     place: Option<ItemId>,
-    start: Option<Date>,
     picker: Option<Picker<Destination>>,
 }
 
@@ -142,7 +129,7 @@ impl State {
         Some(QuickAddView {
             field: &quick_add.field,
             title: without(text, &found),
-            start: date(&found, DateKind::Start).or(quick_add.start),
+            start: date(&found, DateKind::Start),
             due: date(&found, DateKind::Due),
             place: container::path(&self.document, place)
                 .into_iter()
@@ -158,12 +145,11 @@ impl State {
         self.quick_add.as_ref()?.picker.as_ref().map(Picker::view)
     }
 
-    /// Opens Quick Add with what `prefill` names, its dates read on `today`.
-    pub(super) fn open_quick_add(&mut self, prefill: Prefill, today: Date) {
+    /// Opens Quick Add on an empty text, its task bound for the Inbox.
+    pub(super) fn open_quick_add(&mut self) {
         self.quick_add = Some(QuickAdd {
             field: TextField::new(String::new()),
-            place: (prefill == Prefill::Inbox).then(|| self.document.inbox()),
-            start: (prefill == Prefill::StartToday).then_some(today),
+            place: None,
             picker: None,
         });
     }
@@ -312,14 +298,14 @@ mod tests {
     #[test]
     fn the_view_names_the_title_dates_and_place_the_task_gets() -> Result<(), PlacementError> {
         let (mut state, _, _) = state()?;
-        state.open_quick_add(Prefill::StartToday, TODAY);
-        typed(&mut state, "  Call  due fri  ");
+        state.open_quick_add();
+        typed(&mut state, "  Call tomorrow due fri  ");
         let view = state.quick_add().ok_or(PlacementError::DoesNotFit)?;
         assert_eq!(view.title, "Call");
-        assert_eq!(view.start, Some(TODAY), "prefilled");
+        assert_eq!(view.start, Some(date(2026, 10, 15)));
         assert_eq!(view.due, Some(date(2026, 10, 16)));
         assert_eq!(view.place, ["Inbox"]);
-        assert_eq!(view.found.len(), 1);
+        assert_eq!(view.found.len(), 2);
         Ok(())
     }
 
@@ -328,7 +314,7 @@ mod tests {
     fn the_picker_moves_its_focus_edits_its_query_and_chooses_in_a_new_pane_alike()
     -> Result<(), PlacementError> {
         let (mut state, site, blog) = state()?;
-        state.open_quick_add(Prefill::Nothing, TODAY);
+        state.open_quick_add();
         pick(&mut state, PickerInput::Next);
         assert_eq!(text(&state).as_deref(), Some(""), "no picker, no change");
         typed(&mut state, "/");
@@ -380,7 +366,7 @@ mod tests {
     #[test]
     fn a_query_typed_back_starts_no_word_with_at() -> Result<(), PlacementError> {
         let (mut state, _, _) = state()?;
-        state.open_quick_add(Prefill::Nothing, TODAY);
+        state.open_quick_add();
         typed(&mut state, "/i @");
         assert!(state.quick_add_picker().is_none(), "nothing matches `i @`");
         assert_eq!(text(&state).as_deref(), Some("/i "));
@@ -392,7 +378,7 @@ mod tests {
     #[test]
     fn esc_or_backspace_closes_the_picker_and_a_tag_is_refused() -> Result<(), PlacementError> {
         let (mut state, _, _) = state()?;
-        state.open_quick_add(Prefill::Nothing, TODAY);
+        state.open_quick_add();
         typed(&mut state, "/");
         pick(&mut state, PickerInput::Edit(TextEdit::DeleteBackward));
         assert!(state.quick_add_picker().is_none());
@@ -418,7 +404,7 @@ mod tests {
     #[test]
     fn enter_adds_nothing_without_a_title_and_esc_closes_the_panel() -> Result<(), PlacementError> {
         let (mut state, _, _) = state()?;
-        state.open_quick_add(Prefill::Nothing, TODAY);
+        state.open_quick_add();
         typed(&mut state, "tomorrow");
         let before = state.clone();
         input(&mut state, QuickAddInput::Add);
@@ -433,7 +419,7 @@ mod tests {
     #[test]
     fn a_task_goes_last_into_the_place_chosen_as_a_does() -> Result<(), PlacementError> {
         let (mut state, site, _) = state()?;
-        state.open_quick_add(Prefill::Nothing, TODAY);
+        state.open_quick_add();
         typed(&mut state, "/Site");
         pick(&mut state, PickerInput::Choose);
         typed(&mut state, "Ship it");
@@ -453,7 +439,7 @@ mod tests {
     #[test]
     fn a_reload_keeps_the_place_found_again_and_closes_the_picker() -> Result<(), PlacementError> {
         let (mut state, site, blog) = state()?;
-        state.open_quick_add(Prefill::Inbox, TODAY);
+        state.open_quick_add();
         let mut quick_add = state.quick_add.take().ok_or(PlacementError::DoesNotFit)?;
         quick_add.place = Some(site);
         quick_add.picker = Some(Picker::new(Vec::new()));
@@ -474,7 +460,7 @@ mod tests {
         input(&mut state, QuickAddInput::Add);
         pick(&mut state, PickerInput::Choose);
         assert_eq!(state, before);
-        state.open_quick_add(Prefill::Nothing, TODAY);
+        state.open_quick_add();
         state.toggle_navigator();
         assert!(state.quick_add().is_none());
         Ok(())

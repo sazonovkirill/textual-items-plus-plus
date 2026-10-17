@@ -1795,7 +1795,7 @@ fn sidebar_passes(command: Command) -> bool {
             | Command::Palette
             | Command::ContextMenu
             | Command::Search
-            | Command::QuickAdd(_)
+            | Command::QuickAdd
             | Command::Sidebar
             | Command::FocusLeft
             | Command::FocusRight

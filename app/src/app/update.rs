@@ -243,7 +243,7 @@ fn run(state: &mut State, command: Command, today: Date, asked: Option<&Notice>)
         Command::ContextMenu => state.open_context_menu(),
         Command::GoToSymbol => state.open_go_to_symbol(),
         Command::Search => state.open_search(),
-        Command::QuickAdd(prefill) => state.open_quick_add(prefill, today),
+        Command::QuickAdd => state.open_quick_add(),
         Command::EditTitle => state.edit_title(),
         Command::New(side) => state.add_beside(side),
         Command::AddTask(end) => state.add(ItemKind::Task, end),

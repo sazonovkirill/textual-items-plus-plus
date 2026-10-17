@@ -1,4 +1,4 @@
-//! Quick Add: the panel `qq`, `qt` and `qi` open, the dates found in its text, the place chosen
+//! Quick Add: the panel `q` opens, the dates found in its text, the place chosen
 //! with `/` and the task it adds (FR-EDIT-07).
 
 use std::{fs, path::PathBuf};
@@ -48,9 +48,9 @@ fn saved(harness: &mut Harness, path: &PathBuf) -> String {
 
 // FR-EDIT-07
 #[test]
-fn qq_adds_a_task_with_its_dates_to_the_project_chosen_with_a_slash() {
+fn q_adds_a_task_with_its_dates_to_the_project_chosen_with_a_slash() {
     let (_dir, path, mut harness) = on_file(FILE);
-    harness.type_text("qq");
+    harness.type_text("q");
     assert_eq!(
         panel(&harness),
         [
@@ -88,7 +88,7 @@ fn qq_adds_a_task_with_its_dates_to_the_project_chosen_with_a_slash() {
 #[test]
 fn next_week_is_the_start_and_due_in_a_month_the_due_date() {
     let (_dir, path, mut harness) = on_file(FILE);
-    harness.type_text("qqDo something next week due in a month /Blog");
+    harness.type_text("qDo something next week due in a month /Blog");
     harness.key(KeyCode::Enter);
     assert_eq!(
         panel(&harness)[..3],
@@ -109,7 +109,7 @@ fn next_week_is_the_start_and_due_in_a_month_the_due_date() {
 #[test]
 fn a_date_of_more_than_four_words_is_read_whole() {
     let (_dir, path, mut harness) = on_file(FILE);
-    harness.type_text("qqPlan in a month +1 day");
+    harness.type_text("qPlan in a month +1 day");
     assert_eq!(panel(&harness)[2], " Start Fri 6 Nov 2026");
     harness.key(KeyCode::Enter);
     assert!(
@@ -119,18 +119,18 @@ fn a_date_of_more_than_four_words_is_read_whole() {
 
 // FR-EDIT-07
 #[test]
-fn qt_starts_the_task_today_unless_another_start_is_typed_and_qi_adds_to_the_inbox() {
+fn without_a_place_chosen_the_task_goes_to_the_inbox_with_the_dates_typed() {
     let (_dir, path, mut harness) = on_file(FILE);
-    harness.type_text("qtCall mom");
+    harness.type_text("qCall mom today");
     assert_eq!(panel(&harness)[2], " Start Mon 5 Oct 2026");
     harness.key(KeyCode::Enter);
-    harness.type_text("qtCall dad friday due sat");
+    harness.type_text("qCall dad friday due sat");
     assert_eq!(
         panel(&harness)[2],
         " Start Fri 9 Oct 2026 · Due Sat 10 Oct 2026"
     );
     harness.key(KeyCode::Enter);
-    harness.type_text("qiPay rent");
+    harness.type_text("qPay rent");
     assert_eq!(
         panel(&harness)[..3],
         [
@@ -150,7 +150,7 @@ fn qt_starts_the_task_today_unless_another_start_is_typed_and_qi_adds_to_the_inb
 #[test]
 fn a_slash_that_finds_nothing_or_is_dismissed_stays_text() {
     let (_dir, path, mut harness) = on_file(FILE);
-    harness.type_text("qqRead a/b /zz");
+    harness.type_text("qRead a/b /zz");
     assert_eq!(panel(&harness)[1], " Read a/b /zz", "nothing matches zz");
     harness.type_text(" /bl");
     harness.key(KeyCode::Esc);
@@ -181,7 +181,7 @@ fn a_slash_that_finds_nothing_or_is_dismissed_stays_text() {
 #[test]
 fn the_panel_types_no_tag_adds_nothing_without_a_title_and_esc_closes_it() {
     let (_dir, path, mut harness) = on_file(FILE);
-    harness.type_text("qq@tomorrow");
+    harness.type_text("q@tomorrow");
     assert_eq!(
         panel(&harness)[1],
         " tomorrow",
@@ -204,14 +204,14 @@ fn the_panel_types_no_tag_adds_nothing_without_a_title_and_esc_closes_it() {
 fn the_shortcuts_panel_lists_the_panel_keys_and_quick_add_works_from_the_sidebar_and_closes_for_the_navigator()
  {
     let mut harness = Harness::launched(120, 30);
-    harness.type_text("?qq");
+    harness.type_text("?q");
     let screen = harness.screen();
     assert!(screen.contains("Quick Add"));
     assert!(screen.contains("Add Task"));
     harness.key(KeyCode::Esc);
     harness.type_text("?");
     harness.ctrl('b');
-    harness.type_text("qi");
+    harness.type_text("q");
     assert!(harness.screen().contains("Quick Add → Inbox"));
     harness.ctrl('k');
     let screen = harness.screen();
@@ -226,7 +226,7 @@ fn the_shortcuts_panel_lists_the_panel_keys_and_quick_add_works_from_the_sidebar
 #[test]
 fn the_caret_is_in_the_panel_or_the_picker_and_a_reload_keeps_the_place() {
     let (_dir, path, mut harness) = on_file(FILE);
-    harness.type_text("qqab");
+    harness.type_text("qab");
     let screen = Rect::new(0, 0, 80, 24);
     assert_eq!(harness.tui.cursor(screen), Some(Position::new(4, 20)));
     harness.type_text(" /bl");

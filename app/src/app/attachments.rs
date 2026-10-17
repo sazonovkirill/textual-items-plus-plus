@@ -542,8 +542,8 @@ mod tests {
 
     use super::*;
     use crate::app::{
-        Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, Prefill,
-        QuickAddInput, TextEdit, autosave, update, view::View,
+        Direction, EditInput, Effect, End, Go, Message, Motion, Opened, Part, QuickAddInput,
+        TextEdit, autosave, update, view::View,
     };
     use crate::domain::{Completion, PlacementError};
 
@@ -1298,7 +1298,7 @@ mod tests {
         let (mut state, a, _) = two_tasks()?;
         give(&mut state, Command::OpenNote(Whose::Focused));
         give(&mut state, Command::FocusLeft);
-        give(&mut state, Command::QuickAdd(Prefill::Nothing));
+        give(&mut state, Command::QuickAdd);
         state.set_covered(0, true);
         assert_eq!(keys(&state), Some((0, false)), "Quick Add keeps the keys");
         update(&mut state, Message::QuickAdd(QuickAddInput::Cancel), TODAY);

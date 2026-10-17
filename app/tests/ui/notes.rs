@@ -416,7 +416,7 @@ fn a_window_keeps_the_keys_when_the_panel_comes_to_cover_its_list() {
             "Alpha taskjd",
         ),
         ("the date prompt", |harness| harness.type_text("ms"), " jd"),
-        ("Quick Add", |harness| harness.type_text("qq"), "jd"),
+        ("Quick Add", |harness| harness.type_text("q"), "jd"),
         ("the context menu", |harness| harness.ctrl('\\'), "jd"),
         ("the command palette", |harness| harness.ctrl('p'), "jd"),
     ];

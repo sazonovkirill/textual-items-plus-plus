@@ -70,7 +70,7 @@ pub use moving::{Direction, Refusal};
 pub use navigator::{Place, Stop};
 pub use pane::PaneView;
 pub use picker::{Candidate, Entries, Picked, Picker, PickerInput, PickerView};
-pub use quick_add::{Prefill, QuickAddInput, QuickAddView};
+pub use quick_add::{QuickAddInput, QuickAddView};
 pub use quick_comment::{QuickCommentInput, QuickCommentView};
 pub use save_as::{SaveAsInput, SaveAsReport, SaveAsStatus, SaveAsView};
 pub use saving::{ConflictSide, ConflictView, CopyId, Notice, OnDisk, Report};

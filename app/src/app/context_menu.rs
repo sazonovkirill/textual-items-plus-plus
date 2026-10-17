@@ -81,7 +81,7 @@ impl Reach {
             | Command::ContextMenu
             | Command::GoToSymbol
             | Command::Search
-            | Command::QuickAdd(_)
+            | Command::QuickAdd
             | Command::AddTask(_)
             | Command::AddSection(_)
             | Command::AddProject(_)

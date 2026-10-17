@@ -7,7 +7,7 @@ use std::{collections::HashMap, time::Duration};
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::{
-    app::{Command, Direction, End, Focus, Go, Prefill, Side, Whose, view::View},
+    app::{Command, Direction, End, Focus, Go, Side, Whose, view::View},
     domain::dates::DateKind,
 };
 
@@ -74,11 +74,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // letter add one at the bottom and the top of the container shown, or in the sidebar `a` an
     // area and `p` a top-level project (owner, D-40, D-127).
     (Command::EditTitle, &["enter"]),
-    // taskpaper-terminal's Quick Add keys: `q` alone starts the others, so plain Quick Add is
-    // `qq`; `qt` starts the task today and `qi` adds it to the Inbox (owner, D-97).
-    (Command::QuickAdd(Prefill::Nothing), &["q q"]),
-    (Command::QuickAdd(Prefill::StartToday), &["q t"]),
-    (Command::QuickAdd(Prefill::Inbox), &["q i"]),
+    // One Quick Add key, its task bound for the Inbox (owner, D-150).
+    (Command::QuickAdd, &["q"]),
     (Command::New(Side::Below), &["o", "space"]),
     (Command::New(Side::Above), &["O"]),
     (Command::AddArea(End::Bottom), &["a"]),
@@ -878,13 +875,11 @@ mod tests {
     }
 
     #[test]
-    fn q_without_ctrl_or_with_more_modifiers_does_nothing() {
+    fn q_without_ctrl_is_quick_add_and_with_more_modifiers_does_nothing() {
         let mut keymap = Keymap::default();
-        for modifiers in [
-            KeyModifiers::NONE,
-            KeyModifiers::ALT,
-            KeyModifiers::CONTROL | KeyModifiers::ALT,
-        ] {
+        let q = press(KeyCode::Char('q'), KeyModifiers::NONE);
+        assert_eq!(keymap.press(&q), Some(Command::QuickAdd));
+        for modifiers in [KeyModifiers::ALT, KeyModifiers::CONTROL | KeyModifiers::ALT] {
             let q = press(KeyCode::Char('q'), modifiers);
             assert_eq!(keymap.press(&q), None, "{modifiers:?}");
         }

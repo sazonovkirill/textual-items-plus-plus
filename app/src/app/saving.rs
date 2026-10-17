@@ -643,8 +643,7 @@ mod tests {
     use super::*;
     use crate::app::{
         AttachmentsInput, Command, DateInput, Direction, EditDialogInput, EditInput, Focus, Go,
-        History, Message, Opened, PickerInput, Prefill, QuickAddInput, Selected, Side, TextEdit,
-        Whose,
+        History, Message, Opened, PickerInput, QuickAddInput, Selected, Side, TextEdit, Whose,
         navigator::Stop,
         update,
         view::{Shown, View},
@@ -1324,7 +1323,7 @@ mod tests {
     fn a_reload_keeps_quick_add_open_on_its_place_found_again_and_closes_its_picker() -> TestResult
     {
         let mut state = opened(&["a"])?;
-        command(&mut state, Command::QuickAdd(Prefill::Nothing));
+        command(&mut state, Command::QuickAdd);
         for c in "/P".chars() {
             send(
                 &mut state,

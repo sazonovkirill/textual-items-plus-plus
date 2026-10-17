@@ -13,7 +13,6 @@ fn opens_the_demo_inbox_moves_through_it_and_quits_with_ctrl_q_from_quick_add_re
     terminal.send(termlens::Key::Char('j'))?;
     terminal.wait_until(|screen| screen.text().contains("▌ ☐ Buy coffee beans"))?;
     terminal.send(termlens::Key::Char('q'))?;
-    terminal.send(termlens::Key::Char('q'))?;
     terminal.wait_until(|screen| screen.text().contains("Quick Add → Inbox"))?;
     terminal.send(termlens::Key::Ctrl('q'))?;
     assert!(terminal.wait_exit()?.success());
