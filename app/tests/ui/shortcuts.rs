@@ -422,12 +422,27 @@ fn the_edit_dialog_lists_its_own_keys_and_the_text_keys() {
             "│ Edit Dialog",
             "│  Next Field                    Tab, ↓",
             "│  Previous Field          Shift+Tab, ↑",
-            "│  Save                           Enter",
-            "│  Cancel                           Esc",
+            "│  Confirm Field                  Enter",
+            "│  Close                            Esc",
             "│ Text",
             "│  Left                               ←",
         ]
     );
+    harness.key(KeyCode::Tab);
+    harness.key(KeyCode::Tab);
+    harness.type_text(" ");
+    assert_eq!(
+        panel(&harness, 40).get(1..6).unwrap_or_default(),
+        [
+            "│ Tags",
+            "│  Toggle Tag                     Space",
+            "│  Close                     Enter, Esc",
+            "│  Previous Match             ↑, Ctrl+P",
+            "│  Next Match                 ↓, Ctrl+N",
+        ],
+        "over the dialog, its tag picker's own keys"
+    );
+    harness.key(KeyCode::Esc);
     harness.key(KeyCode::Esc);
     assert_eq!(panel(&harness, 40).get(1), Some(&"│ Moving".to_owned()));
 }

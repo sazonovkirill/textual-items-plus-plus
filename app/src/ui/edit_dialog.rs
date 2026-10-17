@@ -20,12 +20,12 @@ use super::{
     edit_keys::DESCRIPTION_MOTIONS,
     field,
     keymap::{self, Key},
-    text_keys,
+    picker, text_keys,
 };
 use crate::{
     app::{
-        DatePromptView, EditDialogInput, EditDialogView, EditField, EditProblem, TextEdit,
-        TextField,
+        DatePromptView, EditDialogInput, EditDialogView, EditField, EditProblem, PickerInput,
+        TextEdit, TextField,
     },
     domain::{
         ItemKind,
@@ -45,10 +45,34 @@ pub(super) const KEYS: &[(Key, EditDialogInput)] = &[
     ((KeyModifiers::NONE, KeyCode::Up), EditDialogInput::Previous),
     (
         (KeyModifiers::NONE, KeyCode::Enter),
-        EditDialogInput::Accept,
+        EditDialogInput::Confirm,
     ),
-    ((KeyModifiers::NONE, KeyCode::Esc), EditDialogInput::Cancel),
+    ((KeyModifiers::NONE, KeyCode::Esc), EditDialogInput::Close),
 ];
+
+/// The keys of the tag picker open over the dialog that differ from a picker's: `Space` puts the
+/// focused tag on or takes it off, which a tag's name can't hold anyway, and `Enter` closes it
+/// (D-148).
+pub(super) const TAG_KEYS: &[(Key, PickerInput)] = &[
+    (
+        (KeyModifiers::NONE, KeyCode::Char(' ')),
+        PickerInput::Choose,
+    ),
+    ((KeyModifiers::NONE, KeyCode::Enter), PickerInput::Dismiss),
+];
+
+/// What `event` does in the tag picker open over the dialog: a key of [`TAG_KEYS`], else what it
+/// does in a picker, but for opening in a new pane, which the dialog has no use for. Only key
+/// presses count.
+pub(super) fn tags_input(event: &Event) -> Option<PickerInput> {
+    let key = keymap::key_press(event)?;
+    TAG_KEYS
+        .iter()
+        .find(|(bound, _)| *bound == key)
+        .map(|&(_, input)| input)
+        .or_else(|| picker::picker_input(event))
+        .filter(|&input| input != PickerInput::ChooseInNewPane)
+}
 
 /// What `event` does in the open dialog with `focus` focused, the description wrapping in
 /// `width` columns: in the description the keys that move by lines move its caret and `Enter`
@@ -341,14 +365,17 @@ impl<'a> EditDialogPanel<'a> {
             None => {}
         }
         let keys = match self.view.focus {
-            EditField::Title => " Tab next field · Enter save · Esc cancel",
-            EditField::Description => " Enter new line · Tab next field · Esc cancel",
-            EditField::Tags => " Type or Space to pick a tag · Backspace removes the last",
-            EditField::Start | EditField::Due => {
-                " Type a date: tomorrow, fri, +3d · Enter save · Esc cancel"
+            EditField::Title => " Tab next field · Enter confirm · Esc close",
+            EditField::Description => " Enter new line · Tab next field · Esc close",
+            EditField::Tags if self.view.picker.is_some() => {
+                " Type to filter · Space toggles a tag · Enter close"
             }
-            EditField::Pinned => " Space pins or unpins · Enter save · Esc cancel",
-            EditField::Flagged => " Space flags or unflags · Enter save · Esc cancel",
+            EditField::Tags => " Type or Space to pick tags · Backspace removes the last",
+            EditField::Start | EditField::Due => {
+                " Type a date: tomorrow, fri, +3d · Enter set · Esc close"
+            }
+            EditField::Pinned => " Space pins or unpins · Esc close",
+            EditField::Flagged => " Space flags or unflags · Esc close",
         };
         Line::styled(keys, Style::new().fg(self.theme.dim_text))
     }
@@ -415,8 +442,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::{Motion, TextField},
-        domain::dates::DateError,
+        app::{Command, Message, Motion, Opened, State, TextField, update},
+        domain::{Document, Item, Node, dates::DateError},
         ui::BuiltIn,
     };
 
@@ -533,11 +560,11 @@ mod tests {
         );
         assert_eq!(
             input(KeyCode::Enter, none, EditField::Start),
-            Some(EditDialogInput::Accept)
+            Some(EditDialogInput::Confirm)
         );
         assert_eq!(
             input(KeyCode::Esc, none, EditField::Description),
-            Some(EditDialogInput::Cancel)
+            Some(EditDialogInput::Close)
         );
         assert_eq!(
             input(KeyCode::Char('x'), none, EditField::Title),
@@ -569,6 +596,25 @@ mod tests {
         );
     }
 
+    // FR-EDIT-08, FR-TAG-02, D-148
+    #[test]
+    fn in_the_tag_picker_space_toggles_and_enter_closes() {
+        let none = KeyModifiers::NONE;
+        let input = |code, modifiers| tags_input(&press(code, modifiers));
+        assert_eq!(input(KeyCode::Char(' '), none), Some(PickerInput::Choose));
+        assert_eq!(input(KeyCode::Enter, none), Some(PickerInput::Dismiss));
+        assert_eq!(input(KeyCode::Esc, none), Some(PickerInput::Dismiss));
+        assert_eq!(input(KeyCode::Down, none), Some(PickerInput::Next));
+        assert_eq!(
+            input(KeyCode::Char('a'), none),
+            Some(PickerInput::Edit(TextEdit::Insert('a')))
+        );
+        assert_eq!(input(KeyCode::Enter, KeyModifiers::ALT), None);
+        let mut release = KeyEvent::new(KeyCode::Char(' '), none);
+        release.kind = KeyEventKind::Release;
+        assert_eq!(tags_input(&Event::Key(release)), None);
+    }
+
     // FR-EDIT-08, FR-DATE-02, FR-VIEW-12
     #[test]
     fn the_panel_labels_each_field_marks_the_focused_one_and_previews_its_date() {
@@ -590,7 +636,7 @@ mod tests {
                 "│  Pinned       ✔ Pinned                                   │",
                 "│  Flagged      ⚑ Flagged                                  │",
                 "│                                                          │",
-                "│ Type a date: tomorrow, fri, +3d · Enter save · Esc cancel│",
+                "│ Type a date: tomorrow, fri, +3d · Enter set · Esc close  │",
                 "└──────────────────────────────────────────────────────────┘",
             ]
         );
@@ -644,14 +690,39 @@ mod tests {
         assert_eq!(
             hints,
             [
-                "Tab next field · Enter save · Esc cancel",
-                "Enter new line · Tab next field · Esc cancel",
-                "Type or Space to pick a tag · Backspace removes the last",
-                "Type a date: tomorrow, fri, +3d · Enter save · Esc cancel",
-                "Type a date: tomorrow, fri, +3d · Enter save · Esc cancel",
-                "Space pins or unpins · Enter save · Esc cancel",
-                "Space flags or unflags · Enter save · Esc cancel",
+                "Tab next field · Enter confirm · Esc close",
+                "Enter new line · Tab next field · Esc close",
+                "Type or Space to pick tags · Backspace removes the last",
+                "Type a date: tomorrow, fri, +3d · Enter set · Esc close",
+                "Type a date: tomorrow, fri, +3d · Enter set · Esc close",
+                "Space pins or unpins · Esc close",
+                "Space flags or unflags · Esc close",
             ]
+        );
+        let mut document = Document::new();
+        let task = Node::Item(Item::new(ItemKind::Task, "Call"));
+        document
+            .push(Some(document.inbox()), task)
+            .expect("the Inbox takes a task");
+        let mut state = State::new(document, Opened::Demo, TODAY);
+        for message in [
+            Message::Command(Command::EditItem),
+            Message::EditDialog(EditDialogInput::Next),
+            Message::EditDialog(EditDialogInput::Next),
+            Message::EditDialog(EditDialogInput::Edit(TextEdit::Insert(' '))),
+        ] {
+            update(&mut state, message, TODAY);
+        }
+        let view = state.edit_dialog().expect("the dialog is open");
+        let lines = drawn(&view, 64);
+        assert_eq!(
+            lines
+                .iter()
+                .rev()
+                .nth(1)
+                .map(|line| line.trim_matches('│').trim()),
+            Some("Type to filter · Space toggles a tag · Enter close"),
+            "with its tag picker open"
         );
     }
 
@@ -674,7 +745,7 @@ mod tests {
                 "│               five         │",
                 "│               six          │",
                 "│                            │",
-                "│ Tab next field · Enter save│",
+                "│ Tab next field · Enter conf│",
                 "└────────────────────────────┘",
             ]
         );

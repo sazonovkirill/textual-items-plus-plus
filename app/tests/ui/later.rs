@@ -209,6 +209,7 @@ fn starting_a_later_task_in_the_edit_dialog_takes_it_out_of_later() {
         saved_after_a_second(&mut harness, &path),
         "Inbox:\n\t- Plan @start(2026-10-05)\n"
     );
+    harness.key(KeyCode::Esc);
     harness.type_text("gt");
     assert!(harness.screen().contains("Plan"), "listed in Today");
     harness.type_text("z");

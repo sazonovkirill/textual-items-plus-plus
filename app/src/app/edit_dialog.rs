@@ -1,6 +1,7 @@
 //! The edit dialog: every property of one area, project, section or task but its attachments,
-//! changed in a draft in a modal window and applied as one step to undo, as taskpaper-terminal's
-//! Edit Node dialog and Things 3's task window do
+//! changed in a modal window, each field's change applied as its own step to undo as soon as it is
+//! confirmed or the field is left, as Things 3's task window applies changes as they are made,
+//! after taskpaper-terminal's Edit Node dialog
 //! ([editing.md §7](../../../specs/reference/taskpaper-terminal/specs/editing.md#7-edit-node-dialog-fr-mode-09),
 //! FR-EDIT-08). Hides the draft and which fields each kind of item has.
 
@@ -38,21 +39,24 @@ pub enum EditField {
 /// What the user does in the open dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditDialogInput {
-    /// Focus the next field, stopping at the last.
+    /// Apply the focused field's change, then focus the next field, stopping at the last.
     Next,
-    /// Focus the previous field, stopping at the first.
+    /// Apply the focused field's change, then focus the previous field, stopping at the first.
     Previous,
     /// A text key on the focused field: it edits the title, the description or a date; moving up
     /// from the description's first line or down from its last focuses the field before or
     /// after it; on the tags a space opens the tag picker, another character opens it with the
     /// character typed and deleting removes the last tag; on Pinned a space pins or unpins, and
-    /// on Flagged flags or unflags.
+    /// on Flagged flags or unflags. Leaving the description, changing the tags, pinning and
+    /// flagging apply at once.
     Edit(TextEdit),
-    /// Apply the changes and close, unless the title is empty or a date field holds no date.
-    Accept,
-    /// Close, changing nothing.
-    Cancel,
-    /// An input to the tag picker open over the dialog.
+    /// Apply the focused field's change, keeping the dialog open; a field that cannot apply, an
+    /// empty title or a date field that holds no date, keeps the focus, saying why.
+    Confirm,
+    /// Apply what can apply and close, a field that cannot keeping its value from before.
+    Close,
+    /// An input to the tag picker open over the dialog: choosing a tag puts it on the item or
+    /// takes it off at once, keeping the picker open.
     Tags(PickerInput),
 }
 
@@ -90,13 +94,13 @@ pub struct EditDialogView<'a> {
     pub flagged: bool,
     /// The tag picker open over the dialog, if any.
     pub picker: Option<TagsView<'a>>,
-    /// Why the last try to apply did not, until the next input.
+    /// Why the last try to apply the focused field did not, until the next input.
     pub problem: Option<EditProblem>,
 }
 
-/// The open dialog: the item it edits, the item as its draft started from, its draft, the focused
-/// field, the local date the dates typed resolve against, the tag picker open over it and why
-/// applying last failed.
+/// The open dialog: the item it edits, the item as its draft last applied or started from, its
+/// draft, the focused field, the local date the dates typed resolve against, the tag picker open
+/// over it and why applying last failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct EditDialog {
     id: ItemId,
@@ -144,7 +148,11 @@ impl EditDialog {
     /// dates typed resolving against `today`; `None` unless it is an area, project, section or
     /// task.
     pub(super) fn open(document: &Document, id: ItemId, today: Date) -> Option<Self> {
-        let item = document.node(id).and_then(Node::item)?;
+        Self::of(id, document.node(id).and_then(Node::item)?, today)
+    }
+
+    /// The dialog on `item`, item `id`, as [`Self::open`] opens it.
+    fn of(id: ItemId, item: &Item, today: Date) -> Option<Self> {
         let &[focus, ..] = fields(item.kind) else {
             return None;
         };
@@ -304,52 +312,72 @@ impl EditDialog {
         }
     }
 
-    /// Applies `input` to the tag picker open over the dialog: choosing a tag closes it and puts
-    /// the tag on the draft or takes it off; closing it changes nothing.
-    fn tags_input(&mut self, document: &Document, input: PickerInput) {
-        let Some(picker) = self.picker.as_mut() else {
-            return;
-        };
-        match picker.input(document, input) {
-            Some(Picked::Chosen(Choice::Draft(name))) => {
-                self.picker = None;
-                self.toggle_tag(&name);
-            }
-            Some(_) => self.picker = None,
-            None => {}
+    /// Applies `input` to the tag picker open over the dialog, and returns the name of the tag
+    /// chosen, which it puts on the draft or takes off, keeping the picker open; closing the
+    /// picker changes nothing.
+    fn tags_input(&mut self, document: &Document, input: PickerInput) -> Option<String> {
+        if let Picked::Chosen(Choice::Draft(name)) = self.picker.as_mut()?.input(document, input)? {
+            self.toggle_tag(&name);
+            Some(name)
+        } else {
+            self.picker = None;
+            None
         }
     }
 
-    /// The item as the draft makes `item`, its title trimmed and its description without the
-    /// space and empty lines at its end, as editing them in place writes them (D-43).
+    /// The names of the user's tags the draft carries.
+    fn carried(&self) -> Vec<String> {
+        (self.tags.iter())
+            .filter(|tag| tag.is_users())
+            .map(|tag| tag.name.clone())
+            .collect()
+    }
+
+    /// Makes the open tag picker again for `document`, marking the tags the draft carries, its
+    /// query typed again and the tag named `focus` focused, if it lists it.
+    fn reopen_picker(&mut self, document: &Document, focus: Option<&str>) {
+        let carried = self.carried();
+        self.picker = (self.picker.take())
+            .and_then(|picker| picker.reopen(document, Vec::new(), &[], &carried));
+        if let (Some(picker), Some(name)) = (self.picker.as_mut(), focus) {
+            picker.focus_tag(name);
+        }
+    }
+
+    /// The item as the draft makes `item`, as [`Self::kept`] does, the focused field being the
+    /// one whose change is applied, since leaving a field applies it.
     ///
     /// # Errors
     ///
-    /// Why the draft cannot apply: the title is empty or a date field holds no date.
+    /// Why the focused field cannot apply: it is the title and empty, or a date field that holds
+    /// no date.
     fn applied(&self, item: &Item) -> Result<Item, EditProblem> {
-        let has = |field| fields(self.kind).contains(&field);
         let date_problem = |kind| {
             self.date_view(kind)
                 .date
                 .err()
                 .map(|_| EditProblem::NotADate(kind))
         };
-        if self.title.text().trim().is_empty() {
-            return Err(EditProblem::EmptyTitle);
-        }
-        for (field, kind) in [
-            (EditField::Start, DateKind::Start),
-            (EditField::Due, DateKind::Due),
-        ] {
-            if let Some(problem) = date_problem(kind).filter(|_| has(field)) {
-                return Err(problem);
+        let problem = match self.focus {
+            EditField::Title => self
+                .title
+                .text()
+                .trim()
+                .is_empty()
+                .then_some(EditProblem::EmptyTitle),
+            EditField::Start => date_problem(DateKind::Start),
+            EditField::Due => date_problem(DateKind::Due),
+            EditField::Description | EditField::Tags | EditField::Pinned | EditField::Flagged => {
+                None
             }
-        }
-        Ok(self.kept(item))
+        };
+        problem.map_or_else(|| Ok(self.kept(item)), Err)
     }
 
-    /// The item as the draft makes `item`, as [`Self::applied`] does, except that a field it
-    /// would refuse keeps its value from `item`, as quitting keeps a draft (D-109).
+    /// The item as the draft makes `item`, its title trimmed and its description without the
+    /// space and empty lines at its end, as editing them in place writes them (D-43), a field
+    /// that cannot apply, an empty title or a date field that holds no date, keeping its value
+    /// from `item`, as closing the dialog and quitting do (D-109).
     fn kept(&self, item: &Item) -> Item {
         let has = |field| fields(self.kind).contains(&field);
         let title = self.title.text().trim();
@@ -383,6 +411,35 @@ impl EditDialog {
         after
     }
 
+    /// Starts the draft again from `item`, which applying it made, keeping the focus and the tag
+    /// picker, and a text's caret where its text stays as it was; the focused date field has its
+    /// text selected, so that typing replaces it.
+    fn restart(&mut self, item: &Item) {
+        let fresh = Self::of(self.id, item, self.today).expect("applying keeps the item's kind");
+        for (field, fresh) in [
+            (&mut self.title, fresh.title),
+            (&mut self.description, fresh.description),
+            (&mut self.start, fresh.start),
+            (&mut self.due, fresh.due),
+        ] {
+            if field.text() != fresh.text() {
+                *field = fresh;
+            }
+        }
+        for (focus, date) in [
+            (EditField::Start, &mut self.start),
+            (EditField::Due, &mut self.due),
+        ] {
+            if focus == self.focus {
+                *date = date.edited(TextEdit::SelectAll);
+            }
+        }
+        self.tags = fresh.tags;
+        self.pinned = fresh.pinned;
+        self.flagged = fresh.flagged;
+        self.base = fresh.base;
+    }
+
     /// The dialog on the item of a reloaded document that `exact` finds for its own, rebased on
     /// it, with the tag picker made again for `document`, or `None` when it finds none.
     pub(super) fn rematched(
@@ -395,12 +452,7 @@ impl EditDialog {
             ..self
         };
         dialog.rebase(edited(document, dialog.id).clone());
-        let carried: Vec<String> = (dialog.tags.iter())
-            .filter(|tag| tag.is_users())
-            .map(|tag| tag.name.clone())
-            .collect();
-        dialog.picker = (dialog.picker.take())
-            .and_then(|picker| picker.reopen(document, Vec::new(), &[], &carried));
+        dialog.reopen_picker(document, None);
         Some(dialog)
     }
 
@@ -465,40 +517,67 @@ impl State {
         }
     }
 
-    /// Applies `input` to the open edit dialog: accepting applies the draft as one step to undo
-    /// and closes it, unless the draft cannot apply, which keeps it open on the field to fix,
-    /// saying why; a draft that changes nothing makes no step. Nothing happens while it is
-    /// closed.
+    /// Applies `input` to the open edit dialog, applying each field's change as one step to undo
+    /// when it is confirmed, left or toggled. Nothing happens while it is closed.
     pub(super) fn edit_dialog_input(&mut self, input: EditDialogInput) {
         let Some(dialog) = self.edit_dialog.as_mut() else {
             return;
         };
         dialog.problem = None;
         match input {
-            EditDialogInput::Next => dialog.step(1),
-            EditDialogInput::Previous => dialog.step(-1),
-            EditDialogInput::Edit(edit) => {
-                if dialog.edit(&self.document, edit) == Err(Refused::Tag) {
-                    self.notify(Notice::TagInTitle);
+            EditDialogInput::Next | EditDialogInput::Previous => {
+                if let Some(dialog) = self.apply_edit_dialog() {
+                    dialog.step(if input == EditDialogInput::Next {
+                        1
+                    } else {
+                        -1
+                    });
                 }
             }
-            EditDialogInput::Tags(input) => dialog.tags_input(&self.document, input),
-            EditDialogInput::Cancel => self.edit_dialog = None,
-            EditDialogInput::Accept => match dialog.applied(edited(&self.document, dialog.id)) {
-                Ok(after) => {
-                    let id = dialog.id;
-                    self.edit_dialog = None;
-                    self.set_edited(id, after);
+            EditDialogInput::Edit(edit) => {
+                let focus = dialog.focus;
+                if dialog.edit(&self.document, edit) == Err(Refused::Tag) {
+                    self.notify(Notice::TagInTitle);
+                } else if dialog.focus != focus
+                    || matches!(
+                        focus,
+                        EditField::Tags | EditField::Pinned | EditField::Flagged
+                    )
+                {
+                    self.apply_edit_dialog();
                 }
-                Err(problem) => {
-                    dialog.focus = match problem {
-                        EditProblem::EmptyTitle => EditField::Title,
-                        EditProblem::NotADate(DateKind::Start) => EditField::Start,
-                        EditProblem::NotADate(DateKind::Due) => EditField::Due,
-                    };
-                    dialog.problem = Some(problem);
+            }
+            EditDialogInput::Tags(input) => {
+                if let Some(name) = dialog.tags_input(&self.document, input)
+                    && self.apply_edit_dialog().is_some()
+                    && let Some(dialog) = self.edit_dialog.as_mut()
+                {
+                    dialog.reopen_picker(&self.document, Some(&name));
                 }
-            },
+            }
+            EditDialogInput::Confirm => {
+                self.apply_edit_dialog();
+            }
+            EditDialogInput::Close => self.keep_edit_dialog(),
+        }
+    }
+
+    /// Applies the open edit dialog's draft as one step to undo, or no step when that changes
+    /// nothing, and returns the dialog, its draft started again from the item as it now is;
+    /// `None` when the focused field cannot apply, which keeps the focus there, saying why.
+    fn apply_edit_dialog(&mut self) -> Option<&mut EditDialog> {
+        let dialog = self.edit_dialog.as_mut()?;
+        match dialog.applied(edited(&self.document, dialog.id)) {
+            Ok(after) => {
+                let id = dialog.id;
+                dialog.restart(&after);
+                self.set_edited(id, after);
+                self.edit_dialog.as_mut()
+            }
+            Err(problem) => {
+                dialog.problem = Some(problem);
+                None
+            }
         }
     }
 
@@ -749,7 +828,7 @@ mod tests {
 
     // FR-EDIT-08, FR-TAG-02
     #[test]
-    fn a_character_on_the_tags_opens_the_tag_picker_which_toggles_a_tag() -> TestResult {
+    fn a_character_on_the_tags_opens_the_tag_picker_which_toggles_tags() -> TestResult {
         let sample = sample()?;
         let document = &sample.document;
         let mut open = dialog(document, sample.call)?;
@@ -768,9 +847,14 @@ mod tests {
                 ("phone", TagMark::All)
             ]
         );
-        open.tags_input(document, PickerInput::Choose);
+        assert_eq!(
+            open.tags_input(document, PickerInput::Choose).as_deref(),
+            Some("errands")
+        );
         assert_eq!(open.view().tags, ["phone", "home", "errands"]);
-        assert!(open.picker.is_none(), "choosing closes it");
+        assert!(open.picker.is_some(), "choosing keeps it open");
+        open.tags_input(document, PickerInput::Dismiss);
+        assert!(open.picker.is_none());
         typed(&mut open, document, "ho");
         open.tags_input(document, PickerInput::Next);
         open.tags_input(document, PickerInput::Choose);
@@ -779,6 +863,7 @@ mod tests {
             ["phone", "errands"],
             "valued, gone by name"
         );
+        open.tags_input(document, PickerInput::Dismiss);
         typed(&mut open, document, "new one");
         assert_eq!(
             open.view().picker.map(|view| view.picker.query.text()),
@@ -786,11 +871,12 @@ mod tests {
         );
         open.tags_input(document, PickerInput::Choose);
         assert_eq!(open.view().tags, ["phone", "errands", "new-one"]);
+        open.tags_input(document, PickerInput::Dismiss);
         open.edit(document, TextEdit::Insert('x'))
             .map_err(|_| "refused")?;
         open.tags_input(document, PickerInput::Dismiss);
         assert!(open.picker.is_none());
-        open.tags_input(document, PickerInput::Choose);
+        assert_eq!(open.tags_input(document, PickerInput::Choose), None);
         assert_eq!(open.view().tags.len(), 3, "nothing is open to choose in");
         open.edit(document, TextEdit::DeleteBackward)
             .map_err(|_| "refused")?;
@@ -845,7 +931,7 @@ mod tests {
 
     // FR-EDIT-08, FR-EDIT-06, FR-DATE-02, FR-ORG-12
     #[test]
-    fn accepting_applies_every_change_as_one_step_to_undo() -> TestResult {
+    fn each_fields_change_applies_as_its_own_step_when_confirmed_left_or_toggled() -> TestResult {
         let sample = sample()?;
         let (buy, before) = (sample.buy, item(&sample.document, sample.buy).clone());
         let mut state = State::new(sample.document, Opened::Demo, TODAY);
@@ -853,53 +939,135 @@ mod tests {
             update(&mut state, Message::Command(Command::EditItem), TODAY),
             []
         );
-        type_into(&mut state, "  ");
+        type_into(&mut state, " now ");
+        input(&mut state, EditDialogInput::Confirm);
+        let applied = |state: &State| item(state.document(), buy).clone();
+        assert_eq!(applied(&state).title, "Buy beans now", "trimmed");
+        let view = state.edit_dialog().ok_or("Enter keeps it open")?;
+        assert_eq!(
+            (view.focus, view.title.text()),
+            (EditField::Title, "Buy beans now")
+        );
         input(&mut state, EditDialogInput::Next);
         type_into(&mut state, "Ask about fees\n\n");
+        assert_eq!(applied(&state).description, "", "not while it is typed");
         input(&mut state, EditDialogInput::Next);
+        assert_eq!(
+            applied(&state).description,
+            "Ask about fees",
+            "on leaving it, without its empty lines"
+        );
         input(&mut state, EditDialogInput::Edit(TextEdit::DeleteBackward));
+        assert_eq!(applied(&state).tags, [], "at once");
         type_into(&mut state, " ");
         input(&mut state, EditDialogInput::Tags(PickerInput::Dismiss));
         input(&mut state, EditDialogInput::Next);
         type_into(&mut state, "tomorrow");
+        input(&mut state, EditDialogInput::Confirm);
+        assert_eq!(applied(&state).start, Some(date(2026, 10, 6)));
+        let view = state.edit_dialog().ok_or("open")?;
+        assert_eq!(
+            (view.start.field.text(), view.start.field.selection()),
+            ("2026-10-06", Some(0..10)),
+            "the date it resolved to, selected"
+        );
         input(&mut state, EditDialogInput::Next);
         type_into(&mut state, "fri");
         input(&mut state, EditDialogInput::Next);
+        assert_eq!(applied(&state).due, Some(date(2026, 10, 9)));
         type_into(&mut state, " ");
-        input(&mut state, EditDialogInput::Accept);
+        assert!(applied(&state).flagged, "at once");
+        input(&mut state, EditDialogInput::Close);
         assert_eq!(state.edit_dialog(), None);
-        let after = item(state.document(), buy);
-        assert_eq!(after.title, "Buy beans", "trimmed");
-        assert_eq!(
-            after.description, "Ask about fees",
-            "without its empty lines"
-        );
-        assert_eq!(after.tags, []);
-        assert_eq!(after.start, Some(date(2026, 10, 6)));
-        assert_eq!(after.due, Some(date(2026, 10, 9)));
-        assert!(after.flagged);
         state.undo();
-        assert_eq!(item(state.document(), buy), &before, "one step");
+        let undone = applied(&state);
+        assert_eq!(
+            (undone.flagged, undone.due),
+            (false, Some(date(2026, 10, 9)))
+        );
+        for _ in 0..5 {
+            state.undo();
+        }
+        assert_eq!(applied(&state), before, "a step for each field");
+        Ok(())
+    }
+
+    // FR-EDIT-08, FR-TAG-02
+    #[test]
+    fn a_tag_chosen_applies_at_once_and_the_picker_stays_on_it_marked() -> TestResult {
+        let sample = sample()?;
+        let (call, before) = (sample.call, item(&sample.document, sample.call).clone());
+        let mut state = State::new(sample.document, Opened::Demo, TODAY);
+        state.open_edit_dialog_on(call);
+        input(&mut state, EditDialogInput::Next);
+        input(&mut state, EditDialogInput::Next);
+        type_into(&mut state, " ");
+        let pick = |state: &mut State, input: PickerInput| {
+            assert_eq!(
+                update(
+                    state,
+                    Message::EditDialog(EditDialogInput::Tags(input)),
+                    TODAY
+                ),
+                []
+            );
+        };
+        let shown = |state: &State| -> Option<(Vec<(String, TagMark)>, usize)> {
+            let picker = state.edit_dialog()?.picker?.picker;
+            let entries = (picker.entries.iter())
+                .map(|entry| (entry.value.name.clone(), entry.value.mark))
+                .collect();
+            Some((entries, picker.focused))
+        };
+        pick(&mut state, PickerInput::Next);
+        pick(&mut state, PickerInput::Choose);
+        let users = |state: &State| -> Vec<String> {
+            (item(state.document(), call).tags.iter())
+                .filter(|tag| tag.is_users())
+                .map(|tag| tag.name.clone())
+                .collect()
+        };
+        assert_eq!(users(&state), ["phone"], "home is off at once");
+        let (entries, focused) = shown(&state).ok_or("the picker stays open")?;
+        assert_eq!(
+            (entries.get(focused), focused),
+            (Some(&("home".to_owned(), TagMark::Off)), 1),
+            "on the tag, marked again"
+        );
+        for c in "tea".chars() {
+            pick(&mut state, PickerInput::Edit(TextEdit::Insert(c)));
+        }
+        pick(&mut state, PickerInput::Choose);
+        assert_eq!(users(&state), ["phone", "tea"]);
+        let (entries, focused) = shown(&state).ok_or("open")?;
+        assert_eq!(
+            entries.get(focused),
+            Some(&("tea".to_owned(), TagMark::All)),
+            "the new tag, now carried"
+        );
+        pick(&mut state, PickerInput::Dismiss);
+        assert_eq!(shown(&state), None);
+        state.undo();
+        assert_eq!(users(&state), ["phone"], "a step for each tag");
+        state.undo();
+        assert_eq!(item(state.document(), call), &before);
         Ok(())
     }
 
     // FR-EDIT-08, FR-STORE-03
     #[test]
-    fn quitting_or_terminating_applies_the_draft_but_what_it_would_refuse() -> TestResult {
-        for ending in [Message::Command(Command::Quit), Message::Terminate] {
+    fn closing_quitting_or_terminating_applies_the_field_but_what_it_would_refuse() -> TestResult {
+        for ending in [
+            Message::EditDialog(EditDialogInput::Close),
+            Message::Command(Command::Quit),
+            Message::Terminate,
+        ] {
             let Sample { document, buy, .. } = sample()?;
-            let before = item(&document, buy).clone();
             let mut state = State::new(document.clone(), Opened::Demo, TODAY);
             state.open_edit_dialog();
             type_into(&mut state, " and rice");
             input(&mut state, EditDialogInput::Next);
             type_into(&mut state, "Two bags");
-            for _ in 0..2 {
-                input(&mut state, EditDialogInput::Next);
-            }
-            type_into(&mut state, "soon");
-            input(&mut state, EditDialogInput::Next);
-            type_into(&mut state, "fri");
             update(&mut state, ending.clone(), TODAY);
             assert_eq!(state.edit_dialog(), None);
             let after = item(state.document(), buy);
@@ -907,21 +1075,26 @@ mod tests {
                 (after.title.as_str(), after.description.as_str()),
                 ("Buy beans and rice", "Two bags")
             );
-            assert_eq!((after.start, after.due), (None, Some(date(2026, 10, 9))));
             state.undo();
-            assert_eq!(item(state.document(), buy), &before, "one step");
+            assert_eq!(
+                item(state.document(), buy).description,
+                "",
+                "a step of its own"
+            );
             let mut state = State::new(document, Opened::Demo, TODAY);
             state.open_edit_dialog();
-            input(&mut state, EditDialogInput::Edit(TextEdit::SelectAll));
-            input(&mut state, EditDialogInput::Edit(TextEdit::DeleteBackward));
-            input(&mut state, EditDialogInput::Next);
-            type_into(&mut state, "Oat");
-            update(&mut state, ending, TODAY);
+            for _ in 0..4 {
+                input(&mut state, EditDialogInput::Next);
+            }
+            type_into(&mut state, "fri");
+            input(&mut state, EditDialogInput::Previous);
+            type_into(&mut state, "soon");
+            update(&mut state, ending.clone(), TODAY);
             let after = item(state.document(), buy);
             assert_eq!(
-                (after.title.as_str(), after.description.as_str()),
-                ("Buy beans", "Oat"),
-                "an empty title keeps the old one"
+                (after.start, after.due),
+                (None, Some(date(2026, 10, 9))),
+                "a start that is no date keeps the old one"
             );
         }
         Ok(())
@@ -929,15 +1102,14 @@ mod tests {
 
     // FR-EDIT-08
     #[test]
-    fn a_draft_with_no_title_or_no_date_stays_open_on_the_field_to_fix() -> TestResult {
+    fn a_field_with_no_title_or_no_date_keeps_the_focus_saying_why() -> TestResult {
         let sample = sample()?;
+        let buy = sample.buy;
         let mut state = State::new(sample.document, Opened::Demo, TODAY);
-        let revision = state.document().revision();
         state.open_edit_dialog();
         input(&mut state, EditDialogInput::Edit(TextEdit::SelectAll));
         input(&mut state, EditDialogInput::Edit(TextEdit::DeleteBackward));
         input(&mut state, EditDialogInput::Next);
-        input(&mut state, EditDialogInput::Accept);
         let view = state.edit_dialog().ok_or("still open")?;
         assert_eq!(
             (view.focus, view.problem),
@@ -951,31 +1123,29 @@ mod tests {
         );
         for (steps, kind, field) in [
             (3, DateKind::Start, EditField::Start),
-            (4, DateKind::Due, EditField::Due),
+            (1, DateKind::Due, EditField::Due),
         ] {
             for _ in 0..steps {
                 input(&mut state, EditDialogInput::Next);
             }
             type_into(&mut state, "soon");
-            input(&mut state, EditDialogInput::Previous);
-            input(&mut state, EditDialogInput::Accept);
-            let view = state.edit_dialog().ok_or("still open")?;
-            assert_eq!(
-                (view.focus, view.problem),
-                (field, Some(EditProblem::NotADate(kind)))
-            );
+            for refused in [EditDialogInput::Confirm, EditDialogInput::Previous] {
+                input(&mut state, refused);
+                let view = state.edit_dialog().ok_or("still open")?;
+                assert_eq!(
+                    (view.focus, view.problem),
+                    (field, Some(EditProblem::NotADate(kind)))
+                );
+            }
             input(&mut state, EditDialogInput::Edit(TextEdit::SelectAll));
             input(&mut state, EditDialogInput::Edit(TextEdit::DeleteBackward));
-            for _ in 0..4 {
-                input(&mut state, EditDialogInput::Previous);
-            }
         }
-        input(&mut state, EditDialogInput::Cancel);
+        input(&mut state, EditDialogInput::Close);
         assert_eq!(state.edit_dialog(), None);
+        let after = item(state.document(), buy);
         assert_eq!(
-            state.document().revision(),
-            revision,
-            "cancelling changes nothing"
+            (after.title.as_str(), after.start, after.due),
+            ("Call", None, None)
         );
         Ok(())
     }
@@ -990,11 +1160,12 @@ mod tests {
         type_into(&mut state, " @");
         assert_eq!(state.notice(), Some(&Notice::TagInTitle));
         input(&mut state, EditDialogInput::Edit(TextEdit::DeleteBackward));
-        input(&mut state, EditDialogInput::Accept);
+        input(&mut state, EditDialogInput::Confirm);
+        input(&mut state, EditDialogInput::Close);
         assert_eq!(state.edit_dialog(), None);
         state.undo();
         assert_eq!(state.document().revision(), revision, "nothing to undo");
-        input(&mut state, EditDialogInput::Accept);
+        input(&mut state, EditDialogInput::Confirm);
         assert_eq!(
             state.edit_dialog(),
             None,
@@ -1046,7 +1217,7 @@ mod tests {
             []
         );
         assert_eq!(editing(&state).as_deref(), Some("Site"));
-        input(&mut state, EditDialogInput::Cancel);
+        input(&mut state, EditDialogInput::Close);
         assert_eq!(
             update(
                 &mut state,

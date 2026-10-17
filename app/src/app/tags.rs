@@ -111,7 +111,12 @@ impl TagPicker {
             .filter(|tag| tag.is_users())
             .map(|tag| tag.name.clone())
             .collect();
-        let mut names = carried.clone();
+        Self::drafting(document, carried.clone(), &carried)
+    }
+
+    /// The picker for the edit dialog's draft, as [`Self::for_draft`] makes it, listing the tags
+    /// named `names` too and marking those named `carried`.
+    fn drafting(document: &Document, mut names: Vec<String>, carried: &[String]) -> Self {
         for id in document.top_level().iter().chain([&document.inbox()]) {
             gather(document, *id, &mut names);
         }
@@ -148,7 +153,9 @@ impl TagPicker {
 
     /// The picker `self` was, made again for `document` with `items` and `rows`, marking the
     /// tags named `marked`, which the filter holds or the draft carries, and the query typed
-    /// again, as after a reload; `None` when it tagged items and none is left.
+    /// again, as after a reload or a tag put on or taken off the draft, which still lists the
+    /// tags it did, so that one taken off can be put back on; `None` when it tagged items and
+    /// none is left.
     pub(super) fn reopen(
         &self,
         document: &Document,
@@ -160,8 +167,9 @@ impl TagPicker {
             TagsFor::Items => Self::for_items(document, items)?,
             TagsFor::Filter => Self::for_filter(document, rows, marked),
             TagsFor::Draft => {
-                let tags: Vec<Tag> = marked.iter().map(Tag::plain).collect();
-                Self::for_draft(document, &tags)
+                let names = marked.iter().cloned();
+                let names = names.chain(self.listed.iter().map(|tag| tag.value.name.clone()));
+                Self::drafting(document, names.collect(), marked)
             }
         };
         for c in self.picker.view().query.text().chars() {
@@ -177,6 +185,11 @@ impl TagPicker {
             picker: Picker::new(listed.clone()),
             listed,
         }
+    }
+
+    /// Focuses the tag named `name`, if it lists it.
+    pub(super) fn focus_tag(&mut self, name: &str) {
+        self.picker.focus_where(|entry| entry.name == name);
     }
 
     /// The items it tags.

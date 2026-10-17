@@ -1,5 +1,6 @@
 //! The edit dialog: every property of a task, project, section or area but its attachments,
-//! edited in a modal window at the bottom of the screen and applied as one step to undo.
+//! edited in a modal window at the bottom of the screen, each field's change applied as its own
+//! step to undo as it is confirmed or left.
 
 use crossterm::event::{Event, KeyCode};
 
@@ -20,7 +21,7 @@ fn dialog(harness: &Harness) -> Vec<String> {
 
 // FR-EDIT-08, FR-DATE-02, FR-TAG-02, FR-EDIT-06, FR-ORG-12
 #[test]
-fn edit_every_field_of_a_task_and_save_them_as_one_step_to_undo() {
+fn edit_every_field_of_a_task_each_change_a_step_to_undo() {
     let mut harness = Harness::new(80, 24);
     let before = harness.screen();
     harness.type_text("e!");
@@ -31,6 +32,12 @@ fn edit_every_field_of_a_task_and_save_them_as_one_step_to_undo() {
     harness.key(KeyCode::Tab);
     harness.type_text("err");
     harness.key(KeyCode::Down);
+    harness.type_text(" ");
+    let picking = harness.screen();
+    assert!(
+        picking.contains("│› err") && picking.contains("Space toggles a tag · Enter close"),
+        "Space toggles the tag, the picker staying open: {picking}"
+    );
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Tab);
     harness.type_text("tomorrow");
@@ -50,12 +57,12 @@ fn edit_every_field_of_a_task_and_save_them_as_one_step_to_undo() {
             "│  Due          󱙬 Fri 9 Oct 2026 · Fri                                         │",
             "│▌ Flagged      󰈻 Flagged                                                      │",
             "│                                                                              │",
-            "│ Space flags or unflags · Enter save · Esc cancel                             │",
+            "│ Space flags or unflags · Esc close                                           │",
             "└──────────────────────────────────────────────────────────────────────────────┘",
         ],
         "the tag picked from the matches, the dates typed in words, flagged"
     );
-    harness.key(KeyCode::Enter);
+    harness.key(KeyCode::Esc);
     assert_eq!(dialog(&harness), Vec::<String>::new());
     harness.type_text("gt");
     let today = harness.screen();
@@ -77,14 +84,19 @@ fn edit_every_field_of_a_task_and_save_them_as_one_step_to_undo() {
     harness.key(KeyCode::Esc);
     harness.type_text("gi");
     harness.type_text("z");
-    assert_eq!(harness.screen(), before, "one step takes it all back");
+    assert_ne!(
+        harness.screen(),
+        before,
+        "undoing takes back the flag alone"
+    );
+    harness.type_text("zzzzz");
+    assert_eq!(harness.screen(), before, "a step for each field");
 }
 
 // FR-EDIT-08, FR-EDIT-04
 #[test]
-fn m_i_opens_it_too_escape_closes_it_unchanged_and_pasting_types_into_the_field() {
+fn m_i_opens_it_too_escape_closes_it_keeping_what_was_pasted_into_the_field() {
     let mut harness = Harness::new(80, 24);
-    let before = harness.screen();
     harness.type_text("mi");
     harness.send(&Event::Paste(" today\nplease".to_owned()));
     assert_eq!(
@@ -101,10 +113,17 @@ fn m_i_opens_it_too_escape_closes_it_unchanged_and_pasting_types_into_the_field(
         "after the title"
     );
     harness.key(KeyCode::Esc);
-    assert_eq!(harness.screen(), before);
+    assert_eq!(dialog(&harness), Vec::<String>::new());
+    assert!(
+        harness
+            .screen()
+            .contains("Call the bank about the card today please"),
+        "{}",
+        harness.screen()
+    );
     harness.type_text("e");
     harness.key(KeyCode::End);
-    for _ in 0.."Call the bank about the card".len() {
+    for _ in 0.."Call the bank about the card today please".len() {
         harness.key(KeyCode::Backspace);
     }
     harness.key(KeyCode::Enter);
@@ -143,7 +162,7 @@ fn the_sidebar_opens_a_projects_dialog_which_pins_it_and_an_areas_without_tags_o
             "│  Pinned       ☐ Not pinned                                                   │",
             "│  Flagged      ☐ Not flagged                                                  │",
             "│                                                                              │",
-            "│ Tab next field · Enter save · Esc cancel                                     │",
+            "│ Tab next field · Enter confirm · Esc close                                   │",
             "└──────────────────────────────────────────────────────────────────────────────┘",
         ]
     );
@@ -151,14 +170,14 @@ fn the_sidebar_opens_a_projects_dialog_which_pins_it_and_an_areas_without_tags_o
         harness.key(KeyCode::Tab);
     }
     harness.type_text(" ");
-    harness.key(KeyCode::Enter);
     assert!(
         harness
             .rows()
             .get(9)
             .is_some_and(|row| row.starts_with(" # Learn Rust")),
-        "pinned after the views"
+        "pinned after the views at once"
     );
+    harness.key(KeyCode::Esc);
     harness.type_text("je");
     assert_eq!(
         dialog(&harness).get(..4).unwrap_or_default(),
@@ -187,7 +206,7 @@ fn a_section_opens_a_dialog_of_its_title_and_description() {
             "│▌ Title        Paperwork                                                      │",
             "│  Description  No description                                                 │",
             "│                                                                              │",
-            "│ Tab next field · Enter save · Esc cancel                                     │",
+            "│ Tab next field · Enter confirm · Esc close                                   │",
             "└──────────────────────────────────────────────────────────────────────────────┘",
         ]
     );
@@ -200,10 +219,15 @@ fn a_section_opens_a_dialog_of_its_title_and_description() {
     harness.key(KeyCode::Up);
     harness.key(KeyCode::Enter);
     assert_eq!(
-        dialog(&harness),
-        Vec::<String>::new(),
-        "saved from the title"
+        dialog(&harness).get(1),
+        Some(
+            &"│▌ Title        Paperwork                                                      │"
+                .to_owned()
+        ),
+        "Enter keeps it open on the title"
     );
+    harness.key(KeyCode::Esc);
+    assert_eq!(dialog(&harness), Vec::<String>::new());
     assert_eq!(
         harness.rows().get(5..8).unwrap_or_default(),
         [
@@ -259,7 +283,7 @@ fn the_navigator_opens_over_the_dialog_closing_it() {
 
 // FR-EDIT-08, FR-VIEW-07, D-117
 #[test]
-fn the_navigator_applies_the_dialogs_draft_as_one_step_to_undo() {
+fn the_navigator_applies_the_field_being_typed_as_a_step_to_undo() {
     for key in ['k', 'g'] {
         let mut harness = Harness::new(80, 24);
         let before = harness.screen();
@@ -279,7 +303,58 @@ fn the_navigator_applies_the_dialogs_draft_as_one_step_to_undo() {
             "Ctrl+{key} kept the draft"
         );
         harness.key(KeyCode::Esc);
-        harness.type_text("z");
-        assert_eq!(harness.screen(), before, "one step takes it all back");
+        harness.type_text("zz");
+        assert_eq!(harness.screen(), before, "a step for each field");
     }
+}
+
+// FR-EDIT-08, FR-TAG-02, D-148
+#[test]
+fn space_toggles_tags_in_the_picker_which_enter_and_escape_close_keeping_them() {
+    let mut harness = Harness::new(80, 24);
+    harness.type_text("jje");
+    harness.key(KeyCode::Tab);
+    harness.key(KeyCode::Tab);
+    harness.type_text(" ");
+    harness.type_text("err");
+    harness.key(KeyCode::Down);
+    harness.type_text(" ");
+    let screen = harness.screen();
+    assert!(
+        screen.contains("│› err ")
+            && screen.contains(
+                "errands                                                                  ✓"
+            ),
+        "a space types nothing, putting the tag on: {screen}"
+    );
+    harness.key(KeyCode::Enter);
+    assert_eq!(
+        dialog(&harness).get(3),
+        Some(
+            &"│▌ Tags         @errands                                                       │"
+                .to_owned()
+        ),
+        "Enter closed the picker"
+    );
+    harness.type_text(" ");
+    harness.key(KeyCode::Down);
+    harness.type_text(" ");
+    harness.key(KeyCode::Esc);
+    let tags = dialog(&harness);
+    assert!(
+        tags.get(3).is_some_and(|row| row.contains("@errands @")),
+        "Esc closes it too, keeping both: {}",
+        harness.screen()
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("z");
+    harness.type_text("e");
+    assert_eq!(
+        dialog(&harness).get(3),
+        Some(
+            &"│  Tags         @errands                                                       │"
+                .to_owned()
+        ),
+        "a step for each tag"
+    );
 }

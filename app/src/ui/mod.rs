@@ -382,7 +382,8 @@ impl Tui {
             self.panel_message(event)
         } else if let Some((picker, focus)) = self.dialog_keys() {
             if picker {
-                picker_input(event).map(|input| Message::EditDialog(EditDialogInput::Tags(input)))
+                edit_dialog::tags_input(event)
+                    .map(|input| Message::EditDialog(EditDialogInput::Tags(input)))
             } else {
                 edit_dialog::edit_dialog_input(event, focus, self.dialog_columns())
                     .map(Message::EditDialog)
@@ -1174,7 +1175,7 @@ impl Tui {
             Some(Window::Attachments)
         } else if let Some((picker, _)) = self.dialog_keys() {
             Some(if picker {
-                Window::Picker
+                Window::DialogTags
             } else {
                 Window::EditDialog
             })

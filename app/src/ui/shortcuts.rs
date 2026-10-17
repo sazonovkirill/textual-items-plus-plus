@@ -50,6 +50,8 @@ pub(super) enum Window {
     DatePrompt,
     /// The edit dialog, while its tag picker is closed.
     EditDialog,
+    /// The tag picker open over the edit dialog.
+    DialogTags,
     /// The Save As prompt.
     SaveAs,
     /// The Quick Add panel, while its picker is closed.
@@ -74,6 +76,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
         Window::Picker => ("Picker", named(picker::PICKER, picker_name)),
         Window::DatePrompt => ("Date Prompt", named(date_prompt::PROMPT, date_name)),
         Window::EditDialog => ("Edit Dialog", named(edit_dialog::KEYS, dialog_name)),
+        Window::DialogTags => ("Tags", dialog_tags_keys()),
         Window::SaveAs => ("Save As", named(save_as::KEYS, save_as_name)),
         Window::QuickAdd => ("Quick Add", named(quick_add::KEYS, quick_add_name)),
         Window::QuickComment => (
@@ -159,6 +162,23 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
     vec![(heading, merged(own)), ("Text", merged(text))]
 }
 
+/// The keys of the tag picker open over the edit dialog: its own, then a picker's it leaves as
+/// they are, but for opening in a new pane, which it has no use for (D-148).
+fn dialog_tags_keys() -> Vec<(Key, String)> {
+    let own = named(edit_dialog::TAG_KEYS, |input| match input {
+        PickerInput::Choose => "Toggle Tag".to_owned(),
+        // The table binds no other input to a key of its own.
+        _ => "Close".to_owned(),
+    });
+    let picker = (picker::PICKER.iter())
+        .filter(|&&(key, input)| {
+            input != PickerInput::ChooseInNewPane
+                && edit_dialog::TAG_KEYS.iter().all(|&(bound, _)| bound != key)
+        })
+        .map(|&(key, input)| (key, picker_name(input)));
+    own.into_iter().chain(picker).collect()
+}
+
 /// Each key of `table` with the name `name` gives what it does.
 fn named<T: Copy>(table: &[(Key, T)], name: impl Fn(T) -> String) -> Vec<(Key, String)> {
     table
@@ -218,9 +238,9 @@ fn dialog_name(input: EditDialogInput) -> String {
     match input {
         EditDialogInput::Next => "Next Field",
         EditDialogInput::Previous => "Previous Field",
-        EditDialogInput::Accept => "Save",
+        EditDialogInput::Confirm => "Confirm Field",
         // The dialog's table binds no other input to a key of its own.
-        EditDialogInput::Cancel | EditDialogInput::Edit(_) | EditDialogInput::Tags(_) => "Cancel",
+        EditDialogInput::Close | EditDialogInput::Edit(_) | EditDialogInput::Tags(_) => "Close",
     }
     .to_owned()
 }
@@ -641,6 +661,7 @@ mod tests {
             headings(Window::EditDialog),
             [("Edit Dialog", 4), ("Text", 19)]
         );
+        assert_eq!(headings(Window::DialogTags), [("Tags", 4), ("Text", 19)]);
     }
 
     // FR-KEY-03

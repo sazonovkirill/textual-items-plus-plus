@@ -987,7 +987,7 @@ mod tests {
             &mut state,
             Message::OnDisk(OnDisk::Changed(document(&["a", "x"])?)),
         );
-        send(&mut state, Message::EditDialog(EditDialogInput::Accept));
+        send(&mut state, Message::EditDialog(EditDialogInput::Confirm));
         assert!(
             titled(&state, "a!").is_some(),
             "the draft applies to a found again"
