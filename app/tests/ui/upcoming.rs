@@ -54,7 +54,7 @@ fn open_upcoming() {
 #[test]
 fn completing_a_task_in_upcoming_takes_it_out_until_completed_items_are_shown() {
     let mut harness = Harness::new(60, 25);
-    harness.type_text("gU");
+    harness.type_text("gu");
     harness.type_text("x");
     let rows = trimmed(&harness);
     assert_eq!(rows[2], "  Wed 7 Oct", "{rows:#?}");

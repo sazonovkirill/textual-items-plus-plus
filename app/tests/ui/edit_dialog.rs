@@ -70,7 +70,7 @@ fn edit_every_field_of_a_task_each_change_a_step_to_undo() {
         !today.contains("Call the bank"),
         "it starts tomorrow, out of Today and the Inbox"
     );
-    harness.type_text("gUe");
+    harness.type_text("gue");
     assert_eq!(
         dialog(&harness).get(1..5).unwrap_or_default(),
         [

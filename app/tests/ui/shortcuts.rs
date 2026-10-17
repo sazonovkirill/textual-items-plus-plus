@@ -122,7 +122,7 @@ fn parentheses_scroll_the_panel_a_page_as_far_as_it_goes() {
         lines.get(1..3).unwrap_or_default(),
         [
             "│ ↑ more                              (",
-            "│  Go to Logbook                 gl, gL"
+            "│  Go to Logbook                     gl"
         ]
     );
     harness.type_text("))))))))");

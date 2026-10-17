@@ -44,18 +44,20 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::ShowCompleted, &["ctrl+o"]),
     (Command::Undo, &["z", "ctrl+z"]),
     (Command::Redo, &["Z", "ctrl+shift+z", "ctrl+y"]),
-    // taskpaper-terminal's Go to Inbox and history keys, without its zoom and home (D-36, D-80).
+    // taskpaper-terminal's Go to Inbox and history keys, without its zoom and home (D-36, D-80),
+    // and the owner's `Alt` arrows a browser goes back and forward with, which iTerm2's Natural
+    // Text Editing sends as `Alt+b` and `Alt+f` (D-93, D-156).
     (Command::Go(Go::Inbox), &["g i"]),
-    (Command::Go(Go::Back), &["H", "alt+shift+left"]),
-    (Command::Go(Go::Forward), &["L", "alt+shift+right"]),
+    (Command::Go(Go::Back), &["H", "alt+left", "alt+b"]),
+    (Command::Go(Go::Forward), &["L", "alt+right", "alt+f"]),
     // FR-KEY-06's go-to keys for the views (D-23), and the owner's lower-case ones for Upcoming
-    // and the Logbook beside taskpaper-terminal's (D-82).
+    // and the Logbook in place of taskpaper-terminal's (D-82, D-156).
     (Command::Go(Go::View(View::Today)), &["g t"]),
-    (Command::Go(Go::View(View::Upcoming)), &["g u", "g U"]),
+    (Command::Go(Go::View(View::Upcoming)), &["g u"]),
     // `!` for what is important, since `gf` filters by tags (FR-VIEW-14).
     (Command::Go(Go::View(View::Flagged)), &["g !"]),
     (Command::Go(Go::View(View::All)), &["g a"]),
-    (Command::Go(Go::View(View::Logbook)), &["g l", "g L"]),
+    (Command::Go(Go::View(View::Logbook)), &["g l"]),
     // `d` as `dd` deletes into it (D-55).
     (Command::Go(Go::View(View::Trash)), &["g d"]),
     // taskpaper-terminal's Navigator key, with the owner's `Ctrl+K` (D-36).
@@ -528,20 +530,19 @@ mod tests {
         let mut keymap = Keymap::default();
         let none = KeyModifiers::NONE;
         let alt = KeyModifiers::ALT;
-        let alt_shift = KeyModifiers::ALT | KeyModifiers::SHIFT;
         let go = |to| Some(Command::Go(to));
         for (events, command) in [
             (vec![char('g'), char('i')], go(Go::Inbox)),
             (vec![char('H')], go(Go::Back)),
-            (vec![press(KeyCode::Left, alt_shift)], go(Go::Back)),
+            (vec![press(KeyCode::Left, alt)], go(Go::Back)),
+            (vec![press(KeyCode::Char('b'), alt)], go(Go::Back)),
             (vec![char('L')], go(Go::Forward)),
-            (vec![press(KeyCode::Right, alt_shift)], go(Go::Forward)),
+            (vec![press(KeyCode::Right, alt)], go(Go::Forward)),
+            (vec![press(KeyCode::Char('f'), alt)], go(Go::Forward)),
             (vec![char('g'), char('t')], go(Go::View(View::Today))),
             (vec![char('g'), char('u')], go(Go::View(View::Upcoming))),
-            (vec![char('g'), char('U')], go(Go::View(View::Upcoming))),
             (vec![char('g'), char('a')], go(Go::View(View::All))),
             (vec![char('g'), char('l')], go(Go::View(View::Logbook))),
-            (vec![char('g'), char('L')], go(Go::View(View::Logbook))),
             (vec![char('g'), char('d')], go(Go::View(View::Trash))),
             (
                 vec![press(KeyCode::Char('g'), KeyModifiers::CONTROL)],
@@ -550,7 +551,15 @@ mod tests {
             (vec![press(KeyCode::Right, none)], None),
             (vec![char('>')], None),
             (vec![press(KeyCode::Char('l'), alt)], None),
-            (vec![press(KeyCode::Left, alt)], None),
+            (
+                vec![press(
+                    KeyCode::Left,
+                    KeyModifiers::ALT | KeyModifiers::SHIFT,
+                )],
+                None,
+            ),
+            (vec![char('g'), char('U')], None),
+            (vec![char('g'), char('L')], None),
             (
                 vec![press(KeyCode::Char('\''), KeyModifiers::CONTROL)],
                 None,

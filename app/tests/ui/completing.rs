@@ -111,7 +111,7 @@ fn an_area_is_not_completed_and_one_its_file_marks_done_stays_open() {
     let text = "Inbox:\nWork: @area @done(2026-10-01)\n\t- Work out\n";
     fs::write(&path, text).expect("written");
     let mut harness = Harness::open(path.clone(), 60, 12);
-    harness.type_text("gL");
+    harness.type_text("gl");
     assert!(!harness.screen().contains("Work"), "{}", harness.screen());
     harness.ctrl('g');
     harness.type_text("work");

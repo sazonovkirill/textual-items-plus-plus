@@ -479,7 +479,6 @@ fn go_up_and_the_section_keys_do_nothing_in_the_sidebar_and_are_not_listed_there
     let before = harness.screen();
     harness.type_text("sS>");
     harness.press(KeyCode::Char('h'), KeyModifiers::ALT);
-    harness.press(KeyCode::Left, KeyModifiers::ALT);
     assert_eq!(harness.screen(), before, "nothing changes");
     harness.ctrl('p');
     harness.type_text("section");

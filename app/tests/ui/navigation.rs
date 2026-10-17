@@ -178,7 +178,7 @@ fn enter_opens_a_project_row_and_gi_goes_to_the_inbox() {
     );
     harness.key(KeyCode::Enter);
     assert_eq!(title(&harness), "# Blog", "Enter opens the project");
-    harness.press(KeyCode::Left, KeyModifiers::ALT);
+    harness.press(KeyCode::Left, KeyModifiers::ALT | KeyModifiers::SHIFT);
     harness.type_text(">");
     assert_eq!(title(&harness), "# Blog", "nothing goes up any more");
     harness.ctrl('g');
@@ -197,7 +197,7 @@ fn enter_opens_a_project_row_and_gi_goes_to_the_inbox() {
     assert_eq!(title(&harness), "# Website", "there is no home");
     harness.type_text("gi");
     assert_eq!(title(&harness), "󰚇 Inbox");
-    harness.press(KeyCode::Left, KeyModifiers::ALT | KeyModifiers::SHIFT);
+    harness.press(KeyCode::Left, KeyModifiers::ALT);
     assert_eq!(title(&harness), "# Website");
 }
 
@@ -217,7 +217,7 @@ fn back_and_forward_return_with_the_focus_where_it_was() {
     assert_eq!(title(&harness), "󰚇 Inbox");
     harness.type_text("H");
     assert_eq!(title(&harness), "󰚇 Inbox", "nothing is further back");
-    harness.press(KeyCode::Right, KeyModifiers::ALT | KeyModifiers::SHIFT);
+    harness.press(KeyCode::Right, KeyModifiers::ALT);
     harness.type_text("L");
     assert_eq!(title(&harness), "# Blog");
     harness.type_text("L");

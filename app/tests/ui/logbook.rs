@@ -66,7 +66,7 @@ Work:
 ";
     fs::write(&path, text).expect("written");
     let mut harness = Harness::open(path.clone(), 50, 20);
-    harness.type_text("gL");
+    harness.type_text("gl");
     assert_eq!(
         trimmed(&harness)[..16],
         [
