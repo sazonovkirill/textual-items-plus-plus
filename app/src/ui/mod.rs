@@ -485,6 +485,13 @@ impl Tui {
         }
         let blocked = self.window().is_some() || self.state.conflict().is_some();
         match (pointer, target) {
+            (Pointer::Wheel(direction, _), _) if self.state.keymap().is_some() => {
+                let lines = isize::try_from(WHEEL).unwrap_or(isize::MAX);
+                self.scroll_keymap(Scroll::Lines(match direction {
+                    Direction::Up => -lines,
+                    Direction::Down => lines,
+                }));
+            }
             (Pointer::Wheel(direction, _), Some(Target::Shortcuts)) => {
                 self.scroll_shortcuts(direction, WHEEL);
             }
@@ -499,13 +506,6 @@ impl Tui {
                 if let Some(motion) = self.panel_scroll(Scroll::Lines(lines)) {
                     self.update(Message::Attachments(AttachmentsInput::Select(motion)));
                 }
-            }
-            (Pointer::Wheel(direction, _), _) if self.state.keymap().is_some() => {
-                let lines = isize::try_from(WHEEL).unwrap_or(isize::MAX);
-                self.scroll_keymap(Scroll::Lines(match direction {
-                    Direction::Up => -lines,
-                    Direction::Down => lines,
-                }));
             }
             _ if blocked => {}
             (Pointer::Click(_), Some(Target::Row { pane, id })) => self.click_row(pane, id),

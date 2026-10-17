@@ -126,16 +126,19 @@ fn its_keys_scroll_it_and_no_other_command_gets_through() {
 
 // FR-KEY-08
 #[test]
-fn the_wheel_scrolls_it() {
+fn the_wheel_scrolls_it_wherever_the_pointer_is() {
     let mut harness = Harness::new(160, 50);
-    harness.type_text("g?");
+    harness.type_text("?g?");
     let top = harness.rows()[FIRST].clone();
-    harness.send(&Event::Mouse(MouseEvent {
-        kind: MouseEventKind::ScrollDown,
-        column: 80,
-        row: 20,
-        modifiers: KeyModifiers::NONE,
-    }));
-    assert_ne!(harness.rows()[FIRST], top);
+    for column in [80, 158] {
+        harness.send(&Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column,
+            row: 20,
+            modifiers: KeyModifiers::NONE,
+        }));
+        assert_ne!(harness.rows()[FIRST], top, "over column {column}");
+        harness.press(KeyCode::Home, KeyModifiers::NONE);
+    }
     assert!(open(&harness), "it stays open");
 }
