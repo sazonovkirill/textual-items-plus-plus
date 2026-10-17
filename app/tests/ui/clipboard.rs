@@ -239,7 +239,7 @@ fn ctrl_v_pastes_the_clipboard_text_into_the_text_edited() {
     let shared = Shared::default();
     harness.tui.use_clipboard(Box::new(shared.clone()));
     shared.put(" today\n");
-    harness.key(KeyCode::Enter);
+    harness.type_text("i");
     harness.ctrl('v');
     harness.key(KeyCode::Esc);
     assert_eq!(

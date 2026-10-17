@@ -107,7 +107,7 @@ fn backspace_in_an_empty_title_leaves_editing_as_escape_does() {
     harness.key(KeyCode::Backspace);
     assert_eq!(mode(&harness), "NAVIGATE");
     assert_eq!(items(&harness), inbox, "the new task is not added");
-    harness.key(KeyCode::Enter);
+    harness.type_text("i");
     harness.type_text("x");
     harness.key(KeyCode::Backspace);
     harness.ctrl('u');
@@ -121,7 +121,7 @@ fn backspace_in_an_empty_title_leaves_editing_as_escape_does() {
 #[test]
 fn the_keys_macos_terminals_send_for_option_and_cmd_edit_a_title() {
     let mut harness = Harness::new(60, 12);
-    harness.key(KeyCode::Enter);
+    harness.type_text("i");
     harness.ctrl('a');
     harness.press(KeyCode::Char('d'), KeyModifiers::ALT);
     harness.type_text("Ring");

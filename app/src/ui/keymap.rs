@@ -69,11 +69,13 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::GoToSymbol, &["/"]),
     // Find, as `Ctrl+F` finds in most apps, and **g**o **s**earch (D-70).
     (Command::Search, &["ctrl+f", "g s"]),
-    // taskpaper-terminal's keys to edit, add below and above, and delete (D-37); `o`, `O` and
-    // `Space` add a task, or in the sidebar a project, and the lower and upper case of a kind's
-    // letter add one at the bottom and the top of the container shown, or in the sidebar `a` an
-    // area and `p` a top-level project (owner, D-40, D-127).
-    (Command::EditTitle, &["enter"]),
+    // The owner's `Enter` to open a row or edit it in the dialog and vim's `i` to edit its title
+    // in place (D-154); taskpaper-terminal's keys to add below and above, and delete (D-37); `o`,
+    // `O` and `Space` add a task, or in the sidebar a project, and the lower and upper case of a
+    // kind's letter add one at the bottom and the top of the container shown, or in the sidebar
+    // `a` an area and `p` a top-level project (owner, D-40, D-127).
+    (Command::Open, &["enter"]),
+    (Command::EditTitle, &["i"]),
     // One Quick Add key, its task bound for the Inbox (owner, D-150).
     (Command::QuickAdd, &["q"]),
     (Command::New(Side::Below), &["o", "space"]),
@@ -113,7 +115,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Convert, &["m y"]),
     (Command::GroupIntoSection, &["g S"]),
     (Command::GroupIntoProject, &["g G"]),
-    // taskpaper-terminal's keys for its Edit Node dialog, `m` modifying and **i**tem (D-100).
+    // taskpaper-terminal's keys for its Edit Node dialog, `m` modifying and **i**tem, beside
+    // `Enter` (D-100, D-154).
     (Command::EditItem, &["e", "m i"]),
     // `m` modifies the focused item (FR-KEY-06); `n` for the notes, as TaskPaper calls the lines a
     // description is stored as, and shifted for the container shown, whose title stands above
@@ -485,6 +488,19 @@ mod tests {
                     "{command:?} has only Alt keys"
                 );
             }
+        }
+    }
+
+    // FR-EDIT-01, FR-EDIT-08, D-154
+    #[test]
+    fn enter_opens_or_edits_in_the_dialog_and_i_edits_the_title() {
+        let mut keymap = Keymap::default();
+        for (event, command) in [
+            (press(KeyCode::Enter, KeyModifiers::NONE), Command::Open),
+            (char('i'), Command::EditTitle),
+            (char('e'), Command::EditItem),
+        ] {
+            assert_eq!(keymap.press(&event), Some(command), "{event:?}");
         }
     }
 
@@ -860,9 +876,7 @@ mod tests {
         ] {
             assert_eq!(keymap.press(&char(key)), Some(command), "{key:?}");
         }
-        for key in ['i', 'I'] {
-            assert_eq!(keymap.press(&char(key)), None, "{key}");
-        }
+        assert_eq!(keymap.press(&char('I')), None);
         assert_eq!(keymap.press(&char('R')), Some(Command::RenameContainer));
     }
 

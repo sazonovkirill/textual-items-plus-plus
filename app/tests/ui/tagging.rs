@@ -161,7 +161,7 @@ fn the_filter_goes_when_the_pane_shows_another_place() {
 #[test]
 fn an_at_sign_typed_in_a_title_points_to_the_tag_picker() {
     let mut harness = Harness::new(90, 16);
-    harness.key(KeyCode::Enter);
+    harness.type_text("i");
     harness.type_text(" @home");
     assert_eq!(
         tasks(&harness).first().map(String::as_str),

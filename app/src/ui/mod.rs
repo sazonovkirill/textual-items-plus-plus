@@ -1559,7 +1559,7 @@ fn context_menu_popup<'a>(
 /// a date's or the Trash's, or the generic command icon.
 fn command_icon(command: Command) -> Icon {
     match command {
-        Command::EditTitle | Command::EditItem => Icon::Edit,
+        Command::Open | Command::EditTitle | Command::EditItem => Icon::Edit,
         Command::ToggleFlagged => Icon::Flag,
         Command::ToggleEvening => Icon::Evening,
         Command::EditDescription(_) | Command::OpenNote(_) => Icon::Notes,

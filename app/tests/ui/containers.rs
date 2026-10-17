@@ -125,7 +125,7 @@ fn the_title_of_the_project_shown_is_a_row_its_own_commands_act_on() {
         ["▌ # Blog", "▌ A project in the Work area."],
         "the title and the description are one row"
     );
-    harness.key(KeyCode::Enter);
+    harness.type_text("i");
     harness.type_text(" posts");
     harness.key(KeyCode::Enter);
     harness.type_text("mn");

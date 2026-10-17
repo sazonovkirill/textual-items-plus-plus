@@ -477,7 +477,7 @@ mod tests {
         );
         assert_ne!(buf[(5, website)].bg, theme.current_line);
         give(&mut state, Command::FocusLeft);
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::Open);
         let (_, buf, _) = draw(&state, 20, 14);
         assert_eq!(
             (

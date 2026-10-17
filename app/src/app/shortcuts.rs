@@ -72,7 +72,8 @@ impl KeyGroup {
             | Command::Navigator
             | Command::GoToSymbol
             | Command::Search => Self::Going,
-            Command::EditTitle
+            Command::Open
+            | Command::EditTitle
             | Command::QuickAdd
             | Command::New(_)
             | Command::AddTask(_)

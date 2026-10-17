@@ -50,7 +50,11 @@ pub enum Command {
     /// Open Quick Add, which adds a task to the Inbox or a place chosen in it, with the dates its
     /// words name (FR-EDIT-07).
     QuickAdd,
-    /// Edit the focused row's title in place (FR-EDIT-01, FR-EDIT-02).
+    /// Open the focused area or project row, or the sidebar's focused entry, in the pane, else
+    /// open the edit dialog on the focused item (FR-NAV-02, FR-EDIT-08, D-154).
+    Open,
+    /// Edit the focused row's title in place, or the sidebar's focused entry's (FR-EDIT-01,
+    /// FR-EDIT-02, D-154).
     EditTitle,
     /// Add a task on this side of the focused row, the first of a section below its heading, a
     /// project beside the sidebar's focused entry, the first of an area below it, or a checklist
@@ -377,6 +381,11 @@ pub const REGISTRY: &[Entry] = &[
     Entry {
         command: Command::QuickAdd,
         title: "Quick Add",
+        context: Context::Navigate,
+    },
+    Entry {
+        command: Command::Open,
+        title: "Open or Edit",
         context: Context::Navigate,
     },
     Entry {
@@ -953,6 +962,7 @@ mod tests {
         let added = beside.chain(at_ends);
         let others = [
             Command::QuickAdd,
+            Command::Open,
             Command::EditTitle,
             Command::EditDescription(Whose::Focused),
             Command::EditDescription(Whose::Shown),

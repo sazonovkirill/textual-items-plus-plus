@@ -358,3 +358,26 @@ fn space_toggles_tags_in_the_picker_which_enter_and_escape_close_keeping_them() 
         "a step for each tag"
     );
 }
+
+// FR-EDIT-08, FR-EDIT-01, D-154
+#[test]
+fn enter_opens_the_dialog_and_i_edits_the_title_in_place() {
+    let mut harness = Harness::new(80, 24);
+    harness.key(KeyCode::Enter);
+    assert_eq!(
+        dialog(&harness)
+            .first()
+            .map(|row| row.starts_with("┌ Edit Task ")),
+        Some(true),
+        "Enter opens the focused task in the dialog"
+    );
+    harness.key(KeyCode::Esc);
+    harness.type_text("i!");
+    assert!(dialog(&harness).is_empty(), "i edits in place");
+    harness.key(KeyCode::Esc);
+    assert!(
+        harness.screen().contains("Call the bank about the card!"),
+        "{}",
+        harness.screen()
+    );
+}

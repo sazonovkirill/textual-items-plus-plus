@@ -59,7 +59,7 @@ fn ctrl_backslash_drops_the_menu_down_below_the_focused_row_grouped_with_icons_a
     assert!(
         inside
             .iter()
-            .any(|row| row.starts_with("󰏫 Edit Title") && row.ends_with("Enter")),
+            .any(|row| row.starts_with("󰏫 Edit Title") && row.ends_with(" i")),
         "each command after its icon, its keys at the right: {inside:?}"
     );
     assert!(inside.contains(&"Completing, Dates and Tags".to_owned()));

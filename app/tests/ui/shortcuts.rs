@@ -253,7 +253,7 @@ fn the_date_prompt_lists_its_own_keys_and_the_text_keys_without_scroll_keys() {
 fn edit_mode_lists_the_keys_of_the_title_or_the_description_edited() {
     let mut harness = Harness::new(160, 40);
     harness.type_text("?");
-    harness.key(KeyCode::Enter);
+    harness.type_text("i");
     let lines = panel(&harness, 40);
     assert_eq!(
         lines.get(1..4).unwrap_or_default(),

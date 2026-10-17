@@ -489,7 +489,7 @@ fn a_command_chosen_from_a_menu_the_panel_comes_to_cover_acts_on_the_list() {
 fn a_title_edit_ends_kept_when_the_panel_comes_to_cover_its_list() {
     let (dir, mut harness) = beside_its_list();
     harness.type_text("j");
-    harness.key(KeyCode::Enter);
+    harness.type_text("i");
     harness.type_text("X");
     narrow(&mut harness);
     assert_eq!(mode(&harness), "ATTACHMENTS", "the panel takes the keys");

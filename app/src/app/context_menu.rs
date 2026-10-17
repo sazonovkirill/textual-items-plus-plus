@@ -55,9 +55,10 @@ impl Reach {
             | Command::GroupIntoSection
             | Command::GroupIntoProject => Some(Self::Rows),
             // The pane shows no nesting to fold (D-75), pasting puts in what the clipboard holds
-            // rather than acting on the selection, and the rest act on the container shown or on
-            // no item.
-            Command::Collapse
+            // rather than acting on the selection, opening is `Enter`'s, which the menu's own
+            // `Enter` would stand for, and the rest act on the container shown or on no item.
+            Command::Open
+            | Command::Collapse
             | Command::Paste(_)
             | Command::EditDescription(super::Whose::Shown)
             | Command::OpenNote(super::Whose::Shown)
@@ -230,7 +231,6 @@ impl State {
             Command::GroupIntoSection => group(ItemKind::Section),
             Command::GroupIntoProject => group(ItemKind::Project),
             Command::Convert => converting::convert_all(document, &self.targets()).is_ok(),
-            Command::EditTitle => self.opened_by_title().is_none(),
             Command::OpenInNewPane => self.inside_focused().is_some(),
             Command::OpenChecklist => focused.is_some_and(|id| attachments::is_task(document, id)),
             Command::ToggleLater => later::takes_any(document, &self.described()),
@@ -404,12 +404,14 @@ mod tests {
         } = fixture()?;
         state.show(Shown::Container(site), Some(blog));
         let listed = offered(&mut state);
-        for command in [Command::TogglePinned, Command::OpenInNewPane] {
+        for command in [
+            Command::TogglePinned,
+            Command::OpenInNewPane,
+            Command::EditTitle,
+        ] {
             assert!(listed.contains(&command), "{command:?} on a project");
         }
-        for command in [Command::EditTitle, Command::OpenChecklist] {
-            assert!(!listed.contains(&command), "{command:?}: Enter opens it");
-        }
+        assert!(!listed.contains(&Command::OpenChecklist));
         state.pane_mut().selection.focus(Some(t));
         let listed = offered(&mut state);
         assert!(listed.contains(&Command::OpenChecklist));

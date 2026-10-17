@@ -911,14 +911,18 @@ impl State {
         }
     }
 
-    /// Shows the area or project the focused row is in the pane, or else starts editing the
-    /// focused row's or the heading's title, picking nothing (D-80). Nothing happens when nothing
-    /// is focused.
-    pub(super) fn edit_title(&mut self) {
-        if let Some(id) = self.opened_by_title() {
-            self.open(id, None);
-            return;
+    /// Shows the focused area or project row in the pane (D-80), or else opens the edit dialog on
+    /// the focused item (D-154). Nothing happens when nothing is focused.
+    pub(super) fn open_focused(&mut self) {
+        match self.opened_by_title() {
+            Some(id) => self.open(id, None),
+            None => self.open_edit_dialog(),
         }
+    }
+
+    /// Starts editing the focused row's or the heading's title, picking nothing (D-154). Nothing
+    /// happens when nothing is focused.
+    pub(super) fn edit_title(&mut self) {
         let selection = &self.pane().selection;
         let editing = selection
             .focused()
@@ -927,7 +931,7 @@ impl State {
     }
 
     /// The focused area or project, other than the container shown, that
-    /// [`edit_title`](Self::edit_title) shows in the pane rather than edits (D-80).
+    /// [`open_focused`](Self::open_focused) shows in the pane rather than edits (D-80).
     pub(super) fn opened_by_title(&self) -> Option<ItemId> {
         self.pane()
             .selection
@@ -1279,7 +1283,7 @@ impl State {
             (Command::AddProject(end), _) => {
                 self.sidebar_add(self.document.inbox(), ItemKind::Project, end);
             }
-            (Command::EditTitle, Some(shown)) => self.show_in_first_pane(shown),
+            (Command::Open, Some(shown)) => self.show_in_first_pane(shown),
             // The sidebar shows no descriptions, so the first pane, which the sidebar leads,
             // opens the project to edit its own under its title (owner, D-68, D-79).
             (Command::EditDescription(_), Some(shown @ Shown::Container(id)))
@@ -1296,7 +1300,7 @@ impl State {
                     focused: None,
                 });
             }
-            (Command::RenameContainer, Some(Shown::Container(id))) => {
+            (Command::EditTitle | Command::RenameContainer, Some(Shown::Container(id))) => {
                 self.editing = Editing::existing(&self.document, id, self.pane().selection.clone());
             }
             (Command::Delete, Some(Shown::Container(id))) => {
@@ -1826,6 +1830,7 @@ pub(super) fn sidebar_takes(command: Command) -> bool {
             | Command::New(_)
             | Command::AddArea(_)
             | Command::AddProject(_)
+            | Command::Open
             | Command::EditTitle
             | Command::EditDescription(_)
             | Command::EditItem
@@ -1952,22 +1957,48 @@ mod tests {
         (state.container(), state.selection().focused())
     }
 
-    // FR-NAV-02, FR-EDIT-01, D-68, D-80
+    // FR-NAV-02, FR-EDIT-01, FR-EDIT-08, D-68, D-80, D-154
     #[test]
-    fn enter_opens_a_project_row_and_edits_any_other_title() -> Result<(), PlacementError> {
+    fn opening_shows_a_project_row_and_edits_any_other_in_the_dialog() -> Result<(), PlacementError>
+    {
         let Fixture {
             mut state,
             work,
             loose,
             section,
-            in_section,
             site,
             in_site,
             ..
         } = fixture()?;
         navigate(&mut state, "Work");
         assert_eq!(at(&state), (Some(work), Some(loose)));
-        assert_eq!(state.path(), [work]);
+        state.open_focused();
+        assert!(state.edit_dialog().is_some(), "a task opens in the dialog");
+        state.edit_dialog = None;
+        state.move_focus(Focus::Next);
+        state.open_focused();
+        assert!(state.edit_dialog().is_some(), "so does a section");
+        state.edit_dialog = None;
+        assert_eq!(at(&state), (Some(work), Some(section)));
+        state.move_focus(Focus::Last);
+        state.open_focused();
+        assert!(state.edit_dialog().is_none());
+        assert_eq!(at(&state), (Some(site), Some(in_site)), "a project opens");
+        Ok(())
+    }
+
+    // FR-EDIT-01, FR-EDIT-02, D-154
+    #[test]
+    fn edit_title_edits_any_row_in_place_a_project_row_too() -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            loose,
+            section,
+            site,
+            ..
+        } = fixture()?;
+        navigate(&mut state, "Work");
         let edited = |state: &State| state.editing().map(|(id, ..)| id);
         state.edit_title();
         assert_eq!(edited(&state), Some(loose), "a task is edited");
@@ -1976,21 +2007,14 @@ mod tests {
         state.edit_title();
         assert_eq!(edited(&state), Some(section), "so is a section");
         state.edit_input(EditInput::Done);
-        state.open_in_new_pane();
-        assert_eq!(
-            at(&state),
-            (Some(work), Some(section)),
-            "a section opens in its area, focused on it"
-        );
-        state.close_pane();
         state.move_focus(Focus::Last);
         state.edit_title();
-        assert_eq!(edited(&state), None);
-        assert_eq!(at(&state), (Some(site), Some(in_site)), "a project opens");
-        state.move_focus(Focus::First);
-        state.edit_title();
-        assert_eq!(edited(&state), Some(site), "its title is renamed");
-        assert_ne!(state.container(), Some(in_section));
+        assert_eq!(
+            edited(&state),
+            Some(site),
+            "and a project row, which stays shut"
+        );
+        assert_eq!(state.container(), Some(work));
         Ok(())
     }
 
@@ -3087,7 +3111,7 @@ mod tests {
         );
         state.close_pane();
         state.pane_mut().selection.focus(Some(site));
-        state.edit_title();
+        state.open_focused();
         assert_eq!(state.container(), Some(site), "Enter opens a project");
         assert_eq!(container::listing(state.document(), launch), None);
         assert_eq!(container::listing(state.document(), ItemId::new(99)), None);

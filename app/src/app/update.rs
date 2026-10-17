@@ -244,6 +244,7 @@ fn run(state: &mut State, command: Command, today: Date, asked: Option<&Notice>)
         Command::GoToSymbol => state.open_go_to_symbol(),
         Command::Search => state.open_search(),
         Command::QuickAdd => state.open_quick_add(),
+        Command::Open => state.open_focused(),
         Command::EditTitle => state.edit_title(),
         Command::New(side) => state.add_beside(side),
         Command::AddTask(end) => state.add(ItemKind::Task, end),
@@ -740,7 +741,7 @@ mod tests {
             Some(state.document().inbox()),
             "going to the Inbox passes"
         );
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::Open);
         assert_eq!(state.container(), Some(work), "Enter shows it in the pane");
         assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
         give(&mut state, Command::NextPane);
@@ -847,7 +848,7 @@ mod tests {
             Some("Work"),
             "now where the entry was"
         );
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::Open);
         give(&mut state, Command::NextPane);
         give(&mut state, Command::Focus(Focus::First));
         give(&mut state, Command::TogglePinned);
@@ -1079,7 +1080,7 @@ mod tests {
         edit(&mut state, EditInput::Done);
         assert_eq!(sidebar(&state), (Some("P".into()), vec!["P".into()]));
         let inbox = state.document().inbox();
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::Open);
         assert_ne!(state.container(), Some(inbox));
         give(&mut state, Command::Focus(Focus::First));
         assert_eq!(
@@ -1089,7 +1090,7 @@ mod tests {
         );
         give(&mut state, Command::Go(Go::Back));
         assert_ne!(state.container(), Some(inbox));
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::Open);
         assert_eq!(state.container(), Some(inbox), "and so does Enter");
         assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
     }
@@ -1384,11 +1385,11 @@ mod tests {
             give(&mut state, command);
         }
         assert_eq!(state, before, "a view is only opened");
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::Open);
         assert_eq!(state.shown(), Shown::View(View::Today));
         assert!(state.sidebar_has_keys(), "the keys stay in the sidebar");
         give(&mut state, Command::Go(Go::Inbox));
-        give(&mut state, Command::EditTitle);
+        give(&mut state, Command::Open);
         assert_eq!(state.shown(), Shown::View(View::Today));
         assert_eq!(focused(&state), Some("due"));
         assert!(
