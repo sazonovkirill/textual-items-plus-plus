@@ -41,7 +41,7 @@ fn read(path: &PathBuf) -> String {
 fn comment_on_a_task() {
     let (_dir, path) = file("Inbox:\n\t- Renew the passport\n");
     let mut harness = Harness::open(path.clone(), 80, 16);
-    harness.type_text("N");
+    harness.type_text("\\jj");
     assert_eq!(
         panel(&harness)[1..9],
         [
@@ -107,7 +107,7 @@ fn comment_on_a_task() {
     );
     harness.key(KeyCode::Esc);
     harness.ctrl('z');
-    harness.type_text("N");
+    harness.type_text("\\jj");
     assert_eq!(
         panel(&harness)[8],
         "│▌Oct 5 09:30 Booked                   │",
@@ -115,7 +115,7 @@ fn comment_on_a_task() {
     );
     harness.key(KeyCode::Esc);
     let mut reopened = Harness::open(path, 80, 16);
-    reopened.type_text("N");
+    reopened.type_text("\\jj");
     assert_eq!(
         panel(&reopened)[8],
         "│▌Oct 5 09:30 Booked                   │"
@@ -126,7 +126,7 @@ fn comment_on_a_task() {
 #[test]
 fn escape_cancels_a_comment_and_a_paste_goes_in_on_one_line() {
     let mut harness = Harness::new(80, 16);
-    harness.type_text("N");
+    harness.type_text("\\jj");
     let before = harness.rows();
     harness.type_text("aon second thought");
     harness.key(KeyCode::Esc);
@@ -142,18 +142,40 @@ fn escape_cancels_a_comment_and_a_paste_goes_in_on_one_line() {
 
 // FR-ATT-02, FR-VIEW-10
 #[test]
-fn the_container_shown_and_a_sidebar_entry_open_their_comments() {
+fn the_container_shown_and_a_sidebar_entry_open_their_attachments() {
     let mut harness = Harness::new(80, 12);
-    harness.press(KeyCode::Char('N'), KeyModifiers::ALT | KeyModifiers::SHIFT);
+    harness.press(KeyCode::Char('\\'), KeyModifiers::ALT);
     assert!(panel(&harness)[0].starts_with("┌ Inbox ─"));
     harness.key(KeyCode::Esc);
     harness.ctrl('g');
     harness.type_text("Home");
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
-    harness.type_text("N");
+    harness.type_text("\\");
     let title = panel(&harness)[0].clone();
     assert!(title.starts_with("┌ Home ─"), "{title}");
+}
+
+// FR-ATT-02, FR-NAV-06
+#[test]
+fn the_palette_opens_the_comments_which_have_no_key_of_their_own() {
+    let (_dir, path) = file(
+        "Inbox:\n\t- Renew the passport\n\t\tCOMMENTS @hidden\n\t\t\t[2026-10-05 09:30] Booked\n",
+    );
+    let mut harness = Harness::open(path, 80, 16);
+    harness.type_text("N");
+    assert!(
+        !harness.rows().iter().any(|row| row.contains('┌')),
+        "N opens no panel"
+    );
+    harness.ctrl('p');
+    harness.type_text("Open Comments");
+    harness.key(KeyCode::Enter);
+    assert_eq!(
+        panel(&harness)[8],
+        "│▌Oct 5 09:30 Booked                   │",
+        "the newest comment is selected"
+    );
 }
 
 // FR-ATT-06, FR-ATT-05, FR-VIEW-10
@@ -197,7 +219,7 @@ fn c_adds_a_comment_from_a_line_at_the_bottom_without_the_panel() {
         !harness.rows().iter().any(|row| row.contains('┌')),
         "the Navigator closed it, adding nothing"
     );
-    harness.type_text("N");
+    harness.type_text("\\jj");
     assert_eq!(
         panel(&harness)[8..10],
         [

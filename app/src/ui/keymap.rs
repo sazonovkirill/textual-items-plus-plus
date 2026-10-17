@@ -120,15 +120,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // the rows (D-43).
     (Command::EditDescription(Whose::Focused), &["m n"]),
     (Command::EditDescription(Whose::Shown), &["m N"]),
-    // The owner's key opens the attachments panel on the note, and taskpaper-terminal's Open
-    // Comments on the comments; with `Alt`, on the container shown (FR-ATT-02, D-94).
+    // The owner's key opens the attachments panel, whose sections are all reached from there, so
+    // opening it on the comments or the checklist has no key; with `Alt`, on the container shown
+    // (FR-ATT-02, D-94, D-152). The owner's `c` adds a comment without opening the panel (D-143).
     (Command::OpenNote(Whose::Focused), &["\\"]),
     (Command::OpenNote(Whose::Shown), &["alt+\\"]),
-    (Command::OpenComments(Whose::Focused), &["N"]),
-    (Command::OpenComments(Whose::Shown), &["alt+N"]),
-    // `C` for the checklist, beside `N` for the comments, which only a task has, so it has no key
-    // for the container shown; the owner's `c` adds a comment without opening the panel (D-143).
-    (Command::OpenChecklist, &["C"]),
     (Command::QuickComment, &["c"]),
     // taskpaper-terminal's date prompt keys, and `t` to start today (D-23).
     (Command::SetDate(DateKind::Start), &["m s"]),
@@ -736,12 +732,19 @@ mod tests {
 
     // FR-ATT-02
     #[test]
-    fn backslash_opens_the_note_and_shift_n_the_comments_with_alt_for_the_container_shown() {
+    fn backslash_opens_the_panel_with_alt_for_the_container_shown_and_no_key_opens_a_section() {
         let mut keymap = Keymap::default();
         let shift = KeyModifiers::SHIFT;
         let alt = KeyModifiers::ALT;
-        assert_eq!(keymap.press(&char('n')), None);
-        assert_eq!(keymap.press(&press(KeyCode::Char('n'), alt)), None);
+        for event in [
+            char('n'),
+            press(KeyCode::Char('n'), alt),
+            press(KeyCode::Char('n'), shift),
+            press(KeyCode::Char('N'), alt | shift),
+            press(KeyCode::Char('c'), shift),
+        ] {
+            assert_eq!(keymap.press(&event), None, "{event:?}");
+        }
         for (event, command) in [
             (char('\\'), Command::OpenNote(Whose::Focused)),
             (
@@ -760,14 +763,6 @@ mod tests {
             (
                 press(KeyCode::Char('t'), KeyModifiers::CONTROL),
                 Command::OpenInNewPane,
-            ),
-            (
-                press(KeyCode::Char('n'), shift),
-                Command::OpenComments(Whose::Focused),
-            ),
-            (
-                press(KeyCode::Char('N'), alt | shift),
-                Command::OpenComments(Whose::Shown),
             ),
         ] {
             assert_eq!(keymap.press(&event), Some(command));
@@ -790,11 +785,10 @@ mod tests {
         );
     }
 
-    // FR-ATT-02, FR-ATT-06
+    // FR-ATT-06
     #[test]
-    fn shift_c_opens_the_checklist_and_c_adds_a_comment() {
+    fn c_adds_a_comment() {
         let mut keymap = Keymap::default();
-        assert_eq!(keymap.press(&char('C')), Some(Command::OpenChecklist));
         assert_eq!(keymap.press(&char('c')), Some(Command::QuickComment));
     }
 

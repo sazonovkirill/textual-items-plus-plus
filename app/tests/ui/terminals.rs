@@ -77,8 +77,6 @@ fn every_window_opens_on_every_size() {
         "\x02",
         "\x02j'",
         "\\",
-        "N",
-        "C",
         "c",
         "cCalled back",
         "md",

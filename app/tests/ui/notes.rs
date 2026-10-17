@@ -342,7 +342,7 @@ fn moving_a_full_panel_to_another_item_opens_it_at_half() {
     let corner = |harness: &Harness| harness.rows()[0].chars().position(|c| c == '┌');
     harness.type_text("\\\\");
     assert_eq!(corner(&harness), Some(0), "full");
-    harness.type_text("g0N");
+    harness.type_text("g0\\");
     assert_eq!(
         corner(&harness),
         Some(60),
@@ -392,7 +392,7 @@ fn beside_its_list() -> (tempfile::TempDir, Harness) {
     let text = "Inbox:\n\t- Alpha task\n\t\t- one\n\t\t- two\n\t- Beta task\n";
     fs::write(&path, text).expect("the fixture is written");
     let mut harness = Harness::open(path, 100, 14);
-    harness.type_text("Ckk");
+    harness.type_text("\\");
     harness.press(KeyCode::BackTab, KeyModifiers::SHIFT);
     (dir, harness)
 }
