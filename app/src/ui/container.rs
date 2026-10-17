@@ -827,14 +827,21 @@ impl<'a> ContainerPane<'a> {
     }
 
     /// The line naming `view` at the top of the pane: its icon, then its name, in the Inbox's
-    /// style, and for search results the words searched for after it, with their caret and
-    /// selection while they are typed.
+    /// style, for Today today's date after it not in bold (D-151), and for search results the
+    /// words searched for after it, with their caret and selection while they are typed.
     fn view_title(&self, view: View) -> Piece<'a> {
         let style = Style::new().fg(self.theme.primary).bold();
         let icon = super::view_icon(view).glyph(self.icons);
+        let mut name = Line::from(Span::styled(view.title(), style));
+        if view == View::Today {
+            name.spans.push(Span::styled(
+                self.today.strftime(", %b %-d %Y").to_string(),
+                Style::new().fg(self.theme.primary),
+            ));
+        }
         let mut piece = Piece {
             x: u16::try_from(Span::raw(icon).width() + 1).unwrap_or(u16::MAX),
-            text: Text::styled(view.title(), style),
+            text: Text::from(name),
             fit: self.fit(),
             left: Line::styled(icon, style),
             right: Line::default(),
@@ -1546,7 +1553,7 @@ mod tests {
                 .map(|line| line.trim_end())
                 .collect::<Vec<_>>(),
             [
-                "  ☼ Today",
+                "  ☼ Today, Oct 5 2026",
                 "",
                 "▌ ☐ Answer the recruiter's  ! yesterday",
                 "▌   email",
@@ -1559,6 +1566,12 @@ mod tests {
             "only due dates show (D-139)"
         );
         assert_eq!(buf[(4, 4)].fg, theme.dim_text, "where it is, dimmed");
+        let (name, date) = (&buf[(4, 0)], &buf[(9, 0)]);
+        assert!(
+            name.modifier.contains(Modifier::BOLD) && !date.modifier.contains(Modifier::BOLD),
+            "Today in bold, the date after it not (D-151)"
+        );
+        assert_eq!((name.fg, date.fg), (theme.primary, theme.primary));
     }
 
     // FR-VIEW-06, D-51

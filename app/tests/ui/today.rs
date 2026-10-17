@@ -20,7 +20,7 @@ fn open_today() {
     let mut harness = Harness::new(60, 16);
     harness.type_text("gt");
     let today = [
-        "  \u{f0599} Today",
+        "  \u{f0599} Today, Oct 5 2026",
         "",
         "▌ ☐ Answer the recruiter's email                \u{f0a31} yesterday",
         "▌   Work",
@@ -76,7 +76,7 @@ fn a_task_in_today_opens_where_it_lives_in_a_new_pane() {
     harness.ctrl('w');
     harness.type_text("c");
     let rows = trimmed(&harness);
-    assert_eq!(rows[0], "  \u{f0599} Today");
+    assert_eq!(rows[0], "  \u{f0599} Today, Oct 5 2026");
     assert!(
         rows[6].starts_with("▌ ☐ Review two portfolios"),
         "{rows:#?}"
@@ -91,7 +91,7 @@ fn filter_today_by_a_tag() {
     harness.type_text("writing");
     harness.key(KeyCode::Enter);
     let mut filtered = vec![
-        "  \u{f0599} Today                                        \u{f04fc} @writing",
+        "  \u{f0599} Today, Oct 5 2026                            \u{f04fc} @writing",
         "",
         "▌ ☐ Write the announcement @writing             \u{f0756} 1/5 \u{f11d7} \u{f0189} 1",
         "▌   Work › Website › Launch",
