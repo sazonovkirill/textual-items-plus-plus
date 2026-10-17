@@ -130,6 +130,7 @@ impl KeyGroup {
             | Command::Shortcuts
             | Command::ScrollShortcuts(_)
             | Command::Palette
+            | Command::Keymap
             | Command::ContextMenu
             | Command::Settings
             | Command::ChangeTheme
@@ -181,27 +182,37 @@ impl State {
     /// registry entries in the registry's order, leaving out groups with none (FR-KEY-03).
     #[must_use]
     pub fn shortcuts(&self) -> Option<Vec<(KeyGroup, Vec<&'static Entry>)>> {
-        self.shortcuts.then(|| {
-            KeyGroup::ALL
-                .into_iter()
-                .map(|group| {
-                    let entries = REGISTRY
-                        .iter()
-                        .filter(|entry| {
-                            KeyGroup::of(entry.command) == group && self.takes(entry.command)
-                        })
-                        .collect::<Vec<_>>();
-                    (group, entries)
-                })
-                .filter(|(_, entries)| !entries.is_empty())
-                .collect()
-        })
+        self.shortcuts
+            .then(|| grouped(|command| self.takes(command)))
+    }
+
+    /// While the keymap window is open, every command, each group with its registry entries in
+    /// the registry's order, wherever it is given (FR-KEY-08).
+    #[must_use]
+    pub fn keymap(&self) -> Option<Vec<(KeyGroup, Vec<&'static Entry>)>> {
+        self.keymap.then(|| grouped(|_| true))
     }
 
     /// Shows the shortcuts panel, or hides it.
     pub(super) fn toggle_shortcuts(&mut self) {
         self.shortcuts = !self.shortcuts;
     }
+}
+
+/// The registry entries whose commands `listed` keeps, each group with its entries in the
+/// registry's order, leaving out groups with none.
+fn grouped(listed: impl Fn(Command) -> bool) -> Vec<(KeyGroup, Vec<&'static Entry>)> {
+    KeyGroup::ALL
+        .into_iter()
+        .map(|group| {
+            let entries = REGISTRY
+                .iter()
+                .filter(|entry| KeyGroup::of(entry.command) == group && listed(entry.command))
+                .collect::<Vec<_>>();
+            (group, entries)
+        })
+        .filter(|(_, entries)| !entries.is_empty())
+        .collect()
 }
 
 #[cfg(test)]
@@ -351,6 +362,36 @@ mod tests {
             give(&mut given, entry.command);
             assert_eq!(given, state, "{:?} does nothing", entry.command);
         }
+        Ok(())
+    }
+
+    // FR-KEY-08
+    #[test]
+    fn the_keymap_lists_every_command_and_takes_the_keys_until_closed() -> Result<(), PlacementError>
+    {
+        let mut state = state()?;
+        assert_eq!(state.keymap(), None, "closed at the start");
+        give(&mut state, Command::Keymap);
+        let listed = state.keymap().unwrap_or_default();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|(_, entries)| entries.len())
+                .sum::<usize>(),
+            REGISTRY.len(),
+            "every command, wherever it is given"
+        );
+        assert_eq!(
+            listed.last().map(|(group, _)| *group),
+            Some(KeyGroup::Conflict)
+        );
+        assert!(!state.takes(Command::ToggleCompleted));
+        assert!(state.takes(Command::Navigator));
+        update(&mut state, Message::CloseKeymap, TODAY);
+        assert_eq!(state.keymap(), None);
+        give(&mut state, Command::Keymap);
+        give(&mut state, Command::Navigator);
+        assert_eq!(state.keymap(), None, "the Navigator takes its place");
         Ok(())
     }
 

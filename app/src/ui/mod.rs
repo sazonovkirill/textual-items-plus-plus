@@ -13,6 +13,7 @@ mod edit_keys;
 mod field;
 mod file;
 mod keymap;
+mod keymap_window;
 mod markdown;
 mod mouse;
 mod panes;
@@ -53,10 +54,10 @@ pub use theme::{BuiltIn, Icon, IconSet, Theme};
 use crate::{
     app::{
         self, Animations, AttachmentsInput, Command, DateInput, Destination, Direction,
-        EditDialogInput, EditDialogView, EditField, EditInput, Effect, Focus, KeyGroup, Message,
-        Opened, PaneView, Part, PickerInput, Place, QuickAddInput, QuickCommentInput, Report,
-        SaveAsInput, SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop, Symbol,
-        TagEntry, TagMark, TagsFor, TagsView, TextEdit, view::View,
+        EditDialogInput, EditDialogView, EditField, EditInput, Effect, Entry, Focus, KeyGroup,
+        Message, Opened, PaneView, Part, PickerInput, Place, QuickAddInput, QuickCommentInput,
+        Report, SaveAsInput, SaveAsReport, SearchInput, Selected, Settings, Side, State, Stop,
+        Symbol, TagEntry, TagMark, TagsFor, TagsView, TextEdit, view::View,
     },
     domain::{ItemId, ItemKind, dates::DateKind},
     store::{self, ConfigFile, OpenError, Outcome, RecoveryError},
@@ -69,6 +70,7 @@ use container::{ContainerPane, Top};
 use date_prompt::DatePromptPanel;
 use edit_dialog::EditDialogPanel;
 use file::File;
+use keymap_window::{KeymapKey, KeymapWindow};
 use mouse::{Pointer, Target, Targets, WHEEL};
 use quick_add::QuickAddPanel;
 use quick_comment::QuickCommentPanel;
@@ -129,6 +131,9 @@ pub struct Tui {
     shortcuts_scroll: (usize, Option<Window>),
     /// How many lines a page of the shortcuts panel was at the last draw, which its keys scroll.
     shortcuts_page: usize,
+    /// The first line of the keymap window's columns on screen, and how many lines a page of it
+    /// was at the last draw (FR-KEY-08).
+    keymap_scroll: (usize, usize),
     /// The local time now, which stamps comments (FR-ATT-04), the home folder and where the app
     /// keeps its own files and the disk worker and the watcher report, for the file Save As
     /// opens for a document without one (FR-STORE-11).
@@ -169,6 +174,7 @@ impl Tui {
             keyboard: Keyboard::default(),
             shortcuts_scroll: (0, None),
             shortcuts_page: 1,
+            keymap_scroll: (0, 1),
             edge: edge.clone(),
             now: Duration::ZERO,
             weather: Weather::default(),
@@ -401,6 +407,8 @@ impl Tui {
             settings::settings_input(event)
                 .map(Message::Settings)
                 .or_else(|| self.global(event))
+        } else if self.state.keymap().is_some() {
+            self.keymap_message(event)
         } else if self.state.search().is_some() {
             search::search_input(event)
                 .map(Message::Search)
@@ -491,6 +499,13 @@ impl Tui {
                 if let Some(motion) = self.panel_scroll(Scroll::Lines(lines)) {
                     self.update(Message::Attachments(AttachmentsInput::Select(motion)));
                 }
+            }
+            (Pointer::Wheel(direction, _), _) if self.state.keymap().is_some() => {
+                let lines = isize::try_from(WHEEL).unwrap_or(isize::MAX);
+                self.scroll_keymap(Scroll::Lines(match direction {
+                    Direction::Up => -lines,
+                    Direction::Down => lines,
+                }));
             }
             _ if blocked => {}
             (Pointer::Click(_), Some(Target::Row { pane, id })) => self.click_row(pane, id),
@@ -692,7 +707,9 @@ impl Tui {
     /// the attachments panel while nothing in it is edited and no checklist entry is selected.
     fn paste(&mut self, text: &str) {
         let panel = self.state.attachments().is_some() && self.state.editing().is_none();
-        let window = self.state.conflict().is_some() || self.state.settings_window().is_some();
+        let window = self.state.conflict().is_some()
+            || self.state.settings_window().is_some()
+            || self.state.keymap().is_some();
         if window || (panel && !self.in_checklist()) {
             return;
         }
@@ -1187,6 +1204,8 @@ impl Tui {
             Some(Window::SaveAs)
         } else if self.state.settings_window().is_some() {
             Some(Window::Settings)
+        } else if self.state.keymap().is_some() {
+            Some(Window::Keymap)
         } else if self.state.search().is_some() {
             Some(Window::Search)
         } else if self.open_picker().is_some() {
@@ -1209,15 +1228,60 @@ impl Tui {
             .window()
             .map(shortcuts::window_keys)
             .unwrap_or_default();
-        let commands = groups.into_iter().filter_map(|(group, entries)| {
+        Some(window.into_iter().chain(self.listed(groups)).collect())
+    }
+
+    /// What the keymap window lists while it is open: each group of every command with how its
+    /// keys read, leaving out commands no key gives, then every window's own keys (FR-KEY-08).
+    fn keymap_listings(&self) -> Option<Vec<Listing>> {
+        let groups = self.state.keymap()?;
+        Some(
+            self.listed(groups)
+                .chain(shortcuts::every_window_keys())
+                .collect(),
+        )
+    }
+
+    /// Each of `groups` with how the keys of its commands read, leaving out commands no key
+    /// gives and groups left with none.
+    fn listed(
+        &self,
+        groups: Vec<(KeyGroup, Vec<&'static Entry>)>,
+    ) -> impl Iterator<Item = Listing> {
+        groups.into_iter().filter_map(|(group, entries)| {
             let keys: Vec<_> = entries
                 .into_iter()
                 .map(|entry| (entry.title.to_owned(), self.keymap.labels(entry.command)))
                 .filter(|(_, keys)| !keys.is_empty())
                 .collect();
             (!keys.is_empty()).then_some((group.name(), keys))
-        });
-        Some(window.into_iter().chain(commands).collect())
+        })
+    }
+
+    /// The message of what `event` does in the open keymap window: its own keys, scrolling it
+    /// here, and the global commands it takes (FR-KEY-08).
+    fn keymap_message(&mut self, event: &Event) -> Option<Message> {
+        match keymap_window::keymap_input(event) {
+            Some(KeymapKey::Close) => Some(Message::CloseKeymap),
+            Some(KeymapKey::Scroll(scroll)) => {
+                self.scroll_keymap(scroll);
+                None
+            }
+            None => self.global(event),
+        }
+    }
+
+    /// Scrolls the keymap window's columns as `scroll` says, as far as they go at the next draw.
+    fn scroll_keymap(&mut self, scroll: Scroll) {
+        let (first, page) = self.keymap_scroll;
+        self.keymap_scroll.0 = match scroll {
+            Scroll::Lines(lines) => first.saturating_add_signed(lines),
+            Scroll::Pages(pages) => {
+                first.saturating_add_signed(pages.saturating_mul(page.cast_signed()))
+            }
+            Scroll::Top => 0,
+            Scroll::Bottom => usize::MAX,
+        };
     }
 
     /// Draws the panes placed in `room`, a dim rule apart, scrolling each to keep its focus in
@@ -1809,6 +1873,14 @@ impl Widget for &mut Tui {
             let settings = (self.state.settings(), self.state.default_settings());
             SettingsWindow::new(settings, focused, self.config.path(), &self.theme)
                 .render(panes, buf);
+        }
+        if let Some(groups) = self.keymap_listings() {
+            let window = KeymapWindow::new(&groups, &self.theme);
+            let (last, page) = window.scroll_range(area);
+            self.keymap_scroll = (self.keymap_scroll.0.min(last), page);
+            window.scrolled(self.keymap_scroll.0).render(area, buf);
+        } else {
+            self.keymap_scroll.0 = 0;
         }
         if let (Some(view), Some(file)) = (self.state.conflict(), &self.file) {
             let (theirs, mine) = if view.diff {

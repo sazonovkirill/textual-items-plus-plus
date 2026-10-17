@@ -190,6 +190,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Widen, &["ctrl+w >", "alt+shift+l"]),
     // taskpaper-terminal's keys for its shortcuts panel and for scrolling it a page (its D-55).
     (Command::Shortcuts, &["?"]),
+    // **g**o to every key, beside `?` for the keys that work now (FR-KEY-08).
+    (Command::Keymap, &["g ?"]),
     (Command::ScrollShortcuts(Direction::Down), &[")"]),
     (Command::ScrollShortcuts(Direction::Up), &["("]),
     // taskpaper-terminal's key: **g**o to the settings, `,` as macOS apps open theirs.

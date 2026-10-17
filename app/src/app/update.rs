@@ -47,6 +47,8 @@ pub enum Message {
     Attachments(AttachmentsInput),
     /// The user did something in the open settings window (FR-SET-02).
     Settings(SettingsInput),
+    /// The user closed the keymap window (FR-KEY-08).
+    CloseKeymap,
     /// The user did something in the open Save As prompt (FR-STORE-11).
     SaveAs(SaveAsInput),
     /// The user did something in the open theme picker (FR-UI-12).
@@ -208,6 +210,7 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
         Message::Search(input) => state.search_input(input),
         Message::Attachments(input) => state.attachments_input(input),
         Message::Settings(input) => return state.settings_input(input),
+        Message::CloseKeymap => state.keymap = false,
         Message::SaveAs(input) => return state.save_as_input(input),
         Message::ThemePicker(input) => return state.theme_picker_input(input),
         Message::SettingsFailed(problem) => state.settings_failed(problem),
@@ -300,6 +303,7 @@ fn run(state: &mut State, command: Command, today: Date, asked: Option<&Notice>)
         Command::Narrow => return vec![Effect::NarrowPane],
         Command::Widen => return vec![Effect::WidenPane],
         Command::Shortcuts => state.toggle_shortcuts(),
+        Command::Keymap => state.keymap = true,
         Command::ScrollShortcuts(direction) => {
             return vec![Effect::ScrollShortcuts(direction)];
         }

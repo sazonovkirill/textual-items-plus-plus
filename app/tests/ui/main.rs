@@ -17,6 +17,7 @@ mod editing;
 mod flagged;
 mod go_to_symbol;
 mod inbox;
+mod keymap;
 mod later;
 mod logbook;
 mod mouse;

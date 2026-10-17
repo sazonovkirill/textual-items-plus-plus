@@ -47,6 +47,10 @@ pub enum Opened {
 
 /// Everything the app knows while it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the shortcuts panel, the attachments panel's keys, searching and the keymap window each go on and off on their own"
+)]
 pub struct State {
     pub(super) document: Document,
     pub(super) opened: Opened,
@@ -89,6 +93,8 @@ pub struct State {
     pub(super) sidebar: Sidebar,
     /// Whether the shortcuts panel shows (FR-KEY-03).
     pub(super) shortcuts: bool,
+    /// Whether the keymap window is open (FR-KEY-08).
+    pub(super) keymap: bool,
     /// The settings the app runs with (FR-SET-03).
     pub(super) settings: Settings,
     /// The settings the session takes where the settings file does not set them (FR-SET-02).
@@ -144,6 +150,7 @@ impl State {
             opened_panels: 0,
             sidebar,
             shortcuts: false,
+            keymap: false,
             settings: Settings::default(),
             default_settings: Settings::default(),
             settings_window: None,
@@ -358,6 +365,7 @@ impl State {
             || self.settings_window.is_some()
             || self.save_as.is_some()
             || self.theme_picker.is_some()
+            || self.keymap
             || self.searching
     }
 
@@ -1700,6 +1708,7 @@ impl State {
         self.context_menu = None;
         self.go_to_symbol = None;
         self.settings_window = None;
+        self.keymap = false;
         self.dismiss_theme_picker();
         self.move_to = None;
         self.date_prompt = None;
@@ -1808,6 +1817,7 @@ fn sidebar_passes(command: Command) -> bool {
             | Command::PreviousPane
             | Command::Browse(_)
             | Command::Shortcuts
+            | Command::Keymap
             | Command::ScrollShortcuts(_)
             | Command::Settings
             | Command::ChangeTheme

@@ -100,6 +100,7 @@ impl Reach {
             | Command::Narrow
             | Command::Widen
             | Command::Shortcuts
+            | Command::Keymap
             | Command::ScrollShortcuts(_)
             | Command::Settings
             | Command::ChangeTheme

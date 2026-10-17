@@ -20,6 +20,7 @@ use super::{
     date_prompt, edit_dialog,
     edit_keys::{CHECKLIST, COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
     keymap::{Key, key_label},
+    keymap_window::{self, KeymapKey},
     picker, quick_add,
     quick_comment::{self, CommentKey},
     save_as, search, settings, text_keys,
@@ -68,6 +69,44 @@ pub(super) enum Window {
     Editing(Part),
     /// Edit mode, editing a checklist item's text in the attachments panel.
     EditingChecklistItem,
+    /// The keymap window.
+    Keymap,
+}
+
+impl Window {
+    /// Every window with keys of its own, in the order the keymap window lists them, a note's
+    /// editing left out for having a description's keys.
+    const LISTED: [Self; 15] = [
+        Self::Picker,
+        Self::DatePrompt,
+        Self::EditDialog,
+        Self::DialogTags,
+        Self::SaveAs,
+        Self::QuickAdd,
+        Self::QuickComment,
+        Self::Search,
+        Self::Settings,
+        Self::Attachments,
+        Self::Editing(Part::Title),
+        Self::EditingChecklistItem,
+        Self::Editing(Part::Comment(0)),
+        Self::Editing(Part::Description),
+        Self::Keymap,
+    ];
+}
+
+/// The keys of every window that binds keys of its own, each under the window's name, then the
+/// text keys every text field takes (FR-KEY-08).
+pub(super) fn every_window_keys() -> Vec<Listing> {
+    let text = text_keys::TEXT
+        .iter()
+        .map(|&(key, edit)| (key, text_name(edit)))
+        .collect();
+    Window::LISTED
+        .into_iter()
+        .filter_map(|window| window_keys(window).into_iter().next())
+        .chain([("Text", merged(text))])
+        .collect()
 }
 
 /// The groups of keys `window` binds: its own, then the text keys it leaves as they are.
@@ -90,6 +129,13 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
             }),
         ),
         Window::Settings => ("Settings", named(settings::KEYS, settings_name)),
+        Window::Keymap => (
+            "Keymap",
+            named(keymap_window::KEYS, |key| match key {
+                KeymapKey::Close => "Close".to_owned(),
+                KeymapKey::Scroll(scroll) => scroll_name(scroll),
+            }),
+        ),
         Window::Search => ("Search", named(search::KEYS, search_name)),
         Window::Attachments => (
             "Attachments Panel",
@@ -101,12 +147,7 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
                     PanelKey::Input(_) => "Edit",
                     PanelKey::AddComment => "Add Comment",
                     PanelKey::Cycle => "Full Width, Then Hide",
-                    PanelKey::Scroll(Scroll::Lines(lines)) if lines < 0 => "Scroll Up",
-                    PanelKey::Scroll(Scroll::Lines(_)) => "Scroll Down",
-                    PanelKey::Scroll(Scroll::Pages(pages)) if pages < 0 => "Page Up",
-                    PanelKey::Scroll(Scroll::Pages(_)) => "Page Down",
-                    PanelKey::Scroll(Scroll::Top) => "Top",
-                    PanelKey::Scroll(Scroll::Bottom) => "Bottom",
+                    PanelKey::Scroll(scroll) => return scroll_name(scroll),
                 }
                 .to_owned()
             }),
@@ -151,7 +192,10 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
     if let Window::Editing(_) | Window::EditingChecklistItem = window {
         own.push((PASTE, "Paste".to_owned()));
     }
-    if matches!(window, Window::Attachments | Window::Settings) {
+    if matches!(
+        window,
+        Window::Attachments | Window::Settings | Window::Keymap
+    ) {
         return vec![(heading, merged(own))];
     }
     let text = text_keys::TEXT
@@ -201,6 +245,19 @@ fn merged(keys: Vec<(Key, String)>) -> Vec<(String, String)> {
         }
     }
     listed
+}
+
+/// Where a key that scrolls goes, as the panel names it.
+fn scroll_name(scroll: Scroll) -> String {
+    match scroll {
+        Scroll::Lines(lines) if lines < 0 => "Scroll Up",
+        Scroll::Lines(_) => "Scroll Down",
+        Scroll::Pages(pages) if pages < 0 => "Page Up",
+        Scroll::Pages(_) => "Page Down",
+        Scroll::Top => "Top",
+        Scroll::Bottom => "Bottom",
+    }
+    .to_owned()
 }
 
 /// What a picker's key does, as the panel names it.
@@ -359,6 +416,47 @@ fn broken(keys: &str, first: usize, rest: usize) -> Vec<String> {
     lines
 }
 
+/// A row of a list of keys: what its left side shows and what its right side shows.
+pub(super) type Row = (Line<'static>, Line<'static>);
+
+/// The rows of `groups` listed `width` columns wide in `theme`: each group's name, then each of
+/// its commands' names with their keys, the keys that do not fit beside the name going on in the
+/// rows below it, broken between keys (D-88).
+pub(super) fn rows(groups: &[Listing], width: u16, theme: &Theme) -> Vec<Row> {
+    let width = usize::from(width);
+    let mut rows = Vec::new();
+    for (heading, entries) in groups {
+        rows.push((
+            Line::styled(*heading, Style::new().fg(theme.headers).bold()),
+            Line::default(),
+        ));
+        for (name, keys) in entries {
+            let name = format!(" {name}");
+            let beside = width.saturating_sub(name.width() + 1);
+            let mut name = Some(Line::from(name));
+            for keys in broken(keys, beside, width) {
+                rows.push((
+                    name.take().unwrap_or_default(),
+                    Line::styled(keys, Style::new().fg(theme.primary)),
+                ));
+            }
+        }
+    }
+    rows
+}
+
+/// Draws `row` over `area`: its left side from the left, its right side at the right, a column
+/// apart.
+pub(super) fn render_row((name, keys): Row, area: Rect, buf: &mut Buffer) {
+    let width = u16::try_from(keys.width()).unwrap_or(u16::MAX);
+    let [name_area, keys_area] =
+        Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)])
+            .spacing(1)
+            .areas(area);
+    name.render(name_area, buf);
+    keys.right_aligned().render(keys_area, buf);
+}
+
 /// The shortcuts panel: titled "Shortcuts" beside a rule down its left edge, each group's name
 /// in the headers color over its commands, each command's name with its keys at the right in
 /// the primary color, scrolled, with a `↑ more` line first while lines are hidden above and a
@@ -456,34 +554,13 @@ impl<'a> ShortcutsPanel<'a> {
             .title(Line::from("Shortcuts").bold())
     }
 
-    /// The rows of a list `width` columns wide: each group's name, then each of its commands'
-    /// names with their keys, the keys that do not fit beside the name going on in the rows
-    /// below it, broken between keys (D-88).
-    fn rows(&self, width: u16) -> Vec<(Line<'static>, Line<'static>)> {
-        let width = usize::from(width);
-        let mut rows = Vec::new();
-        for (heading, entries) in self.groups {
-            rows.push((
-                Line::styled(*heading, Style::new().fg(self.theme.headers).bold()),
-                Line::default(),
-            ));
-            for (name, keys) in entries {
-                let name = format!(" {name}");
-                let beside = width.saturating_sub(name.width() + 1);
-                let mut name = Some(Line::from(name));
-                for keys in broken(keys, beside, width) {
-                    rows.push((
-                        name.take().unwrap_or_default(),
-                        Line::styled(keys, Style::new().fg(self.theme.primary)),
-                    ));
-                }
-            }
-        }
-        rows
+    /// The rows of a list `width` columns wide, as [`rows`] lays them out.
+    fn rows(&self, width: u16) -> Vec<Row> {
+        rows(self.groups, width, self.theme)
     }
 
     /// The row saying more lines are hidden, `↑` above or `↓` below, with the keys that show them.
-    fn more(&self, arrow: &str, keys: &str) -> (Line<'static>, Line<'static>) {
+    fn more(&self, arrow: &str, keys: &str) -> Row {
         (
             Line::from(format!("{arrow} more")).dim(),
             Line::styled(keys.to_owned(), Style::new().fg(self.theme.primary)),
@@ -523,14 +600,8 @@ impl Widget for ShortcutsPanel<'_> {
                     .take(shown.count),
             )
             .chain(shown.below.then(|| self.more("↓", down)));
-        for ((name, keys), row) in rows.zip(list.rows()) {
-            let width = u16::try_from(keys.width()).unwrap_or(u16::MAX);
-            let [name_area, keys_area] =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)])
-                    .spacing(1)
-                    .areas(row);
-            name.render(name_area, buf);
-            keys.right_aligned().render(keys_area, buf);
+        for (drawn, row) in rows.zip(list.rows()) {
+            render_row(drawn, row, buf);
         }
         let footer = inner.rows().skip(usize::from(list.height));
         for (note, row) in self.notes().into_iter().zip(footer) {
