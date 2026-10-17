@@ -64,7 +64,7 @@ fn a_long_list_item_in_a_note_wraps_under_its_text() {
     assert_eq!(
         panel(&harness)[8..10],
         [
-            "│ e edit · a comment · \\ full          │",
+            "│ e edit · c comment · \\ full          │",
             "│ Esc close                            │"
         ]
     );
@@ -316,7 +316,7 @@ fn backslash_goes_round_closed_half_and_full_beside_the_sidebar() {
     );
     let rows = harness.rows();
     assert!(rows[2].starts_with(" 󰖙 Today"), "the sidebar stays");
-    assert!(rows[9].contains("│ e edit · a comment · \\ hide · Esc close  "));
+    assert!(rows[9].contains("│ e edit · c comment · \\ hide · Esc close  "));
     harness.type_text("eA note as wide as the panel is now, past half the screen");
     assert_eq!(
         harness.tui.cursor(Rect::new(0, 0, 100, 12)),

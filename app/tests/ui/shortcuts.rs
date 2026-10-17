@@ -377,7 +377,7 @@ fn the_attachments_panel_lists_its_keys_and_opens_beside_the_shortcuts() {
         ]
     );
     assert!(
-        lines.contains(&"│  Add Comment                        a".to_owned()),
+        lines.contains(&"│  Add Comment                     a, c".to_owned()),
         "{lines:#?}"
     );
     assert!(

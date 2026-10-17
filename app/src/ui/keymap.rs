@@ -91,12 +91,12 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // The owner's Move to key, beside taskpaper-terminal's (D-39).
     (Command::MoveTo, &["M", "g m"]),
     // taskpaper-terminal's clipboard keys (its D-53), without `p` and `P`, which add projects
-    // (D-44).
+    // (D-44), and vim's `gP` to paste above where `Option` types a character (D-153).
     (Command::Duplicate, &["D"]),
     (Command::Copy, &["y", "ctrl+c"]),
     (Command::Cut, &["ctrl+x"]),
     (Command::Paste(Side::Below), &["ctrl+v"]),
-    (Command::Paste(Side::Above), &["alt+v"]),
+    (Command::Paste(Side::Above), &["alt+v", "g P"]),
     // The container shown, which no row of its own shows (D-40); deleting it has no key (D-83).
     (Command::RenameContainer, &["R"]),
     // `m` and a vim motion move, as macOS terminals type a character for `Option` with a letter,
@@ -121,10 +121,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::EditDescription(Whose::Focused), &["m n"]),
     (Command::EditDescription(Whose::Shown), &["m N"]),
     // The owner's key opens the attachments panel, whose sections are all reached from there, so
-    // opening it on the comments or the checklist has no key; with `Alt`, on the container shown
-    // (FR-ATT-02, D-94, D-152). The owner's `c` adds a comment without opening the panel (D-143).
+    // opening it on the comments or the checklist has no key; with `Alt`, or after `g` where
+    // `Option` types a character, on the container shown (FR-ATT-02, D-94, D-152, D-153). The
+    // owner's `c` adds a comment without opening the panel (D-143).
     (Command::OpenNote(Whose::Focused), &["\\"]),
-    (Command::OpenNote(Whose::Shown), &["alt+\\"]),
+    (Command::OpenNote(Whose::Shown), &["alt+\\", "g \\"]),
     (Command::QuickComment, &["c"]),
     // taskpaper-terminal's date prompt keys, and `t` to start today (D-23).
     (Command::SetDate(DateKind::Start), &["m s"]),
@@ -458,6 +459,30 @@ mod tests {
                 assert!(
                     parse_sequence(key).is_some_and(|parsed| seen.insert(parsed)),
                     "{key} does not parse or is bound twice"
+                );
+            }
+        }
+    }
+
+    // FR-KEY-02, N-PORT-03: a macOS terminal types a character for `Option` with a letter (D-124).
+    #[test]
+    fn every_command_with_an_alt_letter_has_a_key_without_alt() {
+        let alt_letter = |keys: &Vec<Key>| {
+            keys.iter().any(|&(modifiers, code)| {
+                modifiers.contains(KeyModifiers::ALT) && matches!(code, KeyCode::Char(_))
+            })
+        };
+        for (command, written) in DEFAULT_KEYS {
+            let keys: Vec<Vec<Key>> = written
+                .iter()
+                .filter_map(|key| parse_sequence(key))
+                .collect();
+            if keys.iter().any(alt_letter) {
+                assert!(
+                    keys.iter().any(|keys| keys
+                        .iter()
+                        .all(|&(modifiers, _)| !modifiers.contains(KeyModifiers::ALT))),
+                    "{command:?} has only Alt keys"
                 );
             }
         }

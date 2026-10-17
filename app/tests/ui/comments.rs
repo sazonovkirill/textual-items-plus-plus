@@ -58,7 +58,7 @@ fn comment_on_a_task() {
     );
     assert_eq!(
         panel(&harness)[13],
-        "│ a comment · \\ full · Esc close       │"
+        "│ c comment · \\ full · Esc close       │"
     );
     harness.type_text("aPhotos: done");
     assert_eq!(
@@ -97,7 +97,7 @@ fn comment_on_a_task() {
         read(&path),
         "Inbox:\n\t- Renew the passport\n\t\tCOMMENTS @hidden\n\t\t\t[2026-10-05 09:30] Booked\n\t\t\t[2026-10-05 09:30] Photos: done for the form\n"
     );
-    harness.type_text("kd");
+    harness.type_text("kdd");
     assert_eq!(
         panel(&harness)[8..10],
         [
@@ -238,5 +238,18 @@ fn c_adds_a_comment_from_a_line_at_the_bottom_without_the_panel() {
     assert!(
         harness.rows()[12].starts_with("┌ Comment on Inbox "),
         "the sidebar's entry takes one"
+    );
+}
+
+// FR-ATT-04
+#[test]
+fn c_in_the_panel_adds_a_comment_as_it_does_in_the_list() {
+    let mut harness = Harness::new(80, 16);
+    harness.type_text("\\jj");
+    harness.type_text("cBooked");
+    harness.key(KeyCode::Enter);
+    assert_eq!(
+        panel(&harness)[8],
+        "│▌Oct 5 09:30 Booked                   │"
     );
 }

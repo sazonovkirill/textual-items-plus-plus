@@ -115,15 +115,15 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
         PanelKey::Input(AttachmentsInput::Edit),
     ),
     (
-        (KeyModifiers::NONE, KeyCode::Char('d')),
-        PanelKey::Input(AttachmentsInput::Delete),
-    ),
-    (
         (KeyModifiers::NONE, KeyCode::Delete),
         PanelKey::Input(AttachmentsInput::Delete),
     ),
     (
         (KeyModifiers::NONE, KeyCode::Char('a')),
+        PanelKey::AddComment,
+    ),
+    (
+        (KeyModifiers::NONE, KeyCode::Char('c')),
         PanelKey::AddComment,
     ),
     ((KeyModifiers::NONE, KeyCode::Char('\\')), PanelKey::Cycle),
@@ -174,10 +174,10 @@ pub(super) const KEYS: &[(Key, PanelKey)] = &[
 ];
 
 /// What `event` does in the open panel while nothing in it is edited: `Esc` closes it, `e` and
-/// `Enter` edit what is selected, `d` and `Delete` delete the selected checklist item or comment,
-/// `a` adds a comment, `\\` widens or narrows the panel, and the motion keys scroll or select;
-/// `g` is left to start the keymap's sequences, as `gg` selecting the first entry and `gn` moving
-/// the keys on. Only key presses count.
+/// `Enter` edit what is selected, `Delete` deletes the selected checklist item or comment, as the
+/// keymap's `dd` does, `a` and `c` add a comment, `\\` widens or narrows the panel, and the
+/// motion keys scroll or select; `g` and `d` are left to start the keymap's sequences, as `gg`
+/// selecting the first entry and `gn` moving the keys on. Only key presses count.
 pub(super) fn panel_input(event: &Event) -> Option<PanelKey> {
     let key = keymap::key_press(event)?;
     KEYS.iter()
@@ -597,13 +597,13 @@ impl<'a> AttachmentsPanel<'a> {
             (Some(_), Selected::Note) => &["Enter new line", "Esc done"],
             (Some(_), Selected::Checklist(_)) => &["Enter next item", "Esc done"],
             (Some(_), Selected::Comment(_)) => &["Enter done", "Esc cancel"],
-            (None, Selected::Note) => &["e edit", "a comment"],
+            (None, Selected::Note) => &["e edit", "c comment"],
             (None, Selected::Checklist(Some(_))) => {
-                &["e edit", "o add", "x check", "d del", "a comment"]
+                &["e edit", "o add", "x check", "dd del", "c comment"]
             }
-            (None, Selected::Checklist(None)) => &["o add", "a comment"],
-            (None, Selected::Comment(Some(_))) => &["e edit", "d del", "a comment"],
-            (None, Selected::Comment(None)) => &["a comment"],
+            (None, Selected::Checklist(None)) => &["o add", "c comment"],
+            (None, Selected::Comment(Some(_))) => &["e edit", "dd del", "c comment"],
+            (None, Selected::Comment(None)) => &["c comment"],
         };
         let width_key = if self.full { "\\ hide" } else { "\\ full" };
         let rest: &[&str] = if self.view.editing.is_some() {
@@ -764,16 +764,12 @@ mod tests {
                 PanelKey::Input(AttachmentsInput::Edit),
             ),
             (
-                KeyCode::Char('d'),
-                none,
-                PanelKey::Input(AttachmentsInput::Delete),
-            ),
-            (
                 KeyCode::Delete,
                 none,
                 PanelKey::Input(AttachmentsInput::Delete),
             ),
             (KeyCode::Char('a'), none, PanelKey::AddComment),
+            (KeyCode::Char('c'), none, PanelKey::AddComment),
             (KeyCode::Char('j'), none, PanelKey::Scroll(Scroll::Lines(1))),
             (KeyCode::Up, none, PanelKey::Scroll(Scroll::Lines(-1))),
             (
@@ -796,6 +792,7 @@ mod tests {
             );
         }
         for (code, modifiers) in [
+            (KeyCode::Char('d'), none),
             (KeyCode::Char('x'), none),
             (KeyCode::Char(']'), none),
             (KeyCode::Char('['), none),
@@ -961,7 +958,7 @@ mod tests {
                 "│ ❞ Comments                           │",
                 "│ No comments                          │",
                 "│                                      │",
-                "│ e edit · a comment · \\ full          │",
+                "│ e edit · c comment · \\ full          │",
                 "│ Esc close                            │",
                 "└──────────────────────────────────────┘",
             ]
@@ -1155,19 +1152,19 @@ mod tests {
         };
         assert_eq!(
             hint(68),
-            ["e edit · o add · x check · d del · a comment · \\ full · Esc close"]
+            ["e edit · o add · x check · dd del · c comment · \\ full · Esc close"]
         );
         assert_eq!(
             hint(36),
             [
-                "e edit · o add · x check · d del",
-                "a comment · \\ full · Esc close"
+                "e edit · o add · x check · dd del",
+                "c comment · \\ full · Esc close"
             ],
             "whole keys go to the next line"
         );
         assert_eq!(
             panel.full(true).hint(68)[0].to_string(),
-            "e edit · o add · x check · d del · a comment · \\ hide · Esc close",
+            "e edit · o add · x check · dd del · c comment · \\ hide · Esc close",
             "over the whole of the panes it narrows"
         );
     }
@@ -1206,7 +1203,7 @@ mod tests {
                 "│▌plain by hand                        │",
                 "│ Dec 30 2025 18:02 Called             │",
                 "│                                      │",
-                "│ e edit · d del · a comment · \\ full  │",
+                "│ e edit · dd del · c comment · \\ full │",
                 "│ Esc close                            │",
                 "└──────────────────────────────────────┘",
             ]
@@ -1381,8 +1378,8 @@ mod tests {
                 "│ No comments                          │",
                 "│                                      │",
                 "│                                      │",
-                "│ e edit · o add · x check · d del     │",
-                "│ a comment · \\ full · Esc close       │",
+                "│ e edit · o add · x check · dd del    │",
+                "│ c comment · \\ full · Esc close       │",
                 "└──────────────────────────────────────┘",
             ]
         );
@@ -1514,7 +1511,7 @@ mod tests {
         let rows = rows(&buf);
         assert_eq!(rows[8], "│▌No comments                          │");
         assert_eq!(banded(&buf), [8], "its heading off the band");
-        assert_eq!(rows[11], "│ a comment · \\ full · Esc close       │");
+        assert_eq!(rows[11], "│ c comment · \\ full · Esc close       │");
     }
 
     /// The rows of `buf` on the current-line band.

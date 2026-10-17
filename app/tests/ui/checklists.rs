@@ -86,7 +86,7 @@ fn build_a_checklist() {
         ],
         "a paste adds an item for each line, none nested, and Alt+j moves one down"
     );
-    harness.type_text("d");
+    harness.type_text("dd");
     assert_eq!(
         panel(&harness)[8],
         "│▌☐ Proof of address                   │"
@@ -350,5 +350,27 @@ fn mj_and_mk_move_the_item_selected_and_leave_nothing_pending() {
     assert!(
         saved.starts_with("Inbox:\n\t- Pack\n\t\t- Cups\n\t\t- Plates @done("),
         "{saved}"
+    );
+}
+
+// FR-CHK-03, FR-KEY-02
+#[test]
+fn dd_deletes_only_the_item_selected() {
+    let mut harness = Harness::new(80, 20);
+    harness.type_text("\\jo");
+    for item in ["one", "two", "three"] {
+        harness.type_text(item);
+        harness.key(KeyCode::Enter);
+    }
+    harness.key(KeyCode::Esc);
+    harness.type_text("kdd");
+    assert_eq!(
+        panel(&harness)[4..7],
+        [
+            "│ ☐ one                                │",
+            "│▌☐ three                              │",
+            "│                                      │",
+        ],
+        "d alone deletes nothing, so dd deletes one item"
     );
 }
