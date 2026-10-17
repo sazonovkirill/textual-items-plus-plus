@@ -47,6 +47,13 @@ impl Selection {
         self.visual
     }
 
+    /// Whether nothing is picked and visual line mode is off, so that commands take the focused
+    /// row and Clear Selection has nothing to clear.
+    #[must_use]
+    pub fn is_clear(&self) -> bool {
+        self.picked.is_empty() && !self.visual
+    }
+
     /// Focuses `item`, or nothing, keeping what is picked.
     pub fn focus(&mut self, item: Option<ItemId>) {
         self.focused = item;

@@ -412,9 +412,14 @@ impl State {
         self.pane_mut().selection.select_all(&rows);
     }
 
-    /// Picks nothing, so that commands take the focused row again (FR-OPS-01).
+    /// Picks nothing, so that commands take the focused row again (FR-OPS-01); with nothing
+    /// picked, closes search results (D-149).
     pub(super) fn clear_selection(&mut self) {
-        self.pane_mut().selection.clear();
+        if self.pane().selection.is_clear() && self.shown() == Shown::View(View::Search) {
+            self.close_search();
+        } else {
+            self.pane_mut().selection.clear();
+        }
     }
 
     /// The selected items without those inside another of them, which go along with it, in the

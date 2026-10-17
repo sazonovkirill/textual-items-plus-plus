@@ -578,7 +578,9 @@ impl Tui {
         let rows = order(self);
         let at = rows.iter().position(|&row| row == id);
         let Some(to) = at else { return };
-        self.update(Message::Command(Command::ClearSelection));
+        if !self.state.pane_view().selection().is_clear() {
+            self.update(Message::Command(Command::ClearSelection));
+        }
         self.walk(
             to,
             rows.len(),

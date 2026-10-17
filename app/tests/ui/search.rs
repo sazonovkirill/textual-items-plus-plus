@@ -1,7 +1,7 @@
 //! Full-text search: the words typed find items by any of their text, wherever they live, and
 //! a result opens where it lives.
 
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
 
 use crate::support::Harness;
@@ -160,5 +160,36 @@ fn the_shortcuts_panel_lists_the_keys_of_the_words_typed_and_the_palette_searche
     assert_eq!(
         trimmed(&harness)[0].trim_end_matches(|c: char| c != 'k'),
         "  \u{f0349} Search  bank"
+    );
+}
+
+// FR-SRCH-01, FR-NAV-04, FR-OPS-01, FR-KEY-05, D-149
+#[test]
+fn escape_leaves_the_words_then_closes_the_results_for_the_place_before_them() {
+    let mut harness = Harness::new(80, 20);
+    harness.key(KeyCode::Char('j'));
+    let inbox = harness.screen();
+    harness.ctrl('f');
+    harness.type_text("e");
+    harness.key(KeyCode::Esc);
+    harness.key(KeyCode::Char('J'));
+    harness.key(KeyCode::Esc);
+    harness.send(&Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 20,
+        row: 3,
+        modifiers: KeyModifiers::NONE,
+    }));
+    let rows = trimmed(&harness);
+    assert_eq!(
+        rows[0], "  \u{f0349} Search  e",
+        "Esc picks nothing first, and a click only focuses"
+    );
+    assert!(rows[3].starts_with("▌ ☐ Buy coffee beans"), "{}", rows[3]);
+    harness.key(KeyCode::Esc);
+    assert_eq!(
+        harness.screen(),
+        inbox,
+        "with nothing picked, the place before, focused as it was"
     );
 }

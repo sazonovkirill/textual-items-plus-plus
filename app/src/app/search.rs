@@ -5,9 +5,9 @@
 use std::ops::Range;
 
 use super::{
-    State, TextEdit, TextField,
+    Go, State, TextEdit, TextField,
     container::Row,
-    view::{Group, View},
+    view::{Group, Shown, View},
 };
 use crate::domain::{Document, Item, ItemId, ItemKind, Node, Tag, comments};
 
@@ -144,7 +144,7 @@ impl State {
         if self.sidebar_has_keys() {
             self.focus_right();
         }
-        self.go(super::Go::View(View::Search));
+        self.go(Go::View(View::Search));
         let pane = self.pane_mut();
         pane.query = pane.query.edited(TextEdit::SelectAll);
         self.searching = true;
@@ -166,6 +166,15 @@ impl State {
                 selection.focus(first);
             }
             SearchInput::Done => self.searching = false,
+        }
+    }
+
+    /// Leaves the search results for where the pane was before them, focused as it was there,
+    /// or for the Inbox when they are the first place it showed (D-149).
+    pub(super) fn close_search(&mut self) {
+        self.go(Go::Back);
+        if self.shown() == Shown::View(View::Search) {
+            self.go(Go::Inbox);
         }
     }
 
@@ -334,7 +343,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::{Command, Focus, Go, Opened, view::Shown},
+        app::{Command, Direction, Focus, Opened, visits::Visits},
         domain::{Completion, Tag},
     };
     use ItemKind::{ChecklistItem, Project, Section, Task};
@@ -669,5 +678,33 @@ mod tests {
         assert_eq!(state.panes().count(), 2);
         assert_eq!(state.selection().focused(), Some(done));
         assert!(state.shows_completed());
+    }
+
+    // FR-SRCH-01, FR-NAV-04, FR-OPS-01, D-149
+    #[test]
+    fn clearing_the_selection_with_nothing_picked_closes_the_results_for_where_they_opened() {
+        let (mut state, [first, second, _]) = state();
+        let inbox = Shown::Container(state.document().inbox());
+        state.move_focus(Focus::Next);
+        state.open_search();
+        type_text(&mut state, "plan");
+        state.search_input(SearchInput::Done);
+        state.extend_selection(Direction::Down);
+        state.clear_selection();
+        assert_eq!(state.shown(), Shown::View(View::Search));
+        assert!(state.selection().is_clear(), "what is picked goes first");
+        assert_eq!(state.selection().focused(), Some(second));
+        state.clear_selection();
+        assert_eq!(state.shown(), inbox);
+        assert_eq!(
+            state.selection().focused(),
+            Some(second),
+            "focused where it was"
+        );
+        state.go(Go::Forward);
+        state.pane_mut().visits = Visits::default();
+        state.clear_selection();
+        assert_eq!(state.shown(), inbox, "nowhere before them, the Inbox");
+        assert_eq!(state.selection().focused(), Some(first));
     }
 }
