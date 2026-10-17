@@ -1284,7 +1284,7 @@ impl State {
             (Command::Focus(motion), _) => self.move_sidebar_focus(motion),
             (Command::Collapse, _) => self.sidebar.toggle_collapsed(&self.document),
             (Command::New(side), _) => self.sidebar_new(&entries, side),
-            // `a` adds an area and `p` a project at the top level (owner, D-75, D-127).
+            // `na` adds an area and `np` a project at the top level (owner, D-75, D-127, D-157).
             (Command::AddArea(end), _) => {
                 self.sidebar_add(self.document.inbox(), ItemKind::Area, end);
             }

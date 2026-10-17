@@ -48,7 +48,7 @@ fn g_question_mark_lists_every_key_in_columns_and_esc_closes_it() {
         ("Open or Edit", "Enter"),
         ("Edit Title", "i"),
         ("Go to Symbol", "/"),
-        ("Paste Above", "Alt+v, gP"),
+        ("Paste Above", "P, Alt+v"),
         ("Save As…", "Ctrl+S"),
     ] {
         assert!(

@@ -163,7 +163,7 @@ fn shift_o_adds_above_and_keys_type_while_editing() {
 #[test]
 fn space_adds_a_task_below_as_o_does_and_a_adds_none() {
     let mut harness = Harness::new(60, 12);
-    harness.type_text("aA");
+    harness.type_text("nanA");
     assert_eq!(
         mode(&harness),
         "NAVIGATE",

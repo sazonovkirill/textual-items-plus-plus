@@ -70,7 +70,7 @@ fn every_window_opens_on_every_size() {
         "\x10weather\n",
         "/",
         "/bank",
-        "gm",
+        "M",
         "mg",
         "\x06",
         "\x06the bank",

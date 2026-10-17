@@ -57,7 +57,7 @@ fn ctrl_p_lists_every_command_with_its_keys_and_typing_filters_them() {
     assert_eq!(
         commands(&harness),
         [
-            ("Move To".to_owned(), "M, gm".to_owned()),
+            ("Move To".to_owned(), "M".to_owned()),
             ("Move Up".to_owned(), "mk, Alt+k, Alt+↑".to_owned()),
             ("Move Down".to_owned(), "mj, Alt+j, Alt+↓".to_owned()),
             ("New Item Above".to_owned(), "O".to_owned()),

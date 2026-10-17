@@ -42,7 +42,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // `Ctrl+Shift+Z` as `Ctrl+Z`, which undoes (D-35).
     (Command::ToggleCompleted, &["x", ".", "ctrl+enter"]),
     (Command::ShowCompleted, &["ctrl+o"]),
-    (Command::Undo, &["z", "ctrl+z"]),
+    // vim's `u` beside `z` (owner, D-157).
+    (Command::Undo, &["z", "u", "ctrl+z"]),
     (Command::Redo, &["Z", "ctrl+shift+z", "ctrl+y"]),
     // taskpaper-terminal's Go to Inbox and history keys, without its zoom and home (D-36, D-80),
     // and the owner's `Alt` arrows a browser goes back and forward with, which iTerm2's Natural
@@ -74,34 +75,36 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // The owner's `Enter` to open a row or edit it in the dialog and vim's `i` to edit its title
     // in place (D-154); taskpaper-terminal's keys to add below and above, and delete (D-37); `o`,
     // `O` and `Space` add a task, or in the sidebar a project, and the lower and upper case of a
-    // kind's letter add one at the bottom and the top of the container shown, or in the sidebar
-    // `a` an area and `p` a top-level project (owner, D-40, D-127).
+    // kind's letter add one at the bottom and the top of the container shown, `s` a section and
+    // **n**ew `p` a project, or in the sidebar a top-level project and `na` an area (owner, D-40,
+    // D-127, D-157).
     (Command::Open, &["enter"]),
     (Command::EditTitle, &["i"]),
     // One Quick Add key, its task bound for the Inbox (owner, D-150).
     (Command::QuickAdd, &["q"]),
     (Command::New(Side::Below), &["o", "space"]),
     (Command::New(Side::Above), &["O"]),
-    (Command::AddArea(End::Bottom), &["a"]),
-    (Command::AddArea(End::Top), &["A"]),
+    (Command::AddArea(End::Bottom), &["n a"]),
+    (Command::AddArea(End::Top), &["n A"]),
     (Command::AddSection(End::Bottom), &["s"]),
     (Command::AddSection(End::Top), &["S"]),
-    (Command::AddProject(End::Bottom), &["p"]),
-    (Command::AddProject(End::Top), &["P"]),
+    (Command::AddProject(End::Bottom), &["n p"]),
+    (Command::AddProject(End::Top), &["n P"]),
     (Command::Delete, &["d d", "delete"]),
-    // In the Trash, `u` undeletes, as vim's undo would the deletion, and `de` empties it (D-55).
-    (Command::Restore, &["u"]),
+    // In the Trash, `R` **r**estores, where no container is shown to rename, and `de` empties
+    // it (owner, D-55, D-157).
+    (Command::Restore, &["R"]),
     (Command::EmptyTrash, &["d e"]),
-    // The owner's Move to key, beside taskpaper-terminal's (D-39).
-    (Command::MoveTo, &["M", "g m"]),
-    // taskpaper-terminal's clipboard keys (its D-53), without `p` and `P`, which add projects
-    // (D-44), and vim's `gP` to paste above where `Option` types a character (D-153).
+    // The owner's Move to key (D-39, D-157).
+    (Command::MoveTo, &["M"]),
+    // taskpaper-terminal's clipboard keys (its D-53), with vim's `p` and `P` (owner, D-157).
     (Command::Duplicate, &["D"]),
     (Command::Copy, &["y", "ctrl+c"]),
     (Command::Cut, &["ctrl+x"]),
-    (Command::Paste(Side::Below), &["ctrl+v"]),
-    (Command::Paste(Side::Above), &["alt+v", "g P"]),
-    // The container shown, which no row of its own shows (D-40); deleting it has no key (D-83).
+    (Command::Paste(Side::Below), &["p", "ctrl+v"]),
+    (Command::Paste(Side::Above), &["P", "alt+v"]),
+    // The container shown, which no row of its own shows (D-40), outside the Trash, where `R`
+    // restores; deleting it has no key (D-83).
     (Command::RenameContainer, &["R"]),
     // `m` and a vim motion move, as macOS terminals type a character for `Option` with a letter,
     // and `Alt` with a motion, leaving taskpaper-terminal's `Tab`/`Shift+Tab` to move between
@@ -112,11 +115,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
         Command::Move(Direction::Down),
         &["m j", "alt+j", "alt+down"],
     ),
-    // taskpaper-terminal's convert type and group keys; `S` for a section beside its `G`, which
-    // groups in a new parent as a new project does here (D-47).
+    // taskpaper-terminal's convert type key, and **w**rap in a section or a project, by the
+    // letters that add one, so that `g` only goes somewhere (D-47, owner, D-157).
     (Command::Convert, &["m y"]),
-    (Command::GroupIntoSection, &["g S"]),
-    (Command::GroupIntoProject, &["g G"]),
+    (Command::GroupIntoSection, &["w s"]),
+    (Command::GroupIntoProject, &["w p"]),
     // taskpaper-terminal's keys for its Edit Node dialog, `m` modifying and **i**tem, beside
     // `Enter` (D-100, D-154).
     (Command::EditItem, &["e", "m i"]),
@@ -384,6 +387,16 @@ impl Keymap {
     /// sequence waits for the next key; one that continues none cancels the keys pressed so far
     /// and does nothing else. Releases, repeats and other events change nothing.
     pub fn press(&mut self, event: &Event) -> Option<Command> {
+        self.press_where(event, |_| true)
+    }
+
+    /// As [`Keymap::press`], where the keys bound to more than one command, each taken in other
+    /// places, give the first of them `takes` accepts (D-157).
+    pub fn press_where(
+        &mut self,
+        event: &Event,
+        takes: impl Fn(Command) -> bool,
+    ) -> Option<Command> {
         let key = key_press(event)?;
         let mut keys = std::mem::take(&mut self.pending);
         if keys.is_empty() {
@@ -394,15 +407,24 @@ impl Keymap {
             self.pending = keys;
             return None;
         }
-        self.command(&keys)
+        self.command(&keys, takes)
     }
 
-    /// The command `keys` are bound to, if any.
-    fn command(&self, keys: &[Key]) -> Option<Command> {
-        self.commands
+    /// The command `keys` are bound to that `takes` accepts, else the first they are bound to, if
+    /// any.
+    fn command(&self, keys: &[Key], takes: impl Fn(Command) -> bool) -> Option<Command> {
+        let mut bound = self
+            .commands
             .iter()
-            .find(|(bound, _)| bound == keys)
-            .map(|&(_, command)| command)
+            .filter(|(bound, _)| bound == keys)
+            .map(|&(_, command)| command);
+        let first = bound.next()?;
+        Some(
+            std::iter::once(first)
+                .chain(bound)
+                .find(|&command| takes(command))
+                .unwrap_or(first),
+        )
     }
 
     /// How the keys bound to `command` read on screen, in the order they are written, separated by
@@ -444,7 +466,7 @@ impl Keymap {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::HashMap;
 
     use crossterm::event::{KeyEvent, KeyEventKind};
 
@@ -458,17 +480,42 @@ mod tests {
         press(KeyCode::Char(c), KeyModifiers::NONE)
     }
 
+    // D-157: `R` restores in the Trash and renames the container shown elsewhere.
     #[test]
-    fn every_default_key_parses_and_belongs_to_one_command() {
-        let mut seen = HashSet::new();
-        for (_, keys) in DEFAULT_KEYS {
-            for key in *keys {
-                assert!(
-                    parse_sequence(key).is_some_and(|parsed| seen.insert(parsed)),
-                    "{key} does not parse or is bound twice"
-                );
+    fn every_default_key_parses_and_belongs_to_one_command_but_r() {
+        let mut seen = HashMap::new();
+        for &(command, keys) in DEFAULT_KEYS {
+            for key in keys {
+                let parsed = parse_sequence(key);
+                assert!(parsed.is_some(), "{key} does not parse");
+                if let Some(other) = parsed.and_then(|parsed| seen.insert(parsed, command)) {
+                    assert_eq!(
+                        (*key, other, command),
+                        ("R", Command::Restore, Command::RenameContainer),
+                        "{key} is bound twice"
+                    );
+                }
             }
         }
+    }
+
+    // FR-KEY-02, D-157
+    #[test]
+    fn a_key_bound_twice_gives_the_command_the_app_takes() {
+        let mut keymap = Keymap::default();
+        let renames = |command| command == Command::RenameContainer;
+        assert_eq!(
+            keymap.press_where(&char('R'), renames),
+            Some(Command::RenameContainer)
+        );
+        assert_eq!(
+            keymap.press_where(&char('R'), |_| false),
+            Some(Command::Restore)
+        );
+        assert_eq!(
+            keymap.press_where(&char('x'), |_| false),
+            Some(Command::ToggleCompleted)
+        );
     }
 
     // FR-KEY-02, N-PORT-03: a macOS terminal types a character for `Option` with a letter (D-124).
@@ -651,22 +698,40 @@ mod tests {
 
     // FR-TASK-06, FR-OPS-07, FR-OPS-08, FR-KEY-02
     #[test]
-    fn m_y_converts_and_g_shift_s_and_g_shift_g_group() {
+    fn m_y_converts_and_w_wraps_in_a_section_or_a_project() {
         let mut keymap = Keymap::default();
-        let shifted = |c| press(KeyCode::Char(c), KeyModifiers::SHIFT);
-        for (second, command) in [
-            (char('y'), Command::Convert),
-            (shifted('s'), Command::GroupIntoSection),
-            (shifted('g'), Command::GroupIntoProject),
+        for (first, second, command) in [
+            ('m', 'y', Command::Convert),
+            ('w', 's', Command::GroupIntoSection),
+            ('w', 'p', Command::GroupIntoProject),
         ] {
-            let first = if command == Command::Convert {
-                'm'
-            } else {
-                'g'
-            };
             assert_eq!(keymap.press(&char(first)), None);
-            assert_eq!(keymap.press(&second), Some(command), "{second:?}");
+            assert_eq!(
+                keymap.press(&char(second)),
+                Some(command),
+                "{first}{second}"
+            );
         }
+    }
+
+    // FR-OPS-05, FR-EDIT-06, D-157: vim's paste and undo keys, and `g` only goes somewhere.
+    #[test]
+    fn p_pastes_u_undoes_and_g_keys_only_go() {
+        let mut keymap = Keymap::default();
+        for (key, command) in [
+            ('p', Command::Paste(Side::Below)),
+            ('P', Command::Paste(Side::Above)),
+            ('u', Command::Undo),
+            ('z', Command::Undo),
+        ] {
+            assert_eq!(keymap.press(&char(key)), Some(command), "{key}");
+        }
+        for second in ['m', 'P', 'S', 'G'] {
+            keymap.press(&char('g'));
+            assert_eq!(keymap.press(&char(second)), None, "g{second}");
+        }
+        assert_eq!(keymap.press(&char('a')), None);
+        assert_eq!(keymap.press(&char('A')), None);
     }
 
     // FR-NAV-01, FR-KEY-02
@@ -878,17 +943,21 @@ mod tests {
             ('o', Command::New(Side::Below)),
             (' ', Command::New(Side::Below)),
             ('O', Command::New(Side::Above)),
-            ('a', Command::AddArea(End::Bottom)),
-            ('A', Command::AddArea(End::Top)),
             ('s', Command::AddSection(End::Bottom)),
             ('S', Command::AddSection(End::Top)),
-            ('p', Command::AddProject(End::Bottom)),
-            ('P', Command::AddProject(End::Top)),
         ] {
             assert_eq!(keymap.press(&char(key)), Some(command), "{key:?}");
         }
+        for (key, command) in [
+            ('p', Command::AddProject(End::Bottom)),
+            ('P', Command::AddProject(End::Top)),
+            ('a', Command::AddArea(End::Bottom)),
+            ('A', Command::AddArea(End::Top)),
+        ] {
+            assert_eq!(keymap.press(&char('n')), None, "n starts n{key}");
+            assert_eq!(keymap.press(&char(key)), Some(command), "n{key}");
+        }
         assert_eq!(keymap.press(&char('I')), None);
-        assert_eq!(keymap.press(&char('R')), Some(Command::RenameContainer));
     }
 
     // FR-KEY-02

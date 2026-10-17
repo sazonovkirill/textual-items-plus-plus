@@ -39,12 +39,12 @@ fn title(harness: &Harness) -> String {
 fn add_an_area_with_a_project_and_a_section() {
     let mut harness = Harness::new(60, 16);
     harness.ctrl('b');
-    harness.type_text("aHome");
+    harness.type_text("naHome");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
     harness.ctrl('b');
     assert_eq!(title(&harness), "󰆧 Home");
-    harness.type_text("pGarden");
+    harness.type_text("npGarden");
     harness.key(KeyCode::Esc);
     harness.type_text("SChores");
     harness.key(KeyCode::Enter);
@@ -96,11 +96,11 @@ fn new_containers_are_saved_with_their_kind_tags() {
     fs::write(&path, "Inbox:\n").expect("written");
     let mut harness = Harness::open(path.clone(), 60, 16);
     harness.ctrl('b');
-    harness.type_text("aHome");
+    harness.type_text("naHome");
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Enter);
     harness.key(KeyCode::Tab);
-    harness.type_text("pGarden");
+    harness.type_text("npGarden");
     harness.key(KeyCode::Esc);
     harness.key(KeyCode::Enter);
     harness.type_text("sSpring");

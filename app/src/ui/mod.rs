@@ -426,7 +426,10 @@ impl Tui {
                 .map(Message::QuickComment)
                 .or_else(|| self.global(event))
         } else {
-            self.keymap.press(event).map(Message::Command)
+            let state = &self.state;
+            self.keymap
+                .press_where(event, |command| state.takes(command))
+                .map(Message::Command)
         };
         if let Some(message) = message {
             self.update(message);
@@ -887,8 +890,9 @@ impl Tui {
 
     /// The message of the global command whose keys `event` completes, if any.
     fn global(&mut self, event: &Event) -> Option<Message> {
+        let state = &self.state;
         self.keymap
-            .press(event)
+            .press_where(event, |command| state.takes(command))
             .filter(|&command| self.allows(command))
             .map(Message::Command)
     }

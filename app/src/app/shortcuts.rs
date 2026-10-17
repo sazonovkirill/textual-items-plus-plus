@@ -148,8 +148,9 @@ impl State {
     /// picker, the command palette, the context menu, Go to Symbol, the date prompt, Quick Add,
     /// Quick Comment or the settings window is open, in edit mode or while the words to search
     /// for are typed only global ones, while the sidebar has the keys those it takes, and
-    /// otherwise any but Toggle Evening outside Today (FR-VIEW-13) and the area keys, which only
-    /// the sidebar takes (D-127).
+    /// otherwise any but Toggle Evening outside Today (FR-VIEW-13), the area keys, which only
+    /// the sidebar takes (D-127), and Restore outside the Trash and Rename Container in it but
+    /// for the sidebar's entries, which share a key (D-157).
     #[must_use]
     pub fn takes(&self, command: Command) -> bool {
         let context = REGISTRY
@@ -169,6 +170,13 @@ impl State {
                 && (!self.sidebar_has_keys() || state::sidebar_takes(command))
                 && (command != Command::ToggleEvening || self.shown() == Shown::View(View::Today))
                 && (!matches!(command, Command::AddArea(_)) || self.sidebar_has_keys())
+                && match command {
+                    Command::Restore => self.shown() == Shown::View(View::Trash),
+                    Command::RenameContainer => {
+                        self.sidebar_has_keys() || self.shown() != Shown::View(View::Trash)
+                    }
+                    _ => true,
+                }
         }
     }
 
@@ -221,7 +229,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::{Message, Opened, update},
+        app::{Go, Message, Opened, update},
         domain::{Document, Item, ItemKind, Node, PlacementError, dates::DateKind},
     };
 
@@ -246,6 +254,24 @@ mod tests {
                 .map(|(group, entries)| (group.name(), entries.len()))
                 .collect()
         })
+    }
+
+    // FR-VIEW-04, D-157: `R` restores in the Trash and renames the container shown elsewhere.
+    #[test]
+    fn restore_is_taken_only_in_the_trash_and_rename_container_everywhere_else()
+    -> Result<(), PlacementError> {
+        let mut state = state()?;
+        assert!(state.takes(Command::RenameContainer));
+        assert!(!state.takes(Command::Restore));
+        give(&mut state, Command::Go(Go::View(View::Trash)));
+        assert!(state.takes(Command::Restore));
+        assert!(!state.takes(Command::RenameContainer));
+        give(&mut state, Command::FocusPane(0));
+        assert!(
+            state.takes(Command::RenameContainer),
+            "the sidebar's entry is renamed while the pane shows the Trash"
+        );
+        Ok(())
     }
 
     // FR-KEY-03
@@ -273,13 +299,18 @@ mod tests {
         let navigate = REGISTRY
             .iter()
             .filter(|entry| entry.context != Context::Conflict)
-            .filter(|entry| !matches!(entry.command, Command::ToggleEvening | Command::AddArea(_)))
+            .filter(|entry| {
+                !matches!(
+                    entry.command,
+                    Command::ToggleEvening | Command::AddArea(_) | Command::Restore
+                )
+            })
             .count();
         assert_eq!(
             listed.len(),
             navigate,
-            "every command but the conflict's, outside Today Toggle Evening and outside the \
-             sidebar the area keys"
+            "every command but the conflict's, outside Today Toggle Evening, outside the \
+             sidebar the area keys and outside the Trash Restore"
         );
         assert_eq!(
             groups

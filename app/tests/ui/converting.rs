@@ -58,7 +58,7 @@ fn keys(harness: &mut Harness, keys: &str) {
 #[test]
 fn group_three_tasks_into_a_section() {
     let (_dir, path, mut harness) = plans();
-    keys(&mut harness, "JJgS");
+    keys(&mut harness, "JJws");
     harness.type_text("Soon");
     harness.key(KeyCode::Esc);
     let screen = harness.screen();
@@ -115,7 +115,7 @@ fn a_task_becomes_a_project_and_a_project_a_section() {
 #[test]
 fn where_the_new_kind_cannot_go_the_status_line_says_why() {
     let (_dir, _path, mut harness) = plans();
-    keys(&mut harness, "GgS");
+    keys(&mut harness, "Gws");
     assert!(
         status(&harness).ends_with("a section holds only tasks"),
         "{}",
@@ -124,7 +124,7 @@ fn where_the_new_kind_cannot_go_the_status_line_says_why() {
     keys(&mut harness, "gi");
     keys(&mut harness, "my");
     assert!(status(&harness).ends_with("a project goes only in an area or at the top level"));
-    keys(&mut harness, "gS");
+    keys(&mut harness, "ws");
     assert!(status(&harness).ends_with("a section goes only in an area or a project"));
 }
 
@@ -160,7 +160,7 @@ Work: @area
 #[test]
 fn tasks_and_a_section_group_into_a_new_project() {
     let (_dir, path, mut harness) = plans();
-    keys(&mut harness, "vjjjvgG");
+    keys(&mut harness, "vjjjvwp");
     harness.type_text("Renovate");
     harness.key(KeyCode::Enter);
     assert_eq!(

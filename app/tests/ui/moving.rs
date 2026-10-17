@@ -37,7 +37,7 @@ fn pane(harness: &Harness) -> Vec<String> {
 #[test]
 fn move_a_task_to_another_project() {
     let mut harness = Harness::new(80, 24);
-    harness.type_text("gm");
+    harness.type_text("M");
     assert_eq!(
         window(&harness, "Move to"),
         [
@@ -88,7 +88,7 @@ fn move_a_task_to_another_project() {
         ],
         "the task is the project's last"
     );
-    harness.type_text("Ggm");
+    harness.type_text("GM");
     assert_eq!(
         window(&harness, "Move to").get(1).map(String::as_str),
         Some(" 󰚇 Inbox"),
@@ -111,7 +111,7 @@ fn a_project_moves_to_the_top_level_and_escape_closes_the_picker() {
     harness.ctrl('g');
     harness.type_text("work");
     harness.key(KeyCode::Enter);
-    harness.type_text("Ggm");
+    harness.type_text("GM");
     assert_eq!(
         window(&harness, "Move to"),
         ["›", " 󰋜 Home", " 󰆧 Home"],
@@ -119,7 +119,7 @@ fn a_project_moves_to_the_top_level_and_escape_closes_the_picker() {
     );
     harness.key(KeyCode::Esc);
     assert_eq!(window(&harness, "Move to"), Vec::<String>::new());
-    harness.type_text("gm");
+    harness.type_text("M");
     harness.ctrl('g');
     assert_eq!(
         window(&harness, "Move to"),
@@ -128,7 +128,7 @@ fn a_project_moves_to_the_top_level_and_escape_closes_the_picker() {
     );
     assert_ne!(window(&harness, "Navigator"), Vec::<String>::new());
     harness.key(KeyCode::Esc);
-    harness.type_text("gm");
+    harness.type_text("M");
     harness.key(KeyCode::Enter);
     harness.ctrl('g');
     assert_eq!(

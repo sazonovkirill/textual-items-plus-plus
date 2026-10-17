@@ -104,14 +104,18 @@ mod tests {
             .filter(|&command| {
                 !matches!(
                     command,
-                    Command::Palette | Command::ToggleEvening | Command::AddArea(_)
+                    Command::Palette
+                        | Command::ToggleEvening
+                        | Command::AddArea(_)
+                        | Command::Restore
                 )
             })
             .collect();
         assert_eq!(
             listed(&state),
             expected,
-            "Toggle Evening only in Today, the area keys only in the sidebar"
+            "Toggle Evening only in Today, the area keys only in the sidebar, Restore only in the \
+             Trash"
         );
         let first = state
             .palette()

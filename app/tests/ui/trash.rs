@@ -51,7 +51,7 @@ fn open_the_trash() {
 #[test]
 fn restore_a_deleted_task() {
     let mut harness = Harness::new(60, 12);
-    harness.type_text("gdu");
+    harness.type_text("gdR");
     assert_eq!(
         trimmed(&harness),
         trash(
@@ -168,13 +168,13 @@ Site: @done(2026-10-14)
 ";
     fs::write(&path, text).expect("written");
     let mut harness = Harness::open(path, 90, 12);
-    harness.type_text("gdu");
+    harness.type_text("gdR");
     assert!(
         !harness.screen().contains("restored"),
         "a restore to a shown place says nothing:\n{}",
         harness.screen()
     );
-    harness.type_text("ju");
+    harness.type_text("jR");
     assert!(
         harness
             .screen()
@@ -182,7 +182,7 @@ Site: @done(2026-10-14)
         "{}",
         harness.screen()
     );
-    harness.type_text("zkJu");
+    harness.type_text("zkJR");
     assert!(
         harness
             .screen()

@@ -1002,7 +1002,7 @@ mod tests {
         assert_eq!(
             sidebar(&state),
             (Some(String::new()), vec![String::new(), "Works".into()]),
-            "`p` adds one at the top level, listed before the areas"
+            "`np` adds one at the top level, listed before the areas"
         );
         edit(&mut state, EditInput::Done);
         give(&mut state, Command::AddArea(End::Top));

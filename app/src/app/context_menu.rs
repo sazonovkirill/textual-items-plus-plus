@@ -225,7 +225,6 @@ impl State {
                 )
         };
         match command {
-            Command::Restore => false,
             Command::New(_) | Command::Move(_) => {
                 self.container().is_some() || self.shown() == Shown::View(View::Today)
             }

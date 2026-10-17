@@ -71,7 +71,7 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
     );
     harness.type_text("z");
     harness.type_text("yj");
-    harness.press(KeyCode::Char('v'), KeyModifiers::ALT);
+    harness.type_text("P");
     assert_eq!(
         tasks(&harness),
         [
@@ -82,7 +82,7 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
         ],
         "pasting above the next task puts the copy before it"
     );
-    harness.type_text("z");
+    harness.type_text("u");
     harness.ctrl('x');
     assert_eq!(
         tasks(&harness),
@@ -92,7 +92,7 @@ fn duplicate_copy_cut_and_paste_tasks_in_the_inbox() {
         ],
         "cutting takes the task out"
     );
-    harness.ctrl('v');
+    harness.type_text("p");
     assert_eq!(
         tasks(&harness),
         [
@@ -186,7 +186,7 @@ fn text_pasted_into_the_terminal_becomes_tasks_or_goes_into_the_text_typed() {
         harness.screen()
     );
     harness.key(KeyCode::Esc);
-    harness.type_text("gm");
+    harness.type_text("M");
     paste(&mut harness, "Hiring");
     assert!(
         harness.screen().contains("› Hiring"),

@@ -131,7 +131,7 @@ fn add_rename_and_open_entries_in_the_sidebar() {
         entries(&harness).get(7).map(String::as_str),
         Some("*# Gardens")
     );
-    harness.type_text("A");
+    harness.type_text("nA");
     harness.type_text("Errands");
     harness.key(KeyCode::Enter);
     assert_eq!(
@@ -161,7 +161,7 @@ fn move_a_project_into_an_area_and_back_to_the_top_level() {
     let before = entries(&harness);
     harness.type_text("][");
     assert_eq!(entries(&harness), before, "a project does not indent");
-    harness.type_text("gm");
+    harness.type_text("M");
     harness.type_text("Home");
     harness.key(KeyCode::Enter);
     let moved = entries(&harness);
@@ -170,7 +170,7 @@ fn move_a_project_into_an_area_and_back_to_the_top_level() {
         Some("*# Learn Rust           2"),
         "{moved:?}"
     );
-    harness.type_text("gm");
+    harness.type_text("M");
     harness.key(KeyCode::Enter);
     assert_eq!(
         entries(&harness).get(7).map(String::as_str),

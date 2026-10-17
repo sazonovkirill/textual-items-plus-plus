@@ -94,7 +94,7 @@ fn open_the_focused_item_in_a_new_pane() {
     harness.ctrl('w');
     harness.type_text("c");
     assert_eq!(rules(&harness), Vec::<usize>::new());
-    for picker in ["gm", "gf"] {
+    for picker in ["M", "gf"] {
         harness.type_text(picker);
         let open = harness.rows();
         harness.press(KeyCode::Enter, KeyModifiers::ALT);
