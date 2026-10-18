@@ -1,0 +1,3 @@
+{# A screenshot or clip from static/screenshots/, sized from the file itself: PNGs are rendered at
+   2x, clips at 1x. #}
+{% macro shot(src, alt, class="", lazy=true) %}{% set path = "screenshots/" ~ src %}{% set meta = get_image_metadata(path=path) %}{% if src is ending_with(".webp") %}{% set scale = 1 %}{% else %}{% set scale = 2 %}{% endif %}<img{% if class %} class="{{ class }}"{% endif %} src="{{ get_url(path=path) }}"{% if lazy %} loading="lazy"{% endif %} width="{{ meta.width / scale | round }}" height="{{ meta.height / scale | round }}" alt="{{ alt }}">{% endmacro shot %}

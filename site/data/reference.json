@@ -1,0 +1,4190 @@
+{
+ "commands": [
+  {
+   "id": "key-quit",
+   "title": "Quit",
+   "group": "View and Panels",
+   "context": "global",
+   "topic": "files",
+   "keys": [
+    [
+     "Ctrl+Q"
+    ]
+   ]
+  },
+  {
+   "id": "key-next-item",
+   "title": "Next Item",
+   "group": "Moving",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "j"
+    ],
+    [
+     "↓"
+    ]
+   ]
+  },
+  {
+   "id": "key-previous-item",
+   "title": "Previous Item",
+   "group": "Moving",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "k"
+    ],
+    [
+     "↑"
+    ]
+   ]
+  },
+  {
+   "id": "key-first-item",
+   "title": "First Item",
+   "group": "Moving",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "g",
+     "g"
+    ],
+    [
+     "Home"
+    ]
+   ]
+  },
+  {
+   "id": "key-last-item",
+   "title": "Last Item",
+   "group": "Moving",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "G"
+    ],
+    [
+     "End"
+    ]
+   ]
+  },
+  {
+   "id": "key-extend-selection-down",
+   "title": "Extend Selection Down",
+   "group": "Selection",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "J"
+    ],
+    [
+     "Shift+↓"
+    ]
+   ]
+  },
+  {
+   "id": "key-extend-selection-up",
+   "title": "Extend Selection Up",
+   "group": "Selection",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "K"
+    ],
+    [
+     "Shift+↑"
+    ]
+   ]
+  },
+  {
+   "id": "key-toggle-selected",
+   "title": "Toggle Selected",
+   "group": "Selection",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "v"
+    ]
+   ]
+  },
+  {
+   "id": "key-visual-line-mode",
+   "title": "Visual Line Mode",
+   "group": "Selection",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "V"
+    ]
+   ]
+  },
+  {
+   "id": "key-select-all",
+   "title": "Select All",
+   "group": "Selection",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "Ctrl+A"
+    ]
+   ]
+  },
+  {
+   "id": "key-clear-selection",
+   "title": "Clear Selection",
+   "group": "Selection",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "Esc"
+    ]
+   ]
+  },
+  {
+   "id": "key-complete",
+   "title": "Complete",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "tasks",
+   "keys": [
+    [
+     "x"
+    ],
+    [
+     "."
+    ],
+    [
+     "Ctrl+Enter"
+    ]
+   ]
+  },
+  {
+   "id": "key-show-completed-items",
+   "title": "Show Completed Items",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "tasks",
+   "keys": [
+    [
+     "Ctrl+O"
+    ]
+   ]
+  },
+  {
+   "id": "key-undo",
+   "title": "Undo",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "z"
+    ],
+    [
+     "u"
+    ],
+    [
+     "Ctrl+Z"
+    ]
+   ]
+  },
+  {
+   "id": "key-redo",
+   "title": "Redo",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "Z"
+    ],
+    [
+     "Ctrl+Shift+Z"
+    ],
+    [
+     "Ctrl+Y"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-back",
+   "title": "Go Back",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "H"
+    ],
+    [
+     "Alt+←"
+    ],
+    [
+     "Alt+b"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-forward",
+   "title": "Go Forward",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "L"
+    ],
+    [
+     "Alt+→"
+    ],
+    [
+     "Alt+f"
+    ]
+   ]
+  },
+  {
+   "id": "key-next-sidebar-entry",
+   "title": "Next Sidebar Entry",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "j"
+    ],
+    [
+     "Ctrl+↓"
+    ]
+   ]
+  },
+  {
+   "id": "key-previous-sidebar-entry",
+   "title": "Previous Sidebar Entry",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "k"
+    ],
+    [
+     "Ctrl+↑"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-inbox",
+   "title": "Go to Inbox",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "g",
+     "i"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-today",
+   "title": "Go to Today",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "t"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-upcoming",
+   "title": "Go to Upcoming",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "u"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-flagged",
+   "title": "Go to Flagged",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "!"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-all",
+   "title": "Go to All",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "a"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-logbook",
+   "title": "Go to Logbook",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "l"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-trash",
+   "title": "Go to Trash",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "g",
+     "d"
+    ]
+   ]
+  },
+  {
+   "id": "key-quick-add",
+   "title": "Quick Add",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "q"
+    ]
+   ]
+  },
+  {
+   "id": "key-open-or-edit",
+   "title": "Open or Edit",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "navigation",
+   "keys": [
+    [
+     "Enter"
+    ]
+   ]
+  },
+  {
+   "id": "key-edit-title",
+   "title": "Edit Title",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "i"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-item-below",
+   "title": "New Item Below",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "o"
+    ],
+    [
+     "Space"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-item-above",
+   "title": "New Item Above",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "O"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-task-at-bottom",
+   "title": "New Task at Bottom",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": []
+  },
+  {
+   "id": "key-new-task-at-top",
+   "title": "New Task at Top",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": []
+  },
+  {
+   "id": "key-new-section-at-bottom",
+   "title": "New Section at Bottom",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "s"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-section-at-top",
+   "title": "New Section at Top",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "S"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-project-at-bottom",
+   "title": "New Project at Bottom",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "n",
+     "p"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-project-at-top",
+   "title": "New Project at Top",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "n",
+     "P"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-area-at-bottom",
+   "title": "New Area at Bottom",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "n",
+     "a"
+    ]
+   ]
+  },
+  {
+   "id": "key-new-area-at-top",
+   "title": "New Area at Top",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "n",
+     "A"
+    ]
+   ]
+  },
+  {
+   "id": "key-delete",
+   "title": "Delete",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "d",
+     "d"
+    ],
+    [
+     "Delete"
+    ]
+   ]
+  },
+  {
+   "id": "key-restore",
+   "title": "Restore",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "R"
+    ]
+   ]
+  },
+  {
+   "id": "key-empty-trash",
+   "title": "Empty Trash",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "d",
+     "e"
+    ]
+   ]
+  },
+  {
+   "id": "key-move-to",
+   "title": "Move To",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "M"
+    ]
+   ]
+  },
+  {
+   "id": "key-duplicate",
+   "title": "Duplicate",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "D"
+    ]
+   ]
+  },
+  {
+   "id": "key-copy",
+   "title": "Copy",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "y"
+    ],
+    [
+     "Ctrl+C"
+    ]
+   ]
+  },
+  {
+   "id": "key-cut",
+   "title": "Cut",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "Ctrl+X"
+    ]
+   ]
+  },
+  {
+   "id": "key-paste-below",
+   "title": "Paste Below",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "p"
+    ],
+    [
+     "Ctrl+V"
+    ]
+   ]
+  },
+  {
+   "id": "key-paste-above",
+   "title": "Paste Above",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "P"
+    ],
+    [
+     "Alt+v"
+    ]
+   ]
+  },
+  {
+   "id": "key-rename-container",
+   "title": "Rename Container",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "R"
+    ]
+   ]
+  },
+  {
+   "id": "key-delete-container",
+   "title": "Delete Container",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": []
+  },
+  {
+   "id": "key-move-up",
+   "title": "Move Up",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "m",
+     "k"
+    ],
+    [
+     "Alt+k"
+    ],
+    [
+     "Alt+↑"
+    ]
+   ]
+  },
+  {
+   "id": "key-move-down",
+   "title": "Move Down",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "selection",
+   "keys": [
+    [
+     "m",
+     "j"
+    ],
+    [
+     "Alt+j"
+    ],
+    [
+     "Alt+↓"
+    ]
+   ]
+  },
+  {
+   "id": "key-convert-to-project-or-section",
+   "title": "Convert to Project or Section",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "m",
+     "y"
+    ]
+   ]
+  },
+  {
+   "id": "key-group-into-section",
+   "title": "Group into Section",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "w",
+     "s"
+    ]
+   ]
+  },
+  {
+   "id": "key-group-into-project",
+   "title": "Group into Project",
+   "group": "Structure",
+   "context": "navigate",
+   "topic": "organization",
+   "keys": [
+    [
+     "w",
+     "p"
+    ]
+   ]
+  },
+  {
+   "id": "key-edit-item",
+   "title": "Edit Item",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "e"
+    ],
+    [
+     "m",
+     "i"
+    ]
+   ]
+  },
+  {
+   "id": "key-edit-description",
+   "title": "Edit Description",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "m",
+     "n"
+    ]
+   ]
+  },
+  {
+   "id": "key-edit-container-description",
+   "title": "Edit Container Description",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "editing",
+   "keys": [
+    [
+     "m",
+     "N"
+    ]
+   ]
+  },
+  {
+   "id": "key-open-note",
+   "title": "Open Note",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "attachments",
+   "keys": [
+    [
+     "\\"
+    ]
+   ]
+  },
+  {
+   "id": "key-open-container-note",
+   "title": "Open Container Note",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "attachments",
+   "keys": [
+    [
+     "Alt+\\"
+    ],
+    [
+     "g",
+     "\\"
+    ]
+   ]
+  },
+  {
+   "id": "key-open-comments",
+   "title": "Open Comments",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "attachments",
+   "keys": []
+  },
+  {
+   "id": "key-open-container-comments",
+   "title": "Open Container Comments",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "attachments",
+   "keys": []
+  },
+  {
+   "id": "key-open-checklist",
+   "title": "Open Checklist",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "attachments",
+   "keys": []
+  },
+  {
+   "id": "key-quick-comment",
+   "title": "Quick Comment",
+   "group": "Editing and Creating",
+   "context": "navigate",
+   "topic": "attachments",
+   "keys": [
+    [
+     "c"
+    ]
+   ]
+  },
+  {
+   "id": "key-set-start-date",
+   "title": "Set Start Date",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "dates",
+   "keys": [
+    [
+     "m",
+     "s"
+    ]
+   ]
+  },
+  {
+   "id": "key-set-due-date",
+   "title": "Set Due Date",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "dates",
+   "keys": [
+    [
+     "m",
+     "d"
+    ]
+   ]
+  },
+  {
+   "id": "key-start-today",
+   "title": "Start Today",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "dates",
+   "keys": [
+    [
+     "m",
+     "t"
+    ]
+   ]
+  },
+  {
+   "id": "key-toggle-later",
+   "title": "Toggle Later",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "tasks",
+   "keys": [
+    [
+     "m",
+     "l"
+    ]
+   ]
+  },
+  {
+   "id": "key-toggle-evening",
+   "title": "Toggle Evening",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "m",
+     "e"
+    ]
+   ]
+  },
+  {
+   "id": "key-start-a-day-earlier",
+   "title": "Start a Day Earlier",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "dates",
+   "keys": [
+    [
+     "["
+    ]
+   ]
+  },
+  {
+   "id": "key-start-a-day-later",
+   "title": "Start a Day Later",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "dates",
+   "keys": [
+    [
+     "]"
+    ]
+   ]
+  },
+  {
+   "id": "key-due-a-day-earlier",
+   "title": "Due a Day Earlier",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "dates",
+   "keys": [
+    [
+     "{"
+    ]
+   ]
+  },
+  {
+   "id": "key-due-a-day-later",
+   "title": "Due a Day Later",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "dates",
+   "keys": [
+    [
+     "}"
+    ]
+   ]
+  },
+  {
+   "id": "key-tags",
+   "title": "Tags",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "tags",
+   "keys": [
+    [
+     "m",
+     "g"
+    ]
+   ]
+  },
+  {
+   "id": "key-filter-by-tags",
+   "title": "Filter by Tags",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "tags",
+   "keys": [
+    [
+     "g",
+     "f"
+    ]
+   ]
+  },
+  {
+   "id": "key-clear-tag-filter",
+   "title": "Clear Tag Filter",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "tags",
+   "keys": [
+    [
+     "g",
+     "F"
+    ]
+   ]
+  },
+  {
+   "id": "key-pin-or-unpin-project",
+   "title": "Pin or Unpin Project",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "m",
+     "p"
+    ]
+   ]
+  },
+  {
+   "id": "key-toggle-flag",
+   "title": "Toggle Flag",
+   "group": "Completing, Dates and Tags",
+   "context": "navigate",
+   "topic": "tasks",
+   "keys": [
+    [
+     "m",
+     "f"
+    ]
+   ]
+  },
+  {
+   "id": "key-toggle-sidebar",
+   "title": "Toggle Sidebar",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "Ctrl+B"
+    ],
+    [
+     "|"
+    ]
+   ]
+  },
+  {
+   "id": "key-collapse-or-expand",
+   "title": "Collapse or Expand",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "views",
+   "keys": [
+    [
+     "'"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-left",
+   "title": "Focus Pane Left",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Ctrl+W",
+     "h"
+    ],
+    [
+     "Ctrl+W",
+     "←"
+    ],
+    [
+     "Ctrl+Shift+←"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-right",
+   "title": "Focus Pane Right",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Ctrl+W",
+     "l"
+    ],
+    [
+     "Ctrl+W",
+     "→"
+    ],
+    [
+     "Ctrl+Shift+→"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-next-pane",
+   "title": "Focus Next Pane",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Tab"
+    ],
+    [
+     "g",
+     "n"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-previous-pane",
+   "title": "Focus Previous Pane",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Shift+Tab"
+    ],
+    [
+     "g",
+     "p"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-sidebar",
+   "title": "Focus Sidebar",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "0"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-1",
+   "title": "Focus Pane 1",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "1"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-2",
+   "title": "Focus Pane 2",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "2"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-3",
+   "title": "Focus Pane 3",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "3"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-4",
+   "title": "Focus Pane 4",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "4"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-5",
+   "title": "Focus Pane 5",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "5"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-6",
+   "title": "Focus Pane 6",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "6"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-7",
+   "title": "Focus Pane 7",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "7"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-8",
+   "title": "Focus Pane 8",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "8"
+    ]
+   ]
+  },
+  {
+   "id": "key-focus-pane-9",
+   "title": "Focus Pane 9",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "g",
+     "9"
+    ]
+   ]
+  },
+  {
+   "id": "key-open-in-new-pane",
+   "title": "Open in New Pane",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Alt+Enter"
+    ],
+    [
+     "Ctrl+T"
+    ],
+    [
+     "Ctrl+W",
+     "v"
+    ]
+   ]
+  },
+  {
+   "id": "key-close-pane",
+   "title": "Close Pane",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Ctrl+W",
+     "c"
+    ]
+   ]
+  },
+  {
+   "id": "key-narrow-pane",
+   "title": "Narrow Pane",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Ctrl+W",
+     "<"
+    ],
+    [
+     "Alt+Shift+H"
+    ]
+   ]
+  },
+  {
+   "id": "key-widen-pane",
+   "title": "Widen Pane",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "panes",
+   "keys": [
+    [
+     "Ctrl+W",
+     ">"
+    ],
+    [
+     "Alt+Shift+L"
+    ]
+   ]
+  },
+  {
+   "id": "key-toggle-shortcuts",
+   "title": "Toggle Shortcuts",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "keyboard",
+   "keys": [
+    [
+     "?"
+    ]
+   ]
+  },
+  {
+   "id": "key-command-palette",
+   "title": "Command Palette",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "finders",
+   "keys": [
+    [
+     "Ctrl+P"
+    ],
+    [
+     "g",
+     "c"
+    ]
+   ]
+  },
+  {
+   "id": "key-keymap",
+   "title": "Keymap",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "keyboard",
+   "keys": [
+    [
+     "g",
+     "?"
+    ]
+   ]
+  },
+  {
+   "id": "key-context-menu",
+   "title": "Context Menu",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "finders",
+   "keys": [
+    [
+     "Ctrl+\\"
+    ],
+    [
+     "Ctrl+4"
+    ]
+   ]
+  },
+  {
+   "id": "key-go-to-symbol",
+   "title": "Go to Symbol",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "finders",
+   "keys": [
+    [
+     "/"
+    ]
+   ]
+  },
+  {
+   "id": "key-search",
+   "title": "Search",
+   "group": "Going",
+   "context": "navigate",
+   "topic": "finders",
+   "keys": [
+    [
+     "Ctrl+F"
+    ],
+    [
+     "g",
+     "s"
+    ]
+   ]
+  },
+  {
+   "id": "key-scroll-shortcuts-down",
+   "title": "Scroll Shortcuts Down",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "keyboard",
+   "keys": [
+    [
+     ")"
+    ]
+   ]
+  },
+  {
+   "id": "key-scroll-shortcuts-up",
+   "title": "Scroll Shortcuts Up",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "keyboard",
+   "keys": [
+    [
+     "("
+    ]
+   ]
+  },
+  {
+   "id": "key-open-settings",
+   "title": "Open Settings",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "settings",
+   "keys": [
+    [
+     "g",
+     ","
+    ]
+   ]
+  },
+  {
+   "id": "key-change-theme",
+   "title": "Change Theme",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "appearance",
+   "keys": []
+  },
+  {
+   "id": "key-save-as",
+   "title": "Save As…",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "files",
+   "keys": [
+    [
+     "Ctrl+S"
+    ]
+   ]
+  },
+  {
+   "id": "key-start-weather-animation",
+   "title": "Start Weather Animation",
+   "group": "View and Panels",
+   "context": "navigate",
+   "topic": "appearance",
+   "keys": []
+  },
+  {
+   "id": "key-open-navigator",
+   "title": "Open Navigator",
+   "group": "Going",
+   "context": "global",
+   "topic": "finders",
+   "keys": [
+    [
+     "Ctrl+G"
+    ],
+    [
+     "Ctrl+K"
+    ]
+   ]
+  },
+  {
+   "id": "key-keep-mine",
+   "title": "Keep Mine",
+   "group": "Conflict",
+   "context": "conflict",
+   "topic": "files",
+   "keys": [
+    [
+     "Ctrl+E"
+    ]
+   ]
+  },
+  {
+   "id": "key-take-theirs",
+   "title": "Take Theirs",
+   "group": "Conflict",
+   "context": "conflict",
+   "topic": "files",
+   "keys": [
+    [
+     "Ctrl+R"
+    ]
+   ]
+  },
+  {
+   "id": "key-show-diff",
+   "title": "Show Diff",
+   "group": "Conflict",
+   "context": "conflict",
+   "topic": "files",
+   "keys": [
+    [
+     "Ctrl+L"
+    ]
+   ]
+  }
+ ],
+ "windows": [
+  {
+   "id": "keys-picker",
+   "title": "Picker",
+   "topic": "finders",
+   "keys": [
+    {
+     "title": "Close",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Choose",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Open in New Pane",
+     "keys": [
+      [
+       "Alt+Enter"
+      ],
+      [
+       "Ctrl+T"
+      ]
+     ]
+    },
+    {
+     "title": "Previous Match",
+     "keys": [
+      [
+       "↑"
+      ],
+      [
+       "Ctrl+P"
+      ]
+     ]
+    },
+    {
+     "title": "Next Match",
+     "keys": [
+      [
+       "↓"
+      ],
+      [
+       "Ctrl+N"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-date-prompt",
+   "title": "Date Prompt",
+   "topic": "dates",
+   "keys": [
+    {
+     "title": "Set Date",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Cancel",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-edit-dialog",
+   "title": "Edit Dialog",
+   "topic": "editing",
+   "keys": [
+    {
+     "title": "Next Field",
+     "keys": [
+      [
+       "Tab"
+      ],
+      [
+       "↓"
+      ]
+     ]
+    },
+    {
+     "title": "Previous Field",
+     "keys": [
+      [
+       "Shift+Tab"
+      ],
+      [
+       "↑"
+      ]
+     ]
+    },
+    {
+     "title": "Confirm Field",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Close",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-tags",
+   "title": "Tags",
+   "topic": "editing",
+   "keys": [
+    {
+     "title": "Toggle Tag",
+     "keys": [
+      [
+       "Space"
+      ]
+     ]
+    },
+    {
+     "title": "Close",
+     "keys": [
+      [
+       "Enter"
+      ],
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Previous Match",
+     "keys": [
+      [
+       "↑"
+      ],
+      [
+       "Ctrl+P"
+      ]
+     ]
+    },
+    {
+     "title": "Next Match",
+     "keys": [
+      [
+       "↓"
+      ],
+      [
+       "Ctrl+N"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-save-as",
+   "title": "Save As",
+   "topic": "files",
+   "keys": [
+    {
+     "title": "Save",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Cancel",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-quick-add",
+   "title": "Quick Add",
+   "topic": "editing",
+   "keys": [
+    {
+     "title": "Add Task",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Cancel",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-quick-comment",
+   "title": "Quick Comment",
+   "topic": "attachments",
+   "keys": [
+    {
+     "title": "Add Comment",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Cancel",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-search",
+   "title": "Search",
+   "topic": "finders",
+   "keys": [
+    {
+     "title": "Go to Results",
+     "keys": [
+      [
+       "Enter"
+      ],
+      [
+       "Esc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-settings",
+   "title": "Settings",
+   "topic": "settings",
+   "keys": [
+    {
+     "title": "Previous Setting",
+     "keys": [
+      [
+       "k"
+      ],
+      [
+       "↑"
+      ]
+     ]
+    },
+    {
+     "title": "Next Setting",
+     "keys": [
+      [
+       "j"
+      ],
+      [
+       "↓"
+      ]
+     ]
+    },
+    {
+     "title": "Next Value",
+     "keys": [
+      [
+       "l"
+      ],
+      [
+       "→"
+      ],
+      [
+       "Enter"
+      ],
+      [
+       "Space"
+      ]
+     ]
+    },
+    {
+     "title": "Previous Value",
+     "keys": [
+      [
+       "h"
+      ],
+      [
+       "←"
+      ]
+     ]
+    },
+    {
+     "title": "Reset to Default",
+     "keys": [
+      [
+       "r"
+      ]
+     ]
+    },
+    {
+     "title": "Close",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-attachments-panel",
+   "title": "Attachments Panel",
+   "topic": "attachments",
+   "keys": [
+    {
+     "title": "Close",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Edit",
+     "keys": [
+      [
+       "e"
+      ],
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Delete",
+     "keys": [
+      [
+       "Delete"
+      ]
+     ]
+    },
+    {
+     "title": "Add Comment",
+     "keys": [
+      [
+       "a"
+      ],
+      [
+       "c"
+      ]
+     ]
+    },
+    {
+     "title": "Full Width, Then Hide",
+     "keys": [
+      [
+       "\\"
+      ]
+     ]
+    },
+    {
+     "title": "Scroll Down",
+     "keys": [
+      [
+       "j"
+      ],
+      [
+       "↓"
+      ]
+     ]
+    },
+    {
+     "title": "Scroll Up",
+     "keys": [
+      [
+       "k"
+      ],
+      [
+       "↑"
+      ]
+     ]
+    },
+    {
+     "title": "Page Down",
+     "keys": [
+      [
+       "Ctrl+D"
+      ],
+      [
+       "PgDn"
+      ]
+     ]
+    },
+    {
+     "title": "Page Up",
+     "keys": [
+      [
+       "Ctrl+U"
+      ],
+      [
+       "PgUp"
+      ]
+     ]
+    },
+    {
+     "title": "Top",
+     "keys": [
+      [
+       "Home"
+      ]
+     ]
+    },
+    {
+     "title": "Bottom",
+     "keys": [
+      [
+       "G"
+      ],
+      [
+       "End"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-editing",
+   "title": "Editing",
+   "topic": "editing",
+   "keys": [
+    {
+     "title": "Done",
+     "keys": [
+      [
+       "Enter"
+      ],
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Paste",
+     "keys": [
+      [
+       "Ctrl+V"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-editing-checklist-item",
+   "title": "Editing Checklist Item",
+   "topic": "attachments",
+   "keys": [
+    {
+     "title": "Done, Then Next Item",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Done",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Paste",
+     "keys": [
+      [
+       "Ctrl+V"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-editing-comment",
+   "title": "Editing Comment",
+   "topic": "attachments",
+   "keys": [
+    {
+     "title": "Done",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Cancel",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Paste",
+     "keys": [
+      [
+       "Ctrl+V"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-editing-description",
+   "title": "Editing Description",
+   "topic": "editing",
+   "keys": [
+    {
+     "title": "Line Up",
+     "keys": [
+      [
+       "↑"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line Up",
+     "keys": [
+      [
+       "Shift+↑"
+      ]
+     ]
+    },
+    {
+     "title": "Line Down",
+     "keys": [
+      [
+       "↓"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line Down",
+     "keys": [
+      [
+       "Shift+↓"
+      ]
+     ]
+    },
+    {
+     "title": "Line Start",
+     "keys": [
+      [
+       "Home"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line Start",
+     "keys": [
+      [
+       "Shift+Home"
+      ]
+     ]
+    },
+    {
+     "title": "Line End",
+     "keys": [
+      [
+       "End"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line End",
+     "keys": [
+      [
+       "Shift+End"
+      ]
+     ]
+    },
+    {
+     "title": "Text Start",
+     "keys": [
+      [
+       "Ctrl+Home"
+      ]
+     ]
+    },
+    {
+     "title": "Select Text Start",
+     "keys": [
+      [
+       "Ctrl+Shift+Home"
+      ]
+     ]
+    },
+    {
+     "title": "Text End",
+     "keys": [
+      [
+       "Ctrl+End"
+      ]
+     ]
+    },
+    {
+     "title": "Select Text End",
+     "keys": [
+      [
+       "Ctrl+Shift+End"
+      ]
+     ]
+    },
+    {
+     "title": "New Line",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Done",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Paste",
+     "keys": [
+      [
+       "Ctrl+V"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-keymap",
+   "title": "Keymap",
+   "topic": "keyboard",
+   "keys": [
+    {
+     "title": "Close",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Scroll Down",
+     "keys": [
+      [
+       "j"
+      ],
+      [
+       "↓"
+      ]
+     ]
+    },
+    {
+     "title": "Scroll Up",
+     "keys": [
+      [
+       "k"
+      ],
+      [
+       "↑"
+      ]
+     ]
+    },
+    {
+     "title": "Page Down",
+     "keys": [
+      [
+       "Ctrl+D"
+      ],
+      [
+       "PgDn"
+      ]
+     ]
+    },
+    {
+     "title": "Page Up",
+     "keys": [
+      [
+       "Ctrl+U"
+      ],
+      [
+       "PgUp"
+      ]
+     ]
+    },
+    {
+     "title": "Top",
+     "keys": [
+      [
+       "Home"
+      ]
+     ]
+    },
+    {
+     "title": "Bottom",
+     "keys": [
+      [
+       "G"
+      ],
+      [
+       "End"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "keys-text",
+   "title": "Text",
+   "topic": "editing",
+   "keys": [
+    {
+     "title": "Left",
+     "keys": [
+      [
+       "←"
+      ]
+     ]
+    },
+    {
+     "title": "Right",
+     "keys": [
+      [
+       "→"
+      ]
+     ]
+    },
+    {
+     "title": "Word Left",
+     "keys": [
+      [
+       "Ctrl+←"
+      ],
+      [
+       "Alt+←"
+      ],
+      [
+       "Alt+b"
+      ]
+     ]
+    },
+    {
+     "title": "Word Right",
+     "keys": [
+      [
+       "Ctrl+→"
+      ],
+      [
+       "Alt+→"
+      ],
+      [
+       "Alt+f"
+      ]
+     ]
+    },
+    {
+     "title": "Text Start",
+     "keys": [
+      [
+       "Home"
+      ]
+     ]
+    },
+    {
+     "title": "Text End",
+     "keys": [
+      [
+       "End"
+      ]
+     ]
+    },
+    {
+     "title": "Line Start",
+     "keys": [
+      [
+       "Ctrl+A"
+      ]
+     ]
+    },
+    {
+     "title": "Line End",
+     "keys": [
+      [
+       "Ctrl+E"
+      ]
+     ]
+    },
+    {
+     "title": "Select Left",
+     "keys": [
+      [
+       "Shift+←"
+      ]
+     ]
+    },
+    {
+     "title": "Select Right",
+     "keys": [
+      [
+       "Shift+→"
+      ]
+     ]
+    },
+    {
+     "title": "Select Word Left",
+     "keys": [
+      [
+       "Ctrl+Shift+←"
+      ],
+      [
+       "Alt+Shift+←"
+      ]
+     ]
+    },
+    {
+     "title": "Select Word Right",
+     "keys": [
+      [
+       "Ctrl+Shift+→"
+      ],
+      [
+       "Alt+Shift+→"
+      ]
+     ]
+    },
+    {
+     "title": "Select Text Start",
+     "keys": [
+      [
+       "Shift+Home"
+      ],
+      [
+       "Shift+↑"
+      ]
+     ]
+    },
+    {
+     "title": "Select Text End",
+     "keys": [
+      [
+       "Shift+End"
+      ],
+      [
+       "Shift+↓"
+      ]
+     ]
+    },
+    {
+     "title": "Delete Back",
+     "keys": [
+      [
+       "Backspace"
+      ]
+     ]
+    },
+    {
+     "title": "Delete Forward",
+     "keys": [
+      [
+       "Delete"
+      ]
+     ]
+    },
+    {
+     "title": "Delete Word Back",
+     "keys": [
+      [
+       "Ctrl+W"
+      ],
+      [
+       "Alt+Backspace"
+      ]
+     ]
+    },
+    {
+     "title": "Delete Word Forward",
+     "keys": [
+      [
+       "Alt+d"
+      ],
+      [
+       "Alt+Delete"
+      ]
+     ]
+    },
+    {
+     "title": "Delete to Line Start",
+     "keys": [
+      [
+       "Ctrl+U"
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "settings": [
+  {
+   "default": "Terminal Dark",
+   "description": "The colors the app draws in",
+   "file_default": "terminal-dark",
+   "group": "Appearance",
+   "key": "theme",
+   "name": "Theme",
+   "values": [
+    "terminal-dark",
+    "catppuccin-mocha",
+    "tokyo-night",
+    "github-light",
+    "flexoki-light",
+    "rose-pine",
+    "kanagawa-wave",
+    "kanagawa-dragon",
+    "gruvbox-dark",
+    "everforest-dark",
+    "github-dark",
+    "flexoki-dark",
+    "melange-dark",
+    "moonfly",
+    "nightfly",
+    "cyberdream",
+    "synthwave-84",
+    "gruvbox-light",
+    "melange-light",
+    "dayfox"
+   ],
+   "id": "setting-theme",
+   "topic": "settings"
+  },
+  {
+   "default": "Off",
+   "description": "The theme in its grays alone: no color in text or icons",
+   "file_default": false,
+   "group": "Appearance",
+   "key": "grayscale",
+   "name": "Grayscale",
+   "values": [
+    true,
+    false
+   ],
+   "id": "setting-grayscale",
+   "topic": "settings"
+  },
+  {
+   "default": "Nerd Font",
+   "description": "Nerd Font icons, or plain markers without the font",
+   "file_default": "nerd",
+   "group": "Appearance",
+   "key": "icons",
+   "name": "Icons",
+   "values": [
+    "nerd",
+    "plain"
+   ],
+   "id": "setting-icons",
+   "topic": "settings"
+  },
+  {
+   "default": "On",
+   "description": "Long titles wrap; off, each takes one line, cut short",
+   "file_default": true,
+   "group": "Appearance",
+   "key": "word_wrap",
+   "name": "Word wrap",
+   "values": [
+    true,
+    false
+   ],
+   "id": "setting-word-wrap",
+   "topic": "settings"
+  },
+  {
+   "default": "Full",
+   "description": "Full, reduced to flashes without fades, or off",
+   "file_default": "full",
+   "group": "Appearance",
+   "key": "animations",
+   "name": "Animations",
+   "values": [
+    "full",
+    "reduced",
+    "off"
+   ],
+   "id": "setting-animations",
+   "topic": "settings"
+  },
+  {
+   "default": "On",
+   "description": "The sidebar shows how many tasks each list and view holds",
+   "file_default": true,
+   "group": "Appearance",
+   "key": "task_counts",
+   "name": "Display task counts",
+   "values": [
+    true,
+    false
+   ],
+   "id": "setting-task-counts",
+   "topic": "settings"
+  },
+  {
+   "default": "On",
+   "description": "The season's weather falls over the app while it sits idle",
+   "file_default": true,
+   "group": "Weather",
+   "key": "weather",
+   "name": "Weather animation",
+   "values": [
+    true,
+    false
+   ],
+   "id": "setting-weather",
+   "topic": "settings"
+  },
+  {
+   "default": "30 minutes",
+   "description": "How long the app sits idle before the weather starts",
+   "file_default": 30,
+   "group": "Weather",
+   "key": "weather_idle_minutes",
+   "name": "Weather after idle",
+   "values": "a whole number of minutes, at least 1",
+   "id": "setting-weather-idle-minutes",
+   "topic": "settings"
+  }
+ ],
+ "themes": [
+  {
+   "id": "terminal-dark",
+   "light": false,
+   "name": "Terminal Dark"
+  },
+  {
+   "id": "catppuccin-mocha",
+   "light": false,
+   "name": "Catppuccin Mocha"
+  },
+  {
+   "id": "tokyo-night",
+   "light": false,
+   "name": "Tokyo Night"
+  },
+  {
+   "id": "github-light",
+   "light": true,
+   "name": "GitHub Light Default"
+  },
+  {
+   "id": "flexoki-light",
+   "light": true,
+   "name": "Flexoki Light"
+  },
+  {
+   "id": "rose-pine",
+   "light": false,
+   "name": "Rosé Pine"
+  },
+  {
+   "id": "kanagawa-wave",
+   "light": false,
+   "name": "Kanagawa Wave"
+  },
+  {
+   "id": "kanagawa-dragon",
+   "light": false,
+   "name": "Kanagawa Dragon"
+  },
+  {
+   "id": "gruvbox-dark",
+   "light": false,
+   "name": "Gruvbox Dark"
+  },
+  {
+   "id": "everforest-dark",
+   "light": false,
+   "name": "Everforest Dark"
+  },
+  {
+   "id": "github-dark",
+   "light": false,
+   "name": "GitHub Dark Default"
+  },
+  {
+   "id": "flexoki-dark",
+   "light": false,
+   "name": "Flexoki Dark"
+  },
+  {
+   "id": "melange-dark",
+   "light": false,
+   "name": "Melange Dark"
+  },
+  {
+   "id": "moonfly",
+   "light": false,
+   "name": "Moonfly"
+  },
+  {
+   "id": "nightfly",
+   "light": false,
+   "name": "Nightfly"
+  },
+  {
+   "id": "cyberdream",
+   "light": false,
+   "name": "Cyberdream"
+  },
+  {
+   "id": "synthwave-84",
+   "light": false,
+   "name": "Synthwave '84"
+  },
+  {
+   "id": "gruvbox-light",
+   "light": true,
+   "name": "Gruvbox Light"
+  },
+  {
+   "id": "melange-light",
+   "light": true,
+   "name": "Melange Light"
+  },
+  {
+   "id": "dayfox",
+   "light": true,
+   "name": "Dayfox"
+  }
+ ],
+ "cheatsheet": {
+  "groups": [
+   {
+    "title": "Moving",
+    "rows": [
+     {
+      "title": "Next Item",
+      "keys": [
+       [
+        "j"
+       ],
+       [
+        "↓"
+       ]
+      ]
+     },
+     {
+      "title": "Previous Item",
+      "keys": [
+       [
+        "k"
+       ],
+       [
+        "↑"
+       ]
+      ]
+     },
+     {
+      "title": "First Item",
+      "keys": [
+       [
+        "g",
+        "g"
+       ],
+       [
+        "Home"
+       ]
+      ]
+     },
+     {
+      "title": "Last Item",
+      "keys": [
+       [
+        "G"
+       ],
+       [
+        "End"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "title": "Selection",
+    "rows": [
+     {
+      "title": "Extend Selection Down",
+      "keys": [
+       [
+        "J"
+       ],
+       [
+        "Shift+↓"
+       ]
+      ]
+     },
+     {
+      "title": "Extend Selection Up",
+      "keys": [
+       [
+        "K"
+       ],
+       [
+        "Shift+↑"
+       ]
+      ]
+     },
+     {
+      "title": "Toggle Selected",
+      "keys": [
+       [
+        "v"
+       ]
+      ]
+     },
+     {
+      "title": "Visual Line Mode",
+      "keys": [
+       [
+        "V"
+       ]
+      ]
+     },
+     {
+      "title": "Select All",
+      "keys": [
+       [
+        "Ctrl+A"
+       ]
+      ]
+     },
+     {
+      "title": "Clear Selection",
+      "keys": [
+       [
+        "Esc"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "title": "Going",
+    "rows": [
+     {
+      "title": "Go Back",
+      "keys": [
+       [
+        "H"
+       ],
+       [
+        "Alt+←"
+       ],
+       [
+        "Alt+b"
+       ]
+      ]
+     },
+     {
+      "title": "Go Forward",
+      "keys": [
+       [
+        "L"
+       ],
+       [
+        "Alt+→"
+       ],
+       [
+        "Alt+f"
+       ]
+      ]
+     },
+     {
+      "title": "Next Sidebar Entry",
+      "keys": [
+       [
+        "g",
+        "j"
+       ],
+       [
+        "Ctrl+↓"
+       ]
+      ]
+     },
+     {
+      "title": "Previous Sidebar Entry",
+      "keys": [
+       [
+        "g",
+        "k"
+       ],
+       [
+        "Ctrl+↑"
+       ]
+      ]
+     },
+     {
+      "title": "Go to Inbox",
+      "keys": [
+       [
+        "g",
+        "i"
+       ]
+      ]
+     },
+     {
+      "title": "Go to Today",
+      "keys": [
+       [
+        "g",
+        "t"
+       ]
+      ]
+     },
+     {
+      "title": "Go to Upcoming",
+      "keys": [
+       [
+        "g",
+        "u"
+       ]
+      ]
+     },
+     {
+      "title": "Go to Flagged",
+      "keys": [
+       [
+        "g",
+        "!"
+       ]
+      ]
+     },
+     {
+      "title": "Go to All",
+      "keys": [
+       [
+        "g",
+        "a"
+       ]
+      ]
+     },
+     {
+      "title": "Go to Logbook",
+      "keys": [
+       [
+        "g",
+        "l"
+       ]
+      ]
+     },
+     {
+      "title": "Go to Trash",
+      "keys": [
+       [
+        "g",
+        "d"
+       ]
+      ]
+     },
+     {
+      "title": "Go to Symbol",
+      "keys": [
+       [
+        "/"
+       ]
+      ]
+     },
+     {
+      "title": "Search",
+      "keys": [
+       [
+        "Ctrl+F"
+       ],
+       [
+        "g",
+        "s"
+       ]
+      ]
+     },
+     {
+      "title": "Open Navigator",
+      "keys": [
+       [
+        "Ctrl+G"
+       ],
+       [
+        "Ctrl+K"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "title": "Editing and Creating",
+    "rows": [
+     {
+      "title": "Quick Add",
+      "keys": [
+       [
+        "q"
+       ]
+      ]
+     },
+     {
+      "title": "Open or Edit",
+      "keys": [
+       [
+        "Enter"
+       ]
+      ]
+     },
+     {
+      "title": "Edit Title",
+      "keys": [
+       [
+        "i"
+       ]
+      ]
+     },
+     {
+      "title": "New Item Below",
+      "keys": [
+       [
+        "o"
+       ],
+       [
+        "Space"
+       ]
+      ]
+     },
+     {
+      "title": "New Item Above",
+      "keys": [
+       [
+        "O"
+       ]
+      ]
+     },
+     {
+      "title": "New Section at Bottom",
+      "keys": [
+       [
+        "s"
+       ]
+      ]
+     },
+     {
+      "title": "New Section at Top",
+      "keys": [
+       [
+        "S"
+       ]
+      ]
+     },
+     {
+      "title": "New Project at Bottom",
+      "keys": [
+       [
+        "n",
+        "p"
+       ]
+      ]
+     },
+     {
+      "title": "New Project at Top",
+      "keys": [
+       [
+        "n",
+        "P"
+       ]
+      ]
+     },
+     {
+      "title": "New Area at Bottom",
+      "keys": [
+       [
+        "n",
+        "a"
+       ]
+      ]
+     },
+     {
+      "title": "New Area at Top",
+      "keys": [
+       [
+        "n",
+        "A"
+       ]
+      ]
+     },
+     {
+      "title": "Rename Container",
+      "keys": [
+       [
+        "R"
+       ]
+      ]
+     },
+     {
+      "title": "Edit Item",
+      "keys": [
+       [
+        "e"
+       ],
+       [
+        "m",
+        "i"
+       ]
+      ]
+     },
+     {
+      "title": "Edit Description",
+      "keys": [
+       [
+        "m",
+        "n"
+       ]
+      ]
+     },
+     {
+      "title": "Edit Container Description",
+      "keys": [
+       [
+        "m",
+        "N"
+       ]
+      ]
+     },
+     {
+      "title": "Open Note",
+      "keys": [
+       [
+        "\\"
+       ]
+      ]
+     },
+     {
+      "title": "Open Container Note",
+      "keys": [
+       [
+        "Alt+\\"
+       ],
+       [
+        "g",
+        "\\"
+       ]
+      ]
+     },
+     {
+      "title": "Quick Comment",
+      "keys": [
+       [
+        "c"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "title": "Completing, Dates and Tags",
+    "rows": [
+     {
+      "title": "Complete",
+      "keys": [
+       [
+        "x"
+       ],
+       [
+        "."
+       ],
+       [
+        "Ctrl+Enter"
+       ]
+      ]
+     },
+     {
+      "title": "Set Start Date",
+      "keys": [
+       [
+        "m",
+        "s"
+       ]
+      ]
+     },
+     {
+      "title": "Set Due Date",
+      "keys": [
+       [
+        "m",
+        "d"
+       ]
+      ]
+     },
+     {
+      "title": "Start Today",
+      "keys": [
+       [
+        "m",
+        "t"
+       ]
+      ]
+     },
+     {
+      "title": "Toggle Later",
+      "keys": [
+       [
+        "m",
+        "l"
+       ]
+      ]
+     },
+     {
+      "title": "Toggle Evening",
+      "keys": [
+       [
+        "m",
+        "e"
+       ]
+      ]
+     },
+     {
+      "title": "Start a Day Earlier",
+      "keys": [
+       [
+        "["
+       ]
+      ]
+     },
+     {
+      "title": "Start a Day Later",
+      "keys": [
+       [
+        "]"
+       ]
+      ]
+     },
+     {
+      "title": "Due a Day Earlier",
+      "keys": [
+       [
+        "{"
+       ]
+      ]
+     },
+     {
+      "title": "Due a Day Later",
+      "keys": [
+       [
+        "}"
+       ]
+      ]
+     },
+     {
+      "title": "Tags",
+      "keys": [
+       [
+        "m",
+        "g"
+       ]
+      ]
+     },
+     {
+      "title": "Pin or Unpin Project",
+      "keys": [
+       [
+        "m",
+        "p"
+       ]
+      ]
+     },
+     {
+      "title": "Toggle Flag",
+      "keys": [
+       [
+        "m",
+        "f"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "title": "Structure",
+    "rows": [
+     {
+      "title": "Undo",
+      "keys": [
+       [
+        "z"
+       ],
+       [
+        "u"
+       ],
+       [
+        "Ctrl+Z"
+       ]
+      ]
+     },
+     {
+      "title": "Redo",
+      "keys": [
+       [
+        "Z"
+       ],
+       [
+        "Ctrl+Shift+Z"
+       ],
+       [
+        "Ctrl+Y"
+       ]
+      ]
+     },
+     {
+      "title": "Delete",
+      "keys": [
+       [
+        "d",
+        "d"
+       ],
+       [
+        "Delete"
+       ]
+      ]
+     },
+     {
+      "title": "Restore",
+      "keys": [
+       [
+        "R"
+       ]
+      ]
+     },
+     {
+      "title": "Empty Trash",
+      "keys": [
+       [
+        "d",
+        "e"
+       ]
+      ]
+     },
+     {
+      "title": "Move To",
+      "keys": [
+       [
+        "M"
+       ]
+      ]
+     },
+     {
+      "title": "Duplicate",
+      "keys": [
+       [
+        "D"
+       ]
+      ]
+     },
+     {
+      "title": "Copy",
+      "keys": [
+       [
+        "y"
+       ],
+       [
+        "Ctrl+C"
+       ]
+      ]
+     },
+     {
+      "title": "Cut",
+      "keys": [
+       [
+        "Ctrl+X"
+       ]
+      ]
+     },
+     {
+      "title": "Paste Below",
+      "keys": [
+       [
+        "p"
+       ],
+       [
+        "Ctrl+V"
+       ]
+      ]
+     },
+     {
+      "title": "Paste Above",
+      "keys": [
+       [
+        "P"
+       ],
+       [
+        "Alt+v"
+       ]
+      ]
+     },
+     {
+      "title": "Move Up",
+      "keys": [
+       [
+        "m",
+        "k"
+       ],
+       [
+        "Alt+k"
+       ],
+       [
+        "Alt+↑"
+       ]
+      ]
+     },
+     {
+      "title": "Move Down",
+      "keys": [
+       [
+        "m",
+        "j"
+       ],
+       [
+        "Alt+j"
+       ],
+       [
+        "Alt+↓"
+       ]
+      ]
+     },
+     {
+      "title": "Convert to Project or Section",
+      "keys": [
+       [
+        "m",
+        "y"
+       ]
+      ]
+     },
+     {
+      "title": "Group into Section",
+      "keys": [
+       [
+        "w",
+        "s"
+       ]
+      ]
+     },
+     {
+      "title": "Group into Project",
+      "keys": [
+       [
+        "w",
+        "p"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "title": "View and Panels",
+    "rows": [
+     {
+      "title": "Quit",
+      "keys": [
+       [
+        "Ctrl+Q"
+       ]
+      ]
+     },
+     {
+      "title": "Show Completed Items",
+      "keys": [
+       [
+        "Ctrl+O"
+       ]
+      ]
+     },
+     {
+      "title": "Filter by Tags",
+      "keys": [
+       [
+        "g",
+        "f"
+       ]
+      ]
+     },
+     {
+      "title": "Clear Tag Filter",
+      "keys": [
+       [
+        "g",
+        "F"
+       ]
+      ]
+     },
+     {
+      "title": "Toggle Sidebar",
+      "keys": [
+       [
+        "Ctrl+B"
+       ],
+       [
+        "|"
+       ]
+      ]
+     },
+     {
+      "title": "Collapse or Expand",
+      "keys": [
+       [
+        "'"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane Left",
+      "keys": [
+       [
+        "Ctrl+W",
+        "h"
+       ],
+       [
+        "Ctrl+W",
+        "←"
+       ],
+       [
+        "Ctrl+Shift+←"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane Right",
+      "keys": [
+       [
+        "Ctrl+W",
+        "l"
+       ],
+       [
+        "Ctrl+W",
+        "→"
+       ],
+       [
+        "Ctrl+Shift+→"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Next Pane",
+      "keys": [
+       [
+        "Tab"
+       ],
+       [
+        "g",
+        "n"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Previous Pane",
+      "keys": [
+       [
+        "Shift+Tab"
+       ],
+       [
+        "g",
+        "p"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Sidebar",
+      "keys": [
+       [
+        "g",
+        "0"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 1",
+      "keys": [
+       [
+        "g",
+        "1"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 2",
+      "keys": [
+       [
+        "g",
+        "2"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 3",
+      "keys": [
+       [
+        "g",
+        "3"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 4",
+      "keys": [
+       [
+        "g",
+        "4"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 5",
+      "keys": [
+       [
+        "g",
+        "5"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 6",
+      "keys": [
+       [
+        "g",
+        "6"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 7",
+      "keys": [
+       [
+        "g",
+        "7"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 8",
+      "keys": [
+       [
+        "g",
+        "8"
+       ]
+      ]
+     },
+     {
+      "title": "Focus Pane 9",
+      "keys": [
+       [
+        "g",
+        "9"
+       ]
+      ]
+     },
+     {
+      "title": "Open in New Pane",
+      "keys": [
+       [
+        "Alt+Enter"
+       ],
+       [
+        "Ctrl+T"
+       ],
+       [
+        "Ctrl+W",
+        "v"
+       ]
+      ]
+     },
+     {
+      "title": "Close Pane",
+      "keys": [
+       [
+        "Ctrl+W",
+        "c"
+       ]
+      ]
+     },
+     {
+      "title": "Narrow Pane",
+      "keys": [
+       [
+        "Ctrl+W",
+        "<"
+       ],
+       [
+        "Alt+Shift+H"
+       ]
+      ]
+     },
+     {
+      "title": "Widen Pane",
+      "keys": [
+       [
+        "Ctrl+W",
+        ">"
+       ],
+       [
+        "Alt+Shift+L"
+       ]
+      ]
+     },
+     {
+      "title": "Toggle Shortcuts",
+      "keys": [
+       [
+        "?"
+       ]
+      ]
+     },
+     {
+      "title": "Command Palette",
+      "keys": [
+       [
+        "Ctrl+P"
+       ],
+       [
+        "g",
+        "c"
+       ]
+      ]
+     },
+     {
+      "title": "Keymap",
+      "keys": [
+       [
+        "g",
+        "?"
+       ]
+      ]
+     },
+     {
+      "title": "Context Menu",
+      "keys": [
+       [
+        "Ctrl+\\"
+       ],
+       [
+        "Ctrl+4"
+       ]
+      ]
+     },
+     {
+      "title": "Scroll Shortcuts Down",
+      "keys": [
+       [
+        ")"
+       ]
+      ]
+     },
+     {
+      "title": "Scroll Shortcuts Up",
+      "keys": [
+       [
+        "("
+       ]
+      ]
+     },
+     {
+      "title": "Open Settings",
+      "keys": [
+       [
+        "g",
+        ","
+       ]
+      ]
+     },
+     {
+      "title": "Save As…",
+      "keys": [
+       [
+        "Ctrl+S"
+       ]
+      ]
+     }
+    ]
+   }
+  ],
+  "windows": [
+   {
+    "id": "keys-attachments-panel",
+    "title": "Attachments Panel",
+    "topic": "attachments",
+    "keys": [
+     {
+      "title": "Close",
+      "keys": [
+       [
+        "Esc"
+       ]
+      ]
+     },
+     {
+      "title": "Edit",
+      "keys": [
+       [
+        "e"
+       ],
+       [
+        "Enter"
+       ]
+      ]
+     },
+     {
+      "title": "Delete",
+      "keys": [
+       [
+        "Delete"
+       ]
+      ]
+     },
+     {
+      "title": "Add Comment",
+      "keys": [
+       [
+        "a"
+       ],
+       [
+        "c"
+       ]
+      ]
+     },
+     {
+      "title": "Full Width, Then Hide",
+      "keys": [
+       [
+        "\\"
+       ]
+      ]
+     },
+     {
+      "title": "Scroll Down",
+      "keys": [
+       [
+        "j"
+       ],
+       [
+        "↓"
+       ]
+      ]
+     },
+     {
+      "title": "Scroll Up",
+      "keys": [
+       [
+        "k"
+       ],
+       [
+        "↑"
+       ]
+      ]
+     },
+     {
+      "title": "Page Down",
+      "keys": [
+       [
+        "Ctrl+D"
+       ],
+       [
+        "PgDn"
+       ]
+      ]
+     },
+     {
+      "title": "Page Up",
+      "keys": [
+       [
+        "Ctrl+U"
+       ],
+       [
+        "PgUp"
+       ]
+      ]
+     },
+     {
+      "title": "Top",
+      "keys": [
+       [
+        "Home"
+       ]
+      ]
+     },
+     {
+      "title": "Bottom",
+      "keys": [
+       [
+        "G"
+       ],
+       [
+        "End"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "id": "keys-picker",
+    "title": "Picker",
+    "topic": "finders",
+    "keys": [
+     {
+      "title": "Close",
+      "keys": [
+       [
+        "Esc"
+       ]
+      ]
+     },
+     {
+      "title": "Choose",
+      "keys": [
+       [
+        "Enter"
+       ]
+      ]
+     },
+     {
+      "title": "Open in New Pane",
+      "keys": [
+       [
+        "Alt+Enter"
+       ],
+       [
+        "Ctrl+T"
+       ]
+      ]
+     },
+     {
+      "title": "Previous Match",
+      "keys": [
+       [
+        "↑"
+       ],
+       [
+        "Ctrl+P"
+       ]
+      ]
+     },
+     {
+      "title": "Next Match",
+      "keys": [
+       [
+        "↓"
+       ],
+       [
+        "Ctrl+N"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "id": "keys-edit-dialog",
+    "title": "Edit Dialog",
+    "topic": "editing",
+    "keys": [
+     {
+      "title": "Next Field",
+      "keys": [
+       [
+        "Tab"
+       ],
+       [
+        "↓"
+       ]
+      ]
+     },
+     {
+      "title": "Previous Field",
+      "keys": [
+       [
+        "Shift+Tab"
+       ],
+       [
+        "↑"
+       ]
+      ]
+     },
+     {
+      "title": "Confirm Field",
+      "keys": [
+       [
+        "Enter"
+       ]
+      ]
+     },
+     {
+      "title": "Close",
+      "keys": [
+       [
+        "Esc"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "id": "keys-date-prompt",
+    "title": "Date Prompt",
+    "topic": "dates",
+    "keys": [
+     {
+      "title": "Set Date",
+      "keys": [
+       [
+        "Enter"
+       ]
+      ]
+     },
+     {
+      "title": "Cancel",
+      "keys": [
+       [
+        "Esc"
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "id": "keys-text",
+    "title": "Text",
+    "topic": "editing",
+    "keys": [
+     {
+      "title": "Left",
+      "keys": [
+       [
+        "←"
+       ]
+      ]
+     },
+     {
+      "title": "Right",
+      "keys": [
+       [
+        "→"
+       ]
+      ]
+     },
+     {
+      "title": "Word Left",
+      "keys": [
+       [
+        "Ctrl+←"
+       ],
+       [
+        "Alt+←"
+       ],
+       [
+        "Alt+b"
+       ]
+      ]
+     },
+     {
+      "title": "Word Right",
+      "keys": [
+       [
+        "Ctrl+→"
+       ],
+       [
+        "Alt+→"
+       ],
+       [
+        "Alt+f"
+       ]
+      ]
+     },
+     {
+      "title": "Text Start",
+      "keys": [
+       [
+        "Home"
+       ]
+      ]
+     },
+     {
+      "title": "Text End",
+      "keys": [
+       [
+        "End"
+       ]
+      ]
+     },
+     {
+      "title": "Line Start",
+      "keys": [
+       [
+        "Ctrl+A"
+       ]
+      ]
+     },
+     {
+      "title": "Line End",
+      "keys": [
+       [
+        "Ctrl+E"
+       ]
+      ]
+     },
+     {
+      "title": "Select Left",
+      "keys": [
+       [
+        "Shift+←"
+       ]
+      ]
+     },
+     {
+      "title": "Select Right",
+      "keys": [
+       [
+        "Shift+→"
+       ]
+      ]
+     },
+     {
+      "title": "Select Word Left",
+      "keys": [
+       [
+        "Ctrl+Shift+←"
+       ],
+       [
+        "Alt+Shift+←"
+       ]
+      ]
+     },
+     {
+      "title": "Select Word Right",
+      "keys": [
+       [
+        "Ctrl+Shift+→"
+       ],
+       [
+        "Alt+Shift+→"
+       ]
+      ]
+     },
+     {
+      "title": "Select Text Start",
+      "keys": [
+       [
+        "Shift+Home"
+       ],
+       [
+        "Shift+↑"
+       ]
+      ]
+     },
+     {
+      "title": "Select Text End",
+      "keys": [
+       [
+        "Shift+End"
+       ],
+       [
+        "Shift+↓"
+       ]
+      ]
+     },
+     {
+      "title": "Delete Back",
+      "keys": [
+       [
+        "Backspace"
+       ]
+      ]
+     },
+     {
+      "title": "Delete Forward",
+      "keys": [
+       [
+        "Delete"
+       ]
+      ]
+     },
+     {
+      "title": "Delete Word Back",
+      "keys": [
+       [
+        "Ctrl+W"
+       ],
+       [
+        "Alt+Backspace"
+       ]
+      ]
+     },
+     {
+      "title": "Delete Word Forward",
+      "keys": [
+       [
+        "Alt+d"
+       ],
+       [
+        "Alt+Delete"
+       ]
+      ]
+     },
+     {
+      "title": "Delete to Line Start",
+      "keys": [
+       [
+        "Ctrl+U"
+       ]
+      ]
+     }
+    ]
+   }
+  ],
+  "unbound": [
+   "New Task at Bottom",
+   "New Task at Top",
+   "Delete Container",
+   "Open Comments",
+   "Open Container Comments",
+   "Open Checklist",
+   "Change Theme",
+   "Start Weather Animation"
+  ]
+ }
+}

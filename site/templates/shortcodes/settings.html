@@ -1,0 +1,15 @@
+{# Every setting of one group of the settings window, generated from the app's settings:
+   {{ settings(group="Appearance") }} #}
+{% set data = load_data(path="data/reference.json") %}
+{% set rows = data.settings | filter(attribute="group", value=group) %}
+{% if rows | length == 0 %}{{ throw(message="settings: no settings in group " ~ group) }}{% endif %}
+<div class="ref-table"><table class="ref-settings">
+<thead><tr><th scope="col">Setting</th><th scope="col"><code>config.toml</code></th><th scope="col">Values</th><th scope="col">Default</th></tr></thead>
+<tbody>
+{% for s in rows %}
+<tr id="{{ s.id }}"><th scope="row"><a class="ref-anchor" href="#{{ s.id }}">{{ s.name }}</a><span class="ref-desc">{{ s.description }}</span></th>
+<td><code>{{ s.key }}</code></td>
+<td>{% if s.key == "theme" %}any theme's id, <a href="{{ get_url(path='@/reference/appearance.md') }}#themes">listed with the themes</a>{% elif s["values"] is string %}{{ s["values"] }}{% else %}{% for v in s["values"] %}{% if not loop.first %}, {% endif %}<code>{{ v | json_encode() | safe }}</code>{% endfor %}{% endif %}</td>
+<td><code>{{ s.file_default | json_encode() | safe }}</code>{% if s.default != "On" and s.default != "Off" %} ({{ s.default }}){% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>

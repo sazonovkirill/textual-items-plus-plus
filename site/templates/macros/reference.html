@@ -1,0 +1,4 @@
+{# Pieces of the Reference's generated tables (site/scripts/reference.py): a key sequence is a list
+   of presses, shown as one key cap each. #}
+{% macro sequence(s) %}<span class="ref-seq">{% for p in s %}<kbd>{{ p }}</kbd>{% endfor %}</span>{% endmacro sequence %}
+{% macro sequences(list) %}{% for s in list %}{% if not loop.first %}<span class="ref-or">, </span>{% endif %}{{ self::sequence(s=s) }}{% endfor %}{% endmacro sequences %}

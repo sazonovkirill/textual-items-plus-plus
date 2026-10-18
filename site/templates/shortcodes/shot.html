@@ -1,0 +1,8 @@
+{# A screenshot from site/screenshots/scenes: {{ shot(src="tutorial/first-launch", alt="…", caption="…") }}.
+   A clip is named with its extension: src="landing/quick-add.webp". #}
+{% if src is ending_with(".webp") %}{% set path = "screenshots/" ~ src %}{% else %}{% set path = "screenshots/" ~ src ~ ".png" %}{% endif %}
+{% set meta = get_image_metadata(path=path) %}{% if src is ending_with(".webp") %}{% set scale = 1 %}{% else %}{% set scale = 2 %}{% endif %}
+<figure class="shot-figure">
+  <img src="{{ get_url(path=path) }}" alt="{{ alt }}" loading="lazy" width="{{ meta.width / scale | round }}" height="{{ meta.height / scale | round }}">
+  {% if caption is defined %}<figcaption>{{ caption }}</figcaption>{% endif %}
+</figure>

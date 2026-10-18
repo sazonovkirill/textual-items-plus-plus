@@ -1,0 +1,87 @@
+Inbox:
+	- Call the dentist to move Thursday's appointment @calls @due({today+1})
+	- Buy a birthday present for Maya @errands @flagged
+	- Read the RFC on retry budgets Priya shared
+	- Renew the passport @due({today+9})
+	- Try the new ramen place on Elm Street
+	- Cancel the old gym membership @deleted({today-2})
+Work: @area
+	Everything for the day job at Northwind.
+	- Send the weekly status update @start({today}) @writing
+	- Review Daniel's pull request on rate limiting @due({today-1}) @flagged
+	Launch the billing page: @pinned @due({today+12}) @flagged
+		The new self-serve billing page, with plans, invoices and a card form.
+		NOTE @hidden
+			# Goals
+			- Customers upgrade without talking to sales
+			- Invoices are downloadable as PDF
+			
+			Design: the *Billing v2* file, page 3.
+		COMMENTS @hidden
+			[{today-1} 17:40] Legal approved the new terms of service.
+			[{today-3} 11:05] Kick-off with design and finance went well.
+		- Agree on the plan names with marketing @done({today-2})
+		- Write the pricing copy @writing @due({today+4})
+		- Get sign-off from finance @waiting
+		Build: @section
+			What has to ship before the launch.
+			- Wire the card form to the payments API @start({today}) @deep
+				Use the sandbox keys until the security review is done.
+				NOTE @hidden
+					Retries must be idempotent: send the same idempotency key on every attempt.
+				COMMENTS @hidden
+					[{today} 09:12] The sandbox returns 402 for expired cards, handle it.
+				- Card number field
+				- Expiry and CVC
+				- Error messages @done({today-1})
+				- Loading state
+				- Success page
+			- Generate invoice PDFs @start({today+2}) @deep
+			- Add the plan comparison table @done({today-1})
+		Launch: @section
+			- Write the release notes @start({today+8}) @writing
+			- Book the launch review with the team @due({today+5}) @calls
+			- Prepare the support FAQ @waiting
+		Polish: @section
+			- Check the page on a phone
+			- Add an empty state for accounts without invoices
+	Hire a backend engineer: @due({today+30})
+		- Write the job description @done({today-6})
+		- Screen the first five candidates @start({today+1})
+		- Ask Sam for interview questions @waiting
+	Q4 planning:
+		- Draft the roadmap one-pager @start({today+3}) @writing
+		- Collect estimates from each team @due({today+6})
+	Team: @section
+		- Prepare the 1:1 with Alex @start({today})
+		- Plan the team offsite @start({today+14})
+Home: @area
+	The flat, the family and everything in between.
+	- Water the plants @start({today-1})
+	- Pay the electricity bill @due({today}) @errands
+	Kitchen renovation: @due({today+40})
+		Budget: 8,000 for cabinets, worktop and lights.
+		- Measure the kitchen walls @done({today-4})
+		- Get three quotes for the cabinets @start({today+2}) @calls
+		- Pick the worktop material @waiting
+		Electrics: @section
+			- Ask the electrician about under-cabinet lights @start({today+4}) @calls
+			- Order the pendant lamps @start({today+10})
+	Weekend in Lisbon: @pinned @start({today+16})
+		- Book the flights @done({today-3})
+		- Book a room in Alfama @due({today+3})
+		- Make a list of restaurants @start({today+6})
+		- Buy a travel adapter @errands
+Health: @area
+	- Book the yearly check-up @start({today+5}) @calls
+	Run a half marathon: @later
+		- Find a training plan
+		- Buy new running shoes @errands
+Read Designing Data-Intensive Applications: @start({today})
+	One chapter a week, notes in the Notes app.
+	- Chapter 5: Replication @start({today}) @deep
+	- Chapter 6: Partitioning @start({today+7})
+	- Chapter 4: Encoding and evolution @done({today-5})
+Learn Japanese: @later
+	- Finish the hiragana deck
+	- Find a conversation partner

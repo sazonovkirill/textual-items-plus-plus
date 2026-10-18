@@ -1,0 +1,21 @@
+# The textual-items++ product website (specs/website.md). Build with `bash site/site.sh build`.
+# base_url is a placeholder until the site has a host (W-SITE-10).
+base_url = "https://textual-items.invalid"
+title = "textual-items++"
+description = "A keyboard-first todo app for the terminal, in the spirit of Things 3 and Todoist, that keeps everything in one plain-text TaskPaper file."
+compile_sass = false
+build_search_index = true
+generate_feeds = false
+
+[search]
+include_title = true
+include_description = true
+include_content = true
+
+[markdown]
+smart_punctuation = true
+
+[extra]
+tagline = "Things 3 calm, terminal speed"
+github = "https://github.com/sazonovkirill/textual-items-plus-plus"
+install = "cargo install --git https://github.com/sazonovkirill/textual-items-plus-plus"

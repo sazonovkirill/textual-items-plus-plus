@@ -1,0 +1,14 @@
+{# The own keys of one window, generated from its key table in app/src/ui:
+   {{ window_keys(window="Date Prompt") }} #}
+{% import "macros/reference.html" as ref %}
+{% set data = load_data(path="data/reference.json") %}
+{% set found = data.windows | filter(attribute="title", value=window) %}
+{% if found | length == 0 %}{{ throw(message="window_keys: no window " ~ window) }}{% endif %}
+{% set w = found | first %}
+<div class="ref-table" id="{{ w.id }}"><table class="ref-keys ref-context">
+<caption>{% if caption is defined %}{{ caption }}{% else %}{{ w.title }}{% endif %}</caption>
+<thead><tr><th scope="col">Action</th><th scope="col">Keys</th></tr></thead>
+<tbody>
+{% for k in w.keys %}<tr><th scope="row">{{ k.title }}</th><td>{{ ref::sequences(list=k.keys) }}</td></tr>
+{% endfor %}
+</tbody></table></div>

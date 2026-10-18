@@ -1,0 +1,47 @@
+Inbox:
+	- Call the vet about Pepper's vaccinations @calls
+	- Buy a birthday card for Grandma @errands
+	- Look into a standing desk
+	- Return the library books @errands
+Work: @area
+	The day job at Fernway, a small travel-booking company.
+	- Submit the expense report
+	- Reply to Ana about the conference talk
+	Customer newsletter: @pinned
+		A monthly email for our customers. The first issue goes out in November.
+		NOTE @hidden
+			# Goals
+			- Get a 30% open rate on the first issue
+			- Tell one clear story per issue
+		COMMENTS @hidden
+			[2026-10-12 09:30] Marketing signed off on the name "Fernway Notes".
+			[2026-10-09 16:10] Kick-off with Ana and Tom went well.
+		- Pick an email tool @done(2026-10-10)
+		- Write the welcome issue @flagged
+			Keep it under 400 words.
+			- Intro from the founders
+			- Three trips of the month
+			- Link to the travel guide
+		- Design the header image
+		Launch: @section
+			- Import the customer list
+			- Send a test to the team
+	Hire a support lead:
+		- Write the job post @done(2026-10-08)
+		- Ask Tom for interview questions
+		- Screen the first candidates
+Home: @area
+	The flat, the family and everything in between.
+	- Fix the dripping bathroom tap
+	- Replace the hallway light bulb @errands
+	- Pay the council tax
+	- Plan Grandma's 90th
+		- Book a table at Luigi's
+		- Invite the cousins
+	Weekend in Edinburgh:
+		- Book the train tickets
+		- Find a place to stay near the Old Town
+		- Make a list of cafés
+Bake sourdough bread:
+	- Make a starter
+	- Bake the first loaf

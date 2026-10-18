@@ -1,0 +1,18 @@
+{# The commands of one Reference page, generated from the app's command registry and default keymap:
+   {{ keys(topic="navigation") }}, or only some of them with titles="Go Back|Go Forward". #}
+{% import "macros/reference.html" as ref %}
+{% set data = load_data(path="data/reference.json") %}
+{% set rows = data.commands | filter(attribute="topic", value=topic) %}
+{% if titles is defined %}{% set wanted = titles | split(pat="|") %}{% set picked = [] %}
+{% for c in rows %}{% if c.title in wanted %}{% set_global picked = picked | concat(with=c) %}{% endif %}{% endfor %}
+{% if picked | length != wanted | length %}{{ throw(message="keys: topic " ~ topic ~ " lacks one of " ~ titles) }}{% endif %}
+{% set rows = picked %}{% endif %}
+{% if rows | length == 0 %}{{ throw(message="keys: no commands for topic " ~ topic) }}{% endif %}
+<div class="ref-table"><table class="ref-keys">
+<thead><tr><th scope="col">Command</th><th scope="col">Keys</th></tr></thead>
+<tbody>
+{% for c in rows %}
+<tr id="{{ c.id }}"><th scope="row"><a class="ref-anchor" href="#{{ c.id }}">{{ c.title }}</a></th>
+<td>{% if c.keys | length == 0 %}<span class="ref-none">no key; from the command palette</span>{% else %}{{ ref::sequences(list=c.keys) }}{% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>

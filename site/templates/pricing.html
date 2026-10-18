@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="pricing">
+  <h1>Simple, transparent pricing</h1>
+  <p class="sub">Choose the plan that fits your to-do list. Upgrade, downgrade or cancel at any time. Nothing will happen.</p>
+
+  <div class="toggle">
+    <div class="switch" role="group" aria-label="Billing period">
+      <button type="button" aria-pressed="true" data-period="monthly">Monthly</button>
+      <button type="button" aria-pressed="false" data-period="annually">Annually</button>
+    </div>
+    <span class="save">Save 0%</span>
+  </div>
+
+  <div class="plans">
+    <div class="plan">
+      <h2>Basic</h2>
+      <p class="tag">For people who just need a list that stays put.</p>
+      <div class="price"><b>$0</b><span class="per">/ month</span></div>
+      <div class="was">($0 annually)</div>
+      <a class="cta" href="#get-it">Start with Basic</a>
+      <ul>
+        <li>One plain-text <code>.taskpaper</code> file you own</li>
+        <li>Inbox, areas, projects, sections and tasks</li>
+        <li>Navigate and edit modes with vim-style keys</li>
+        <li>Undo and redo for every change</li>
+        <li>Saves every change, with 30 daily backups</li>
+      </ul>
+    </div>
+
+    <div class="plan pro">
+      <span class="badge">Most popular</span>
+      <h2>Pro</h2>
+      <p class="tag">For people who get things done. Like you.</p>
+      <div class="price"><b>$0</b><span class="per">/ month</span></div>
+      <div class="was">($0 annually) · <s>$0</s> limited-time offer</div>
+      <a class="cta" href="#get-it">Get Pro</a>
+      <p class="nudge">★ Chosen by 100% of people who chose it</p>
+      <ul>
+        <li class="plus">Everything in Basic, plus:</li>
+        <li>Start and due dates typed in plain words</li>
+        <li>Today, Upcoming, Flagged, All, Logbook and Trash</li>
+        <li>This Evening and Later, for honest days</li>
+        <li>Tags, flags and pinned projects</li>
+        <li>Quick Add from anywhere</li>
+        <li>Notes, checklists and comments on any item</li>
+        <li>The Navigator, Go to Symbol and a command palette</li>
+      </ul>
+    </div>
+
+    <div class="plan max">
+      <h2>Pro Max</h2>
+      <p class="tag">For power users with very large projects and opinions.</p>
+      <div class="price"><b>$0</b><span class="per">/ month</span></div>
+      <div class="was">($0 annually)</div>
+      <a class="cta" href="#get-it">Go Max</a>
+      <ul>
+        <li class="plus">Everything in Pro, plus:</li>
+        <li>Full-text search across notes and comments</li>
+        <li>As many side-by-side panes as fit</li>
+        <li>Twenty built-in themes, plus grayscale</li>
+        <li>Animations and the season's weather when idle</li>
+        <li>Mouse support, if you insist</li>
+        <li>Works over SSH and inside tmux</li>
+        <li>Priority support: you, reading the source</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="fine">All prices exclude nothing. No credit card required, or accepted.</p>
+
+  <section class="real">
+    <h2>The fine print, honestly</h2>
+    <dl>
+      <dt>Is textual-items++ really free?</dt>
+      <dd>Yes. Every feature above is in the one and only version, and all three plans are the same app.</dd>
+      <dt>Do I need an account?</dt>
+      <dd>No. There is no account, no sign-in, no subscription and no telemetry. The app reads and writes one file on your disk, and that's it.</dd>
+      <dt>What's the license?</dt>
+      <dd>It is open source under the <a href="{{ config.extra.github | safe }}/blob/main/LICENSE">MIT license</a>.</dd>
+      <dt id="get-it">How do I get it?</dt>
+      <dd>With Rust installed, run <code>{{ config.extra.install }}</code>, then <code>tipp todo.taskpaper</code>. The <a href="{{ get_url(path='@/tutorial/_index.md') }}">Tutorial</a> takes it from there.</dd>
+      <dt>Then why is there a pricing page?</dt>
+      <dd>Every product website has one. We felt left out.</dd>
+    </dl>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ get_url(path='js/site.js', cachebust=true) }}" defer></script>{% endblock %}

@@ -1,0 +1,12 @@
+# Writes the Reference's data, every command, key binding, setting and theme, as the app itself
+# defines them (specs/website.md, W-REF-03). Run through `bash site/site.sh reference`.
+[package]
+name = "tipp-reference"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[dependencies]
+serde_json = "1.0.154"
+textual-items-plus-plus = { path = "../../app" }

@@ -1,0 +1,223 @@
+{
+ "file": "demo.taskpaper.in",
+ "scenes": [
+  {
+   "name": "hero",
+   "title": "A project with sections, dates, tags and attachments",
+   "keys": [
+    "C-k",
+    "text:billing",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "j",
+    "j"
+   ]
+  },
+  {
+   "name": "file-view",
+   "title": "The Lisbon project as the app shows it",
+   "file": "lisbon.taskpaper.in",
+   "save_as": "Trips.taskpaper",
+   "cols": 74,
+   "rows": 14,
+   "keys": [
+    "C-b",
+    "C-b",
+    "C-k",
+    "text:lisbon",
+    "wait:0.3",
+    "Enter"
+   ]
+  },
+  {
+   "name": "today",
+   "title": "Today, with an item in the Evening",
+   "keys": [
+    "g",
+    "t",
+    "G",
+    "m",
+    "e",
+    "g",
+    "g"
+   ]
+  },
+  {
+   "name": "upcoming",
+   "title": "Upcoming",
+   "keys": [
+    "g",
+    "u"
+   ]
+  },
+  {
+   "name": "palette",
+   "title": "The command palette filtered to dates",
+   "keys": [
+    "C-k",
+    "text:billing",
+    "wait:0.3",
+    "Enter",
+    "C-p",
+    "text:date"
+   ]
+  },
+  {
+   "name": "quick-add",
+   "title": "Quick Add with a date and a place in plain words",
+   "keys": [
+    "frame:900",
+    "q",
+    "frame:500",
+    "type:Call the plumber tomorrow",
+    "frame:1400",
+    "Enter",
+    "frame:2500"
+   ]
+  },
+  {
+   "name": "editing",
+   "title": "Adding a task under the focused one",
+   "keys": [
+    "C-k",
+    "text:lisbon",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "frame:900",
+    "o",
+    "frame:400",
+    "type:Pack the sunscreen",
+    "frame:900",
+    "Enter",
+    "frame:500",
+    "x",
+    "frame:2200"
+   ]
+  },
+  {
+   "name": "attachments",
+   "title": "A task's note, checklist and comments in the attachments panel",
+   "keys": [
+    "C-k",
+    "text:billing",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "j",
+    "j",
+    "\\"
+   ]
+  },
+  {
+   "name": "search",
+   "title": "Full-text search for review",
+   "keys": [
+    "C-f",
+    "text:review"
+   ]
+  },
+  {
+   "name": "panes",
+   "title": "The billing project and Today side by side",
+   "keys": [
+    "C-k",
+    "text:billing",
+    "wait:0.3",
+    "Enter",
+    "C-w",
+    "v",
+    "g",
+    "t"
+   ]
+  },
+  {
+   "name": "weather",
+   "title": "Autumn leaves over the app",
+   "keys": [
+    "g",
+    "t",
+    "C-p",
+    "text:weather",
+    "wait:0.3",
+    "Enter",
+    "wait:1.5",
+    "frame:150",
+    "wait:0.4",
+    "frame:150",
+    "wait:0.4",
+    "frame:150",
+    "wait:0.4",
+    "frame:150",
+    "wait:0.4",
+    "frame:150",
+    "wait:0.4",
+    "frame:150",
+    "wait:0.4",
+    "frame:150",
+    "wait:0.4",
+    "frame:150"
+   ],
+   "config": {
+    "animations": "full"
+   }
+  },
+  {
+   "name": "theme-catppuccin-mocha",
+   "title": "catppuccin-mocha",
+   "cols": 100,
+   "rows": 26,
+   "plain": true,
+   "config": {
+    "theme": "catppuccin-mocha"
+   },
+   "keys": [
+    "g",
+    "t"
+   ]
+  },
+  {
+   "name": "theme-tokyo-night",
+   "title": "tokyo-night",
+   "cols": 100,
+   "rows": 26,
+   "plain": true,
+   "config": {
+    "theme": "tokyo-night"
+   },
+   "keys": [
+    "g",
+    "t"
+   ]
+  },
+  {
+   "name": "theme-flexoki-light",
+   "title": "flexoki-light",
+   "cols": 100,
+   "rows": 26,
+   "plain": true,
+   "config": {
+    "theme": "flexoki-light"
+   },
+   "keys": [
+    "g",
+    "t"
+   ]
+  },
+  {
+   "name": "theme-gruvbox-light",
+   "title": "gruvbox-light",
+   "cols": 100,
+   "rows": 26,
+   "plain": true,
+   "config": {
+    "theme": "gruvbox-light"
+   },
+   "keys": [
+    "g",
+    "t"
+   ]
+  }
+ ]
+}

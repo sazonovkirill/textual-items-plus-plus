@@ -1,0 +1,493 @@
+{
+ "file": "../static/tutorial/tutorial.taskpaper",
+ "scenes": [
+  {
+   "name": "why",
+   "title": "The Customer newsletter project as the app shows it",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab"
+   ]
+  },
+  {
+   "name": "first-launch",
+   "title": "The sample file at first launch",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": []
+  },
+  {
+   "name": "shortcuts",
+   "title": "The shortcuts panel",
+   "save_as": "tutorial.taskpaper",
+   "rows": 32,
+   "keys": [
+    "?"
+   ]
+  },
+  {
+   "name": "moving",
+   "title": "The Work area, opened from the sidebar",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "j",
+    "j"
+   ]
+  },
+  {
+   "name": "new-task",
+   "title": "Typing a new task in the Inbox",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "G",
+    "o",
+    "text:Order more coffee beans"
+   ]
+  },
+  {
+   "name": "edit-dialog",
+   "title": "The edit dialog of a task",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "Enter"
+   ]
+  },
+  {
+   "name": "quick-add",
+   "title": "Quick Add with a date in plain words",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "q",
+    "text:Renew the car insurance next week"
+   ]
+  },
+  {
+   "name": "completed",
+   "title": "A completed task shown under Completed Items",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "j",
+    "x",
+    "C-o"
+   ]
+  },
+  {
+   "name": "logbook",
+   "title": "The Logbook",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "j",
+    "x",
+    "g",
+    "l"
+   ]
+  },
+  {
+   "name": "move-to",
+   "title": "The Move to picker finding the new project",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "V",
+    "j",
+    "w",
+    "s",
+    "text:Repairs",
+    "Enter",
+    "k",
+    "m",
+    "y",
+    "g",
+    "i",
+    "j",
+    "M",
+    "wait:0.3",
+    "text:grandma",
+    "wait:0.3"
+   ]
+  },
+  {
+   "name": "organized",
+   "title": "The Home area after grouping and converting",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "V",
+    "j",
+    "w",
+    "s",
+    "text:Repairs",
+    "Enter",
+    "k",
+    "m",
+    "y",
+    "g",
+    "i",
+    "j",
+    "M",
+    "wait:0.3",
+    "text:grandma",
+    "wait:0.3",
+    "Enter",
+    "H"
+   ]
+  },
+  {
+   "name": "today",
+   "title": "Today with an item in the Evening",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "m",
+    "t",
+    "g",
+    "i",
+    "m",
+    "t",
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "j",
+    "j",
+    "m",
+    "d",
+    "wait:0.3",
+    "text:fri",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "j",
+    "Enter",
+    "m",
+    "d",
+    "wait:0.3",
+    "text:tomorrow",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "m",
+    "s",
+    "wait:0.3",
+    "text:+3d",
+    "wait:0.3",
+    "Enter",
+    "]",
+    "g",
+    "t",
+    "G",
+    "m",
+    "e",
+    "g",
+    "g"
+   ]
+  },
+  {
+   "name": "upcoming",
+   "title": "Upcoming",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "m",
+    "t",
+    "g",
+    "i",
+    "m",
+    "t",
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "j",
+    "j",
+    "m",
+    "d",
+    "wait:0.3",
+    "text:fri",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "j",
+    "Enter",
+    "m",
+    "d",
+    "wait:0.3",
+    "text:tomorrow",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "m",
+    "s",
+    "wait:0.3",
+    "text:+3d",
+    "wait:0.3",
+    "Enter",
+    "]",
+    "g",
+    "u"
+   ]
+  },
+  {
+   "name": "tag-picker",
+   "title": "The tag picker creating a new tag",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "j",
+    "j",
+    "m",
+    "g",
+    "wait:0.3",
+    "text:office"
+   ]
+  },
+  {
+   "name": "tag-filter",
+   "title": "All filtered to errands",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "g",
+    "a",
+    "g",
+    "f",
+    "wait:0.3",
+    "text:errands",
+    "wait:0.3",
+    "Space",
+    "Enter"
+   ]
+  },
+  {
+   "name": "flagged",
+   "title": "The Flagged view with a pinned project in the sidebar",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "V",
+    "j",
+    "w",
+    "s",
+    "text:Repairs",
+    "Enter",
+    "k",
+    "m",
+    "y",
+    "g",
+    "i",
+    "j",
+    "M",
+    "wait:0.3",
+    "text:grandma",
+    "wait:0.3",
+    "Enter",
+    "H",
+    "m",
+    "f",
+    "j",
+    "m",
+    "p",
+    "g",
+    "!"
+   ]
+  },
+  {
+   "name": "attachments",
+   "title": "The attachments panel of a task",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "Tab",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "j",
+    "Tab",
+    "\\",
+    "j",
+    "x",
+    "c",
+    "text:Ana will send the founders' intro on Tuesday",
+    "Enter"
+   ]
+  },
+  {
+   "name": "navigator",
+   "title": "The Navigator filtered to edin",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "C-k",
+    "wait:0.3",
+    "text:edin"
+   ]
+  },
+  {
+   "name": "search",
+   "title": "Search for ana",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "C-f",
+    "wait:0.3",
+    "text:ana"
+   ]
+  },
+  {
+   "name": "palette",
+   "title": "The command palette filtered to date",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "C-p",
+    "wait:0.3",
+    "text:date"
+   ]
+  },
+  {
+   "name": "context-menu",
+   "title": "The context menu of a task",
+   "save_as": "tutorial.taskpaper",
+   "rows": 32,
+   "keys": [
+    "C-\\"
+   ]
+  },
+  {
+   "name": "panes",
+   "title": "Search results and a project side by side",
+   "save_as": "tutorial.taskpaper",
+   "rows": 20,
+   "keys": [
+    "C-f",
+    "wait:0.3",
+    "text:ana",
+    "wait:0.3",
+    "Enter",
+    "j",
+    "C-t"
+   ]
+  },
+  {
+   "name": "theme",
+   "title": "The theme picker previewing Tokyo Night",
+   "save_as": "tutorial.taskpaper",
+   "rows": 24,
+   "keys": [
+    "C-p",
+    "wait:0.3",
+    "text:theme",
+    "wait:0.3",
+    "Enter",
+    "wait:0.3",
+    "text:tokyo",
+    "wait:0.5"
+   ]
+  },
+  {
+   "name": "keymap",
+   "title": "The Keymap window",
+   "save_as": "tutorial.taskpaper",
+   "rows": 32,
+   "keys": [
+    "g",
+    "?"
+   ]
+  }
+ ]
+}

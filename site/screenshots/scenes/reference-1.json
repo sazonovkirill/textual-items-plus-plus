@@ -1,0 +1,33 @@
+{
+ "file": "demo.taskpaper.in",
+ "scenes": [
+  {
+   "name": "area",
+   "title": "An area: its tasks, its section, then its projects",
+   "rows": 20,
+   "keys": ["C-k", "text:work", "wait:0.3", "Enter"]
+  },
+  {
+   "name": "completed-items",
+   "title": "A project showing its Completed Items",
+   "keys": ["C-k", "text:billing", "wait:0.3", "Enter", "C-o", "G"]
+  },
+  {
+   "name": "edit-dialog",
+   "title": "The edit dialog on a task",
+   "keys": ["C-k", "text:billing", "wait:0.3", "Enter", "j", "j", "j", "e"]
+  },
+  {
+   "name": "quick-add",
+   "title": "Quick Add reading a start and a due date",
+   "rows": 24,
+   "keys": ["q", "text:Call Ann about the offsite next week due fri"]
+  },
+  {
+   "name": "date-prompt",
+   "title": "The date prompt previewing the date typed",
+   "rows": 24,
+   "keys": ["j", "m", "s", "text:next fri +1w"]
+  }
+ ]
+}

@@ -1,0 +1,75 @@
+{
+ "file": "demo.taskpaper.in",
+ "scenes": [
+  {
+   "name": "tag-picker",
+   "title": "The tag picker on two selected tasks",
+   "cols": 100,
+   "rows": 24,
+   "keys": ["C-k", "text:billing", "wait:0.3", "Enter", "J", "m", "g"]
+  },
+  {
+   "name": "tag-filter",
+   "title": "All filtered by @errands",
+   "cols": 100,
+   "rows": 20,
+   "keys": ["g", "a", "g", "f", "text:errands", "wait:0.3", "Enter"]
+  },
+  {
+   "name": "attachments-checklist",
+   "title": "The attachments panel with a checklist item selected",
+   "cols": 110,
+   "rows": 26,
+   "keys": ["C-k", "text:billing", "wait:0.3", "Enter", "j", "j", "j", "\\", "j", "j"]
+  },
+  {
+   "name": "navigator",
+   "title": "The Navigator filtered by a few letters",
+   "cols": 100,
+   "rows": 24,
+   "keys": ["C-k", "text:lis"]
+  },
+  {
+   "name": "go-to-symbol",
+   "title": "Go to Symbol finding tasks",
+   "cols": 100,
+   "rows": 24,
+   "keys": ["/", "text:write"]
+  },
+  {
+   "name": "search",
+   "title": "Search results with matches outside the title",
+   "cols": 100,
+   "rows": 20,
+   "keys": ["C-f", "text:sandbox keys", "Enter"]
+  },
+  {
+   "name": "context-menu",
+   "title": "The context menu on a task",
+   "cols": 100,
+   "rows": 26,
+   "keys": ["C-\\"]
+  },
+  {
+   "name": "panes",
+   "title": "Three panes, the second with the keys",
+   "cols": 120,
+   "rows": 22,
+   "keys": ["C-b", "C-b", "C-k", "text:billing", "wait:0.3", "Enter", "C-w", "v", "g", "t", "C-w", "v", "g", "u", "g", "2"]
+  },
+  {
+   "name": "keymap",
+   "title": "The Keymap window",
+   "cols": 120,
+   "rows": 30,
+   "keys": ["g", "?"]
+  },
+  {
+   "name": "settings",
+   "title": "The settings window",
+   "cols": 100,
+   "rows": 28,
+   "keys": ["g", ","]
+  }
+ ]
+}

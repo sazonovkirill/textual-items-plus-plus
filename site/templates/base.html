@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{% set page_title = section.title | default(value=page.title | default(value=config.title)) %}
+<title>{% if page_title == config.title %}textual-items++ · the todo app for your terminal{% else %}{{ page_title }} · textual-items++{% endif %}</title>
+<meta name="description" content="{{ section.description | default(value=page.description | default(value=config.description)) }}">
+<link rel="stylesheet" href="{{ get_url(path='css/site.css', cachebust=true) }}">
+{% set page_description = section.description | default(value=page.description | default(value=config.description)) %}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="textual-items++">
+<meta property="og:title" content="{% if page_title == config.title %}textual-items++ · the todo app for your terminal{% else %}{{ page_title }} · textual-items++{% endif %}">
+<meta property="og:description" content="{{ page_description }}">
+<meta property="og:image" content="{{ get_url(path='social.png') }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="{{ get_url(path='favicon.svg') }}" type="image/svg+xml">
+<script>document.documentElement.classList.add("js")</script>
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+{% set here = current_path | default(value="/") %}
+<header class="site-header">
+  <a class="logo" href="{{ get_url(path='@/_index.md') }}"><span aria-hidden="true">☐</span> textual-items<b>++</b></a>
+  <nav aria-label="Main">
+    <a href="{{ get_url(path='@/_index.md') }}"{% if here == "/" %} aria-current="page"{% endif %}>Home</a>
+    <a href="{{ get_url(path='@/tutorial/_index.md') }}"{% if here is starting_with("/tutorial/") %} aria-current="page"{% endif %}>Tutorial</a>
+    <a href="{{ get_url(path='@/reference/_index.md') }}"{% if here is starting_with("/reference/") %} aria-current="page"{% endif %}>Reference</a>
+    <a href="{{ get_url(path='@/pricing.md') }}"{% if here is starting_with("/pricing/") %} aria-current="page"{% endif %}>Pricing</a>
+    <a href="{{ config.extra.github | safe }}">GitHub</a>
+  </nav>
+</header>
+<main id="main">
+{% block main %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <p>textual-items++ is free and open source under the MIT license · <a href="{{ config.extra.github | safe }}">GitHub</a> · <a href="{{ get_url(path='@/reference/cheatsheet.md') }}">Cheat sheet</a></p>
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

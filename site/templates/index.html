@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% import "macros/site.html" as site %}
+{% block main %}
+<section class="hero">
+  <p class="eyebrow">textual-items++ · the todo app for your terminal</p>
+  <h1>Things 3 calm.<br>Terminal speed.</h1>
+  <p class="pitch">A keyboard-first todo app in the spirit of Things 3 and Todoist. Everything you plan lives in one plain-text file you own.</p>
+  <div class="install">
+    <code id="install">{{ config.extra.install | safe }}</code>
+    <button type="button" class="copy" data-copy="install">Copy</button>
+  </div>
+  <p class="links"><a class="button" href="{{ get_url(path='@/tutorial/_index.md') }}">Read the Tutorial</a> <a href="{{ config.extra.github | safe }}">View on GitHub</a></p>
+  {{ site::shot(src="landing/hero.png", class="shot hero-shot reveal grow", lazy=false,
+     alt="textual-items++ showing the Launch the billing page project: a sidebar of views, pinned projects and areas on the left, and the project's tasks under the Build, Launch and Polish sections with tags and date chips") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Calm structure</p>
+    <h2>A place for everything.</h2>
+    <p>New thoughts land in the Inbox. Areas hold the big parts of your life, projects hold the goals inside them, and sections break a project into steps, as in Things 3. The sidebar keeps it all one keystroke away.</p>
+    <p class="keys"><kbd>o</kbd> new task <kbd>s</kbd> new section <kbd>n</kbd><kbd>p</kbd> new project <kbd>M</kbd> move to</p>
+  </div>
+  {{ site::shot(src="landing/upcoming.png", class="shot reveal grow",
+     alt="The Upcoming view: tasks and projects grouped by day, tomorrow first, then each day of the week and the rest of October") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Plain text</p>
+    <h2>Your list is a text file.</h2>
+    <p>Everything is kept in one <code>.taskpaper</code> file: readable in any editor, easy to sync, diff and back up, and open in TaskPaper too. Dates, flags and pins are ordinary tags, and the app keeps every line it doesn't understand exactly as it was.</p>
+  </div>
+  <div class="split reveal">
+    <figure class="file">
+      <figcaption>Trips.taskpaper</figcaption>
+<pre><span class="p">Weekend in Lisbon:</span> <span class="t">@pinned</span>
+	Three days in May, flights booked.
+	- Book a room in Alfama <span class="t">@flagged</span>
+	- Make a list of restaurants <span class="t">@food</span>
+	- Buy a travel adapter <span class="t">@errands</span>
+	- Book the flights <span class="t">@done(2026-10-15)</span>
+	<span class="p">Day trips:</span> <span class="t">@section</span>
+		- Sintra by train
+		- Cascais beach <span class="t">@later</span></pre>
+    </figure>
+    {{ site::shot(src="landing/file-view.png",
+       alt="The same project in textual-items++: the flag drawn as a red flag, the section as a heading, the done task hidden and the Later task dimmed") }}
+  </div>
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Today</p>
+    <h2>Your day, gathered for you.</h2>
+    <p>Today collects everything that starts or is due today from every project, overdue first, each with the place it lives. Push what can wait to This Evening, mark a project Later, and see the weeks ahead in Upcoming.</p>
+    <p class="keys"><kbd>g</kbd><kbd>t</kbd> Today <kbd>g</kbd><kbd>u</kbd> Upcoming <kbd>m</kbd><kbd>e</kbd> this evening</p>
+  </div>
+  {{ site::shot(src="landing/today.png", class="shot reveal grow",
+     alt="The Today view for the day the screenshot was taken: an overdue flagged review, today's tasks with where each lives, and a reading task under an Evening heading") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Keyboard first</p>
+    <h2>Move like vim. Plan like Things.</h2>
+    <p>Keys are mnemonic: <kbd>g</kbd> goes somewhere, <kbd>m</kbd> modifies what you selected. Press <kbd>?</kbd> for the keys that work right now, or open the command palette and type what you want.</p>
+    <p class="keys"><kbd>j</kbd> <kbd>k</kbd> move <kbd>x</kbd> complete <kbd>u</kbd> undo <kbd>Ctrl+P</kbd> every command</p>
+  </div>
+  {{ site::shot(src="landing/editing.webp", class="shot reveal grow",
+     alt="Animation: in the Weekend in Lisbon project, o opens a new task below the focused one, Pack the sunscreen is typed, Enter ends editing and x completes it") }}
+  {{ site::shot(src="landing/palette.png", class="shot reveal grow second",
+     alt="The command palette over a project, filtered by date: Set Start Date ms, Set Due Date md, Start a Day Later ], Due a Day Later }") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Quick Add</p>
+    <h2>Catch the thought. Keep your place.</h2>
+    <p>Quick Add puts a task in the Inbox without leaving where you are. Type "tomorrow", "next fri" or "in 3 days" and it becomes a date; type <code>/</code> and a project name to file it there.</p>
+    <p class="keys"><kbd>q</kbd> quick add</p>
+  </div>
+  {{ site::shot(src="landing/quick-add.webp", class="shot reveal grow",
+     alt="Animation: Quick Add opens at the bottom of the screen, Call the plumber tomorrow is typed, it previews the start date, and Enter adds the task") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Notes, checklists, comments</p>
+    <h2>Details, out of the way.</h2>
+    <p>Any task, project or area can carry a Markdown note and dated comments, and a task its own checklist. In the list they are a quiet icon and a <code>1/5</code>; one key opens them in a panel at the side.</p>
+    <p class="keys"><kbd>\</kbd> open the panel <kbd>c</kbd> quick comment</p>
+  </div>
+  {{ site::shot(src="landing/attachments.png", class="shot reveal grow",
+     alt="The attachments panel at the right of a project, showing a task's Markdown note, its five-item checklist with one item checked, and a dated comment") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Find anything</p>
+    <h2>Everything is close.</h2>
+    <p>The Navigator jumps to any view, area or project. Go to Symbol finds any task by name, and search reads every title, description, note, comment and checklist item as you type.</p>
+    <p class="keys"><kbd>Ctrl+K</kbd> Navigator <kbd>/</kbd> go to symbol <kbd>Ctrl+F</kbd> search</p>
+  </div>
+  {{ site::shot(src="landing/search.png", class="shot reveal grow",
+     alt="Search results for review: three tasks with the word highlighted in a title and a description, each with the project and section it lives in") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Panes</p>
+    <h2>Two places at once.</h2>
+    <p>Open a project next to Today, or as many panes as fit. Each has its own history, and an edit in one shows in all of them at once.</p>
+    <p class="keys"><kbd>Ctrl+W</kbd> <kbd>v</kbd> new pane <kbd>Tab</kbd> next pane</p>
+  </div>
+  {{ site::shot(src="landing/panes.png", class="shot reveal grow",
+     alt="Two panes beside the sidebar: the billing project on the left and Today on the right") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Make it yours</p>
+    <h2>Twenty themes. A little weather.</h2>
+    <p>Keep Terminal Dark, which takes its colors from your terminal, or pick one of nineteen more, dark and light, with a live preview. Gentle animations show where things land, and if you step away for half an hour the season's weather drifts across the screen.</p>
+  </div>
+  <div class="themes reveal">
+    <figure>{{ site::shot(src="landing/theme-catppuccin-mocha.png", alt="Today in the Catppuccin Mocha theme") }}<figcaption>Catppuccin Mocha</figcaption></figure>
+    <figure>{{ site::shot(src="landing/theme-tokyo-night.png", alt="Today in the Tokyo Night theme") }}<figcaption>Tokyo Night</figcaption></figure>
+    <figure>{{ site::shot(src="landing/theme-flexoki-light.png", alt="Today in the Flexoki Light theme") }}<figcaption>Flexoki Light</figcaption></figure>
+    <figure>{{ site::shot(src="landing/theme-gruvbox-light.png", alt="Today in the Gruvbox Light theme") }}<figcaption>Gruvbox Light</figcaption></figure>
+  </div>
+  {{ site::shot(src="landing/weather.webp", class="shot reveal grow",
+     alt="Animation: autumn leaves drift down over the Today view") }}
+</section>
+
+<section class="feature">
+  <div class="copy-block reveal">
+    <p class="eyebrow">Anywhere</p>
+    <h2>Wherever there's a terminal.</h2>
+  </div>
+  <ul class="facts reveal">
+    <li><b>SSH and tmux</b>Runs on a server as well as on your laptop, and copies over SSH.</li>
+    <li><b>macOS and Linux</b>Any modern terminal, from 80 by 24 up. The kitty keyboard protocol is used when there is one.</li>
+    <li><b>Saves as you go</b>Every change is written to the file, with 30 daily backups and a recovery file if anything crashes.</li>
+    <li><b>Edit it anywhere</b>Change the file in another editor and the app picks it up, or asks which side to keep.</li>
+    <li><b>Mouse welcome</b>Click rows, checkboxes and the sidebar, scroll with the wheel. Nothing needs it.</li>
+    <li><b>No account</b>No sign-in, no cloud, no telemetry. Just a file.</li>
+  </ul>
+</section>
+
+<section class="cta reveal">
+  <h2>Clear your head.</h2>
+  <div class="install">
+    <code id="install-again">{{ config.extra.install | safe }}</code>
+    <button type="button" class="copy" data-copy="install-again">Copy</button>
+  </div>
+  <p class="links"><a class="button" href="{{ get_url(path='@/tutorial/_index.md') }}">Read the Tutorial</a> <a href="{{ get_url(path='@/reference/_index.md') }}">Browse the Reference</a> <a href="{{ config.extra.github | safe }}">Star on GitHub</a></p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ get_url(path='js/site.js', cachebust=true) }}" defer></script>{% endblock %}

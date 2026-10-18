@@ -1,0 +1,13 @@
+{# Every built-in theme of the app, with its screenshot from scenes/themes.json. #}
+{% set data = load_data(path="data/reference.json") %}
+{% for light in [false, true] %}
+<h3 id="{% if light %}light-themes{% else %}dark-themes{% endif %}">{% if light %}Light themes{% else %}Dark themes{% endif %}</h3>
+<div class="ref-themes">
+{% for t in data.themes | filter(attribute="light", value=light) %}{% set src = "screenshots/themes/" ~ t.id ~ ".png" %}{% set meta = get_image_metadata(path=src) %}
+<figure class="ref-theme" id="theme-{{ t.id }}">
+  <img src="{{ get_url(path=src) }}" alt="The demo file's Today view in the {{ t.name }} theme" loading="lazy" width="{{ meta.width / 2 | round }}" height="{{ meta.height / 2 | round }}">
+  <figcaption><strong>{{ t.name }}</strong> <code>theme = "{{ t.id }}"</code>{% if t.id == "terminal-dark" %} · the default, in your terminal's own colors{% endif %}</figcaption>
+</figure>
+{% endfor %}
+</div>
+{% endfor %}

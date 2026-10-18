@@ -1,0 +1,21 @@
+{# The printable cheat sheet (W-REF-07): every default key, from the same data as the Reference. #}
+{% import "macros/reference.html" as ref %}
+{% set data = load_data(path="data/reference.json") %}
+{% set sheet = data.cheatsheet %}
+<div class="cheatsheet">
+{% for g in sheet.groups %}
+<section class="cs-card">
+<h2 class="cs-title">{{ g.title }}</h2>
+{% for r in g.rows %}<div class="cs-row"><span class="cs-what">{{ r.title }}</span><span class="cs-keys">{{ ref::sequences(list=r.keys) }}</span></div>
+{% endfor %}
+</section>
+{% endfor %}
+{% for w in sheet.windows %}
+<section class="cs-card">
+<h2 class="cs-title">{{ w.title }} <small>{% if w.title == "Text" %}in every text field{% else %}while it is open{% endif %}</small></h2>
+{% for r in w.keys %}<div class="cs-row"><span class="cs-what">{{ r.title }}</span><span class="cs-keys">{{ ref::sequences(list=r.keys) }}</span></div>
+{% endfor %}
+</section>
+{% endfor %}
+</div>
+<p class="cs-foot">No default key, from the command palette (<kbd>Ctrl+P</kbd>): {{ sheet.unbound | join(sep=", ") }}.</p>
