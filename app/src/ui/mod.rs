@@ -49,6 +49,7 @@ pub use clipboard::SystemClipboard;
 pub use file::Edge;
 pub use keymap::Keymap;
 pub use picker::{PickerPopup, picker_input};
+pub use shortcuts::{Listing, every_window_keys};
 pub use theme::{BuiltIn, Icon, IconSet, Theme};
 
 use crate::{
@@ -76,7 +77,7 @@ use quick_add::QuickAddPanel;
 use quick_comment::QuickCommentPanel;
 use save_as::SaveAsPanel;
 use settings::SettingsWindow;
-use shortcuts::{Keyboard, Listing, ShortcutsPanel, Window};
+use shortcuts::{Keyboard, ShortcutsPanel, Window};
 use sidebar::SidebarPane;
 use status::StatusLine;
 use weather::{Idle, Season, Weather};

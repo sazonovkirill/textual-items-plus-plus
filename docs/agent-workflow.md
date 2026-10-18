@@ -149,6 +149,10 @@ Code changes require `bash app/scripts/validate.sh all` (format, lint, cargo-den
 
 Documentation-only work needs local review and `git diff --check` before staging plus `git diff --cached --check` after staging.
 
+### The product website
+
+Changes to the product website in `site/` ([website.md](../specs/website.md)) have a lighter quality bar than the app (owner, 2026-10-18): they need no independent review, neither the per-commit Claude review nor the Codex milestone review. Their validation is `bash site/site.sh check`, which must pass for the committed contents. A commit that also changes `app/` follows the full gate for that part. A change to the app's commands, key bindings, settings or themes must keep `site.sh check` passing: run `bash site/site.sh reference` and place any new command, window or setting in `site/reference/topics.toml`.
+
 Standing authorization covers pushing to `main`. Follow [version-control practices](version-control.md) for rebasing and publication. Parallel agents may advance `main` while a review is in progress; a clean replay of an unchanged patch keeps its reviews.
 
 After acceptance checks, required independent review, durable documentation, recorded validation and verified publication, move the Todoist task to Done and leave it open. Record the delivery summary, commit links and limitations on the task and release the claim. Agents never close Todoist tasks; the owner closing a delivered task is acceptance. If the owner requests rework, claim the task again and continue on its existing record.

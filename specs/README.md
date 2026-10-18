@@ -16,6 +16,7 @@ textual-items++ is a keyboard-first todo app for the terminal, inspired by [Thin
 | [functional-requirements.md](functional-requirements.md) | Draft | What the app does, as decided by the owner. Once accepted, overrides every other document here. |
 | [requirements.md](requirements.md) | Draft | Non-functional requirements (performance, reliability, portability) and data-handling requirements the functional requirements leave open. |
 | [implementation-plan.md](implementation-plan.md) | Draft | The order the app is built in: milestones of small steps, each leaving a working app. |
+| [website.md](website.md) | Draft | The product website in `site/`: its pages, screenshots, generated Reference and milestones. |
 | [open-questions.md](open-questions.md) | Living | Undecided choices, each with a proposed default, plus the ones already decided. |
 | [reference/](reference/README.md) | Reference | Research on Things 3, Todoist, TaskPaper, Workflowy and TUI best practices, and a snapshot of taskpaper-terminal's specs. |
 

@@ -31,7 +31,7 @@ use crate::app::{
 };
 
 /// A group of the panel: its heading, and each command's name with how its keys read.
-pub(super) type Listing = (&'static str, Vec<(String, String)>);
+pub type Listing = (&'static str, Vec<(String, String)>);
 
 /// What the terminal has shown of its keyboard, which the panel notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -96,8 +96,9 @@ impl Window {
 }
 
 /// The keys of every window that binds keys of its own, each under the window's name, then the
-/// text keys every text field takes (FR-KEY-08).
-pub(super) fn every_window_keys() -> Vec<Listing> {
+/// text keys every text field takes (FR-KEY-08), which the product website's Reference lists too.
+#[must_use]
+pub fn every_window_keys() -> Vec<Listing> {
     let text = text_keys::TEXT
         .iter()
         .map(|&(key, edit)| (key, text_name(edit)))

@@ -110,6 +110,7 @@ Either tool may instead be launched as an independent reviewer: Claude of a prop
 - `app/`: the Rust crate, its source, tests and `scripts/`.
 - `specs/`: what the app does: requirements, specs, references, open questions and the implementation plan ([index](specs/README.md)); no task tracking.
 - `docs/`: how agents work: workflow, version control, testing and code quality ([index](docs/README.md)); no task tracking.
+- `site/`: the product website ([website.md](specs/website.md)), built with `bash site/site.sh`; its lighter quality bar is in [the agent workflow](docs/agent-workflow.md#the-product-website), and a change to the app's commands or settings must keep `bash site/site.sh check` passing.
 - `.worktrees/` and `.claude/worktrees/`: agent worktrees, ignored by Git.
 - `.agents/skills/`: procedures both tools load on demand (`claim-task`, `review-commit`, `deliver-task`, `explore-app`, `bug-hunt`); `.claude/skills` links to it. The documents under `docs/` stay authoritative; a skill only sequences their steps.
 - `.claude/`: Claude Code settings and hooks.
