@@ -13,6 +13,11 @@ pub enum TextEdit {
     /// Type a character in place of the selection, or at the caret. A character that breaks a
     /// line starts a new line in a multi-line field and is ignored on one line.
     Insert(char),
+    /// Break the line as [`TextEdit::Insert`] does, so that a Markdown list goes on: on a list
+    /// item's line, one starting with `-` or `*` and a space after any indentation, the new line
+    /// starts with the same indentation, marker and spaces, unless the caret is still among them.
+    /// On an item holding nothing but its marker, the line is cleared instead, ending the list.
+    ContinueList,
     /// Move the caret; with `select`, extend the selection to it.
     Move {
         /// Where to.
@@ -183,6 +188,7 @@ impl TextField {
     pub fn edited(&self, edit: TextEdit) -> Self {
         match edit {
             TextEdit::Insert(c) => self.pasted(c.encode_utf8(&mut [0; 4])),
+            TextEdit::ContinueList => self.continued_list(),
             TextEdit::Move { motion, select } => self.moved(motion, select),
             TextEdit::DeleteBackward => self.replaced(self.selection_or(self.left()), ""),
             TextEdit::DeleteForward => self.replaced(self.selection_or(self.right()), ""),
@@ -211,6 +217,28 @@ impl TextField {
             return self.clone();
         }
         self.replaced(self.selection_or(self.caret), &typed)
+    }
+
+    /// The field after [`TextEdit::ContinueList`].
+    fn continued_list(&self) -> Self {
+        let typed = self.selection_or(self.caret);
+        let start = self.line_start_at(typed.start);
+        let line = self
+            .text
+            .get(start..self.line_end(start))
+            .unwrap_or_default();
+        match list_item(line) {
+            Some((lead, item))
+                if self.lines == Lines::Many && typed.start - start >= lead.len() =>
+            {
+                if typed.is_empty() && item.trim().is_empty() {
+                    self.replaced(start..start + line.len(), "")
+                } else {
+                    self.pasted(&format!("\n{lead}"))
+                }
+            }
+            _ => self.edited(TextEdit::Insert('\n')),
+        }
     }
 
     /// The selection, or the bytes between the caret and `to` when nothing is selected.
@@ -424,6 +452,15 @@ pub fn grapheme_columns(text: &str) -> impl Iterator<Item = (usize, usize)> {
     }))
 }
 
+/// `line` split into the lead of the Markdown list item it is, its indentation, its `-` or `*`
+/// marker and the spaces after that, and the item's text; nothing when it is not one.
+fn list_item(line: &str) -> Option<(&str, &str)> {
+    let marked = line.trim_start_matches([' ', '\t']);
+    let after = marked.strip_prefix(['-', '*'])?;
+    let item = after.trim_start_matches(' ');
+    (item.len() < after.len()).then(|| line.split_at(line.len() - item.len()))
+}
+
 /// `text` with each line break as `\n`.
 fn newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace(breaks_line, "\n")
@@ -588,6 +625,37 @@ mod tests {
         check_area("a|b", TextEdit::Insert('\n'), "a\n|b");
         check_area("a[b|c", TextEdit::Insert('\r'), "a\n|c");
         check_area("|", TextEdit::Insert('\u{2029}'), "\n|");
+    }
+
+    // FR-ATT-03
+    #[test]
+    fn a_line_break_continues_a_list_item_with_its_indentation_and_marker() {
+        let next = TextEdit::ContinueList;
+        check_area("- a|", next, "- a\n- |");
+        check_area("x\n  *   a|b\ny", next, "x\n  *   a\n  *   |b\ny");
+        check_area("\t- a[b|c", next, "\t- a\n\t- |c");
+        check_area("- |a", next, "- \n- |a");
+        check_area("text|", next, "text\n|");
+        check_area("-a|", next, "-a\n|");
+        check_area("**bold** a|", next, "**bold** a\n|");
+        check_area("+ a|", next, "+ a\n|");
+        check_area("|- a", next, "\n|- a");
+        check_area(" |- a", next, " \n|- a");
+        check("- a|", next, "- a|");
+    }
+
+    // FR-ATT-03
+    #[test]
+    fn a_line_break_on_an_empty_list_item_ends_the_list() {
+        let next = TextEdit::ContinueList;
+        check_area("- a\n- |", next, "- a\n|");
+        check_area("- a\n  * |\nb", next, "- a\n|\nb");
+        check_area("- a\n-  \t|", next, "- a\n|");
+        check_area("- a\n[- |", next, "- a\n\n|");
+        assert_eq!(
+            edited_area("- a|", &[next, TextEdit::Insert('b'), next, next]),
+            "- a\n- b\n|"
+        );
     }
 
     // FR-EDIT-04
@@ -916,6 +984,7 @@ mod tests {
             Just(TextEdit::DeleteWordForward),
             Just(TextEdit::DeleteLineBackward),
             Just(TextEdit::SelectAll),
+            Just(TextEdit::ContinueList),
         ]
     }
 

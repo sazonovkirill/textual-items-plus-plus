@@ -380,7 +380,7 @@ impl Tui {
                 Part::Description => {
                     edit_keys::description_input(event, self.description_columns())
                 }
-                Part::Note => edit_keys::description_input(event, self.note_columns()),
+                Part::Note => edit_keys::note_input(event, self.note_columns()),
                 Part::Comment(_) => edit_keys::comment_input(event),
             }
             .map(Message::Edit)

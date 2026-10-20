@@ -18,7 +18,7 @@ use super::{
     Theme,
     attachments::{self, PanelKey, Scroll},
     date_prompt, edit_dialog,
-    edit_keys::{CHECKLIST, COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, PASTE},
+    edit_keys::{CHECKLIST, COMMENT, DESCRIPTION, DESCRIPTION_MOTIONS, EDIT, NOTE, PASTE},
     keymap::{Key, key_label},
     keymap_window::{self, KeymapKey},
     picker, quick_add,
@@ -74,9 +74,8 @@ pub(super) enum Window {
 }
 
 impl Window {
-    /// Every window with keys of its own, in the order the keymap window lists them, a note's
-    /// editing left out for having a description's keys.
-    const LISTED: [Self; 15] = [
+    /// Every window with keys of its own, in the order the keymap window lists them.
+    const LISTED: [Self; 16] = [
         Self::Picker,
         Self::DatePrompt,
         Self::EditDialog,
@@ -91,6 +90,7 @@ impl Window {
         Self::EditingChecklistItem,
         Self::Editing(Part::Comment(0)),
         Self::Editing(Part::Description),
+        Self::Editing(Part::Note),
         Self::Keymap,
     ];
 }
@@ -179,15 +179,12 @@ pub(super) fn window_keys(window: Window) -> Vec<Listing> {
                         ),
                     ]
                 });
-            let heading = if part == Part::Note {
-                "Editing Note"
+            let (heading, keys) = if part == Part::Note {
+                ("Editing Note", NOTE)
             } else {
-                "Editing Description"
+                ("Editing Description", DESCRIPTION)
             };
-            (
-                heading,
-                motions.chain(named(DESCRIPTION, edit_name)).collect(),
-            )
+            (heading, motions.chain(named(keys, edit_name)).collect())
         }
     };
     if let Window::Editing(_) | Window::EditingChecklistItem = window {
@@ -347,6 +344,7 @@ fn edit_name(input: EditInput) -> String {
 fn text_name(edit: TextEdit) -> String {
     match edit {
         TextEdit::Insert('\n') => "New Line".to_owned(),
+        TextEdit::ContinueList => "New Line, Continuing a List".to_owned(),
         TextEdit::Insert(_) => "Type".to_owned(),
         TextEdit::Move {
             motion,
@@ -724,6 +722,8 @@ mod tests {
                 .to_vec()
             )
         );
+        let (_, editing) = &window_keys(Window::Editing(Part::Note))[0];
+        assert!(editing.contains(&("New Line, Continuing a List".to_owned(), "Enter".to_owned())));
         let (_, editing) = &window_keys(Window::Editing(Part::Title))[0];
         assert!(editing.contains(&("Paste".to_owned(), "Ctrl+V".to_owned())));
         assert_eq!(headings(Window::Attachments), [("Attachments Panel", 11)]);

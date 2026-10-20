@@ -52,7 +52,7 @@ A panel stays on its item while the pane's list moves and while the pane shows o
 
 ## Notes
 
-With the note selected, `e`, `i` or `Enter` edits it as raw text, in a multi-line editor with the [keys of a description](@/reference/editing.md#keys-editing-description): `Enter` starts a new line and `Esc` ends the edit, keeping it. Spaces and empty lines at the end of the note are dropped, so emptying a note removes it.
+With the note selected, `e`, `i` or `Enter` edits it as raw text, in a multi-line editor with the [keys of a description](@/reference/editing.md#keys-editing-description) but for `Enter`, which starts a new line that continues a bullet list: on a line starting with `-` or `*` and a space, the new line starts with the same indentation and marker, and on an item left empty it takes the marker off instead, ending the list. `Esc` ends the edit, keeping it. Spaces and empty lines at the end of the note are dropped, so emptying a note removes it.
 
 The panel renders the note's Markdown, the syntax hidden:
 
@@ -66,6 +66,8 @@ The panel renders the note's Markdown, the syntax hidden:
 | `[title](url)`, `<url>` or a bare URL | underlined in the link color, the title shown |
 
 A delimiter without its partner shows as typed. Links are not opened from the app.
+
+{{ window_keys(window="Editing Note") }}
 
 ## Checklists
 

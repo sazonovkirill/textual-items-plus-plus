@@ -95,10 +95,32 @@ pub(super) const DESCRIPTION: &[(Key, EditInput)] = &[
     ((KeyModifiers::NONE, KeyCode::Esc), EditInput::Done),
 ];
 
+/// The other keys of a note besides the text keys: those of a description, but `Enter` breaks
+/// the line so that a Markdown list goes on (D-159).
+pub(super) const NOTE: &[(Key, EditInput)] = &[
+    (
+        (KeyModifiers::NONE, KeyCode::Enter),
+        EditInput::Text(TextEdit::ContinueList),
+    ),
+    ((KeyModifiers::NONE, KeyCode::Esc), EditInput::Done),
+];
+
 /// What `event` does while a description is edited, its lines wrapping in `width` columns: its
 /// motion key moves the caret, its other description key acts, and the other text keys edit it.
 /// Only key presses count.
 pub(super) fn description_input(event: &Event, width: usize) -> Option<EditInput> {
+    multi_line_input(event, width, DESCRIPTION)
+}
+
+/// What `event` does while a note is edited, as [`description_input`] says but with the keys of
+/// a note.
+pub(super) fn note_input(event: &Event, width: usize) -> Option<EditInput> {
+    multi_line_input(event, width, NOTE)
+}
+
+/// What `event` does in a text of many lines wrapping in `width` columns whose other keys
+/// besides the motion and text keys are `keys`.
+fn multi_line_input(event: &Event, width: usize, keys: &[(Key, EditInput)]) -> Option<EditInput> {
     let (modifiers, code) = keymap::key_press(event)?;
     let select = modifiers.contains(KeyModifiers::SHIFT);
     let moved = (modifiers.difference(KeyModifiers::SHIFT), code);
@@ -108,8 +130,7 @@ pub(super) fn description_input(event: &Event, width: usize) -> Option<EditInput
             select,
         }));
     }
-    DESCRIPTION
-        .iter()
+    keys.iter()
         .find(|(key, _)| *key == (modifiers, code))
         .map(|&(_, input)| input)
         .or_else(|| text_keys::text_edit((modifiers, code)).map(EditInput::Text))
@@ -216,6 +237,28 @@ mod tests {
             Some(EditInput::Text(TextEdit::Insert('n')))
         );
         assert_eq!(input(KeyCode::Char('q'), KeyModifiers::CONTROL), None);
+    }
+
+    // FR-ATT-03
+    #[test]
+    fn in_a_note_enter_continues_a_list_and_other_keys_are_a_descriptions() {
+        let input = |code, modifiers| note_input(&press(code, modifiers), 30);
+        assert_eq!(
+            input(KeyCode::Enter, KeyModifiers::NONE),
+            Some(EditInput::Text(TextEdit::ContinueList))
+        );
+        assert_eq!(
+            input(KeyCode::Esc, KeyModifiers::NONE),
+            Some(EditInput::Done)
+        );
+        assert_eq!(
+            input(KeyCode::Up, KeyModifiers::SHIFT),
+            description_input(&press(KeyCode::Up, KeyModifiers::SHIFT), 30)
+        );
+        assert_eq!(
+            input(KeyCode::Char('n'), KeyModifiers::NONE),
+            Some(EditInput::Text(TextEdit::Insert('n')))
+        );
     }
 
     // FR-EDIT-04, FR-UI-05

@@ -2199,6 +2199,133 @@
    ]
   },
   {
+   "id": "keys-editing-note",
+   "title": "Editing Note",
+   "topic": "attachments",
+   "keys": [
+    {
+     "title": "Line Up",
+     "keys": [
+      [
+       "↑"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line Up",
+     "keys": [
+      [
+       "Shift+↑"
+      ]
+     ]
+    },
+    {
+     "title": "Line Down",
+     "keys": [
+      [
+       "↓"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line Down",
+     "keys": [
+      [
+       "Shift+↓"
+      ]
+     ]
+    },
+    {
+     "title": "Line Start",
+     "keys": [
+      [
+       "Home"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line Start",
+     "keys": [
+      [
+       "Shift+Home"
+      ]
+     ]
+    },
+    {
+     "title": "Line End",
+     "keys": [
+      [
+       "End"
+      ]
+     ]
+    },
+    {
+     "title": "Select Line End",
+     "keys": [
+      [
+       "Shift+End"
+      ]
+     ]
+    },
+    {
+     "title": "Text Start",
+     "keys": [
+      [
+       "Ctrl+Home"
+      ]
+     ]
+    },
+    {
+     "title": "Select Text Start",
+     "keys": [
+      [
+       "Ctrl+Shift+Home"
+      ]
+     ]
+    },
+    {
+     "title": "Text End",
+     "keys": [
+      [
+       "Ctrl+End"
+      ]
+     ]
+    },
+    {
+     "title": "Select Text End",
+     "keys": [
+      [
+       "Ctrl+Shift+End"
+      ]
+     ]
+    },
+    {
+     "title": "New Line, Continuing a List",
+     "keys": [
+      [
+       "Enter"
+      ]
+     ]
+    },
+    {
+     "title": "Done",
+     "keys": [
+      [
+       "Esc"
+      ]
+     ]
+    },
+    {
+     "title": "Paste",
+     "keys": [
+      [
+       "Ctrl+V"
+      ]
+     ]
+    }
+   ]
+  },
+  {
    "id": "keys-keymap",
    "title": "Keymap",
    "topic": "keyboard",

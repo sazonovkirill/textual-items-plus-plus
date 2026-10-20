@@ -124,6 +124,31 @@ fn write_a_note_on_a_project() {
     );
 }
 
+// FR-ATT-03
+#[test]
+fn enter_in_a_note_continues_a_bullet_list_until_an_item_is_left_empty() {
+    let mut harness = Harness::new(80, 12);
+    harness.type_text("\\e");
+    harness.type_text("Bring:");
+    harness.key(KeyCode::Enter);
+    harness.type_text("- photos");
+    harness.key(KeyCode::Enter);
+    harness.type_text("passport");
+    harness.key(KeyCode::Enter);
+    harness.key(KeyCode::Enter);
+    harness.type_text("Then go");
+    assert_eq!(
+        panel(&harness)[2..6],
+        [
+            "│▌Bring:                               │",
+            "│▌- photos                             │",
+            "│▌- passport                           │",
+            "│▌Then go                              │",
+        ],
+        "each new line starts with the item's marker, and Enter on an empty item takes it off"
+    );
+}
+
 // FR-ATT-01, FR-ATT-02
 #[test]
 fn the_panel_takes_the_keys_until_it_closes() {
@@ -270,6 +295,7 @@ fn a_note_is_saved_as_guarded_lines_and_reads_back() {
     harness.type_text("\\e");
     harness.type_text("- bring photos");
     harness.key(KeyCode::Enter);
+    harness.ctrl('u');
     harness.type_text("Steps:  ");
     harness.key(KeyCode::Enter);
     harness.wait(1000);
