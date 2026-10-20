@@ -27,7 +27,7 @@ The new pane starts with an empty history and no tag filter, and shows completed
 Several keys move the keys between the panes and the sidebar:
 
 - **Focus Next Pane** (`Tab` or `gn`) and **Focus Previous Pane** (`Shift+Tab` or `gp`) go round the sidebar, while it shows, and the panes, wrapping at either end. A pane with an open attachments panel is two stops, its list then its panel.
-- **Focus Pane Left** (`Ctrl+W h`, `Ctrl+W ←` or `Ctrl+Shift+←`) and **Focus Pane Right** (`Ctrl+W l`, `Ctrl+W →` or `Ctrl+Shift+→`) step to the stop on that side without wrapping; from the first pane, left goes to the sidebar while it shows, and right from the sidebar goes back to the pane that had the keys.
+- **Focus Pane Left** (`Ctrl+W h`, `Ctrl+W ←`, `Ctrl+Shift+←` or `Ctrl+,`) and **Focus Pane Right** (`Ctrl+W l`, `Ctrl+W →`, `Ctrl+Shift+→` or `Ctrl+.`) step to the stop on that side without wrapping; from the first pane, left goes to the sidebar while it shows, and right from the sidebar goes back to the pane that had the keys.
 - **Focus Pane 1** to **9** (`g1` to `g9`) give a pane its keys by number, and **Focus Sidebar** (`g0`) gives them to the sidebar, showing it when it is hidden.
 
 The first pane is linked to the sidebar: moving in the sidebar, or [Next and Previous Sidebar Entry](@/reference/views.md) (`gj`/`gk`) from anywhere, shows the sidebar's entry in the first pane.

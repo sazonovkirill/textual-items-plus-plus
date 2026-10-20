@@ -107,7 +107,7 @@ fn a_narrow_panel_keeps_every_name_whole_with_its_keys_going_on_below() {
         lines.get(left..left + 2).unwrap_or_default(),
         [
             "│  Focus Pane Left        Ctrl+W h,",
-            "│            Ctrl+W ←, Ctrl+Shift+←"
+            "│    Ctrl+W ←, Ctrl+Shift+←, Ctrl+,"
         ]
     );
 }

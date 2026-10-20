@@ -165,7 +165,8 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     // keys to open their choice in a new pane open the focused row in one instead (D-60, D-106).
     // The owner's keys cycle through the panes, the sidebar first, `g` with a digit reaches one,
     // `g0` the sidebar, and `gj`/`gk`, taskpaper-terminal's next and previous sibling, browse the
-    // sidebar's entries in the first pane (D-79).
+    // sidebar's entries in the first pane (D-79). The owner's `Ctrl+,` and `Ctrl+.` focus the
+    // pane on the left and right too (D-158).
     (Command::Sidebar, &["ctrl+b", "|"]),
     (Command::NextPane, &["tab", "g n"]),
     (Command::PreviousPane, &["shift+tab", "g p"]),
@@ -173,11 +174,11 @@ const DEFAULT_KEYS: &[(Command, &[&str])] = &[
     (Command::Browse(Direction::Up), &["g k", "ctrl+up"]),
     (
         Command::FocusLeft,
-        &["ctrl+w h", "ctrl+w left", "ctrl+shift+left"],
+        &["ctrl+w h", "ctrl+w left", "ctrl+shift+left", "ctrl+,"],
     ),
     (
         Command::FocusRight,
-        &["ctrl+w l", "ctrl+w right", "ctrl+shift+right"],
+        &["ctrl+w l", "ctrl+w right", "ctrl+shift+right", "ctrl+."],
     ),
     (Command::FocusPane(0), &["g 0"]),
     (Command::FocusPane(1), &["g 1"]),
@@ -791,6 +792,14 @@ mod tests {
             ),
             (
                 vec![press(KeyCode::Right, ctrl_shift)],
+                Some(Command::FocusRight),
+            ),
+            (
+                vec![press(KeyCode::Char(','), ctrl)],
+                Some(Command::FocusLeft),
+            ),
+            (
+                vec![press(KeyCode::Char('.'), ctrl)],
                 Some(Command::FocusRight),
             ),
             (vec![char('g'), char('r')], None),
