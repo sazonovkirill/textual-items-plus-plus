@@ -137,3 +137,48 @@ fn an_area_is_not_completed_and_one_its_file_marks_done_stays_open() {
         "only the task completes and the area keeps its tag: {file}"
     );
 }
+
+// FR-ORG-09, FR-VIEW-10, D-140, D-160
+#[test]
+fn x_completes_a_project_from_its_sidebar_entry_and_dot_from_its_title_when_shown() {
+    let mut harness = Harness::launched(90, 30);
+    harness.type_text("g0jjjjjjjjjj");
+    assert!(harness.screen().contains("▌# Blog"), "{}", harness.screen());
+    harness.key(KeyCode::Char('x'));
+    assert!(
+        harness
+            .screen()
+            .contains("1 open task; press x again to complete anyway"),
+        "{}",
+        harness.screen()
+    );
+    harness.key(KeyCode::Char('x'));
+    assert!(
+        !harness.rows().iter().any(|row| row
+            .chars()
+            .skip(1)
+            .collect::<String>()
+            .starts_with("# Blog")),
+        "the sidebar no longer lists it:\n{}",
+        harness.screen()
+    );
+
+    let mut harness = Harness::new(60, 24);
+    harness.ctrl('g');
+    harness.type_text("website");
+    harness.key(KeyCode::Enter);
+    harness.type_text("gg.");
+    assert!(
+        harness
+            .screen()
+            .contains("4 open tasks; press x again to complete anyway"),
+        "{}",
+        harness.screen()
+    );
+    harness.key(KeyCode::Char('.'));
+    let screen = harness.screen();
+    assert!(
+        screen.contains("# Website") && !screen.contains("Collect logos from partners"),
+        "the project shown is completed, its tasks hidden:\n{screen}"
+    );
+}

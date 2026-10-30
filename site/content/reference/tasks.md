@@ -27,7 +27,7 @@ Project and section rows show the same icons and chips; a project has a `#` and 
 
 ## Completing
 
-**Complete** (`x`, `.` or `Ctrl+Enter`) completes the selected items, or the focused one, on today's date, and uncompletes them when every one of them is completed already. It is one step to undo however many items it changes. A click on a task's checkbox completes it too.
+**Complete** (`x`, `.` or `Ctrl+Enter`) completes the selected items, or the focused one, on today's date, or the project shown while its title row has the focus, or, in the [sidebar](@/reference/views.md#the-sidebar), the focused project. It uncompletes them when every one of them is completed already. It is one step to undo however many items it changes. A click on a task's checkbox completes it too.
 
 - **Tasks, projects and sections** can be completed. An area cannot (`an area can't be completed`), nor the Inbox; checklist items are checked in the [attachments panel](@/reference/attachments.md).
 - **A completed item stays where it is** in the file, tagged `@done(YYYY-MM-DD)`. Lists show it after the open items, and hide it until you show completed items. The [Logbook](@/reference/views.md#logbook) collects every completed item; completing or uncompleting there acts on the item where it is.

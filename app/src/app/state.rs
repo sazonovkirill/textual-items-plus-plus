@@ -436,21 +436,27 @@ impl State {
         container::outermost_rows(&self.document, self.pane().selection.items(&self.listed()))
     }
 
-    /// Completes the selected items on `today`, or uncompletes them when all are completed, as
-    /// one step to undo, moving the focus on when its row hides; on areas alone the status line
-    /// says they are not completed (D-81). Completing projects that hold open tasks waits until
-    /// `asked`, when the status line has just asked to confirm, and otherwise asks (D-140).
+    /// Completes the selected items, or the project shown while its title row has the
+    /// focus (D-160), on `today`, as [`toggle_completed_for`](Self::toggle_completed_for) does.
     pub(super) fn toggle_completed(&mut self, today: Date, asked: bool) {
-        let items = self.pane().selection.items(&self.listed());
-        if self.refuses_areas(&items, Notice::AreaUncompleted) {
+        let items = self.described();
+        self.toggle_completed_for(&items, today, asked);
+    }
+
+    /// Completes `items` on `today`, or uncompletes them when all are completed, as one step to
+    /// undo, moving the focus on when its row hides; on areas alone the status line says they
+    /// are not completed (D-81). Completing projects that hold open tasks waits until `asked`,
+    /// when the status line has just asked to confirm, and otherwise asks (D-140).
+    fn toggle_completed_for(&mut self, items: &[ItemId], today: Date, asked: bool) {
+        if self.refuses_areas(items, Notice::AreaUncompleted) {
             return;
         }
-        let open = completion::left_open(&self.document, &items);
+        let open = completion::left_open(&self.document, items);
         if open > 0 && !asked {
             self.notify(Notice::OpenTasks(open));
             return;
         }
-        let transaction = completion::toggle(&self.document, items, today);
+        let transaction = completion::toggle(&self.document, items.iter().copied(), today);
         self.change(transaction);
     }
 
@@ -1262,14 +1268,15 @@ impl State {
 
     /// Gives `command` to the sidebar on `today` while it has the keys, and returns whether it
     /// took it. It acts on its focused entry: moving the focus, renaming, editing its description
-    /// in the pane, adding an area or a project, collapsing it, deleting, moving, converting,
-    /// pinning, flagging and setting its dates, each one step to
+    /// in the pane, adding an area or a project, collapsing it, completing it, asking first as
+    /// `asked` says (D-140, D-160), deleting, moving, converting, pinning, flagging and setting
+    /// its dates, each one step to
     /// undo, opening Move to for it or the first pane's attachments panel on it, which gets the
     /// keys, and showing the entry in the
     /// first pane, the sidebar keeping the keys, or in a new pane, which gets them; a view's entry
     /// is only shown. The commands [`sidebar_passes`] names pass to the app; every other command
     /// does nothing.
-    pub(super) fn sidebar_command(&mut self, command: Command, today: Date) -> bool {
+    pub(super) fn sidebar_command(&mut self, command: Command, today: Date, asked: bool) -> bool {
         if sidebar_passes(command) || !self.sidebar.has_keys() {
             return false;
         }
@@ -1313,6 +1320,9 @@ impl State {
             }
             (Command::Delete, Some(Shown::Container(id))) => {
                 self.change(trash::delete(&self.document, [id], today));
+            }
+            (Command::ToggleCompleted, Some(Shown::Container(id))) => {
+                self.toggle_completed_for(&[id], today, asked);
             }
             (Command::Move(direction), Some(Shown::Container(id))) => {
                 match self.sidebar.shift(&self.document, id, direction) {
@@ -1846,6 +1856,7 @@ pub(super) fn sidebar_takes(command: Command) -> bool {
             | Command::EditItem
             | Command::OpenInNewPane
             | Command::RenameContainer
+            | Command::ToggleCompleted
             | Command::Delete
             | Command::Move(_)
             | Command::Convert
@@ -3495,6 +3506,62 @@ mod tests {
         assert_eq!(state.notice(), None);
         give(&mut state, Command::ToggleCompleted);
         assert_eq!(completed(&state), None, "uncompleting does not ask");
+        Ok(())
+    }
+
+    // FR-ORG-09, FR-VIEW-10, D-140, D-160
+    #[test]
+    fn the_project_shown_and_its_sidebar_entry_are_completed_as_a_row_is()
+    -> Result<(), PlacementError> {
+        let Fixture {
+            mut state,
+            work,
+            site,
+            ..
+        } = fixture()?;
+        let give = |state: &mut State, command| {
+            crate::app::update(state, crate::app::Message::Command(command), TODAY);
+        };
+        let completed = |state: &State| {
+            state
+                .document()
+                .node(site)
+                .and_then(Node::item)
+                .and_then(|item| item.completed)
+        };
+        navigate(&mut state, "Site");
+        while state.selection().focused() != Some(site) {
+            give(&mut state, Command::Focus(Focus::Previous));
+        }
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(state.notice(), Some(&Notice::OpenTasks(1)), "on its title");
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(
+            completed(&state),
+            Some(crate::domain::Completion::On(TODAY))
+        );
+        give(&mut state, Command::Undo);
+        give(&mut state, Command::Sidebar);
+        while state.sidebar.focused() != Some(Shown::Container(work)) {
+            give(&mut state, Command::Focus(Focus::Next));
+        }
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(state.notice(), Some(&Notice::AreaUncompleted));
+        give(&mut state, Command::Focus(Focus::Next));
+        assert_eq!(state.sidebar.focused(), Some(Shown::Container(site)));
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(
+            state.notice(),
+            Some(&Notice::OpenTasks(1)),
+            "in the sidebar"
+        );
+        assert_eq!(completed(&state), None);
+        give(&mut state, Command::ToggleCompleted);
+        assert_eq!(
+            completed(&state),
+            Some(crate::domain::Completion::On(TODAY))
+        );
+        assert!(state.sidebar_has_keys(), "the sidebar keeps the keys");
         Ok(())
     }
 

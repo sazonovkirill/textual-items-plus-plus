@@ -381,7 +381,7 @@ mod tests {
             (Command::Settings, true),
             (Command::SaveAs, true),
             (Command::Shortcuts, true),
-            (Command::ToggleCompleted, false),
+            (Command::ToggleCompleted, true),
             (Command::AddSection(super::super::End::Bottom), false),
             (Command::Narrow, false),
             (Command::KeepMine, false),

@@ -172,8 +172,9 @@ fn dispatch(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
             state.end_visual();
         }
     }
+    let confirms = matches!(asked, Some(Notice::OpenTasks(_)));
     if let Message::Command(command) = message
-        && (state.panel_command(command, today) || state.sidebar_command(command, today))
+        && (state.panel_command(command, today) || state.sidebar_command(command, today, confirms))
     {
         return Vec::new();
     }

@@ -234,7 +234,7 @@ mod tests {
     -> Result<(), PlacementError> {
         let (mut state, _) = state()?;
         state.toggle_sidebar();
-        assert!(state.sidebar_command(Command::QuickComment, TODAY));
+        assert!(state.sidebar_command(Command::QuickComment, TODAY, false));
         assert_eq!(state.quick_comment().map(|view| view.title), Some("Inbox"));
         state.quick_comment = None;
         state.quick_comment_in_sidebar(Shown::View(View::Today));

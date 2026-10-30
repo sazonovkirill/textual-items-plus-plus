@@ -193,16 +193,13 @@ mod tests {
         let listed = listed(&state);
         for command in [
             Command::RenameContainer,
+            Command::ToggleCompleted,
             Command::Navigator,
             Command::Settings,
         ] {
             assert!(listed.contains(&command), "{command:?} is listed");
         }
-        for command in [
-            Command::ToggleCompleted,
-            Command::Narrow,
-            Command::ClosePane,
-        ] {
+        for command in [Command::Narrow, Command::ClosePane] {
             assert!(!listed.contains(&command), "{command:?} is not");
         }
         typed(&mut state, "rename container");

@@ -42,9 +42,9 @@ impl Reach {
             | Command::DayEarlier(_)
             | Command::DayLater(_)
             | Command::Tags
-            | Command::TogglePinned => Some(Self::Described),
-            Command::ToggleCompleted
-            | Command::Delete
+            | Command::TogglePinned
+            | Command::ToggleCompleted => Some(Self::Described),
+            Command::Delete
             | Command::Restore
             | Command::MoveTo
             | Command::Duplicate
@@ -203,7 +203,8 @@ impl State {
             | Command::StartToday
             | Command::DayEarlier(_)
             | Command::DayLater(_)
-            | Command::Tags => !state::all_areas(document, &entry),
+            | Command::Tags
+            | Command::ToggleCompleted => !state::all_areas(document, &entry),
             _ => true,
         };
         id != document.inbox() && acts && applies && self.takes(command)
@@ -241,10 +242,8 @@ impl State {
             | Command::StartToday
             | Command::DayEarlier(_)
             | Command::DayLater(_)
-            | Command::Tags => !state::all_areas(document, &self.described()),
-            Command::ToggleCompleted => {
-                !state::all_areas(document, &self.pane().selection.items(&self.listed()))
-            }
+            | Command::Tags
+            | Command::ToggleCompleted => !state::all_areas(document, &self.described()),
             _ => true,
         }
     }
@@ -530,6 +529,7 @@ mod tests {
             Command::ToggleFlagged,
             Command::Delete,
             Command::OpenInNewPane,
+            Command::ToggleCompleted,
         ] {
             assert!(listed.contains(&command), "{command:?}");
         }
@@ -537,7 +537,6 @@ mod tests {
             Command::EditTitle,
             Command::OpenChecklist,
             Command::Duplicate,
-            Command::ToggleCompleted,
             Command::ToggleEvening,
         ] {
             assert!(!listed.contains(&command), "{command:?}");

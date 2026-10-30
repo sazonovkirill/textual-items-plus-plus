@@ -622,7 +622,7 @@ mod tests {
         assert_eq!(state.attachments().map(|view| view.id), Some(a));
         state.attachments_input(AttachmentsInput::Close);
         state.toggle_sidebar();
-        assert!(state.sidebar_command(Command::OpenNote(Whose::Focused), TODAY));
+        assert!(state.sidebar_command(Command::OpenNote(Whose::Focused), TODAY, false));
         assert_eq!(
             state.attachments().map(|view| view.id),
             Some(inbox),
@@ -631,7 +631,7 @@ mod tests {
         assert!(!state.sidebar_has_keys());
         state.attachments_input(AttachmentsInput::Close);
         state.focus_pane(0);
-        assert!(state.sidebar_command(Command::OpenComments(Whose::Focused), TODAY));
+        assert!(state.sidebar_command(Command::OpenComments(Whose::Focused), TODAY, false));
         assert_eq!(state.attachments().map(|view| view.id), Some(inbox));
         let mut empty = State::new(Document::new(), Opened::Demo, TODAY);
         empty.open_attachments(Whose::Focused, Selected::Note);
