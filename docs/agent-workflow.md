@@ -145,13 +145,13 @@ The script launches reviewers from the frozen worktree with the prompt on standa
 
 ## Validation, publication and delivery
 
-Code changes require `bash app/scripts/validate.sh all` (format, lint, cargo-deny, tests and the coverage gate) to pass for the exact contents being committed, before pushing. There is no GitHub CI. Record the command and exit status on the task. Investigate failures and review and validate any corrective commit through the same gate. Do not hide failures with weaker tests, repeated blind retries or results from earlier contents.
+Code changes require `bash app/scripts/validate.sh all` (format, lint, cargo-deny, tests and the coverage gate) to pass for the exact contents being committed, before pushing. There is no GitHub CI; the only GitHub workflow publishes the product website. Record the command and exit status on the task. Investigate failures and review and validate any corrective commit through the same gate. Do not hide failures with weaker tests, repeated blind retries or results from earlier contents.
 
 Documentation-only work needs local review and `git diff --check` before staging plus `git diff --cached --check` after staging.
 
 ### The product website
 
-Changes to the product website in `site/` ([website.md](../specs/website.md)) have a lighter quality bar than the app (owner, 2026-10-18): they need no independent review, neither the per-commit Claude review nor the Codex milestone review. Their validation is `bash site/site.sh check`, which must pass for the committed contents. A commit that also changes `app/` follows the full gate for that part. A change to the app's commands, key bindings, settings or themes must keep `site.sh check` passing: run `bash site/site.sh reference` and place any new command, window or setting in `site/reference/topics.toml`.
+Changes to the product website in `site/` ([website.md](../specs/website.md)) have a lighter quality bar than the app (owner, 2026-10-18): they need no independent review, neither the per-commit Claude review nor the Codex milestone review. Their validation is `bash site/site.sh check`, which must pass for the committed contents. A commit that also changes `app/` follows the full gate for that part. A change to the app's commands, key bindings, settings or themes must keep `site.sh check` passing: run `bash site/site.sh reference` and place any new command, window or setting in `site/reference/topics.toml`. Every push to `main` republishes the site to GitHub Pages through `.github/workflows/site.yml`, which runs `site.sh check` first; a push that fails it leaves the published site as it was.
 
 Standing authorization covers pushing to `main`. Follow [version-control practices](version-control.md) for rebasing and publication. Parallel agents may advance `main` while a review is in progress; a clean replay of an unchanged patch keeps its reviews.
 

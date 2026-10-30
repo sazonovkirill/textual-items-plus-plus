@@ -28,7 +28,7 @@ Priorities use the scale of the functional requirements. IDs are stable; referen
 | W-SITE-07 | `check` builds the site and fails on a broken internal link, a missing image or an anchor that does not exist. | Must |
 | W-SITE-08 | Accessible: semantic headings, alt text on every screenshot saying what it shows, visible keyboard focus, motion reduced when the system asks for it. | Must |
 | W-SITE-09 | No fonts, scripts or analytics from third-party hosts; images have their width and height set and are lazily loaded below the fold. | Must |
-| W-SITE-10 | Published to a public host, with a real base URL and domain. | Later |
+| W-SITE-10 | Published to a public host with a real base URL: GitHub Pages at `https://sazonovkirill.github.io/textual-items-plus-plus/`, deployed by `.github/workflows/site.yml` on every push to `main` that passes `site.sh check` (owner, 2026-10-30). A custom domain is for later. | Must |
 
 ## W-SHOT · Screenshots
 
