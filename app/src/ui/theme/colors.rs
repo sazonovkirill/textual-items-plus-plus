@@ -182,6 +182,7 @@ impl BuiltIn {
             Self::GruvboxLight => GRUVBOX_LIGHT,
             Self::MelangeLight => MELANGE_LIGHT,
             Self::Dayfox => DAYFOX,
+            Self::StarTrekTng => STAR_TREK_TNG,
         }
     }
 }
@@ -790,6 +791,36 @@ const DAYFOX: Theme = Theme {
     trash_icon: Color::Rgb(0x83, 0x7a, 0x72),
 };
 
+/// Star Trek TNG, as themes.md lists it.
+const STAR_TREK_TNG: Theme = Theme {
+    background: Color::Rgb(0x00, 0x00, 0x00),
+    text: Color::Rgb(0xff, 0xcc, 0x99),
+    dim_text: Color::Rgb(0x99, 0x99, 0xcc),
+    primary: Color::Rgb(0xcc, 0x99, 0xcc),
+    accent: Color::Rgb(0xff, 0x99, 0x00),
+    selection: Color::Rgb(0x33, 0x22, 0x33),
+    focus: Color::Rgb(0xff, 0xff, 0x99),
+    current_line: Color::Rgb(0x19, 0x13, 0x19),
+    band_text: Color::Rgb(0xff, 0xcc, 0x99),
+    headers: Color::Rgb(0x99, 0x99, 0xff),
+    sections: Color::Rgb(0xff, 0xcc, 0x66),
+    rule: Color::Rgb(0x66, 0x44, 0x66),
+    link: Color::Rgb(0x99, 0xcc, 0xff),
+    start: Color::Rgb(0x99, 0xcc, 0x99),
+    due: Color::Rgb(0xcc, 0x66, 0x66),
+    overdue: Color::Rgb(0xff, 0x66, 0x66),
+    error: Color::Rgb(0xff, 0x66, 0x66),
+    tag: Color::Rgb(0xcc, 0x99, 0xcc),
+    done: Color::Rgb(0x88, 0x77, 0x88),
+    inbox_icon: Color::Rgb(0x99, 0xcc, 0xff),
+    today_icon: Color::Rgb(0xff, 0xcc, 0x66),
+    upcoming_icon: Color::Rgb(0xcc, 0x66, 0x66),
+    flag: Color::Rgb(0xff, 0x66, 0x66),
+    all_icon: Color::Rgb(0x99, 0xcc, 0x99),
+    logbook_icon: Color::Rgb(0xcc, 0x99, 0xcc),
+    trash_icon: Color::Rgb(0x99, 0x99, 0x99),
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -947,6 +978,7 @@ mod tests {
                 [0xa0, 0x6d, 0x00],
             ),
             (BuiltIn::Dayfox, [0xf6, 0xf2, 0xee], [0xac, 0x54, 0x02]),
+            (BuiltIn::StarTrekTng, [0x00, 0x00, 0x00], [0xff, 0xcc, 0x66]),
         ] {
             let (colors, id) = (theme.colors(), theme.id());
             assert_eq!(

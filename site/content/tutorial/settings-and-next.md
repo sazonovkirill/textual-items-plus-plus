@@ -10,7 +10,7 @@ Press `g` `,` to open the settings window. It lists every setting with a line ab
 
 ## Themes
 
-The app comes with twenty themes, dark and light. Press `Ctrl+P`, type `theme` and press `Enter` to open **Change Theme**. Move through the list, or type part of a name: the whole app is redrawn in the theme you're on as you go. Type `tokyo` to try Tokyo Night.
+The app comes with twenty-one themes, dark and light. Press `Ctrl+P`, type `theme` and press `Enter` to open **Change Theme**. Move through the list, or type part of a name: the whole app is redrawn in the theme you're on as you go. Type `tokyo` to try Tokyo Night.
 
 {{ shot(src="tutorial/theme", alt="The Change Theme picker with tokyo typed and Tokyo Night chosen, the app behind it already drawn in Tokyo Night's colors", caption="The theme picker shows each theme live.") }}
 

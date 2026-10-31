@@ -143,11 +143,11 @@ mod tests {
         let listed = listed(&state);
         assert_eq!(listed.len(), BuiltIn::ALL.len());
         let first_light = listed.iter().position(|theme| theme.is_light());
-        assert_eq!(first_light, Some(15), "fifteen dark, then the light ones");
-        assert!(listed.iter().skip(15).all(|theme| theme.is_light()));
+        assert_eq!(first_light, Some(16), "sixteen dark, then the light ones");
+        assert!(listed.iter().skip(16).all(|theme| theme.is_light()));
         assert_eq!(listed.first(), Some(&BuiltIn::TerminalDark));
         assert_eq!(listed.get(3), Some(&BuiltIn::RosePine), "in ALL's order");
-        assert_eq!(listed.get(15), Some(&BuiltIn::GithubLight));
+        assert_eq!(listed.get(16), Some(&BuiltIn::GithubLight));
         assert_eq!(highlighted(&state), Some(BuiltIn::Moonfly));
         assert_eq!(state.settings().theme, BuiltIn::Moonfly);
     }

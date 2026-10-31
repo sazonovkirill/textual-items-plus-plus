@@ -1,9 +1,9 @@
 # Built-in Themes
 
 - Status: Reference
-- Last updated: 2026-10-15
+- Last updated: 2026-10-30
 
-This page defines the color themes compiled into the app: the four of v1, two dark and two light, and fifteen more added on 2026-10-15 (D-125), twelve dark and three light. Each was chosen on its own merits from what is popular and maintained in 2025-2026 across Neovim (the dotfyle usage and trending rankings), terminal emulators (Ghostty's bundled catalog, which comes from iTerm2-Color-Schemes), and editors. Each one has a permissive license, verified in its own repository, so its palette can be built into the binary with attribution. Every hex value below comes from the theme's official palette file. The app also keeps its "Terminal Dark" theme, which uses the terminal's own 16 ANSI colors; its roles are listed [after the others](#terminal-dark). Candidates evaluated and set aside are listed at the end, without palettes.
+This page defines the color themes compiled into the app: the four of v1, two dark and two light, and fifteen more added on 2026-10-15 (D-125), twelve dark and three light. Each was chosen on its own merits from what is popular and maintained in 2025-2026 across Neovim (the dotfyle usage and trending rankings), terminal emulators (Ghostty's bundled catalog, which comes from iTerm2-Color-Schemes), and editors. Each one has a permissive license, verified in its own repository, so its palette can be built into the binary with attribution. For these editor themes, every hex value below comes from the theme's official palette file. Star Trek TNG is an original LCARS-inspired adaptation (D-161), documented below. The app also keeps its "Terminal Dark" theme, which uses the terminal's own 16 ANSI colors; its roles are listed [after the others](#terminal-dark). Candidates evaluated and set aside are listed at the end, without palettes.
 
 A theme is taken only when its palette fills every role below within the contrast the app's tests hold it to: text and dim text at least 4.5:1, text on both bands at least 4.5:1, checklist done and each view icon at least 3:1, and seven view-icon colors that differ. That rule is what kept out several popular light themes, whose yellows or greys are too faint on their paper (see [Rejected candidates](#rejected-candidates)).
 
@@ -30,6 +30,7 @@ A theme is taken only when its palette fills every role below within the contras
 | 17 | Gruvbox Light | light | [ellisonleao/gruvbox.nvim](https://github.com/ellisonleao/gruvbox.nvim) | MIT, © 2021 NpX (palette from [morhetz/gruvbox](https://github.com/morhetz/gruvbox), MIT) | Gruvbox's warm parchment light mode; its `faded_*` accents keep tags and chips readable on cream. |
 | 18 | Melange Light | light | [savq/melange-nvim](https://github.com/savq/melange-nvim) | MIT, © 2021 Sergio Alejandro Vargas | Melange's light mode: warm brown ink on soft grey paper. |
 | 19 | Dayfox | light | [EdenEast/nightfox.nvim](https://github.com/EdenEast/nightfox.nvim) | MIT, © 2021 James Simpson | Dotfyle #5 family (Nightfox). A warm light theme whose deep accents all clear 3:1. |
+| 20 | Star Trek TNG | dark | Original adaptation; [LCARS colors](https://leonawicz.github.io/trekcolors/reference/lcars_colors.html) | Project MIT license; no third-party code or graphics | Owner-requested lilac, golden yellow and amber on black (D-161). |
 
 ## Roles
 
@@ -837,6 +838,44 @@ Notes: The light partner of Melange Dark, warm brown ink on light grey. `a.ui` a
 | Trash icon | `#837a72` | comment | 3.78:1 |
 
 Notes: The light member of the Nightfox family. Its `yellow` is a deep amber, so the Today icon and sections clear 4.5:1.
+
+## 20. Star Trek TNG
+
+- Key: `star-trek-tng` · dark (D-161)
+- Inspiration: Michael Okuda's LCARS computer displays for *Star Trek: The Next Generation*. The [Rocket Center Foundation's account of the Okudas' work](https://rocketcenterfoundation.org/space-to-input/) describes the purple and orange graphics.
+- Color reference: [trekcolors' named LCARS colors](https://leonawicz.github.io/trekcolors/reference/lcars_colors.html): lilac, golden-tanoi, atomic-tangerine, tanoi, blue-bell, melrose and anakiwa supply the lavender, yellow, amber, peach and cool accents. These are digital reference values, not a claim of exact production RGB calibration. [The LCARS.com color guide](https://www.thelcars.com/colors.php) also documents a classic violet/warm palette, but explicitly revises its values over time.
+- Original role mapping under the project's MIT license; no third-party theme code, graphics, fonts or layouts copied. Black evokes the displays; dark violet bands, muted violet completion text, green start/All indicators, brighter red alerts and neutral Trash grey are app-specific additions for readability and existing semantics.
+
+| Role | Hex | Contrast |
+|---|---|---|
+| Background | `#000000` | — |
+| Text | `#ffcc99` | 14.35:1 |
+| Dim text | `#9999cc` | 7.78:1 |
+| Primary | `#cc99cc` | 9.00:1 |
+| Accent | `#ff9900` | 9.81:1 |
+| Selection | `#332233` | 10.12:1 (text on band) |
+| Focus marker | `#ffff99` | 20.02:1 |
+| Current-line band | `#191319` | 12.49:1 (text on band) |
+| Text on bands | `#ffcc99` | 14.35:1 |
+| Headers | `#9999ff` | 8.35:1 |
+| Sections | `#ffcc66` | 14.08:1 |
+| Rule lines | `#664466` | 2.58:1 |
+| Links | `#99ccff` | 12.44:1 |
+| Start-date chip | `#99cc99` | 11.45:1 |
+| Due-date chip | `#cc6666` | 5.66:1 |
+| Overdue | `#ff6666` | 7.34:1 |
+| Error | `#ff6666` | 7.34:1 |
+| Tag text | `#cc99cc` | 9.00:1 |
+| Checklist done | `#887788` | 5.04:1 |
+| Inbox icon | `#99ccff` | 12.44:1 |
+| Today icon | `#ffcc66` | 14.08:1 |
+| Upcoming icon | `#cc6666` | 5.66:1 |
+| Flag | `#ff6666` | 7.34:1 |
+| All icon | `#99cc99` | 11.45:1 |
+| Logbook icon | `#cc99cc` | 9.00:1 |
+| Trash icon | `#999999` | 7.37:1 |
+
+Tag 1–6: `#99ccff` (blue), `#99cc99` (green), `#ffcc66` (yellow), `#ff9900` (amber), `#ff6666` (red), `#cc99cc` (lilac).
 
 ## Terminal Dark
 

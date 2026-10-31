@@ -114,3 +114,47 @@ fn enter_keeps_the_theme_chosen_which_the_picker_then_opens_on() {
     harness.key(KeyCode::Esc);
     assert_eq!(background(&harness), flexoki);
 }
+
+// FR-UI-03, FR-UI-12, FR-SET-03
+#[test]
+fn star_trek_tng_previews_its_lcars_colors_and_keeps_the_choice() {
+    let mut harness = Harness::new(80, 30);
+    let before = background(&harness);
+    change_theme(&mut harness);
+    harness.type_text("star trek");
+    assert_eq!(window(&harness), ["Dark Themes", "Star Trek TNG"]);
+    assert_eq!(background(&harness), Color::Rgb(0, 0, 0));
+    let buffer = harness.terminal.backend().buffer();
+    assert!(
+        buffer
+            .content
+            .iter()
+            .any(|cell| cell.fg == Color::Rgb(0xcc, 0x99, 0xcc))
+    );
+    harness.key(KeyCode::Esc);
+    assert_eq!(background(&harness), before);
+    change_theme(&mut harness);
+    harness.type_text("star trek");
+    harness.key(KeyCode::Enter);
+    assert_eq!(background(&harness), Color::Rgb(0, 0, 0));
+    assert_eq!(
+        fs::read_to_string(harness.config()).ok().as_deref(),
+        Some("theme = \"star-trek-tng\"\n")
+    );
+    harness.ctrl('b');
+    let buffer = harness.terminal.backend().buffer();
+    assert!(
+        buffer
+            .content
+            .iter()
+            .any(|cell| cell.fg == Color::Rgb(0xff, 0xcc, 0x66))
+    );
+    fs::create_dir_all(harness.home()).expect("the home folder is created");
+    let path = harness.home().join("tasks.taskpaper");
+    fs::write(&path, "Inbox:\n").expect("the next launch's document is written");
+    let harness = harness.relaunch(path);
+    assert_eq!(
+        harness.terminal.backend().buffer()[(79, 29)].bg,
+        Color::Rgb(0, 0, 0)
+    );
+}

@@ -57,11 +57,13 @@ pub enum BuiltIn {
     MelangeLight,
     /// Dayfox, light.
     Dayfox,
+    /// Star Trek TNG, a dark LCARS-inspired palette.
+    StarTrekTng,
 }
 
 impl BuiltIn {
     /// Every built-in theme, in the order themes.md lists them, Terminal Dark first.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::TerminalDark,
         Self::CatppuccinMocha,
         Self::TokyoNight,
@@ -82,6 +84,7 @@ impl BuiltIn {
         Self::GruvboxLight,
         Self::MelangeLight,
         Self::Dayfox,
+        Self::StarTrekTng,
     ];
 
     /// The theme's key, such as `catppuccin-mocha`, as themes.md gives it.
@@ -108,6 +111,7 @@ impl BuiltIn {
             Self::GruvboxLight => "gruvbox-light",
             Self::MelangeLight => "melange-light",
             Self::Dayfox => "dayfox",
+            Self::StarTrekTng => "star-trek-tng",
         }
     }
 
@@ -148,6 +152,7 @@ impl BuiltIn {
             Self::GruvboxLight => "Gruvbox Light",
             Self::MelangeLight => "Melange Light",
             Self::Dayfox => "Dayfox",
+            Self::StarTrekTng => "Star Trek TNG",
         }
     }
 }
@@ -549,7 +554,7 @@ mod tests {
             "going round"
         );
         input(&mut state, SettingsInput::Turn(Direction::Up));
-        assert_eq!(state.settings().theme, BuiltIn::Dayfox);
+        assert_eq!(state.settings().theme, BuiltIn::StarTrekTng);
         assert!(
             !state
                 .settings()
@@ -904,6 +909,7 @@ mod tests {
                 ("gruvbox-light", "Gruvbox Light"),
                 ("melange-light", "Melange Light"),
                 ("dayfox", "Dayfox"),
+                ("star-trek-tng", "Star Trek TNG"),
             ]
         );
     }

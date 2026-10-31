@@ -8,7 +8,7 @@ How the app looks is set in the [settings window](@/reference/settings.md#the-se
 
 ## Themes
 
-The app has twenty built-in themes, fifteen dark and five light, set by [Theme](@/reference/settings.md#setting-theme). The default, **Terminal Dark**, draws in the terminal's own colors: its 16 ANSI colors, with its own background and text color, and four grays of the 256-color palette for dim text, completed items and the selection. It follows whatever palette the terminal is set to and looks right in a terminal without 24-bit color. The other themes bring their own 24-bit colors, background included, from each theme's official palette, and want a terminal with truecolor support.
+The app has twenty-one built-in themes, sixteen dark and five light, set by [Theme](@/reference/settings.md#setting-theme). The default, **Terminal Dark**, draws in the terminal's own colors: its 16 ANSI colors, with its own background and text color, and four grays of the 256-color palette for dim text, completed items and the selection. It follows whatever palette the terminal is set to and looks right in a terminal without 24-bit color. The other themes bring their own 24-bit colors, background included, from each theme's official palette or, for Star Trek TNG, an original LCARS-inspired adaptation, and want a terminal with truecolor support.
 
 Areas, projects and sections each draw their titles in a color of their own, in every theme, wherever they show.
 

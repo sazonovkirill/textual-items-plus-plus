@@ -2621,7 +2621,8 @@
     "synthwave-84",
     "gruvbox-light",
     "melange-light",
-    "dayfox"
+    "dayfox",
+    "star-trek-tng"
    ],
    "id": "setting-theme",
    "topic": "settings"
@@ -2823,6 +2824,11 @@
    "id": "dayfox",
    "light": true,
    "name": "Dayfox"
+  },
+  {
+   "id": "star-trek-tng",
+   "light": false,
+   "name": "Star Trek TNG"
   }
  ],
  "cheatsheet": {
