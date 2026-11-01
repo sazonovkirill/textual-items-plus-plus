@@ -282,9 +282,15 @@ impl State {
         self.saving.now = now;
     }
 
+    /// What the frontend's clock read last.
+    pub(super) fn now(&self) -> Duration {
+        self.saving.now
+    }
+
     /// Clears what the status line said, as each command does.
     pub(super) fn clear_notice(&mut self) {
         self.saving.notice = None;
+        self.picard.hush();
     }
 
     /// Has the status line say `notice` until the next command.

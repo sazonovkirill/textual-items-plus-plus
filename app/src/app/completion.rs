@@ -40,6 +40,20 @@ pub(super) fn toggle(
     Transaction::new(ops)
 }
 
+/// How many tasks and projects `transaction`, made by [`toggle`], completes.
+pub(super) fn completes(transaction: &Transaction) -> usize {
+    transaction
+        .ops()
+        .iter()
+        .filter(|op| {
+            matches!(op, Op::Set { before, after, .. }
+                if before.completed.is_none()
+                    && after.completed.is_some()
+                    && matches!(after.kind, ItemKind::Project | ItemKind::Task))
+        })
+        .count()
+}
+
 /// How many open tasks the projects among `items` that `toggle` would complete hold, at any
 /// depth, which completing hides with them (FR-ORG-09, D-140).
 pub(super) fn left_open(document: &Document, items: &[ItemId]) -> usize {

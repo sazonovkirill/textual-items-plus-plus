@@ -275,6 +275,11 @@ impl Editing {
         self.kind
     }
 
+    /// Whether the item edited was added to be edited, rather than there before.
+    pub(super) fn is_new(&self) -> bool {
+        matches!(self.origin, Origin::New { .. })
+    }
+
     /// Which of its texts is edited.
     pub(super) fn part(&self) -> Part {
         self.part

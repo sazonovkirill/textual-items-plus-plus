@@ -9,6 +9,7 @@ use super::{
     End, Notice, Picked, Picker, PickerInput, PickerView, State, TextEdit, TextField, adding,
     container, editing,
     move_to::{self, Destination},
+    picard::Occasion,
 };
 use crate::domain::{
     Item, ItemId, ItemKind, Node, Op, Snapshot, Transaction,
@@ -249,6 +250,7 @@ impl State {
             subtree,
         }]));
         self.notify(Notice::QuickAdded(name));
+        self.picard.witness(Occasion::QuickAdded);
     }
 }
 

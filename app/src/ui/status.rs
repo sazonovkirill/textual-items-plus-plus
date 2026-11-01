@@ -47,7 +47,8 @@ impl<'a> StatusLine<'a> {
 impl Widget for StatusLine<'_> {
     /// Draws the mode, then the file's path and whether its changes are saved, or that the demo
     /// data is not saved (FR-STORE-01), the path giving up its start first, and then itself,
-    /// when the line is too narrow, and the pending keys at the right end.
+    /// when the line is too narrow, a quote of Captain Picard when the core has one (D-162), and
+    /// the pending keys at the right end.
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mode = if self.state.editing().is_some() {
             format!(" {} EDIT", Icon::Edit.glyph(self.icons))
@@ -64,15 +65,27 @@ impl Widget for StatusLine<'_> {
         };
         let kept = kept(self.state);
         let kept = kept.as_str();
+        let quote = self.state.quote().map_or_else(String::new, |quote| {
+            format!("“{}” — Captain Jean-Luc Picard", quote.words())
+        });
         let pending = if self.pending.is_empty() {
             String::new()
         } else {
             format!(" {} ", self.pending)
         };
-        let fixed = [mode.as_str(), SEPARATOR, SEPARATOR, kept, &pending]
-            .map(UnicodeWidthStr::width)
-            .iter()
-            .sum::<usize>();
+        let quoting = if quote.is_empty() { "" } else { SEPARATOR };
+        let fixed = [
+            mode.as_str(),
+            SEPARATOR,
+            SEPARATOR,
+            kept,
+            quoting,
+            &quote,
+            &pending,
+        ]
+        .map(UnicodeWidthStr::width)
+        .iter()
+        .sum::<usize>();
         let room = usize::from(area.width).saturating_sub(fixed);
         let dim = Style::new().fg(self.theme.dim_text);
         let mut spans = vec![Span::styled(
@@ -84,6 +97,12 @@ impl Widget for StatusLine<'_> {
             spans.extend([Span::styled(SEPARATOR, dim), Span::styled(name, dim)]);
         }
         spans.extend([Span::styled(SEPARATOR, dim), Span::styled(kept, dim)]);
+        if !quote.is_empty() {
+            spans.extend([
+                Span::styled(SEPARATOR, dim),
+                Span::styled(quote, Style::new().fg(self.theme.accent)),
+            ]);
+        }
         Line::from(spans).render(area, buf);
         let width = u16::try_from(pending.width()).unwrap_or(u16::MAX);
         let at = Rect::new(area.right().saturating_sub(width), area.y, width, 1);

@@ -158,3 +158,38 @@ fn star_trek_tng_previews_its_lcars_colors_and_keeps_the_choice() {
         Color::Rgb(0, 0, 0)
     );
 }
+
+/// Whether the status line, the bottom row, quotes Captain Picard, in the theme's accent.
+fn quotes_picard(harness: &Harness) -> bool {
+    let rows = harness.rows();
+    let Some(status) = rows.last() else {
+        return false;
+    };
+    let Some(at) = status.find('“') else {
+        return false;
+    };
+    let column = u16::try_from(status[..at].chars().count()).unwrap_or(u16::MAX);
+    let bottom = u16::try_from(rows.len() - 1).unwrap_or(u16::MAX);
+    status.contains("” — Captain Jean-Luc Picard")
+        && harness.terminal.backend().buffer()[(column, bottom)].fg == Color::Rgb(0xff, 0x99, 0x00)
+}
+
+// D-162
+#[test]
+fn with_star_trek_tng_adding_tasks_now_and_then_quotes_picard_until_the_next_key() {
+    let mut harness = Harness::new(120, 30);
+    change_theme(&mut harness);
+    harness.type_text("star trek");
+    harness.key(KeyCode::Enter);
+    let mut added = 0;
+    while !quotes_picard(&harness) && added < 50 {
+        harness.wait(61_000);
+        harness.type_text("o");
+        harness.type_text("Away team");
+        harness.key(KeyCode::Enter);
+        added += 1;
+    }
+    assert!(quotes_picard(&harness), "{}", harness.screen());
+    harness.type_text("j");
+    assert!(!quotes_picard(&harness));
+}

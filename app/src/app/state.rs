@@ -20,6 +20,7 @@ use super::{
     moving,
     navigator::{self, Stop},
     pane::{self, Pane, PaneView, listed},
+    picard::{Occasion, Picard},
     quick_add::QuickAdd,
     quick_comment::QuickComment,
     save_as::SaveAs,
@@ -108,6 +109,8 @@ pub struct State {
     /// Whether the words the pane searches for are typed (FR-SRCH-01).
     pub(super) searching: bool,
     pub(super) saving: Saving,
+    /// What Captain Picard says on the status line with the Star Trek TNG theme (D-162).
+    pub(super) picard: Picard,
 }
 
 impl State {
@@ -158,6 +161,7 @@ impl State {
             theme_picker: None,
             searching: false,
             saving,
+            picard: Picard::default(),
         }
     }
 
@@ -457,6 +461,10 @@ impl State {
             return;
         }
         let transaction = completion::toggle(&self.document, items.iter().copied(), today);
+        let completed = completion::completes(&transaction);
+        if completed > 0 {
+            self.picard.witness(Occasion::Completed(completed));
+        }
         self.change(transaction);
     }
 
@@ -1189,6 +1197,7 @@ impl State {
             return false;
         };
         let (id, started) = (editing.id(), editing.revision());
+        let adds = editing.is_new() && editing.kind() != ItemKind::ChecklistItem;
         let in_sidebar = self.sidebar.has_keys();
         let in_panel = self.panel_has_keys();
         let heading = !in_sidebar && Some(id) == self.container();
@@ -1205,6 +1214,9 @@ impl State {
             .commit(&mut self.document, transaction, before.clone(), |_| after)
             .expect("an edit's transaction is made from the document as it was");
         let kept = self.document.node(id).is_some();
+        if adds && kept {
+            self.picard.witness(Occasion::Added);
+        }
         if in_sidebar {
             self.sidebar.finish(kept);
         }

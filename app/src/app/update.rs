@@ -137,14 +137,15 @@ pub enum Effect {
 /// Applies `message` to `state` on `today`, the local date by the frontend's clock, and returns
 /// the effects the frontend should carry out, in order. A command or a paste given in edit mode
 /// ends it first, so that the edit is kept before anything else happens; while the sidebar has the
-/// keys, it takes the commands it acts on. Every message is followed by what saving asks for after
-/// it.
+/// keys, it takes the commands it acts on. Every message may be followed by a quote of Captain
+/// Picard (D-162), and by what saving asks for after it.
 pub fn update(state: &mut State, message: Message, today: Date) -> Vec<Effect> {
     state.set_today(today);
     state.history.forget_changed();
     state.forget_refusal();
     let mut effects = dispatch(state, message, today);
     state.settle_sidebar();
+    state.salute();
     effects.extend(state.step_saving());
     effects
 }
